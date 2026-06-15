@@ -866,6 +866,7 @@ async function loadAll() {
 
   // Re-render current view
   renderCurrentView();
+  updateNavUnreadIndicators();
 }
 
 /** Reconcile liveStatus with the `activity` field on /api/sessions (the registry is the source of
@@ -2121,6 +2122,7 @@ function setMode(mode) {
   if (mode === 'projects') renderProjects();
   if (mode === 'sessions') renderSidebar();
   if (mode === 'settings') renderSettings();
+  updateNavUnreadIndicators();
 
   setHash('#/' + mode);
 }
@@ -2165,6 +2167,29 @@ function renderCurrentView() {
   else if (currentMode === 'sessions') renderSidebar();
 }
 
+function setNavUnreadDot(mode, on) {
+  const el = document.querySelector(`.nav-item[data-mode="${mode}"]`);
+  if (!el) return;
+  let dot = el.querySelector('.nav-unread-dot');
+  if (on && !dot) {
+    dot = document.createElement('span');
+    dot.className = 'nav-unread-dot';
+    dot.title = '有未读会话';
+    el.appendChild(dot);
+  } else if (!on && dot) {
+    dot.remove();
+  }
+}
+
+function updateNavUnreadIndicators() {
+  const seen = getLastSeen();
+  const unreadSessions = allSessions.filter(s => rowIsUnread(s, seen));
+  const anyUnread = unreadSessions.length > 0;
+  setNavUnreadDot('now', anyUnread);
+  setNavUnreadDot('sessions', anyUnread);
+  setNavUnreadDot('projects', unreadSessions.some(s => s.projectId));
+}
+
 /** Re-render the current view so unread dots (rows AND aggregate header/project/task
  *  dots) recompute after a session is marked seen, preserving the sidebar scroll. */
 function refreshUnreadUI() {
@@ -2180,6 +2205,7 @@ function refreshUnreadUI() {
   }
   const list2 = document.getElementById('session-list');
   if (list2) list2.scrollTop = top;
+  updateNavUnreadIndicators();
 }
 
 // ── Shared todo-row session UX (used by both Now 进行中待办 and the workspace 待办) ──
@@ -2198,7 +2224,7 @@ function todoExpandInfo(t) {
 
 /** HTML snippet (count badge + ▾ hint) to splice into a todo row before the 起会话 button. */
 function todoRowExtrasHtml(info) {
-  return aggGlyph(info.running, info.unread, '该任务下')
+  return aggGlyph(info.running, info.unread, '该任务下', info.linked)
        + (info.linked.length ? `<span class="todo-sess-count" title="已关联 ${info.linked.length} 个会话">${icon('link-2')} ${info.linked.length}</span>` : '')
        + (info.hasExpand ? `<span class="todo-expand-hint" title="点击任务展开会话/进展">${icon('chevron-down')}</span>` : '');
 }
@@ -2554,15 +2580,50 @@ function markSeen(sessionId) {
   return wasUnread;
 }
 function markSessionRead(sessionId) {
-  markSeen(sessionId);
-  refreshUnreadUI();
+  markSessionsRead([sessionId]);
 }
 function markSessionUnread(sessionId) {
-  if (!sessionId || sessionId.startsWith('new:')) return;
+  markSessionsUnread([sessionId]);
+}
+function cleanSessionIds(ids) {
+  return [...new Set((ids || []).filter(id => typeof id === 'string' && id && !id.startsWith('new:')))];
+}
+function markSessionsRead(ids) {
+  ids = cleanSessionIds(ids);
+  if (ids.length === 0) return;
+  const m = getLastSeen();
   const manual = getManualUnread();
-  manual[sessionId] = 1;
+  const now = Math.floor(Date.now() / 1000);
+  for (const id of ids) {
+    const s = allSessions.find(x => x.sessionId === id);
+    m[id] = Math.max(now, s?.updatedAt || 0);
+    delete manual[id];
+  }
+  try { localStorage.setItem('berthLastSeen', JSON.stringify(m)); } catch (e) {}
   setManualUnreadMap(manual);
   refreshUnreadUI();
+}
+function markSessionsUnread(ids) {
+  ids = cleanSessionIds(ids);
+  if (ids.length === 0) return;
+  const manual = getManualUnread();
+  for (const id of ids) manual[id] = 1;
+  setManualUnreadMap(manual);
+  refreshUnreadUI();
+}
+function handleUnreadToggleClick(e) {
+  const btn = e.target.closest && e.target.closest('.unread-toggle');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+  let ids = [];
+  if (btn.dataset.sessionId) ids = [btn.dataset.sessionId];
+  else if (btn.dataset.sessionIds) {
+    try { ids = JSON.parse(btn.dataset.sessionIds); } catch (_) { ids = []; }
+  }
+  if (btn.dataset.unreadAction === 'read') markSessionsRead(ids);
+  else markSessionsUnread(ids);
 }
 /** A session is "unread" if it has activity after the baseline epoch that you haven't opened since. */
 function isUnread(s, seen) {
@@ -2590,26 +2651,32 @@ function rowIsUnread(s, seen) {
   // event only REFRESHES s.updatedAt (pushed from the server), it doesn't itself mark a row unread.
   return isUnread(s, seen);
 }
+function unreadToggleHtml(ids, unread, label, extraClass = '') {
+  ids = cleanSessionIds(ids);
+  if (ids.length === 0) return '';
+  const action = unread ? 'read' : 'unread';
+  const title = unread ? `${label}标为已读` : `${label}标为未读`;
+  return `<button type="button" class="unread-dot unread-toggle ${unread ? 'on' : ''} ${extraClass}" data-unread-action="${action}" data-session-ids="${escHtml(JSON.stringify(ids))}" title="${escHtml(title)}" aria-label="${escHtml(title)}"></button>`;
+}
 /** Per-row indicator: spinner while running, red dot when there's unseen activity, else an invisible
- *  same-size slot so titles stay aligned. Replaces the old unread-only dot in every list row. */
+ *  same-size clickable slot so titles stay aligned and can be marked unread on hover. */
 function statusGlyph(s) {
   if (rowIsRunning(s)) return '<span class="row-spinner on" title="运行中…"></span>';
-  return rowIsUnread(s)
-    ? '<span class="unread-dot on" title="有结果 / 等待输入 — 还没看"></span>'
-    : '<span class="unread-dot"></span>';
+  const unread = rowIsUnread(s);
+  const title = unread ? '标为已读' : '标为未读';
+  return `<button type="button" class="unread-dot unread-toggle ${unread ? 'on' : ''}" data-session-id="${escHtml(s.sessionId)}" data-unread-action="${unread ? 'read' : 'unread'}" title="${title}" aria-label="${title}"></button>`;
 }
 /** Inline aggregate glyph for project cards / task rows: spinner if running, red dot if unread, else nothing. */
-function aggGlyph(running, unread, label) {
+function aggGlyph(running, unread, label, sessions = []) {
   if (running) return `<span class="row-spinner on" title="${label}有会话运行中"></span>`;
-  return unread ? `<span class="unread-dot on" title="${label}有未读会话"></span>` : '';
+  return unreadToggleHtml(sessions.map(s => s.sessionId), unread, label, '');
 }
 /** Aggregate header indicator: spinner if any child is running, else a red dot if any holds unseen activity. */
 function unreadHeaderDot(sessions) {
   if (sessions.some(rowIsRunning)) return '<span class="row-spinner on header-dot" title="该分组有会话运行中"></span>';
   const seen = getLastSeen();
-  return sessions.some(s => rowIsUnread(s, seen))
-    ? '<span class="unread-dot on header-dot" title="该分组下有未读会话"></span>'
-    : '';
+  const unread = sessions.some(s => rowIsUnread(s, seen));
+  return unreadToggleHtml(sessions.map(s => s.sessionId), unread, '该分组下', 'header-dot');
 }
 /** Recent sessions with new activity you haven't viewed in Berth since (self-clearing on open). */
 function computeInbox() {
@@ -2753,7 +2820,7 @@ function renderNow() {
       <span class="status-chip status-inprogress">${escHtml(t.status)}</span>
       <span class="priority-chip priority-${escHtml((t.priority || 'P?').toLowerCase())}">${escHtml(t.priority || '—')}</span>
       <span class="now-row-title">${escHtml(t.title)}</span>
-      ${aggGlyph(info.running, info.unread, '该任务下')}
+      ${aggGlyph(info.running, info.unread, '该任务下', info.linked)}
       ${info.linked.length ? `<span class="todo-sess-count" title="已关联 ${info.linked.length} 个会话">${icon('link-2')} ${info.linked.length}</span>` : ''}
       <span class="now-row-meta project-tag">${escHtml(todoProjectLabel(t))}</span>
       ${info.hasExpand ? `<span class="todo-expand-hint" title="点击展开会话/进展">${icon('chevron-down')}</span>` : ''}
@@ -2823,7 +2890,7 @@ function projectSummary(proj) {
   const projSessions = allSessions.filter(s => s.projectId === proj.id);
   const running = projSessions.some(rowIsRunning);
   const unread = projSessions.some(s => rowIsUnread(s, seen));
-  return { total, done, open: total - done, inProgress, sessions: projSessions.length, running, unread };
+  return { total, done, open: total - done, inProgress, sessions: projSessions.length, sessionRows: projSessions, running, unread };
 }
 
 // Feishu 项目领域 option hues are color *names* (Red/Purple/Gray/…), not numeric CSS
@@ -2844,7 +2911,7 @@ function buildProjectCard(proj) {
   card.style.setProperty('--proj-accent', projAccentColor(proj.hue));
   card.innerHTML = `
     <button class="project-archive-btn" title="${proj.archived ? '取消归档' : '归档项目'}">${proj.archived ? icon('archive-restore') : icon('archive')}</button>
-    <div class="project-card-name">${aggGlyph(sum.running, sum.unread, '该项目下')}${escHtml(proj.name)}</div>
+    <div class="project-card-name">${aggGlyph(sum.running, sum.unread, '该项目下', sum.sessionRows)}${escHtml(proj.name)}</div>
     <div class="project-card-stats">
       <span class="proj-stat" title="进行中任务">${icon('hourglass')} <strong>${sum.inProgress}</strong> 进行中</span>
       <span class="proj-stat" title="任务总数">共 <strong>${sum.total}</strong> 任务 · ${sum.open} 未完</span>
@@ -2949,7 +3016,7 @@ function renderProjectSidebar(currentName) {
     const item = document.createElement('div');
     item.className = 'project-list-item' + (proj.id === currentName ? ' current' : '');
     item.innerHTML = `
-      <div class="pli-name">${aggGlyph(sum.running, sum.unread, '该项目下')}${escHtml(proj.name)}</div>
+      <div class="pli-name">${aggGlyph(sum.running, sum.unread, '该项目下', sum.sessionRows)}${escHtml(proj.name)}</div>
       <div class="pli-stats">${icon('hourglass')}${sum.inProgress} · ${sum.open}未完 · ${icon('link-2')}${sum.sessions}</div>
     `;
     item.addEventListener('click', () => openProject(proj.id));
@@ -3391,6 +3458,7 @@ function renderWorkspace(name) {
       grpHdr.innerHTML = `
         <span class="ws-task-icon">${icon('chevron-right')}</span>
         <span class="ws-task-title" title="${escHtml(full)}">${escHtml(label)}</span>
+        ${unreadHeaderDot(sessions)}
         <span class="ws-task-count">${sessions.length}</span>
       `;
       // Rows for this group live in their own wrapper so the header can toggle them.
@@ -3626,7 +3694,6 @@ function openMenu(anchor, session) {
 
   const menu = document.createElement('div');
   menu.className = 'dropdown-menu';
-  const unread = isUnread(session);
 
   // Project assignment items
   const currentProjectId = session.projectId;
@@ -3643,10 +3710,6 @@ function openMenu(anchor, session) {
   for (const p of projItems) {
     html += `<div class="menu-item ${p.active ? 'active' : ''} ${p.cls || ''}" data-project-id="${p.id === null ? '__null__' : escHtml(p.id)}">${p.id === null ? icon('ban') + ' ' : ''}${escHtml(p.label)}</div>`;
   }
-  html += '<div class="menu-section">阅读状态</div>';
-  html += unread
-    ? `<div class="menu-item" data-read-act="read">${icon('circle-check')} 标为已读</div>`
-    : `<div class="menu-item" data-read-act="unread">${icon('inbox')} 标为未读</div>`;
   menu.innerHTML = html;
 
   menu.querySelectorAll('.menu-item[data-project-id]').forEach(item => {
@@ -3655,14 +3718,6 @@ function openMenu(anchor, session) {
       const raw = item.dataset.projectId;
       const projectId = raw === '__null__' ? null : raw;
       assign(session.sessionId, projectId);
-      closeMenu();
-    });
-  });
-  menu.querySelectorAll('.menu-item[data-read-act]').forEach(item => {
-    item.addEventListener('click', e => {
-      e.stopPropagation();
-      if (item.dataset.readAct === 'read') markSessionRead(session.sessionId);
-      else markSessionUnread(session.sessionId);
       closeMenu();
     });
   });
@@ -4432,6 +4487,7 @@ async function resolveConflictRow(id, side) {
 function init() {
   // Sidebar resize drag handle
   initSidebarResize();
+  document.addEventListener('click', handleUnreadToggleClick, true);
 
   // Nav mode switching
   document.querySelectorAll('.nav-item').forEach(el => {

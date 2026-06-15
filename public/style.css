@@ -77,6 +77,14 @@ html, body {
   border-left: 2px solid transparent;
   user-select: none;
 }
+.nav-item .nav-unread-dot {
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  flex-shrink: 0;
+}
 
 .nav-item:hover {
   background: var(--bg3);
@@ -470,6 +478,9 @@ html, body {
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   z-index: 1000;
   min-width: 180px;
+  max-height: min(206px, calc(100vh - 24px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px 0;
   font-size: 12px;
 }
@@ -928,14 +939,35 @@ html, body {
   width: 8px; height: 8px;
   border-radius: 50%;
   background: transparent;
+  border: 1px solid transparent;
   flex-shrink: 0;
   vertical-align: middle;
+  padding: 0;
+  appearance: none;
+  cursor: pointer;
+  box-sizing: border-box;
 }
-.unread-dot.on { background: var(--red); }
+.unread-dot.on { background: var(--red); border-color: var(--red); }
+.unread-dot.unread-toggle:not(.on):hover,
+.session-row:hover .unread-dot.unread-toggle:not(.on),
+.now-row:hover .unread-dot.unread-toggle:not(.on),
+.ws-session-row:hover .unread-dot.unread-toggle:not(.on),
+.section-header:hover .unread-dot.unread-toggle:not(.on),
+.project-card:hover .unread-dot.unread-toggle:not(.on),
+.project-list-item:hover .unread-dot.unread-toggle:not(.on),
+.ws-task-header:hover .unread-dot.unread-toggle:not(.on) {
+  border-color: color-mix(in oklab, var(--red) 70%, transparent);
+  background: color-mix(in oklab, var(--red) 14%, transparent);
+}
+.unread-dot.unread-toggle:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--red) 55%, transparent);
+  outline-offset: 3px;
+}
 /* Inline (non-flex) contexts need a little breathing room before the text/count. */
 .section-header .unread-dot.header-dot { width: 7px; height: 7px; margin-right: 6px; }
-.project-card-name .unread-dot.on { margin-right: 6px; }
-.pli-name .unread-dot.on { width: 7px; height: 7px; margin-right: 5px; }
+.project-card-name .unread-dot { margin-right: 6px; }
+.pli-name .unread-dot { width: 7px; height: 7px; margin-right: 5px; }
+.ws-task-header .unread-dot.header-dot { width: 7px; height: 7px; margin-left: auto; margin-right: 6px; }
 
 /* ── Live "running" spinner ────────────────────────────────────────────────
    Same 8px fixed slot as the unread dot (so titles stay aligned whether a row
