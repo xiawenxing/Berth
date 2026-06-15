@@ -1113,6 +1113,7 @@ html, body {
   border-left: 2px solid transparent;
   transition: background 0.1s;
 }
+.project-list-item + .project-list-item { margin-top: 4px; }
 .project-list-item:hover { background: var(--bg3); }
 .project-list-item.current { background: var(--bg3); border-left-color: var(--brand); }
 .pli-name {
