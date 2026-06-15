@@ -15,15 +15,20 @@ import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
 import { generateTitle, generateProgressSummary } from '../agent/index'
-import { extractUserGist } from '../agent/transcript'
+import { extractTitleContext, extractUserGist } from '../agent/transcript'
 import { readFileSync } from 'node:fs'
 import { snapshotActivity } from './pty-registry'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { revertCommit } from '../data/doc-git'
+import { berthAgentCwd } from '../paths'
 
 function truncate(s: string | null, max: number): string | null {
   if (!s) return null
   return s.length <= max ? s : s.slice(0, max) + '…'
+}
+
+function contextAgentError(error: unknown) {
+  return { error: String((error as any)?.message ?? error), contextAgentCwd: berthAgentCwd() }
 }
 
 export interface ApiSession {
@@ -322,9 +327,15 @@ api.post('/context/update', async (req, res) => {
       date: new Date().toISOString().slice(0, 10),
       getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
     })
-    if (!outcome.ok) return res.status(409).json({ error: outcome.reason })
+    if (!outcome.ok) {
+      try { refresh() } catch {}
+      return res.status(409).json(contextAgentError(outcome.reason))
+    }
     res.json({ ok: true, ref, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
-  } catch (e: any) { res.status(502).json({ error: String(e?.message ?? e) }) }
+  } catch (e: any) {
+    try { refresh() } catch {}
+    res.status(502).json(contextAgentError(e))
+  }
 })
 
 api.get('/todos', (_req, res) => {
@@ -529,7 +540,7 @@ api.post('/sessions/:id/title', async (req, res) => {
   let head = ''
   // Read a larger head (65536 bytes) so that real user messages after big injected blocks are captured
   try { const fd = openSync(s.contentSourcePath, 'r'); const b = Buffer.alloc(65536); const n = readSync(fd, b, 0, 65536, 0); closeSync(fd); head = b.toString('utf8', 0, n) } catch {}
-  const gist = extractUserGist(head) || head
+  const gist = extractTitleContext(head) || extractUserGist(head) || head
   try {
     const title = await generateTitle(gist, resolveBerthAgent(getStore()))
     if (!title) return res.status(502).json({ error: 'agent returned empty title' })
@@ -570,7 +581,13 @@ api.post('/sessions/:id/consolidate', async (req, res) => {
       docStore, locale, agent: resolveBerthAgent(store),
       getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
     })
-    if (!outcome.ok) return res.status(409).json({ error: outcome.reason })
+    if (!outcome.ok) {
+      try { refresh() } catch {}
+      return res.status(409).json(contextAgentError(outcome.reason))
+    }
     res.json({ ok: true, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
-  } catch (e: any) { res.status(502).json({ error: String(e?.message ?? e) }) }
+  } catch (e: any) {
+    try { refresh() } catch {}
+    res.status(502).json(contextAgentError(e))
+  }
 })

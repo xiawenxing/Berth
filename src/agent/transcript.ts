@@ -1,6 +1,6 @@
 /**
- * transcript.ts — shared helper for stripping hook/system/command-injected noise
- * from claude/codex/coco session transcript heads before title extraction.
+ * transcript.ts - shared helpers for stripping hook/system/command-injected noise
+ * from claude/codex/coco session transcript heads before title/context extraction.
  */
 
 /** Markers that indicate hook-injected or system content, not real user messages. */
@@ -8,6 +8,7 @@ const HOOK_MARKERS = [
   'Conduit', 'B-role', 'conduit-hooks', 'SessionStart hook',
   'additionalContext', 'environment_context', 'user_instructions',
   '<EXTREMELY_IMPORTANT>', 'superpowers', 'using-superpowers',
+  'AGENTS.md', 'BERTH_SENTINEL', 'treat as reference', 'Context for this task',
 ]
 
 /** Strip tag blocks and block-level injected content from text. */
@@ -126,8 +127,8 @@ export function extractUserGist(head: string): string {
   return ''
 }
 
-/** Flatten claude message content (string or array) into plain text. */
-function extractContentText(content: any): string {
+/** Flatten message content (string or array) into plain text. */
+export function extractContentText(content: any): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
     return content
@@ -135,4 +136,144 @@ function extractContentText(content: any): string {
       .join(' ')
   }
   return ''
+}
+
+export interface TitleContextSample {
+  users: string[]
+  assistants: string[]
+  tools: string[]
+}
+
+function cleanText(raw: string, max = 700): string {
+  const cleaned = stripNoise(raw).replace(/\s+/g, ' ').trim()
+  if (!cleaned || isInjectedText(cleaned)) return ''
+  return cleaned.slice(0, max)
+}
+
+function pushDistinct(arr: string[], text: string, maxItems: number) {
+  const cleaned = text.replace(/\s+/g, ' ').trim()
+  if (!cleaned || arr.length >= maxItems) return
+  const lc = cleaned.toLowerCase()
+  if (arr.some(x => x.toLowerCase() === lc)) return
+  arr.push(cleaned)
+}
+
+function summarizeObject(value: any, depth = 0): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) return value.map(v => summarizeObject(v, depth + 1)).filter(Boolean).join(' ')
+  if (typeof value !== 'object' || depth > 1) return ''
+  const preferred = ['command', 'cmd', 'pattern', 'path', 'file_path', 'relative_path', 'query', 'q', 'name']
+  const parts: string[] = []
+  for (const key of preferred) {
+    if (key in value) {
+      const s = summarizeObject(value[key], depth + 1)
+      if (s) parts.push(`${key}: ${s}`)
+    }
+  }
+  if (parts.length) return parts.join(' ')
+  return Object.entries(value).slice(0, 4).map(([k, v]) => {
+    const s = summarizeObject(v, depth + 1)
+    return s ? `${k}: ${s}` : ''
+  }).filter(Boolean).join(' ')
+}
+
+function collectClaudeContent(content: any, sample: TitleContextSample) {
+  if (typeof content === 'string') {
+    pushDistinct(sample.assistants, cleanText(content, 500), 3)
+    return
+  }
+  if (!Array.isArray(content)) return
+  for (const part of content) {
+    if (typeof part === 'string') {
+      pushDistinct(sample.assistants, cleanText(part, 500), 3)
+    } else if (part?.type === 'text') {
+      pushDistinct(sample.assistants, cleanText(part.text ?? '', 500), 3)
+    } else if (part?.type === 'tool_use') {
+      const detail = summarizeObject(part.input)
+      pushDistinct(sample.tools, cleanText(`${part.name ?? 'tool'} ${detail}`, 500), 8)
+    }
+  }
+}
+
+function collectCodexPayload(payload: any, sample: TitleContextSample) {
+  if (!payload) return
+  if (payload.type === 'message' && payload.role === 'assistant') {
+    pushDistinct(sample.assistants, cleanText(extractContentText(payload.content), 500), 3)
+  } else if (payload.type === 'function_call') {
+    const detail = summarizeObject(payload.arguments ?? payload.input)
+    pushDistinct(sample.tools, cleanText(`${payload.name ?? 'function_call'} ${detail}`, 500), 8)
+  } else if (payload.type === 'event_msg' || payload.type === 'task_started' || payload.type === 'task_complete') {
+    pushDistinct(sample.tools, cleanText(payload.type, 200), 8)
+  }
+}
+
+export function extractTitleContextSample(head: string): TitleContextSample {
+  const sample: TitleContextSample = { users: [], assistants: [], tools: [] }
+
+  for (const line of head.split('\n')) {
+    if (!line.trim()) continue
+    if (sample.users.length >= 3 && sample.assistants.length >= 3 && sample.tools.length >= 8) break
+
+    let o: any
+    try {
+      o = JSON.parse(line)
+    } catch {
+      if ((line.includes('"type":"user"') || line.includes('"type": "user"')) &&
+          (line.includes('"role":"user"') || line.includes('"role": "user"'))) {
+        pushDistinct(sample.users, extractTextViaRegex(line) ?? '', 3)
+      }
+      continue
+    }
+
+    if (o.type === 'user' && o.message?.role === 'user') {
+      pushDistinct(sample.users, cleanText(extractContentText(o.message.content), 700), 3)
+      continue
+    }
+
+    if (o.type === 'assistant' && o.message?.role === 'assistant') {
+      collectClaudeContent(o.message.content, sample)
+      continue
+    }
+
+    if (o.type === 'response_item') {
+      const p = o.payload
+      if (p?.type === 'message' && p.role === 'user') {
+        const cleaned = cleanText(extractContentText(p.content), 700)
+        if (cleaned && !cleaned.startsWith('#')) pushDistinct(sample.users, cleaned, 3)
+      } else {
+        collectCodexPayload(p, sample)
+      }
+    }
+  }
+
+  return sample
+}
+
+export function formatTitleContextSample(sample: TitleContextSample): string {
+  const lines: string[] = []
+  for (const u of sample.users) lines.push(`USER: ${u}`)
+  for (const a of sample.assistants) lines.push(`ASSISTANT: ${a}`)
+  for (const t of sample.tools) lines.push(`TOOL: ${t}`)
+  return lines.join('\n').slice(0, 5000)
+}
+
+/**
+ * Build a title-generation input from the session head. Unlike extractUserGist,
+ * this samples process clues too: assistant summaries, tool names, shell commands,
+ * grep/rg patterns, and touched paths when they appear in structured tool calls.
+ */
+export function extractTitleContext(head: string): string {
+  const sample = extractTitleContextSample(head)
+  return formatTitleContextSample(sample)
+}
+
+export function deriveTitleFromTranscript(head: string): string | null {
+  const sample = extractTitleContextSample(head)
+  const firstUser = sample.users[0]
+  if (!firstUser) return null
+  const process = sample.tools[0] ?? sample.assistants[0] ?? ''
+  if (!process) return firstUser
+  return `${firstUser} / ${process}`
 }

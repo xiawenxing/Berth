@@ -32,6 +32,32 @@ describe('claude adapter', () => {
     expect(title.length).toBeGreaterThan(100)
     expect(s.title).toBe(title)
   })
+  it('includes process clues when the transcript has tool calls', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'berth-claude-'))
+    const id = 'aaaabbbb-1111-4111-8111-222233334445'
+    writeFileSync(join(dir, `${id}.jsonl`), [
+      JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: '标题生成信息太少' },
+        cwd: '/tmp',
+        timestamp: '2026-06-14T00:29:00.000Z',
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: '我会查看标题生成路径。' },
+            { type: 'tool_use', name: 'Bash', input: { command: 'rg -n "extractMeta|generateTitle" src test' } },
+          ],
+        },
+        timestamp: '2026-06-14T00:30:00.000Z',
+      }),
+    ].join('\n') + '\n')
+
+    const s = listClaudeSessions(dir).find(x => x.kind === 'native')!
+    expect(s.title).toBe('标题生成信息太少 / Bash command: rg -n "extractMeta|generateTitle" src test')
+  })
   it('classifies subagent transcripts as kind=subagent with parentId', () => {
     const sub = listClaudeSessions(ROOT).find(x => x.kind === 'subagent')!
     expect(sub.parentId).toBe('cccc1111-1111-4111-8111-111111111111')

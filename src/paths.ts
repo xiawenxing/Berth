@@ -15,3 +15,8 @@ import { join } from 'node:path'
 export function berthHome(): string {
   return process.env.BERTH_HOME || join(homedir(), '.berth')
 }
+
+/** Stable cwd used by Berth's internal management agent so its CLI sessions are discoverable. */
+export function berthAgentCwd(): string {
+  return join(berthHome(), 'agent-cwd')
+}

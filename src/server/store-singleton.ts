@@ -12,7 +12,7 @@ import { getDocsRoot, setDocStoreStore } from '../data/docstore'
 import { getContextConfig } from '../data/context-config'
 import { setDocGitEnabled } from '../data/doc-git'
 import { syncSource } from '../data/sync/engine'
-import { berthHome } from '../paths'
+import { berthAgentCwd, berthHome } from '../paths'
 import type { LogicalSession } from '../types'
 
 const DB_DIR = berthHome()
@@ -42,9 +42,9 @@ export async function initData(): Promise<void> {
   migrateSessionDirsOnce(store)
 }
 
-/** Gather the session-import roots: explicitly imported dirs ∪ project paths ∪ launch-intent cwds. */
+/** Gather the session-import roots: explicit dirs ∪ project paths ∪ launch-intent cwds ∪ Berth agent cwd. */
 function importRoots(): string[] {
-  const roots = new Set<string>(store.allSessionImportDirs())
+  const roots = new Set<string>([berthAgentCwd(), ...store.allSessionImportDirs()])
   for (const { paths } of store.allProjectPaths().values()) for (const p of paths) roots.add(p)
   for (const cwd of store.allLaunchIntentCwds()) roots.add(cwd)
   return [...roots]

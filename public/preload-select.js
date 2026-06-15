@@ -8,11 +8,13 @@
  * @param {Record<string, number>} seen   sessionId → last-seen epoch seconds
  * @param {number} unreadEpoch            activity after this counts toward "unread"
  * @param {number} [n=5]                  max ids to return
+ * @param {Record<string, boolean|number>} manualUnread sessionIds the user explicitly marked unread
  * @returns {string[]} ordered sessionIds
  */
-export function selectPreloadSessions(sessions, seen = {}, unreadEpoch = 0, n = 5) {
+export function selectPreloadSessions(sessions, seen = {}, unreadEpoch = 0, n = 5, manualUnread = {}) {
   const isUnread = s =>
-    s.updatedAt > unreadEpoch && s.updatedAt > ((seen && seen[s.sessionId]) || 0)
+    !!(manualUnread && manualUnread[s.sessionId]) ||
+    (s.updatedAt > unreadEpoch && s.updatedAt > ((seen && seen[s.sessionId]) || 0))
 
   const byRecency = (a, b) => b.updatedAt - a.updatedAt
   const pinned = sessions.filter(s => s.pinned).sort(byRecency)

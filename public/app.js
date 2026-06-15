@@ -249,6 +249,7 @@ const expandedTodos = new Set();
 // Workspace 会话 module: which cwd groups the user has collapsed (key = project name   cwd),
 // persisted across re-renders. Default = expanded.
 const wsCollapsedCwds = new Set();
+const contextUpdatePending = new Set();
 
 // 待办 status board: column order + accent colors, and the currently-expanded column.
 // STATUS_ORDER / TODO_PRIORITIES are seeded with the defaults and refreshed from /api/settings
@@ -949,7 +950,7 @@ async function consolidateSession(sessionId, btn) {
   try {
     const res = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/consolidate', { method: 'POST' });
     const d = await res.json().catch(() => ({ error: res.statusText }));
-    if (!res.ok) { alert('刷新上下文失败: ' + (d.error || res.statusText)); return; }
+    if (!res.ok) { alert('刷新上下文失败: ' + contextAgentErrorText(d, res.statusText)); return; }
     const touched = [...(d.changed || []), ...(d.added || [])];
     alert('已刷新上下文' + (touched.length ? '：' + touched.join('、') : '（无新增进展）'));
   } catch (e) {
@@ -1350,7 +1351,7 @@ function maybePreloadAndRehydrate() {
   let cached = [];
   try { cached = JSON.parse(localStorage.getItem('berthPool') || '[]'); } catch (e) {}
   // Priority 5 (pinned → unread → recent) — may cold-resume, serially.
-  const preload = selectPreloadSessions(allSessions, getLastSeen(), getUnreadEpoch(), 5);
+  const preload = selectPreloadSessions(allSessions, getLastSeen(), getUnreadEpoch(), 5, getManualUnread());
   // Rehydrate: previously-cached sessions that still have a LIVE pty → cheap re-attach only. Cold
   // cached sessions are NOT auto-resumed on reload (avoids a resume storm); they warm on click.
   const liveCached = cached.filter(id => liveStatus.has(id) && !preload.includes(id));
@@ -2531,19 +2532,43 @@ function getUnreadEpoch() {
 function getLastSeen() {
   try { return JSON.parse(localStorage.getItem('berthLastSeen') || '{}'); } catch (e) { return {}; }
 }
+function getManualUnread() {
+  try { return JSON.parse(localStorage.getItem('berthManualUnread') || '{}'); } catch (e) { return {}; }
+}
+function setManualUnreadMap(m) {
+  try { localStorage.setItem('berthManualUnread', JSON.stringify(m)); } catch (e) {}
+}
 /** Mark a session read (now). Returns true if it had been unread (so the UI knows to refresh). */
 function markSeen(sessionId) {
   if (!sessionId || sessionId.startsWith('new:')) return false;
   const m = getLastSeen();
   const s = allSessions.find(x => x.sessionId === sessionId);
   const wasUnread = s ? isUnread(s, m) : false;
-  m[sessionId] = Math.floor(Date.now() / 1000);
+  m[sessionId] = Math.max(Math.floor(Date.now() / 1000), s?.updatedAt || 0);
   try { localStorage.setItem('berthLastSeen', JSON.stringify(m)); } catch (e) {}
+  const manual = getManualUnread();
+  if (manual[sessionId]) {
+    delete manual[sessionId];
+    setManualUnreadMap(manual);
+  }
   return wasUnread;
+}
+function markSessionRead(sessionId) {
+  markSeen(sessionId);
+  refreshUnreadUI();
+}
+function markSessionUnread(sessionId) {
+  if (!sessionId || sessionId.startsWith('new:')) return;
+  const manual = getManualUnread();
+  manual[sessionId] = 1;
+  setManualUnreadMap(manual);
+  refreshUnreadUI();
 }
 /** A session is "unread" if it has activity after the baseline epoch that you haven't opened since. */
 function isUnread(s, seen) {
   if (!s || s.deleted) return false;
+  const manual = getManualUnread();
+  if (manual[s.sessionId]) return true;
   seen = seen || getLastSeen();
   return s.updatedAt > getUnreadEpoch() && s.updatedAt > (seen[s.sessionId] || 0);
 }
@@ -3119,12 +3144,14 @@ function buildContextRow(opts) {
  * Result shows which sections changed + a revert link.
  */
 function addSupplementButton(row, opts) {
+  const stateKey = contextSupplementKey(opts);
   const btn = document.createElement('button');
   btn.className = 'ctx-supplement-btn';
-  btn.title = '补充上下文：给 agent 一些信息，它据此更新这份上下文';
-  btn.innerHTML = `${icon('plus')} 补充`;
+  btn.dataset.contextKey = stateKey;
+  applyContextSupplementButtonState(btn, contextUpdatePending.has(stateKey));
   btn.addEventListener('click', (e) => {
     e.stopPropagation();                                    // don't trigger the row's open-doc click
+    if (contextUpdatePending.has(stateKey)) return;
     const wrap = row.parentElement;
     const existing = wrap.querySelector('.ctx-supplement-panel');
     if (existing) { existing.remove(); return; }            // toggle off
@@ -3135,9 +3162,53 @@ function addSupplementButton(row, opts) {
   row.appendChild(btn);
 }
 
+function contextSupplementKey(opts) {
+  return opts.kind + ':' + opts.key;
+}
+
+function contextAgentErrorText(data, fallback) {
+  const msg = (data && data.error) || fallback || 'unknown error';
+  return data && data.contextAgentCwd
+    ? `${msg}。如后台 Berth agent 需要交互，可在会话列表中查找 cwd：${data.contextAgentCwd}`
+    : msg;
+}
+
+function applyContextSupplementButtonState(btn, busy) {
+  btn.disabled = busy;
+  btn.classList.toggle('loading', busy);
+  btn.title = busy ? 'agent 正在更新这份上下文…' : '补充上下文：给 agent 一些信息，它据此更新这份上下文';
+  btn.innerHTML = busy ? `${icon('loader')} 更新中…` : `${icon('plus')} 补充`;
+}
+
+function applyContextSupplementPanelState(panel, busy) {
+  panel.classList.toggle('is-updating', busy);
+  panel.setAttribute('aria-busy', busy ? 'true' : 'false');
+  const input = panel.querySelector('.ctx-supplement-input');
+  if (input) input.disabled = busy;
+  const send = panel.querySelector('.ctx-supplement-send');
+  if (!send) return;
+  if (!send.dataset.idleHtml) send.dataset.idleHtml = send.innerHTML;
+  send.disabled = busy;
+  send.classList.toggle('loading', busy);
+  send.innerHTML = busy ? `${icon('loader')} 更新中…` : send.dataset.idleHtml;
+}
+
+function setContextSupplementBusy(stateKey, busy) {
+  if (busy) contextUpdatePending.add(stateKey);
+  else contextUpdatePending.delete(stateKey);
+  document.querySelectorAll('.ctx-supplement-btn').forEach(btn => {
+    if (btn.dataset.contextKey === stateKey) applyContextSupplementButtonState(btn, busy);
+  });
+  document.querySelectorAll('.ctx-supplement-panel').forEach(panel => {
+    if (panel.dataset.contextKey === stateKey) applyContextSupplementPanelState(panel, busy);
+  });
+}
+
 function buildSupplementPanel(opts) {
+  const stateKey = contextSupplementKey(opts);
   const panel = document.createElement('div');
   panel.className = 'ctx-supplement-panel';
+  panel.dataset.contextKey = stateKey;
   panel.innerHTML = `
     <textarea class="ctx-supplement-input" placeholder="告诉 agent 要补充/修正什么（prompt / 数据 / 信息）…"></textarea>
     <div class="ctx-supplement-actions">
@@ -3146,19 +3217,22 @@ function buildSupplementPanel(opts) {
     </div>`;
   const send = panel.querySelector('.ctx-supplement-send');
   const statusEl = panel.querySelector('.ctx-supplement-status');
+  applyContextSupplementPanelState(panel, contextUpdatePending.has(stateKey));
   send.addEventListener('click', async () => {
+    if (contextUpdatePending.has(stateKey)) return;
     const userInput = panel.querySelector('textarea').value.trim();
     if (!userInput) { statusEl.textContent = '先写点要补充的内容'; return; }
-    send.disabled = true; statusEl.textContent = 'agent 更新中…';
+    setContextSupplementBusy(stateKey, true); statusEl.textContent = 'agent 更新中…';
     try {
       const r = await fetch('/api/context/update', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind: opts.kind, key: opts.key, userInput }),
       });
       const d = await r.json();
-      if (!r.ok) { statusEl.textContent = '失败: ' + (d.error || r.statusText); send.disabled = false; return; }
+      if (!r.ok) { statusEl.textContent = '失败: ' + contextAgentErrorText(d, r.statusText); return; }
       renderSupplementResult(panel, opts, d);
-    } catch (e) { statusEl.textContent = '失败: ' + e.message; send.disabled = false; }
+    } catch (e) { statusEl.textContent = '失败: ' + e.message; }
+    finally { setContextSupplementBusy(stateKey, false); }
   });
   return panel;
 }
@@ -3552,6 +3626,7 @@ function openMenu(anchor, session) {
 
   const menu = document.createElement('div');
   menu.className = 'dropdown-menu';
+  const unread = isUnread(session);
 
   // Project assignment items
   const currentProjectId = session.projectId;
@@ -3568,14 +3643,26 @@ function openMenu(anchor, session) {
   for (const p of projItems) {
     html += `<div class="menu-item ${p.active ? 'active' : ''} ${p.cls || ''}" data-project-id="${p.id === null ? '__null__' : escHtml(p.id)}">${p.id === null ? icon('ban') + ' ' : ''}${escHtml(p.label)}</div>`;
   }
+  html += '<div class="menu-section">阅读状态</div>';
+  html += unread
+    ? `<div class="menu-item" data-read-act="read">${icon('circle-check')} 标为已读</div>`
+    : `<div class="menu-item" data-read-act="unread">${icon('inbox')} 标为未读</div>`;
   menu.innerHTML = html;
 
-  menu.querySelectorAll('.menu-item').forEach(item => {
+  menu.querySelectorAll('.menu-item[data-project-id]').forEach(item => {
     item.addEventListener('click', e => {
       e.stopPropagation();
       const raw = item.dataset.projectId;
       const projectId = raw === '__null__' ? null : raw;
       assign(session.sessionId, projectId);
+      closeMenu();
+    });
+  });
+  menu.querySelectorAll('.menu-item[data-read-act]').forEach(item => {
+    item.addEventListener('click', e => {
+      e.stopPropagation();
+      if (item.dataset.readAct === 'read') markSessionRead(session.sessionId);
+      else markSessionUnread(session.sessionId);
       closeMenu();
     });
   });

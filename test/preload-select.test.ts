@@ -62,6 +62,18 @@ describe('selectPreloadSessions', () => {
     expect(out).toEqual(['genuinely-unread', 'seen-after', 'stale'])
   })
 
+  it('treats manually marked sessions as unread even before the unread epoch', () => {
+    const sessions = [
+      sess('fresh-read', 0),
+      sess('old-manual', 40),
+      sess('older-recent', 45),
+    ]
+    const seen = { 'fresh-read': NOW }
+    const manualUnread = { 'old-manual': 1 }
+    const out = selectPreloadSessions(sessions, seen, EPOCH, 5, manualUnread)
+    expect(out).toEqual(['old-manual', 'fresh-read', 'older-recent'])
+  })
+
   it('caps at n', () => {
     const sessions = Array.from({ length: 10 }, (_, i) => sess(`s${i}`, i + 1))
     expect(selectPreloadSessions(sessions, {}, EPOCH, 5)).toHaveLength(5)

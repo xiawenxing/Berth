@@ -1,20 +1,28 @@
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveAgentBinary } from '../pty/binaries'
 import { HEADLESS_CLIS } from '../data/agent-config'
+import { berthAgentCwd } from '../paths'
 import type { AgentCli } from '../types'
+import { extractTitleContext, extractUserGist } from './transcript'
 const exec = promisify(execFile)
 const BUF = 8 * 1024 * 1024
 
 export interface BerthAgent { cli: AgentCli; model?: string }
 
+function ensureAgentCwd(): string {
+  const cwd = berthAgentCwd()
+  mkdirSync(cwd, { recursive: true })
+  return cwd
+}
+
 /** claude headless: `claude -p` prints a reply-only stdout. An empty model → claude's own default. */
 async function runClaude(bin: string, prompt: string, model: string | undefined, timeoutMs: number): Promise<string> {
   const args = ['-p', prompt, ...(model ? ['--model', model] : [])]
-  const { stdout } = await exec(bin, args, { timeout: timeoutMs, maxBuffer: BUF })
+  const { stdout } = await exec(bin, args, { cwd: ensureAgentCwd(), timeout: timeoutMs, maxBuffer: BUF })
   return stdout.trim()
 }
 
@@ -34,7 +42,7 @@ async function runCodex(bin: string, prompt: string, model: string | undefined, 
   ]
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(bin, args, { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'] })
+      const child = spawn(bin, args, { cwd: ensureAgentCwd(), stdio: ['ignore', 'ignore', 'pipe'] })
       let stderr = ''
       child.stderr?.on('data', d => { if (stderr.length < 8192) stderr += d.toString() })
       const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('codex timed out')) }, timeoutMs)
@@ -66,11 +74,14 @@ export async function runAgent(prompt: string, opts: { cli?: AgentCli; model?: s
 
 /** Generate a concise human title from a raw session transcript head. */
 export async function generateTitle(transcriptHead: string, agent?: BerthAgent): Promise<string> {
+  const sampled = extractTitleContext(transcriptHead) || extractUserGist(transcriptHead) || transcriptHead.slice(0, 5000)
   const prompt =
-    `Below is the beginning of a coding-assistant session transcript (raw). ` +
+    `Below are sampled clues from a coding-assistant session transcript. ` +
+    `They may include user requests, assistant progress, and tool/grep/command/path clues. ` +
     `Reply with ONLY a concise title of at most 8 words, in the session's own language, ` +
-    `describing what the session is about. No surrounding quotes, no trailing punctuation.\n\n---\n` +
-    transcriptHead.slice(0, 5000)
+    `describing what the session actually worked on. Do not title it from only the first user query ` +
+    `when process clues show a more specific outcome. No surrounding quotes, no trailing punctuation.\n\n---\n` +
+    sampled
   const cli = agent?.cli ?? 'claude'
   // No agent configured at all → preserve the historical claude+haiku default. A configured agent
   // carries its own model (possibly empty = the CLI's own default), so don't force a claude model.

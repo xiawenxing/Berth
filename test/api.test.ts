@@ -68,6 +68,7 @@ vi.mock('../src/agent/index', () => ({
   generateTitle: vi.fn(async () => 'mocked title'),
 }))
 vi.mock('../src/agent/transcript', () => ({
+  extractTitleContext: vi.fn(() => ''),
   extractUserGist: vi.fn(() => ''),
 }))
 
@@ -702,6 +703,7 @@ describe('POST /api/context/update', () => {
     expect(res.status).toBe(409)
     const body = await res.json() as any
     expect(body.error).toBe('agent produced no usable update')
+    expect(body.contextAgentCwd).toMatch(/\.berth\/agent-cwd$/)
   })
 })
 

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { extractUserGist, stripNoise, isInjectedText } from '../src/agent/transcript'
+import {
+  deriveTitleFromTranscript,
+  extractTitleContext,
+  extractTitleContextSample,
+  extractUserGist,
+  stripNoise,
+  isInjectedText,
+} from '../src/agent/transcript'
 
 describe('stripNoise', () => {
   it('removes system-reminder blocks', () => {
@@ -178,5 +185,48 @@ describe('extractUserGist — codex format', () => {
     const gist = extractUserGist(sessionHead)
     expect(gist).toContain('Fix the login bug')
     expect(gist).not.toContain('environment_context')
+  })
+})
+
+describe('extractTitleContext', () => {
+  it('samples user, assistant, and claude tool process clues', () => {
+    const sessionHead = [
+      JSON.stringify({ type: 'user', message: { role: 'user', content: '帮我看看标题生成' } }),
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: '我会检查标题提取和接口路径。' },
+            { type: 'tool_use', name: 'Bash', input: { command: 'rg -n "generateTitle|firstUserTitle" src test' } },
+          ],
+        },
+      }),
+    ].join('\n')
+
+    const ctx = extractTitleContext(sessionHead)
+    expect(ctx).toContain('USER: 帮我看看标题生成')
+    expect(ctx).toContain('ASSISTANT: 我会检查标题提取和接口路径。')
+    expect(ctx).toContain('TOOL: Bash command: rg -n "generateTitle|firstUserTitle" src test')
+  })
+
+  it('samples codex function calls as process clues', () => {
+    const sessionHead = [
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: 'Fix title generation' }] } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: { command: 'rg -n "title" src/adapters' } } }),
+    ].join('\n')
+
+    const sample = extractTitleContextSample(sessionHead)
+    expect(sample.users).toEqual(['Fix title generation'])
+    expect(sample.tools).toEqual(['shell command: rg -n "title" src/adapters'])
+  })
+
+  it('derives an offline title from both request and process clue', () => {
+    const sessionHead = [
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: 'Fix title generation' }] } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: { command: 'rg -n "extractTitleContext" src/agent' } } }),
+    ].join('\n')
+
+    expect(deriveTitleFromTranscript(sessionHead)).toBe('Fix title generation / shell command: rg -n "extractTitleContext" src/agent')
   })
 })

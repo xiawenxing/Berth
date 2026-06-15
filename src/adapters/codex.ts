@@ -2,31 +2,16 @@ import fg from 'fast-glob'
 import { readFileSync, openSync, readSync, closeSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PhysicalSession, LedgerRecord } from '../types'
-import { stripNoise, isInjectedText } from '../agent/transcript'
+import { deriveTitleFromTranscript } from '../agent/transcript'
 import { lastMessageTime } from './transcript-time'
 
-function firstUserTitle(storePath: string): string | null {
+function transcriptTitle(storePath: string): string | null {
   let head: string
   try {
     const fd = openSync(storePath, 'r'); const buf = Buffer.alloc(131072)
     const n = readSync(fd, buf, 0, 131072, 0); closeSync(fd); head = buf.toString('utf8', 0, n)
   } catch { return null }
-  for (const line of head.split('\n')) {
-    if (!line.trim()) continue
-    let o: any; try { o = JSON.parse(line) } catch { continue }
-    if (o.type !== 'response_item') continue
-    const p = o.payload
-    if (p?.type === 'message' && p.role === 'user') {
-      const raw = (Array.isArray(p.content) ? p.content.map((c: any) => c?.text ?? '').join(' ') : '').trim()
-      const cleaned = stripNoise(raw).replace(/\s+/g, ' ').trim()
-      if (!cleaned) continue
-      // Also keep the existing codex-specific injection markers
-      if (isInjectedText(cleaned) || cleaned.startsWith('#') ||
-          /AGENTS\.md|BERTH_SENTINEL|treat as reference|Context for this task/i.test(cleaned.slice(0, 80))) continue
-      return cleaned
-    }
-  }
-  return null
+  return deriveTitleFromTranscript(head)
 }
 
 const STUB_PREFIX = 'Imported from Claude Code session:'
@@ -54,7 +39,7 @@ export function listCodexSessions(root: string): PhysicalSession[] {
       physicalId: meta.id,
       storePath,
       cwd: meta.cwd ?? null,
-      title: (isStub ? null : firstUserTitle(storePath)) ?? titleById.get(meta.id) ?? meta.thread_name ?? null,
+      title: (isStub ? null : transcriptTitle(storePath)) ?? titleById.get(meta.id) ?? meta.thread_name ?? null,
       // session_meta.timestamp is the session CREATION time and never advances; the rollout carries a
       // top-level `timestamp` on every line, so date from the LAST message (like claude) and fall back
       // to creation time only for an empty rollout. Otherwise unread can't re-light and ordering rots.
