@@ -996,6 +996,34 @@ async function generateTitle(sessionId, rowBtn) {
   }
 }
 
+async function generateProgressSummary(todoId, btn, noteEl) {
+  const orig = btn.textContent;
+  btn.textContent = '…'; btn.disabled = true; btn.classList.remove('error');
+  try {
+    const res = await fetch('/api/todos/' + encodeURIComponent(todoId) + '/progress-summary', { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.summary) {
+      btn.textContent = orig; btn.disabled = false; btn.classList.add('error');
+      setTimeout(() => btn.classList.remove('error'), 2000);
+      return;
+    }
+    if (noteEl) noteEl.textContent = d.summary;
+    const todo = (typeof allTodos !== 'undefined' ? allTodos : []).find(x => x.id === todoId);
+    if (todo) todo.progress = d.summary;
+    btn.textContent = orig; btn.disabled = false;
+  } catch {
+    btn.textContent = orig; btn.disabled = false; btn.classList.add('error');
+    setTimeout(() => btn.classList.remove('error'), 2000);
+  }
+}
+
+function openTaskDoc(t) {
+  if (t.detailDoc) { openDocEditor(t.detailDoc, t.title); return; }
+  fetch('/api/context', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'task', key: t.id, title: t.title }) })
+    .then(r => r.json())
+    .then(d => { if (d.ref) { t.detailDoc = d.ref; openDocEditor(d.ref, t.title); } });
+}
+
 function updateSessionTitleLocal(sessionId, title) {
   const s = allSessions.find(x => x.sessionId === sessionId);
   if (s) s.title = title;
@@ -2154,10 +2182,11 @@ function todoExpandInfo(t) {
   const linked = (Array.isArray(t.sessions) ? t.sessions : [])
     .map(id => allSessions.find(x => x.sessionId === id)).filter(Boolean);
   const hasNote = !!t.progress;
+  const hasDoc = !!t.detailDoc;
   const seen = getLastSeen();
   const running = linked.some(rowIsRunning);
   const unread = linked.some(s => rowIsUnread(s, seen));
-  return { linked, hasNote, running, unread, hasExpand: linked.length > 0 || hasNote };
+  return { linked, hasNote, hasDoc, running, unread, hasExpand: linked.length > 0 || hasNote || hasDoc };
 }
 
 /** HTML snippet (count badge + ▾ hint) to splice into a todo row before the 起会话 button. */
@@ -2374,11 +2403,54 @@ function wireTodoRow(t, item, row, projectName, info) {
     exp.appendChild(sl);
   }
 
-  if (info.hasNote) {
+  if (info.hasNote || info.hasDoc) {
+    const pane = document.createElement('div');
+    pane.className = 'todo-note-pane';
     const note = document.createElement('div');
     note.className = 'todo-note';
-    note.textContent = t.progress;
-    exp.appendChild(note);
+    note.textContent = info.hasNote ? t.progress : '';
+    pane.appendChild(note);
+
+    if (info.hasDoc) {
+      const actions = document.createElement('div');
+      actions.className = 'todo-note-actions';
+      actions.innerHTML = `
+        <button class="btn-summarize-progress" title="用 AI 生成进展摘要">${icon('sparkles')}</button>
+        <button class="btn-open-doc" title="打开上下文文档">${icon('file-text')}</button>
+      `;
+      actions.querySelector('.btn-summarize-progress').addEventListener('click', e => {
+        e.stopPropagation();
+        generateProgressSummary(t.id, e.currentTarget, note);
+      });
+      actions.querySelector('.btn-open-doc').addEventListener('click', e => {
+        e.stopPropagation();
+        openTaskDoc(t);
+      });
+      pane.appendChild(actions);
+    }
+    exp.appendChild(pane);
+
+    // Lazy-fetch the B-tail the first time this task is expanded with no A snapshot.
+    let logTailLoaded = false;
+    const ensureLogTail = () => {
+      if (logTailLoaded || info.hasNote || !info.hasDoc) return;
+      logTailLoaded = true;
+      fetch('/api/todos/' + encodeURIComponent(t.id) + '/progress')
+        .then(r => r.json())
+        .then(d => {
+          if (d.summary) { note.textContent = d.summary; return; }
+          const tail = Array.isArray(d.logTail) ? d.logTail : [];
+          note.textContent = tail.length
+            ? tail.map(en => (en.date ? en.date + ': ' : '') + en.text).join('\n')
+            : '暂无进展';
+        })
+        .catch(() => { note.textContent = '暂无进展'; });
+    };
+    if (startOpen) ensureLogTail();
+    row.addEventListener('click', e => {
+      if (e.target.closest('.launch-sess-btn') || e.target.closest('.todo-note-actions')) return;
+      if (exp.style.display === 'none') ensureLogTail();
+    });
   }
 
   item.appendChild(exp);

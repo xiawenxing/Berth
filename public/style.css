@@ -608,6 +608,26 @@ html, body {
 .btn-gen-title:hover { color: var(--text); border-color: var(--border); background: var(--bg3); }
 .btn-gen-title:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-gen-title.error { color: var(--red); border-color: var(--red); }
+
+/* ── Task progress pane ────────────────────────────────────────────────────── */
+.todo-note-pane { display: flex; flex-direction: column; gap: 4px; }
+.todo-note-actions { display: flex; gap: 4px; }
+.btn-summarize-progress, .btn-open-doc {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  width: 26px; height: 26px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1; flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.btn-summarize-progress:hover, .btn-open-doc:hover { color: var(--text); border-color: var(--border); background: var(--bg3); }
+.btn-summarize-progress:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-summarize-progress.error { color: var(--red); border-color: var(--red); }
+.todo-note { white-space: pre-wrap; }
+
 /* in row-actions, reuse action-btn style but differentiate gen-title */
 .action-btn.btn-gen-title {
   width: auto;
