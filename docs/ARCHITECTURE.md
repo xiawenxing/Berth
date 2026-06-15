@@ -158,7 +158,7 @@ default path (clicking a session whose view was disposed just re-attaches server
 | Tasks / projects | **Berth sqlite** (`task`, `project`) | canonical; synced to/from adapters |
 | Task/project detail docs + images | **Berth docstore** (configurable `docsRoot`) | md owned by Berth; default `~/.berth/docs`, may point at the vault |
 | External record ids (feishu recordId, …) | `external_ref` (local) | maps `task.id` ⇄ per-source external id |
-| pin / attach / edge / title-override / archived / **project home cwd** / **session import dirs** | **Berth sqlite (local)** | per-machine |
+| pin / attach / edge / title-override / archived / **project home cwd** / **session import dirs** / **task ddl** | **Berth sqlite (local)** | per-machine; `task_ddl` is a local-only (not synced) deadline overlay keyed by `task.id` |
 | Live agent processes | **`pty-registry` (in-memory)** | gone on server restart |
 
 A **task** has a Berth-native uuid `id`; `recordId` no longer exists in the core (it lives only in
