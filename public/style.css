@@ -252,9 +252,11 @@ html, body {
 .session-row.pending .row-time { color: var(--text-dim); }
 .pending-spinner {
   flex-shrink: 0;
-  width: 13px;
-  height: 13px;
-  border: 2px solid var(--border);
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid color-mix(in oklab, var(--brand) 30%, transparent);
   border-top-color: var(--brand);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
@@ -966,7 +968,12 @@ html, body {
 /* Inline (non-flex) contexts need a little breathing room before the text/count. */
 .section-header .unread-dot.header-dot { width: 7px; height: 7px; margin-right: 6px; }
 .project-card-name .unread-dot { margin-right: 6px; }
-.pli-name .unread-dot { width: 7px; height: 7px; margin-right: 5px; }
+.pli-name .unread-dot {
+  width: 7px;
+  height: 7px;
+  cursor: default;
+  pointer-events: none;
+}
 .ws-task-header .unread-dot.header-dot { width: 7px; height: 7px; margin-left: auto; margin-right: 6px; }
 
 /* ── Live "running" spinner ────────────────────────────────────────────────
@@ -988,7 +995,11 @@ html, body {
 }
 .section-header .row-spinner.header-dot { width: 7px; height: 7px; margin-right: 6px; }
 .project-card-name .row-spinner.on { margin-right: 6px; }
-.pli-name .row-spinner.on { width: 7px; height: 7px; margin-right: 5px; }
+.pli-name .row-spinner.on {
+  width: 7px;
+  height: 7px;
+  pointer-events: none;
+}
 @media (prefers-reduced-motion: reduce) { .row-spinner.on { animation: none; } }
 
 .project-tag {
@@ -1149,12 +1160,23 @@ html, body {
 .project-list-item:hover { background: var(--bg3); }
 .project-list-item.current { background: var(--bg3); border-left-color: var(--brand); }
 .pli-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: 500;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.pli-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pli-status {
+  flex-shrink: 0;
 }
 .project-list-item.current .pli-name { color: var(--brand); }
 .pli-stats {
@@ -1418,18 +1440,41 @@ html, body {
 }
 .todo-col.stacked:hover .todo-mini { color: var(--text); }
 
+.todo-item,
+.now-todo-item {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--bg3);
+  overflow: hidden;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.todo-item:hover,
+.now-todo-item:hover {
+  background: color-mix(in oklab, var(--bg3) 88%, var(--text) 12%);
+}
+.todo-item.expanded,
+.now-todo-item.expanded {
+  border-color: var(--border);
+  background: var(--bg3);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
 .todo-row {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 9px 10px;
+  border-radius: 0;
   transition: background 0.1s;
   flex-wrap: wrap;
 }
 
 .todo-row:hover {
-  background: var(--bg3);
+  background: color-mix(in oklab, var(--bg3) 84%, var(--text) 16%);
+}
+.todo-item .todo-row:hover,
+.now-todo-item .todo-row:hover {
+  background: transparent;
 }
 
 .todo-row.expandable, .now-row.expandable { cursor: pointer; }
@@ -1489,26 +1534,30 @@ html, body {
 /* Expanded panel under a task: its linked sessions + 进展 note */
 .todo-expand {
   width: 100%;
-  margin-top: 5px;
-  padding-left: 4px;
+  padding: 0 10px 10px 10px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
 }
-.todo-linked-list { display: flex; flex-direction: column; gap: 4px; }
+.todo-linked-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 2px;
+}
 .todo-linked-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 11px;
-  border-radius: 7px;
-  background: var(--bg3);
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--bg2);
   border: 1px solid transparent;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, transform 0.06s;
 }
 .todo-linked-row:hover {
-  background: var(--bg2);
+  background: var(--bg);
   border-color: color-mix(in oklab, var(--brand) 45%, transparent);
 }
 .todo-linked-row:active { transform: translateY(1px); }
@@ -1572,16 +1621,16 @@ html, body {
 
 .todo-note {
   width: 100%;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px 10px;
-  font-size: 11px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0 2px;
+  font-size: 11.5px;
   color: var(--text-muted);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  margin-top: 4px;
+  margin: -1px 0 0;
 }
 
 /* Status chips */
@@ -2150,32 +2199,42 @@ html, body {
 
 /* ── Launch-session button (▷ 起会话) ──────────────────────────────────── */
 .launch-sess-btn {
-  background: color-mix(in oklab, var(--brand) 12%, transparent);
-  border: 1px solid var(--brand);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  background: color-mix(in oklab, var(--brand) 10%, var(--bg) 90%);
+  border: 1.5px solid color-mix(in oklab, var(--brand) 86%, var(--text) 14%);
   color: var(--brand);
-  border-radius: 7px;
-  padding: 5px 14px;
-  font-size: 12.5px;
-  font-weight: 600;
+  border-radius: 8px;
+  padding: 5px 15px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
   white-space: nowrap;
-  transition: color 0.12s, border-color 0.12s, background 0.12s, filter 0.12s;
+  box-shadow: none;
+  transition: color 0.12s, border-color 0.12s, background 0.12s, transform 0.06s;
 }
 .launch-sess-btn:hover {
-  color: #fff;
+  color: color-mix(in oklab, var(--brand) 78%, var(--text) 22%);
   border-color: var(--brand);
-  background: var(--brand);
+  background: color-mix(in oklab, var(--brand) 16%, var(--bg) 84%);
+}
+.launch-sess-btn:active { transform: translateY(1px); }
+.launch-sess-btn .icon {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
 }
 /* Prominent variant in the workspace 待办 list — this is the core action */
 .launch-sess-btn.primary {
-  padding: 7px 18px;
-  font-size: 13px;
-  background: var(--brand);
-  color: #fff;
-  box-shadow: 0 1px 8px color-mix(in oklab, var(--brand) 40%, transparent);
+  min-height: 34px;
+  padding: 6px 18px;
+  font-size: 13.5px;
 }
-.launch-sess-btn.primary:hover { filter: brightness(1.12); }
 
 /* ⋯ task edit menu trigger (改名 / 优先级 / 删除) */
 .todo-menu-btn {

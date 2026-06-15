@@ -2195,16 +2195,23 @@ function updateNavUnreadIndicators() {
 function refreshUnreadUI() {
   const list = document.getElementById('session-list');
   const top = list ? list.scrollTop : 0;
+  const projectList = document.getElementById('project-list');
+  const projectTop = projectList ? projectList.scrollTop : 0;
   // The workspace view isn't driven by currentMode, so re-render it directly when it's the one showing.
   const wsVisible = document.getElementById('workspace-view').style.display !== 'none';
   if (wsVisible) {
     const name = document.getElementById('workspace-title').dataset.projectId;
-    if (name) renderWorkspace(name);
+    if (name) {
+      renderProjectSidebar(name);
+      renderWorkspace(name);
+    }
   } else {
     renderCurrentView();
   }
   const list2 = document.getElementById('session-list');
   if (list2) list2.scrollTop = top;
+  const projectList2 = document.getElementById('project-list');
+  if (projectList2) projectList2.scrollTop = projectTop;
   updateNavUnreadIndicators();
 }
 
@@ -2402,8 +2409,56 @@ function wireTodoRow(t, item, row, projectName, info) {
   const exp = document.createElement('div');
   exp.className = 'todo-expand';
   const startOpen = expandedTodos.has(t.id);   // restore prior expand state across re-renders
-  exp.style.display = startOpen ? 'block' : 'none';
+  exp.style.display = startOpen ? '' : 'none';
   row.classList.toggle('expanded', startOpen);
+  item.classList.toggle('expanded', startOpen);
+
+  let ensureLogTail = null;
+  if (info.hasNote || info.hasDoc) {
+    const pane = document.createElement('div');
+    pane.className = 'todo-note-pane';
+    const note = document.createElement('div');
+    note.className = 'todo-note';
+    note.textContent = info.hasNote ? t.progress : '';
+    pane.appendChild(note);
+
+    if (info.hasDoc) {
+      const actions = document.createElement('div');
+      actions.className = 'todo-note-actions';
+      actions.innerHTML = `
+        <button class="btn-summarize-progress" title="用 AI 生成进展摘要">${icon('sparkles')}</button>
+        <button class="btn-open-doc" title="打开上下文文档">${icon('file-text')}</button>
+      `;
+      actions.querySelector('.btn-summarize-progress').addEventListener('click', e => {
+        e.stopPropagation();
+        generateProgressSummary(t.id, e.currentTarget, note);
+      });
+      actions.querySelector('.btn-open-doc').addEventListener('click', e => {
+        e.stopPropagation();
+        openTaskDoc(t);
+      });
+      pane.appendChild(actions);
+    }
+    exp.appendChild(pane);
+
+    // Lazy-fetch the B-tail the first time this task is expanded with no A snapshot.
+    let logTailLoaded = false;
+    ensureLogTail = () => {
+      if (logTailLoaded || info.hasNote || !info.hasDoc) return;
+      logTailLoaded = true;
+      fetch('/api/todos/' + encodeURIComponent(t.id) + '/progress')
+        .then(r => r.json())
+        .then(d => {
+          if (d.summary) { note.textContent = d.summary; return; }
+          const tail = Array.isArray(d.logTail) ? d.logTail : [];
+          note.textContent = tail.length
+            ? tail.map(en => (en.date ? en.date + ': ' : '') + en.text).join('\n')
+            : '暂无进展';
+        })
+        .catch(() => { note.textContent = '暂无进展'; });
+    };
+    if (startOpen) ensureLogTail();
+  }
 
   if (info.linked.length) {
     const sl = document.createElement('div');
@@ -2436,63 +2491,15 @@ function wireTodoRow(t, item, row, projectName, info) {
     exp.appendChild(sl);
   }
 
-  if (info.hasNote || info.hasDoc) {
-    const pane = document.createElement('div');
-    pane.className = 'todo-note-pane';
-    const note = document.createElement('div');
-    note.className = 'todo-note';
-    note.textContent = info.hasNote ? t.progress : '';
-    pane.appendChild(note);
-
-    if (info.hasDoc) {
-      const actions = document.createElement('div');
-      actions.className = 'todo-note-actions';
-      actions.innerHTML = `
-        <button class="btn-summarize-progress" title="用 AI 生成进展摘要">${icon('sparkles')}</button>
-        <button class="btn-open-doc" title="打开上下文文档">${icon('file-text')}</button>
-      `;
-      actions.querySelector('.btn-summarize-progress').addEventListener('click', e => {
-        e.stopPropagation();
-        generateProgressSummary(t.id, e.currentTarget, note);
-      });
-      actions.querySelector('.btn-open-doc').addEventListener('click', e => {
-        e.stopPropagation();
-        openTaskDoc(t);
-      });
-      pane.appendChild(actions);
-    }
-    exp.appendChild(pane);
-
-    // Lazy-fetch the B-tail the first time this task is expanded with no A snapshot.
-    let logTailLoaded = false;
-    const ensureLogTail = () => {
-      if (logTailLoaded || info.hasNote || !info.hasDoc) return;
-      logTailLoaded = true;
-      fetch('/api/todos/' + encodeURIComponent(t.id) + '/progress')
-        .then(r => r.json())
-        .then(d => {
-          if (d.summary) { note.textContent = d.summary; return; }
-          const tail = Array.isArray(d.logTail) ? d.logTail : [];
-          note.textContent = tail.length
-            ? tail.map(en => (en.date ? en.date + ': ' : '') + en.text).join('\n')
-            : '暂无进展';
-        })
-        .catch(() => { note.textContent = '暂无进展'; });
-    };
-    if (startOpen) ensureLogTail();
-    row.addEventListener('click', e => {
-      if (e.target.closest('.launch-sess-btn')) return;   // action-button clicks stopPropagation already
-      if (exp.style.display === 'none') ensureLogTail();
-    });
-  }
-
   item.appendChild(exp);
   row.addEventListener('click', e => {
     if (e.target.closest('.launch-sess-btn')) return;
     const isOpen = exp.style.display !== 'none';
-    exp.style.display = isOpen ? 'none' : 'block';
+    exp.style.display = isOpen ? 'none' : '';
     row.classList.toggle('expanded', !isOpen);
+    item.classList.toggle('expanded', !isOpen);
     if (isOpen) expandedTodos.delete(t.id); else expandedTodos.add(t.id);
+    if (!isOpen && ensureLogTail) ensureLogTail();
   });
 }
 
@@ -2670,6 +2677,12 @@ function statusGlyph(s) {
 function aggGlyph(running, unread, label, sessions = []) {
   if (running) return `<span class="row-spinner on" title="${label}有会话运行中"></span>`;
   return unreadToggleHtml(sessions.map(s => s.sessionId), unread, label, '');
+}
+/** Status-only aggregate marker for project navigation lists: communicates state, no bulk action. */
+function projectListStatusGlyph(running, unread) {
+  if (running) return '<span class="row-spinner on pli-status" title="该项目有会话运行中"></span>';
+  if (unread) return '<span class="unread-dot on pli-status" title="该项目有未读会话"></span>';
+  return '';
 }
 /** Aggregate header indicator: spinner if any child is running, else a red dot if any holds unseen activity. */
 function unreadHeaderDot(sessions) {
@@ -3016,7 +3029,7 @@ function renderProjectSidebar(currentName) {
     const item = document.createElement('div');
     item.className = 'project-list-item' + (proj.id === currentName ? ' current' : '');
     item.innerHTML = `
-      <div class="pli-name">${aggGlyph(sum.running, sum.unread, '该项目下', sum.sessionRows)}${escHtml(proj.name)}</div>
+      <div class="pli-name"><span class="pli-title">${escHtml(proj.name)}</span>${projectListStatusGlyph(sum.running, sum.unread)}</div>
       <div class="pli-stats">${icon('hourglass')}${sum.inProgress} · ${sum.open}未完 · ${icon('link-2')}${sum.sessions}</div>
     `;
     item.addEventListener('click', () => openProject(proj.id));
