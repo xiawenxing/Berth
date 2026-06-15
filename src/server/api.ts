@@ -427,7 +427,10 @@ api.patch('/todos/:id', (req, res) => {
     return res.status(400).json({ error: 'ddl must be null or YYYY-MM-DD' })
   try {
     const store = getStore()
-    updateTask(store, req.params.id, { title, priority, status, progress })
+    // updateTask throws on an empty patch, so only call it when a TaskField is actually present —
+    // a ddl-only patch must not trip that.
+    if (title !== undefined || priority !== undefined || status !== undefined || progress !== undefined)
+      updateTask(store, req.params.id, { title, priority, status, progress })
     if (ddl !== undefined) store.setTaskDdl(req.params.id, ddl)
     res.json({ ok: true })
   } catch (e: any) {

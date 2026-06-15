@@ -60,7 +60,12 @@ const mockCreateTask = vi.fn(async (..._a: any[]) => ({
 vi.mock('../src/data/tasks', () => ({
   listTasks: (...a: any[]) => mockListTasks(...a),
   createTask: (...a: any[]) => mockCreateTask(...a),
-  updateTask: vi.fn(),
+  // Mirror the real updateTask: it throws when the patch carries no editable TaskField.
+  updateTask: vi.fn((_store: any, _id: string, patch: any) => {
+    const has = ['title', 'priority', 'status', 'progress'].some(k => patch?.[k] !== undefined)
+    if (!has) throw new Error('no editable fields in patch')
+    return { ok: true }
+  }),
   deleteTask: vi.fn(),
 }))
 

@@ -1669,6 +1669,31 @@ html, body {
 .priority-p2 { background: color-mix(in oklab, var(--brand) 20%, transparent); color: var(--brand); }
 .priority-p3 { background: color-mix(in oklab, var(--muted-foreground) 30%, transparent); color: var(--text-muted); }
 
+/* DDL (截止日期) chips */
+.ddl-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  line-height: 1.6;
+}
+.ddl-chip.overdue { background: color-mix(in oklab, var(--destructive) 20%, transparent); color: var(--red); }
+.ddl-chip.today   { background: color-mix(in oklab, var(--priority) 20%, transparent);    color: var(--amber); }
+.ddl-chip.future  { background: color-mix(in oklab, var(--muted-foreground) 22%, transparent); color: var(--text-muted); }
+
+/* later… date input inside the task edit menu */
+.menu-item.ddl-later { display: flex; align-items: center; gap: 6px; justify-content: space-between; cursor: default; }
+.ddl-date-input {
+  background: var(--input, var(--bg));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 1px 4px;
+}
+
 /* Doc links */
 .doc-list {
   display: flex;

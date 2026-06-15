@@ -449,6 +449,41 @@ function escHtml(str) {
 
 const DONE_STATUSES = new Set(['已完成', '已取消']);
 
+// ── Task DDL (本地截止日期; 'YYYY-MM-DD' or null) ──────────────────────────────
+/** Local today as 'YYYY-MM-DD' (browser timezone — the user's day). */
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+/** A local date 'YYYY-MM-DD' offset by `n` days from today. */
+function offsetDayStr(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+/** Whole days `ddl` is past `today` (>0 overdue, 0 today, <0 future). Both 'YYYY-MM-DD'. */
+function ddlDaysOverdue(ddl, today) {
+  const [y, m, d] = ddl.split('-').map(Number);
+  const [Y, M, D] = today.split('-').map(Number);
+  return Math.round((Date.UTC(Y, M - 1, D) - Date.UTC(y, m - 1, d)) / 86400000);
+}
+/** Chip HTML for a task's ddl (逾期 / 今日 / future MM-DD); '' when unset. */
+function ddlChipHtml(t) {
+  if (!t.ddl) return '';
+  const over = ddlDaysOverdue(t.ddl, todayStr());
+  if (over > 0) return `<span class="ddl-chip overdue" title="截止 ${escHtml(t.ddl)}">逾期 ${over} 天</span>`;
+  if (over === 0) return `<span class="ddl-chip today" title="截止 ${escHtml(t.ddl)}">今日</span>`;
+  return `<span class="ddl-chip future" title="截止 ${escHtml(t.ddl)}">${escHtml(t.ddl.slice(5))}</span>`;
+}
+/** Tasks due today or overdue (and not done/cancelled), sorted most-overdue → priority. */
+function todayTodos(todos) {
+  const today = todayStr();
+  const rank = p => { const i = TODO_PRIORITIES.indexOf(p); return i < 0 ? 99 : i; };
+  return todos
+    .filter(t => t.ddl && t.ddl <= today && !DONE_STATUSES.has(t.status))
+    .sort((a, b) => (a.ddl < b.ddl ? -1 : a.ddl > b.ddl ? 1 : rank(a.priority) - rank(b.priority)));
+}
+
 // Monotonic counter for client-minted fresh-launch terminal keys.
 let newSessionCounter = 0;
 
@@ -2248,6 +2283,7 @@ function buildWorkspaceTodoItem(t, projectName) {
   row.dataset.todoId = t.id;
   row.innerHTML = `
     <span class="priority-chip priority-${escHtml(priorityClass)}">${escHtml(t.priority || '—')}</span>
+    ${ddlChipHtml(t)}
     <span class="todo-title">${escHtml(t.title)}</span>
     ${todoRowExtrasHtml(info)}
     <button class="launch-sess-btn primary" title="新建一个会话">${icon('play')} 起会话</button>
@@ -2818,9 +2854,9 @@ function renderNow() {
   }, '（暂无置顶会话）');
   container.appendChild(pinnedSection);
 
-  // ── ⏳ 进行中待办
-  const inProgress = allTodos.filter(t => t.status === '进行中');
-  const todoSection = buildNowSection(`${icon('hourglass')} 进行中任务`, inProgress.length === 0 ? null : inProgress, item => {
+  // ── ⏳ 今日待处理任务（ddl ≤ 今天，逾期排前；状态非已完成/已取消）
+  const dueToday = todayTodos(allTodos);
+  const todoSection = buildNowSection(`${icon('hourglass')} 今日待处理任务`, dueToday.length === 0 ? null : dueToday, item => {
     const t = item;
     const info = todoExpandInfo(t);
     const wrap = document.createElement('div');
@@ -2830,7 +2866,8 @@ function renderNow() {
     row.className = 'now-row' + (info.hasExpand ? ' expandable' : '');
     row.dataset.todoId = t.id;
     row.innerHTML = `
-      <span class="status-chip status-inprogress">${escHtml(t.status)}</span>
+      ${ddlChipHtml(t)}
+      <span class="status-chip ${todoStatusClass(t.status)}">${escHtml(t.status || '—')}</span>
       <span class="priority-chip priority-${escHtml((t.priority || 'P?').toLowerCase())}">${escHtml(t.priority || '—')}</span>
       <span class="now-row-title">${escHtml(t.title)}</span>
       ${aggGlyph(info.running, info.unread, '该任务下', info.linked)}
@@ -2842,7 +2879,7 @@ function renderNow() {
     wrap.appendChild(row);
     wireTodoRow(t, wrap, row, todoProjectId(t), info);
     return wrap;
-  }, '（暂无进行中任务）');
+  }, '（今日无待处理任务）');
   container.appendChild(todoSection);
 
   // ── 🕑 最近会话 (top 15 by updatedAt)
@@ -3846,10 +3883,34 @@ function openTodoEditMenu(anchor, t, projectName) {
   for (const p of TODO_PRIORITIES) {
     html += `<span class="menu-prio priority-${p.toLowerCase()} ${t.priority === p ? 'active' : ''}" data-prio="${p}">${p}</span>`;
   }
-  html += '</div><div class="menu-section">操作</div>';
+  html += '</div><div class="menu-section">截止日期</div>';
+  html += `<div class="menu-item ${t.ddl === todayStr() ? 'active' : ''}" data-act="ddl-today">${icon('hourglass')} 今日处理</div>`;
+  html += `<label class="menu-item ddl-later" data-act="ddl-later">${icon('clock')} later…`
+        + `<input type="date" class="ddl-date-input" value="${escHtml(t.ddl || offsetDayStr(1))}"></label>`;
+  if (t.ddl) html += `<div class="menu-item detach" data-act="ddl-clear">${icon('x')} 清除日期</div>`;
+  html += '<div class="menu-section">操作</div>';
   html += `<div class="menu-item" data-act="rename">${icon('pencil')} 改名</div>`;
   html += `<div class="menu-item detach" data-act="delete">${icon('trash-2')} 删除任务</div>`;
   menu.innerHTML = html;
+
+  menu.querySelector('[data-act="ddl-today"]').addEventListener('click', e => {
+    e.stopPropagation();
+    setTodoDdl(t, todayStr(), projectName);
+    closeMenu();
+  });
+  const dateInput = menu.querySelector('.ddl-date-input');
+  dateInput.addEventListener('click', e => e.stopPropagation());   // don't bubble to the menu's outside-click closer
+  dateInput.addEventListener('change', e => {
+    e.stopPropagation();
+    if (e.target.value) setTodoDdl(t, e.target.value, projectName);
+    closeMenu();
+  });
+  const clearEl = menu.querySelector('[data-act="ddl-clear"]');
+  if (clearEl) clearEl.addEventListener('click', e => {
+    e.stopPropagation();
+    setTodoDdl(t, null, projectName);
+    closeMenu();
+  });
 
   menu.querySelectorAll('.menu-item[data-status]').forEach(el => el.addEventListener('click', e => {
     e.stopPropagation();
@@ -3903,6 +3964,16 @@ async function setTodoStatus(t, status, projectName) {
   rerenderTodosView(projectName);
   try { await patchTodo(t.id, { status }); }
   catch (e) { t.status = prev; rerenderTodosView(projectName); alert('状态修改失败：' + e.message); }
+}
+
+async function setTodoDdl(t, ddl, projectName) {
+  const next = ddl || null;
+  if ((t.ddl ?? null) === next) return;
+  const prev = t.ddl ?? null;
+  t.ddl = next;                                // optimistic
+  rerenderTodosView(projectName);
+  try { await patchTodo(t.id, { ddl: next }); }
+  catch (e) { t.ddl = prev; rerenderTodosView(projectName); alert('截止日期修改失败：' + e.message); }
 }
 
 async function renameTodo(t, title, projectName) {
