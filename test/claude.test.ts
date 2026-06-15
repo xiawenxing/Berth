@@ -17,6 +17,21 @@ describe('claude adapter', () => {
     expect(native.cwd).toBe('/Users/me/Code/y')
     expect(native.title).toBe('hi')
   })
+  it('does not truncate long first-user-message titles', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'berth-claude-'))
+    const id = 'aaaabbbb-1111-4111-8111-222233334444'
+    const title = 'Fix the session title inline editor regression and keep the entire original request visible when editing from the sidebar'
+    writeFileSync(join(dir, `${id}.jsonl`), JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: title },
+      cwd: '/tmp',
+      timestamp: '2026-06-14T00:29:00.000Z',
+    }) + '\n')
+
+    const s = listClaudeSessions(dir).find(x => x.kind === 'native')!
+    expect(title.length).toBeGreaterThan(100)
+    expect(s.title).toBe(title)
+  })
   it('classifies subagent transcripts as kind=subagent with parentId', () => {
     const sub = listClaudeSessions(ROOT).find(x => x.kind === 'subagent')!
     expect(sub.parentId).toBe('cccc1111-1111-4111-8111-111111111111')

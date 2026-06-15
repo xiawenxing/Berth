@@ -23,7 +23,7 @@ function firstUserTitle(storePath: string): string | null {
       // Also keep the existing codex-specific injection markers
       if (isInjectedText(cleaned) || cleaned.startsWith('#') ||
           /AGENTS\.md|BERTH_SENTINEL|treat as reference|Context for this task/i.test(cleaned.slice(0, 80))) continue
-      return cleaned.slice(0, 100)
+      return cleaned
     }
   }
   return null

@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { listCodexSessions, loadImportLedger } from '../src/adapters/codex'
 const ROOT = new URL('./fixtures/codex/', import.meta.url).pathname
 
@@ -16,6 +19,21 @@ describe('codex adapter', () => {
     const native = s.find(x => x.physicalId.endsWith('0001'))!
     // fixture has a response_item user message; body-extraction should win over the session_index thread_name
     expect(native.title).toBe('Fix the login toast not showing')
+  })
+  it('does not truncate long first-user-message titles', () => {
+    const root = mkdtempSync(join(tmpdir(), 'berth-codex-'))
+    const dir = join(root, 'sessions', '2026', '06', '15')
+    mkdirSync(dir, { recursive: true })
+    const id = '019ea000-0000-7000-8000-000000000099'
+    const title = 'Fix the session title inline editor regression and keep the entire original request visible when editing from the sidebar'
+    writeFileSync(join(dir, `rollout-${id}.jsonl`), [
+      JSON.stringify({ timestamp: '2026-06-15T00:00:00Z', payload: { type: 'session_meta', id, cwd: '/tmp', timestamp: '2026-06-15T00:00:00Z' } }),
+      JSON.stringify({ timestamp: '2026-06-15T00:01:00Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: title }] } }),
+    ].join('\n') + '\n')
+
+    const s = listCodexSessions(root).find(x => x.physicalId === id)!
+    expect(title.length).toBeGreaterThan(100)
+    expect(s.title).toBe(title)
   })
   it('falls back to session_index.jsonl thread_name when no response_item user message exists', () => {
     // The stub (0002) has no response_item lines; it is kind='import-stub' so firstUserTitle is skipped,

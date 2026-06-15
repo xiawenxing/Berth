@@ -53,7 +53,7 @@ function titleFromRawLine(line: string): string | null {
   let m: RegExpExecArray | null
   while ((m = TEXT_RE.exec(line)) !== null) {
     const raw = m[1].replace(/\\n/g, ' ').replace(/\\"/g, '"').replace(/\\t/g, ' ').replace(/\\\\/g, '\\').trim()
-    if (raw) return raw.replace(/\s+/g, ' ').slice(0, 100)
+    if (raw) return raw.replace(/\s+/g, ' ')
   }
   return null
 }
@@ -79,7 +79,7 @@ function extractMeta(path: string): { cwd: string | null; title: string | null }
       if (Array.isArray(c)) c = c.map((p: any) => (typeof p === 'string' ? p : p?.text ?? '')).join(' ')
       if (typeof c === 'string') {
         const cleaned = stripNoise(c).replace(/\s+/g, ' ').trim()
-        if (cleaned && !isInjectedText(cleaned)) title = cleaned.slice(0, 100)
+        if (cleaned && !isInjectedText(cleaned)) title = cleaned
       }
     }
     if (cwd && title) break
