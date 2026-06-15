@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, statSync, mkdirSync } from 'node:fs'
-import { join, resolve, sep, extname, dirname } from 'node:path'
+import { join, resolve, sep, extname, dirname, relative } from 'node:path'
 import { berthHome } from '../paths'
+import { isDocGitEnabled, commitDoc, ensureRepo } from './doc-git'
 
 // Berth owns markdown docs + their assets under a CONFIGURABLE root (app_setting.docsRoot).
 // Default ~/.berth/docs/. Refs are paths relative to the root. Layout Berth designs/maintains:
@@ -79,10 +80,16 @@ export class DocStore {
     return { content: readFileSync(abs, 'utf8'), mtime: Math.floor(statSync(abs).mtimeMs) }
   }
 
-  writeDoc(abs: string, content: string): { mtime: number } {
+  writeDoc(abs: string, content: string, opts: { message?: string } = {}): { mtime: number } {
     mkdirSync(dirname(abs), { recursive: true })
+    if (isDocGitEnabled()) ensureRepo(this.root)  // init repo before writing so ensureRepo's add -A doesn't capture this file
     writeFileSync(abs, content, 'utf8')
-    return { mtime: Math.floor(statSync(abs).mtimeMs) }
+    const mtime = Math.floor(statSync(abs).mtimeMs)
+    if (isDocGitEnabled()) {
+      const rel = relative(this.root, abs)
+      if (rel && !rel.startsWith('..')) commitDoc(this.root, abs, opts.message ?? `docs: update ${rel}`)
+    }
+    return { mtime }
   }
 
   docMtime(abs: string): number | null {

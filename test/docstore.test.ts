@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { DocStore, getDocsRoot, DEFAULT_DOCS_ROOT } from '../src/data/docstore'
+import { setDocGitEnabled, __resetDocGit } from '../src/data/doc-git'
 
 function tmpRoot() { return mkdtempSync(join(tmpdir(), 'berth-docstore-')) }
 
@@ -81,5 +83,25 @@ describe('DocStore', () => {
     expect(getDocsRoot(store)).toBe(DEFAULT_DOCS_ROOT)
     const store2 = { getSetting: (_k: string) => '/custom/root' }
     expect(getDocsRoot(store2)).toBe('/custom/root')
+  })
+})
+
+describe('writeDoc + git', () => {
+  it('commits the written file when git is enabled, with a default message', () => {
+    __resetDocGit(); setDocGitEnabled(true)
+    const root = mkdtempSync(join(tmpdir(), 'berth-ds-'))
+    const ds = new DocStore(root)
+    const abs = join(root, 'tasks', 't1', 'index.md')
+    ds.writeDoc(abs, '# hi')
+    const subjects = execFileSync('git', ['log', '--pretty=%s'], { cwd: root }).toString()
+    expect(subjects).toContain('docs: update tasks/t1/index.md')
+    setDocGitEnabled(false)                              // reset so later tests don't spawn git
+  })
+
+  it('does NOT touch git when disabled (default)', () => {
+    __resetDocGit()                                     // leaves gitEnabled = false
+    const root = mkdtempSync(join(tmpdir(), 'berth-ds2-'))
+    new DocStore(root).writeDoc(join(root, 'a.md'), 'x')
+    expect(existsSync(join(root, '.git'))).toBe(false)
   })
 })

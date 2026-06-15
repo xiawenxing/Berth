@@ -9,6 +9,8 @@ import { migrateIdentitiesOnce } from '../data/migrate'
 import { migrateAttachmentsOnce } from '../data/migrate-assets'
 import { migrateSessionDirsOnce } from '../data/migrate-session-dirs'
 import { getDocsRoot, setDocStoreStore } from '../data/docstore'
+import { getContextConfig } from '../data/context-config'
+import { setDocGitEnabled } from '../data/doc-git'
 import { syncSource } from '../data/sync/engine'
 import { berthHome } from '../paths'
 import type { LogicalSession } from '../types'
@@ -20,6 +22,7 @@ const store = openStore(join(DB_DIR, 'berth.sqlite'))
 // Register the store so DocStore consumers far from here (pty-registry) can resolve docsRoot.
 // (Pure reference registration — no DB writes, so importing this module never mutates state.)
 setDocStoreStore(store)
+setDocGitEnabled(getContextConfig(store).gitEnabled)
 
 let cache: LogicalSession[] = []
 
