@@ -2449,7 +2449,7 @@ function wireTodoRow(t, item, row, projectName, info) {
     };
     if (startOpen) ensureLogTail();
     row.addEventListener('click', e => {
-      if (e.target.closest('.launch-sess-btn') || e.target.closest('.todo-note-actions')) return;
+      if (e.target.closest('.launch-sess-btn')) return;   // action-button clicks stopPropagation already
       if (exp.style.display === 'none') ensureLogTail();
     });
   }

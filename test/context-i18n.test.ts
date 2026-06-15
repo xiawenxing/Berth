@@ -47,9 +47,15 @@ describe('contextStrings', () => {
 
 describe('summaryPrompt', () => {
   it('exists for both locales and instructs to ignore stable sections / no markdown', () => {
-    expect(contextStrings('zh-CN').summaryPrompt).toContain('进展')
-    expect(contextStrings('zh-CN').summaryPrompt).toMatch(/忽略|稳定/)
-    expect(contextStrings('en').summaryPrompt.toLowerCase()).toContain('progress')
-    expect(contextStrings('en').summaryPrompt.toLowerCase()).toMatch(/ignore|stable/)
+    const zh = contextStrings('zh-CN').summaryPrompt
+    const en = contextStrings('en').summaryPrompt
+    // non-empty + genuinely localized (not a shared/placeholder string)
+    expect(zh.length).toBeGreaterThan(20)
+    expect(en.length).toBeGreaterThan(20)
+    expect(zh).not.toBe(en)
+    expect(zh).toContain('进展')
+    expect(zh).toMatch(/忽略|稳定/)
+    expect(en.toLowerCase()).toContain('progress')
+    expect(en.toLowerCase()).toMatch(/ignore|stable/)
   })
 })

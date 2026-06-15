@@ -276,8 +276,8 @@ api.post('/context/log', (req, res) => {
       store.updateTaskFields(key, { detailDoc: ensured.ref }, Date.now())
     }
     const date = new Date().toISOString().slice(0, 10)
-    const oneLine = text.replace(/\s*\n\s*/g, ' ').trim()
-    const r = appendContextLogOnDisk(ds, ensured.abs, { text: oneLine, date, maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })
+    // appendLogEntry collapses internal whitespace/newlines into a single line — no pre-processing needed here.
+    const r = appendContextLogOnDisk(ds, ensured.abs, { text, date, maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })
     res.json({ ref: ensured.ref, appended: r.appended, rotated: r.rotated })
   } catch (e: any) {
     res.status(500).json({ error: String(e?.message ?? e) })
