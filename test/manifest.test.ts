@@ -40,6 +40,7 @@ it('renders the task manifest in English when locale=en', () => {
   expect(text).toContain('## Task')
   expect(text).toContain('- Title: light the red dot')
   expect(text).not.toContain('上下文索引')   // no zh-CN leakage
+  expect(text).not.toContain('2026-06-11: started')   // A suppressed regardless of locale
 })
 
 it('detailRefToPath joins an internal ref onto docsRoot', () => {

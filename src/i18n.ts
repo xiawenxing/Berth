@@ -30,7 +30,6 @@ export interface ManifestStrings {
   labelPriority: string
   labelProject: string
   labelDetailDoc: string
-  sectionProgress: string
   projectHeading: (name: string) => string
   pendingDetailDocs: string
   noDetailDoc: string
@@ -55,7 +54,6 @@ const MANIFEST: Record<Locale, ManifestStrings> = {
     labelPriority: '- 优先级: ',
     labelProject: '- 项目: ',
     labelDetailDoc: '- 详情文档: ',
-    sectionProgress: '## 进展记录',
     projectHeading: (n) => `## 项目: ${n}`,
     pendingDetailDocs: '### 待办详情文档',
     noDetailDoc: '(无详情文档)',
@@ -72,7 +70,6 @@ const MANIFEST: Record<Locale, ManifestStrings> = {
     labelPriority: '- Priority: ',
     labelProject: '- Project: ',
     labelDetailDoc: '- Detail doc: ',
-    sectionProgress: '## Progress',
     projectHeading: (n) => `## Project: ${n}`,
     pendingDetailDocs: '### Pending task detail docs',
     noDetailDoc: '(no detail doc)',
