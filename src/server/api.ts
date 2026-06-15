@@ -18,7 +18,8 @@ import { generateTitle, generateProgressSummary } from '../agent/index'
 import { extractUserGist } from '../agent/transcript'
 import { readFileSync } from 'node:fs'
 import { snapshotActivity } from './pty-registry'
-import { runConsolidation } from './context-consolidate-service'
+import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
+import { revertCommit } from '../data/doc-git'
 
 function truncate(s: string | null, max: number): string | null {
   if (!s) return null
@@ -236,6 +237,16 @@ api.post('/doc', (req, res) => {
   }
 })
 
+// Revert a single doc-store commit (the "回滚此次" affordance after an agent update).
+api.post('/doc/revert', (req, res) => {
+  const { commit } = req.body ?? {}
+  if (typeof commit !== 'string' || !/^[0-9a-fA-F]{7,40}$/.test(commit))
+    return res.status(400).json({ error: 'commit sha required' })
+  const r = revertCommit(getDocStore(getStore()).root, commit)
+  if (!r.ok) return res.status(409).json({ error: r.reason })
+  res.json({ ok: true })
+})
+
 // Ensure (lazily create) the context file for a task/project. Idempotent — never overwrites.
 api.post('/context', (req, res) => {
   const { kind, key, title } = req.body ?? {}
@@ -282,6 +293,38 @@ api.post('/context/log', (req, res) => {
   } catch (e: any) {
     res.status(500).json({ error: String(e?.message ?? e) })
   }
+})
+
+// Agent-driven context update: fold user-supplied info (and/or a session transcript) into the
+// entity's context file. Any section may change; the write is git-committed (revertable).
+api.post('/context/update', async (req, res) => {
+  const { kind, key, userInput, sessionId } = req.body ?? {}
+  if ((kind !== 'task' && kind !== 'project') || typeof key !== 'string' || !key.trim())
+    return res.status(400).json({ error: 'kind:task|project, key:string required' })
+  if ((typeof userInput !== 'string' || !userInput.trim()) && typeof sessionId !== 'string')
+    return res.status(400).json({ error: 'userInput or sessionId required' })
+  const store = getStore(); const ds = getDocStore(store); const locale = getLocale(store)
+  try {
+    const task = kind === 'task' ? (listTasks(store).find(t => t.id === key) ?? null) : null
+    const projectName = kind === 'project' ? key : (task?.project ?? null)
+    const ref = kind === 'task' ? ds.taskDocRef(key) : ds.projectDocRef(key)
+    const abs = ds.resolveDocPath(ref)
+    if (!abs) return res.status(400).json({ error: 'cannot resolve context path' })
+    const target: ContextTarget = { kind, key, title: task?.title ?? key, projectName, ref, abs }
+    let transcript: string | undefined
+    if (typeof sessionId === 'string') {
+      const s = getCache().find(x => x.sessionId === sessionId)
+      transcript = s ? readTranscript(s.contentSourcePath) : undefined
+    }
+    const outcome = await runContextUpdate({
+      target, docStore: ds, locale, agent: resolveBerthAgent(store),
+      userInput: typeof userInput === 'string' ? userInput : undefined, transcript,
+      date: new Date().toISOString().slice(0, 10),
+      getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
+    })
+    if (!outcome.ok) return res.status(409).json({ error: outcome.reason })
+    res.json({ ok: true, ref, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
+  } catch (e: any) { res.status(502).json({ error: String(e?.message ?? e) }) }
 })
 
 api.get('/todos', (_req, res) => {

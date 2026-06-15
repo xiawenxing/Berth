@@ -93,8 +93,20 @@ vi.mock('../src/server/reconcile', () => ({
 
 // ── Mock context-consolidate-service so no real CLI/agent runs ────────────────
 const mockRunConsolidation = vi.fn().mockResolvedValue({ ok: true, progress: 'p', status: 's', rotated: false })
+const mockRunContextUpdate = vi.fn().mockResolvedValue({ ok: true, changed: [], added: [], removed: [], commit: null, rotated: false })
+const mockReadTranscript = vi.fn((..._a: any[]) => 'transcript text')
 vi.mock('../src/server/context-consolidate-service', () => ({
   runConsolidation: (...a: any[]) => mockRunConsolidation(...a),
+  runContextUpdate: (...a: any[]) => mockRunContextUpdate(...a),
+  readTranscript: (...a: any[]) => mockReadTranscript(...a),
+}))
+
+// ── Spy on doc-git.revertCommit so /doc/revert never touches real git, while
+//    keeping the real exports docstore/store-singleton depend on intact. ───────
+const mockRevertCommit = vi.fn((..._a: any[]): { ok: boolean; reason?: string } => ({ ok: true }))
+vi.mock('../src/data/doc-git', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/data/doc-git')>()),
+  revertCommit: (root: string, commit: string) => mockRevertCommit(root, commit),
 }))
 
 import { createApp } from '../src/server/index'
@@ -120,6 +132,9 @@ beforeEach(() => {
   mockSetTitleOverride.mockClear()
   mockSettings.clear()
   mockImportDirs.clear()
+  mockRunContextUpdate.mockReset().mockResolvedValue({ ok: true, changed: [], added: [], removed: [], commit: null, rotated: false })
+  mockReadTranscript.mockReset().mockReturnValue('transcript text')
+  mockRevertCommit.mockReset().mockReturnValue({ ok: true })
 })
 
 describe('session-dirs API', () => {
@@ -617,5 +632,110 @@ describe('POST /api/sessions/:id/consolidate', () => {
     expect(res.status).toBe(409)
     const body = await res.json() as any
     expect(body.error).toBeTruthy()
+  })
+})
+
+// ── POST /api/context/update ─────────────────────────────────────────────────
+describe('POST /api/context/update', () => {
+  it('runs an agent-driven update for a task (200)', async () => {
+    mockListTasks.mockReturnValue([{ id: 't1', title: 'My Task', project: 'Berth' }])
+    mockRunContextUpdate.mockResolvedValueOnce({ ok: true, changed: ['项目背景'], added: ['新事实'], removed: [], commit: 'def4567', rotated: true })
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/context/update`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'task', key: 't1', userInput: 'remember this' }),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.ok).toBe(true)
+    expect(body.ref).toBe('tasks/t1/index.md')
+    expect(body.changed).toEqual(['项目背景'])
+    expect(body.added).toEqual(['新事实'])
+    expect(body.commit).toBe('def4567')
+    expect(body.rotated).toBe(true)
+    // userInput was forwarded; no sessionId means no transcript read.
+    expect(mockRunContextUpdate.mock.calls[0][0]).toMatchObject({ userInput: 'remember this' })
+    expect(mockReadTranscript).not.toHaveBeenCalled()
+  })
+
+  it('reads the session transcript when sessionId is supplied', async () => {
+    mockGetCache.mockReturnValue([
+      { sessionId: 's1', cli: 'claude', cwd: '/x', title: 'old', updatedAt: 100, deleted: false, copies: [], contentSourcePath: '/tmp/session.jsonl' },
+    ])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/context/update`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'project', key: 'Berth', sessionId: 's1' }),
+    })
+    expect(res.status).toBe(200)
+    expect(mockReadTranscript).toHaveBeenCalledWith('/tmp/session.jsonl')
+    expect(mockRunContextUpdate.mock.calls[0][0]).toMatchObject({ transcript: 'transcript text' })
+  })
+
+  it('rejects an invalid kind (400)', async () => {
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/context/update`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'nope', key: 't1', userInput: 'x' }),
+    })
+    expect(res.status).toBe(400)
+    expect(mockRunContextUpdate).not.toHaveBeenCalled()
+  })
+
+  it('rejects when neither userInput nor sessionId is given (400)', async () => {
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/context/update`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'task', key: 't1' }),
+    })
+    expect(res.status).toBe(400)
+    expect(mockRunContextUpdate).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 when the service reports ok:false', async () => {
+    mockRunContextUpdate.mockResolvedValueOnce({ ok: false, reason: 'agent produced no usable update' })
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/context/update`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'task', key: 't1', userInput: 'x' }),
+    })
+    expect(res.status).toBe(409)
+    const body = await res.json() as any
+    expect(body.error).toBe('agent produced no usable update')
+  })
+})
+
+// ── POST /api/doc/revert ─────────────────────────────────────────────────────
+describe('POST /api/doc/revert', () => {
+  it('reverts a valid commit (200)', async () => {
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/doc/revert`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commit: 'abc1234' }),
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json() as any).ok).toBe(true)
+    expect(mockRevertCommit).toHaveBeenCalledWith(expect.any(String), 'abc1234')
+  })
+
+  it('rejects a malformed commit sha (400)', async () => {
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/doc/revert`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commit: 'not a sha' }),
+    })
+    expect(res.status).toBe(400)
+    expect(mockRevertCommit).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 when the revert fails', async () => {
+    mockRevertCommit.mockReturnValueOnce({ ok: false, reason: 'invalid commit' } as any)
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/doc/revert`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commit: 'abc1234' }),
+    })
+    expect(res.status).toBe(409)
+    expect((await res.json() as any).error).toBe('invalid commit')
   })
 })
