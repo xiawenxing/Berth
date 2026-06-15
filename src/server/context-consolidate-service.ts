@@ -61,9 +61,12 @@ export async function runContextUpdate(args: {
   if (!newDoc) return { ok: false, reason: 'agent produced no usable update' }
   const msg = `context(${target.kind} ${target.key}): ${args.userInput?.trim() ? 'supplement' : 'refresh'}`
   docStore.writeDoc(target.abs, newDoc, { message: msg })
+  const commit = headCommit(docStore.root)   // snapshot the doc-update commit BEFORE rotation may add more commits
   const cfg = args.getCfg()
+  // Note: if rotation fires below it adds further commits; `commit` intentionally points at the doc update so
+  // the revert affordance targets the user's change. Revert is best-effort if a rotation intervened.
   const rotated = rotateContextDocOnDisk(docStore, target.abs, { maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })
-  return { ok: true, changed: diff.changed, added: diff.added, removed: diff.removed, commit: headCommit(docStore.root), rotated }
+  return { ok: true, changed: diff.changed, added: diff.added, removed: diff.removed, commit, rotated }
 }
 
 /** Session wrapper: resolve the session's target, read its transcript, run the update. */

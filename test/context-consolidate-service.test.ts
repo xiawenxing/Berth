@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -13,6 +14,8 @@ vi.mock('../src/agent/index', () => ({
 
 import { resolveSessionContextTarget, runConsolidation, runContextUpdate, type ContextTarget } from '../src/server/context-consolidate-service'
 import { DocStore } from '../src/data/docstore'
+import { ensureContextDoc } from '../src/data/context-doc'
+import { setDocGitEnabled, __resetDocGit, headCommit } from '../src/data/doc-git'
 import { contextStrings } from '../src/i18n'
 
 function tmpRoot() { return mkdtempSync(join(tmpdir(), 'berth-ctxsvc-')) }
@@ -157,5 +160,64 @@ describe('runContextUpdate', () => {
     expect(outcome.ok).toBe(false)
     expect(outcome.reason).toBe('no input or transcript')
     expect(runAgentMock).not.toHaveBeenCalled()
+  })
+
+  // Regression (I1): with git ON, the doc write commits C1, then rotation writes the rolled doc +
+  // archive as further commits C2/C3. The returned `commit` must be C1 (the doc update) so "回滚此次"
+  // reverts the user's change — NOT the later archive/rotation commit (which is now HEAD).
+  it('git on + rotation: returns the doc-update commit, not a later rotation/archive commit', async () => {
+    __resetDocGit()
+    setDocGitEnabled(true)
+    try {
+      const ds = new DocStore(tmpRoot())
+      const c = contextStrings('zh-CN')
+      const key = 'u4'
+      const target: ContextTarget = {
+        kind: 'task', key, title: 'Rotation Task', projectName: 'P',
+        ref: ds.taskDocRef(key), abs: ds.resolveDocPath(ds.taskDocRef(key))!,
+      }
+
+      // Create the doc, then pre-seed its progress log with 3 dated entries so that ONE more
+      // appended line (4 entries) exceeds the deliberately-low logMaxLines=3 and forces a roll.
+      ensureContextDoc(ds, 'task', key, { title: target.title, projectName: target.projectName, locale: 'zh-CN' })
+      const seeded = (() => {
+        const doc = readFileSync(target.abs, 'utf8')
+        const lines = doc.split('\n')
+        const idx = lines.findIndex(l => l.trim() === c.logHeading.trim())
+        lines.splice(idx + 1, 0, '- 2026-06-13: seed one', '- 2026-06-14: seed two', '- 2026-06-15: seed three')
+        return lines.join('\n')
+      })()
+      ds.writeDoc(target.abs, seeded, { message: 'seed log' })
+
+      // The mocked agent returns the FULL seeded doc with ONE more progress line appended → a real
+      // diff for updateContext AND a 4th entry so rotateContextDocOnDisk actually rotates.
+      runAgentMock.mockImplementation(async () => {
+        const doc = readFileSync(target.abs, 'utf8')
+        const lines = doc.split('\n')
+        const idx = lines.findIndex(l => l.trim() === c.logHeading.trim())
+        lines.splice(idx + 1, 0, '- 2026-06-16: did the rotation thing')
+        return lines.join('\n')
+      })
+
+      const lowCfg = () => ({ logMaxLines: 3, logKeep: 2 })
+      const outcome = await runContextUpdate({
+        target, docStore: ds, locale: 'zh-CN', agent: { cli: 'claude' },
+        userInput: '补充触发滚动的信息', date: '2026-06-16', getCfg: lowCfg,
+      })
+
+      expect(outcome.ok).toBe(true)
+      expect(outcome.rotated).toBe(true)                // rotation actually fired
+      expect(outcome.commit).toBeTruthy()
+
+      // The returned commit predates the rotation commits: HEAD has advanced past it.
+      expect(outcome.commit).not.toBe(headCommit(ds.root))
+
+      // And that commit's version of the context file contains the user's appended line — i.e. it's
+      // the doc-update commit (C1), not the archive write.
+      const atCommit = execFileSync('git', ['show', outcome.commit + ':' + target.ref], { cwd: ds.root }).toString()
+      expect(atCommit).toContain('did the rotation thing')
+    } finally {
+      setDocGitEnabled(false)
+    }
   })
 })
