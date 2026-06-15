@@ -74,6 +74,19 @@ Run: `npm start` (vendors xterm+marked, then `tsx bin/berth-serve.ts`) → http:
 - `data/docstore.ts` — `DocStore` for md context docs + image attachments under a **configurable**
   `docsRoot` (default `~/.berth/docs`, may point at the vault), with the path-traversal guard
   (`resolveDocPath`/`resolveAssetPath` confine to the root). Replaced the hardcoded `server/docs.ts`.
+- `data/context-{log,config,protocol,doc}.ts` — 上下文管理规范（AGENTMD）Phase 1：`context-log.rotateLog`
+  是纯函数滚动进展日志；`context-config` 三项 app_setting（`contextLogMaxLines`/`contextLogKeep`/
+  `contextProtocolEnabled`）；`context-protocol` seed/解析生效 `AGENTS.md`（全局 + per-project 覆盖）→
+  `compactRules` + 路径；`context-doc` 按模板惰性建 `tasks/<id>/index.md`·`projects/<name>/index.md` +
+  `rotateContextDocOnDisk` 磁盘滚动封装。启动时 `pty-ws.handleFresh` seed 协议 + `ensureContextDoc` +
+  经 `manifest` 静默通道注入精简规则/路径；会话 PTY 退出触发 `registerPty` 的 `onExit` → 机械滚动。
+  规则文案/模板在 `i18n.contextStrings`（zh-CN/en）。`POST /api/context` 惰性建上下文文件。
+- `data/context-apply.ts` + `agent/context-consolidate.ts` + `server/context-consolidate-service.ts` —
+  上下文管理 Phase 2（整合兜底）：`consolidateContext` 复用 `runAgent` 读 transcript + 当前上下文，
+  让无头 agent **只产结构化 `{progress,status}` JSON**（不直接改文件，稳定段安全）；纯函数
+  `context-apply.applyConsolidation` 确定性写回（追加「进展日志」+ 覆盖「当前状态」节）再跑 Phase 1 滚动。
+  编排在 `context-consolidate-service.runConsolidation`（会话→task/project 上下文映射 + 读 transcript）。
+  触发：`POST /api/sessions/:id/consolidate`（前端会话行的「刷新上下文」⟳ 按钮）。
 
 **Launch / terminal (the core):**
 - `pty/binaries.ts` — `resolveAgentBinary` (pins coco at `~/.local/bin/coco`, blacklists the Trae IDE

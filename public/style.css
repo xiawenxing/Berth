@@ -608,24 +608,6 @@ html, body {
 .btn-gen-title:hover { color: var(--text); border-color: var(--border); background: var(--bg3); }
 .btn-gen-title:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-gen-title.error { color: var(--red); border-color: var(--red); }
-.btn-edit-title {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--text-muted);
-  border-radius: 6px;
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  line-height: 1;
-  flex-shrink: 0;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-}
-.btn-edit-title:hover { color: var(--text); border-color: var(--border); background: var(--bg3); }
-
 /* in row-actions, reuse action-btn style but differentiate gen-title */
 .action-btn.btn-gen-title {
   width: auto;
@@ -820,6 +802,7 @@ html, body {
 
 .now-row-title {
   flex: 1;
+  min-width: 0;
   font-size: 12px;
   font-weight: 500;
   color: var(--text);
@@ -1392,6 +1375,7 @@ html, body {
 }
 
 .todo-row.expandable, .now-row.expandable { cursor: pointer; }
+.todo-row.editing-title, .now-row.editing-title { cursor: default; }
 .todo-expand-hint {
   flex-shrink: 0;
   color: var(--text-dim);
@@ -1411,6 +1395,20 @@ html, body {
   color: var(--text);
   line-height: 1.5;
   word-break: break-word;
+}
+.todo-title-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  background: var(--bg);
+  border: 1px solid var(--brand);
+  border-radius: 5px;
+  color: var(--text);
+  padding: 3px 7px;
+  font: inherit;
+  line-height: 1.35;
+  outline: none;
 }
 
 .todo-sess-count {
@@ -1797,6 +1795,30 @@ html, body {
   border-color: var(--brand);
   background: color-mix(in oklab, var(--brand) 10%, transparent);
 }
+
+/* 刷新上下文 (consolidate) button — same affordance as the task button: hover-revealed, brand-tinted. */
+.ws-sess-ctx-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 5px;
+  padding: 2px 6px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.12s, color 0.12s, border-color 0.12s, background 0.12s;
+}
+.ws-session-row:hover .ws-sess-ctx-btn { opacity: 1; }
+.ws-sess-ctx-btn:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+  background: color-mix(in oklab, var(--brand) 10%, transparent);
+}
+.ws-sess-ctx-btn:disabled, .ws-sess-ctx-btn.loading { opacity: 0.4; pointer-events: none; }
+.ws-sess-ctx-btn.loading .icon { animation: ws-ctx-spin 0.8s linear infinite; }
+@keyframes ws-ctx-spin { to { transform: rotate(360deg); } }
 /* When the session is already linked to a task, the button doubles as a tag: always visible,
    brand-tinted, and truncated so long titles don't blow out the row. */
 .ws-sess-task-btn.linked {

@@ -12,7 +12,10 @@ import { buildManifest, detailRefToPath, type ManifestInput } from '../agent/man
 import { listTasks, updateTask } from '../data/tasks'
 import { getTaskFieldConfig, type TaskFieldConfig } from '../data/task-config'
 import { getAgentConfig } from '../data/agent-config'
-import { getDocsRoot } from '../data/docstore'
+import { getDocsRoot, getDocStore } from '../data/docstore'
+import { getContextConfig } from '../data/context-config'
+import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
+import { ensureContextDoc, rotateContextDocOnDisk } from '../data/context-doc'
 import { getLocale, promptStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent } from '../types'
@@ -157,6 +160,18 @@ function buildManifestInput(params: FreshLaunchParams, todos: Task[], docsRoot: 
   }
 }
 
+export interface ContextInjection {
+  compactRules: string[]
+  protocolPath: string | null
+  contextDocPath: string | null
+}
+
+/** Merge resolved context paths/rules into a manifest input. Pure; null = protocol disabled (no-op). */
+export function enrichManifestForContext(input: ManifestInput, ctx: ContextInjection | null): ManifestInput {
+  if (!ctx) return input
+  return { ...input, compactRules: ctx.compactRules, protocolPath: ctx.protocolPath, contextDocPath: ctx.contextDocPath }
+}
+
 /**
  * Build the /pty WebSocketServer that bridges a CLI session into the browser. Returned in `noServer`
  * mode — the single upgrade router in index.ts dispatches '/pty' upgrades here (so /pty and /status
@@ -229,7 +244,40 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   }
   const plan = planFreshLaunch({ cli, cwd, todoKey, projectId }, todos, Math.floor(Date.now() / 1000), () => randomUUID(), docsRoot, locale)
 
-  const { text, addDirs } = buildManifest(plan.manifestInput, locale)
+  // Context maintenance: seed the protocol, ensure this entity's context file, and inject the
+  // compact rules + paths through the same silent manifest channel. Also remember the context-file
+  // abs path so the PTY-exit mechanical rotation (§7 Phase 1) can roll its progress log.
+  let contextAbs: string | null = null
+  let ctxInjection: ContextInjection | null = null
+  const ctxCfg = getContextConfig(store)
+  if (ctxCfg.protocolEnabled) {
+    try {
+      const ds = getDocStore(store)
+      seedDefaultProtocol(ds, locale)
+      const projectName = plan.manifestInput.projectName
+      const proto = resolveProtocol(ds, locale, projectName)
+      let ensuredAbs: string | null = null
+      if (todoKey && launchedTodo) {
+        const ensured = ensureContextDoc(ds, 'task', launchedTodo.id, { title: launchedTodo.title, projectName: launchedTodo.project, locale })
+        ensuredAbs = ensured.abs
+        if (ensured.created && !launchedTodo.detailDoc) {
+          store.updateTaskFields(launchedTodo.id, { detailDoc: ensured.ref }, Date.now())
+          launchedTodo.detailDoc = ensured.ref
+        }
+      } else if (projectId && projectName && projectName !== '—') {
+        const ensured = ensureContextDoc(ds, 'project', projectName, { title: projectName, projectName, locale })
+        ensuredAbs = ensured.abs
+      }
+      contextAbs = ensuredAbs
+      ctxInjection = { compactRules: proto.compactRules, protocolPath: proto.protocolPath, contextDocPath: ensuredAbs }
+    } catch (e: any) {
+      // docsRoot unwritable etc. → inject read-only context, skip maintenance, never block launch (§10).
+      try { ws.send(`\r\n[berth] context init skipped: ${e?.message ?? e}\r\n`) } catch {}
+    }
+  }
+
+  const enrichedManifest = enrichManifestForContext(plan.manifestInput, ctxInjection)
+  const { text, addDirs } = buildManifest(enrichedManifest, locale)
 
   mkdirSync(INJECT_DIR, { recursive: true })
   const injectFilePath = join(INJECT_DIR, `${plan.intent.id}.txt`)
@@ -244,7 +292,11 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   store.addLaunchIntent(plan.intent)
   if (plan.bindNow) {
     if (plan.bindNow.todoKey) store.addEdge(plan.bindNow.todoKey, plan.bindNow.sessionId)
-    store.setAttach(plan.bindNow.sessionId, plan.bindNow.projectId, 'confirmed')
+    // Only attach to a REAL project. A project-less launch must not write a null-project attach:
+    // that marker has no consumer (the frontend never reads attachState) but used to curate the
+    // session, force-keeping it under a phantom "(NO CWD)" group during the CLI's init window. The
+    // session surfaces normally via its launch-intent cwd (an import root) once that cwd is known.
+    if (plan.bindNow.projectId) store.setAttach(plan.bindNow.sessionId, plan.bindNow.projectId, 'confirmed')
   }
 
   // Tell the client which session id this fresh launch maps to, so it can associate its
@@ -273,6 +325,11 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // rekeyed to the real id by reconcile). The pty now persists across viewer disconnects.
   // A launch with an auto-fired prompt is a turn in progress → show the spinner immediately;
   // a plain empty session is idle until the user types.
-  registerPty(plan.sessionId ?? plan.intent.id, pty, { running: !!initialPrompt })
+  registerPty(plan.sessionId ?? plan.intent.id, pty, {
+    running: !!initialPrompt,
+    onExit: contextAbs ? () => {
+      try { rotateContextDocOnDisk(getDocStore(store), contextAbs!, { maxLines: ctxCfg.logMaxLines, keep: ctxCfg.logKeep, locale }) } catch {}
+    } : undefined,
+  })
   attachViewer(plan.sessionId ?? plan.intent.id, ws)
 }

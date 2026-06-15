@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import type { LogicalSession, LaunchIntent } from '../types'
 import { DATA_SCHEMA, dataMethods, migrateDataSchema } from '../data/store-data'
+import { canonicalPathKey } from '../path-normalize'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS logical_session (
@@ -204,10 +205,10 @@ export function openStore(path: string) {
     },
     // ── Session import directories (the 无归属 import roots) ──
     addSessionImportDir(cwd: string) {
-      db.prepare('INSERT OR IGNORE INTO session_import_dir (cwd) VALUES (?)').run(cwd)
+      db.prepare('INSERT OR IGNORE INTO session_import_dir (cwd) VALUES (?)').run(canonicalPathKey(cwd))
     },
     removeSessionImportDir(cwd: string) {
-      db.prepare('DELETE FROM session_import_dir WHERE cwd=?').run(cwd)
+      db.prepare('DELETE FROM session_import_dir WHERE cwd=? OR cwd=?').run(cwd, canonicalPathKey(cwd))
     },
     allSessionImportDirs(): string[] {
       return (db.prepare('SELECT cwd FROM session_import_dir ORDER BY cwd').all() as any[]).map(r => r.cwd)

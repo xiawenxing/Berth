@@ -19,3 +19,11 @@ try {
     }
   }
 } catch { /* never block install */ }
+
+// Discoverability hint: the package ships an optional Claude Code skill (berth-tasks). We don't write
+// to ~/.claude automatically (that's a user-global side effect) — just point at the opt-in command.
+try {
+  if (existsSync(join(ROOT, 'skills', 'berth-tasks', 'SKILL.md'))) {
+    console.log('berth: optional Claude Code skill available — run `berth skill install` to enable task/project management from chat.')
+  }
+} catch { /* ignore */ }

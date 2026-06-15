@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { openStore } from '../db/store'
-import { collectLogicalSessions, filterImportedSessions } from '../sessions'
+import { collectLogicalSessions, filterImportedSessions, curatedSessionIds as computeCuratedIds } from '../sessions'
 import { reconcileLaunchIntents } from './reconcile'
 import { ensureBootstrap } from '../data/bootstrap'
 import { migrateIdentitiesOnce } from '../data/migrate'
@@ -47,12 +47,12 @@ function importRoots(): string[] {
   return [...roots]
 }
 
-/** Session ids that are curated (attached / edged / pinned) — always kept regardless of cwd. */
+/**
+ * Session ids that are curated — always kept regardless of cwd. Pinned, edged to a task, or attached
+ * to a **real project**; a project-less attach marker does NOT curate (see `curatedSessionIds`).
+ */
 function curatedSessionIds(): Set<string> {
-  const ids = new Set<string>(store.allPinnedSet())
-  for (const id of store.allAttachMap().keys()) ids.add(id)
-  for (const sids of store.edgesByTodo().values()) for (const id of sids) ids.add(id)
-  return ids
+  return computeCuratedIds(store.allPinnedSet(), store.allAttachMap(), store.edgesByTodo().values())
 }
 
 /**

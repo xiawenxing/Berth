@@ -1,14 +1,13 @@
-import { resolve } from 'node:path'
 import type { LogicalSession } from '../types'
 import type { openStore } from '../db/store'
 import { rekeyPty } from './pty-registry'
+import { canonicalPathKey } from '../path-normalize'
 
 type Store = ReturnType<typeof openStore>
 
-// Mirror the normKey logic from dedup/identity.ts (not exported there).
-// resolve() handles relative refs and trailing slashes; NFC handles unicode variance.
+// Match cwd using real paths where possible so aliases like /tmp and /private/tmp bind together.
 function normPath(p: string): string {
-  return resolve(p).normalize('NFC')
+  return canonicalPathKey(p)
 }
 
 /**

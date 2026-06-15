@@ -96,10 +96,10 @@ export async function createTask(
 }
 
 /** Update a task's editable fields (title / priority / status). Validates enums; bumps updated_at. */
-export function updateTask(store: Store, id: string, patch: { title?: string; priority?: string; status?: string }, now: Now = Date.now): { ok: true } {
+export function updateTask(store: Store, id: string, patch: { title?: string; priority?: string; status?: string; progress?: string }, now: Now = Date.now): { ok: true } {
   if (!id) throw new Error('id required')
   const cfg = getTaskFieldConfig(store)
-  const fields: { title?: string; priority?: string; status?: string } = {}
+  const fields: { title?: string; priority?: string; status?: string; progress?: string } = {}
   if (typeof patch.title === 'string' && patch.title.trim()) fields.title = patch.title.trim()
   if (typeof patch.priority === 'string') {
     if (!cfg.priorities.includes(patch.priority)) throw new Error(`invalid priority: ${patch.priority}`)
@@ -109,6 +109,7 @@ export function updateTask(store: Store, id: string, patch: { title?: string; pr
     if (!cfg.statuses.includes(patch.status)) throw new Error(`invalid status: ${patch.status}`)
     fields.status = patch.status
   }
+  if (typeof patch.progress === 'string') fields.progress = patch.progress   // free text; '' clears it
   if (Object.keys(fields).length === 0) throw new Error('no editable fields in patch')
   store.updateTaskFields(id, fields, now())
   return { ok: true }

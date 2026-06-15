@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { openStore } from '../src/db/store'
 import { migrateSessionDirsOnce } from '../src/data/migrate-session-dirs'
 import type { LogicalSession } from '../src/types'
@@ -101,6 +104,24 @@ describe('session_import_dir', () => {
     expect(s.allSessionImportDirs()).toEqual(['/a', '/b'])
     s.removeSessionImportDir('/a')
     expect(s.allSessionImportDirs()).toEqual(['/b'])
+  })
+
+  it('stores import directories by real path and removes by either alias', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'berth-store-path-'))
+    try {
+      const real = join(tmp, 'real')
+      const alias = join(tmp, 'alias')
+      mkdirSync(real)
+      symlinkSync(real, alias, 'dir')
+
+      const s = openStore(':memory:')
+      s.addSessionImportDir(alias)
+      expect(s.allSessionImportDirs()).toEqual([realpathSync(real)])
+      s.removeSessionImportDir(alias)
+      expect(s.allSessionImportDirs()).toEqual([])
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
   })
 })
 

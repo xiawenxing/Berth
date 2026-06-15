@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import type { Task } from '../data/types'
-import { manifestStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
+import { manifestStrings, contextStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
 
 // Budget constants
 const PROGRESS_BUDGET = 600   // max chars per progress block
@@ -11,6 +11,9 @@ export interface TaskManifestInput {
   projectName: string
   docsRoot: string            // absolute Berth docs root; detail refs are relative to it
   todo: Task
+  contextDocPath?: string | null
+  protocolPath?: string | null
+  compactRules?: string[]
 }
 
 export interface ProjectManifestInput {
@@ -18,6 +21,9 @@ export interface ProjectManifestInput {
   projectName: string
   docsRoot: string
   projectTodos: Pick<Task, 'title' | 'detailDoc'>[]
+  contextDocPath?: string | null
+  protocolPath?: string | null
+  compactRules?: string[]
 }
 
 export type ManifestInput = TaskManifestInput | ProjectManifestInput
@@ -98,15 +104,30 @@ export function buildManifest(input: ManifestInput, locale: Locale = DEFAULT_LOC
     }
   }
 
-  lines.push('')
-  lines.push(m.footer)
-
-  let text = lines.join('\n')
-
-  // Enforce total budget
-  if (text.length > TOTAL_BUDGET) {
-    text = text.slice(0, TOTAL_BUDGET) + m.truncated
+  // Maintenance block (the §6 compact rules + context/protocol paths) + footer form a PROTECTED tail:
+  // they carry the load-bearing rules and the abs paths the agent must Read, so they must survive
+  // budget truncation. Build them separately and only truncate the (variable-length) index body —
+  // otherwise a large project todo list could sever the path lines, leaving rules that dangle.
+  // buildManifest stays pure — pty-ws ensures the files and passes the abs paths in.
+  const tail: string[] = []
+  if (input.compactRules && input.compactRules.length) {
+    const c = contextStrings(locale)
+    tail.push('')
+    tail.push(c.sectionMaintain)
+    for (const r of input.compactRules) tail.push(r)
+    if (input.contextDocPath) tail.push(`${c.labelContextDoc}${input.contextDocPath}`)
+    if (input.protocolPath) tail.push(`${c.labelProtocol}${input.protocolPath}`)
   }
+  tail.push('')
+  tail.push(m.footer)
+  const tailText = tail.join('\n')
+
+  let body = lines.join('\n')
+  const bodyBudget = TOTAL_BUDGET - tailText.length
+  if (body.length > bodyBudget) {
+    body = body.slice(0, Math.max(0, bodyBudget)) + m.truncated
+  }
+  const text = body + '\n' + tailText
 
   return {
     text,

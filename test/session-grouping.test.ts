@@ -25,7 +25,7 @@ describe('splitGroupRows', () => {
     expect(stale).toHaveLength(0)
   })
 
-  it('keeps all active sessions visible and hides stale ones (group C: 5 active + 4 stale)', () => {
+  it('keeps active sessions visible up to the default cap and hides stale ones (group C: 5 active + 4 stale)', () => {
     const group = [
       sess('a', 0), sess('b', 1), sess('c', 2), sess('d', 2.5), sess('e', 2.9), // active (<=3d)
       sess('s1', 4), sess('s2', 5), sess('s3', 6), sess('s4', 7),               // stale (>3d)
@@ -33,6 +33,17 @@ describe('splitGroupRows', () => {
     const { visible, stale } = splitGroupRows(group, NOW)
     expect(ids(visible)).toEqual(['a', 'b', 'c', 'd', 'e'])
     expect(ids(stale)).toEqual(['s1', 's2', 's3', 's4'])
+  })
+
+  it('caps visible rows at 6 even when more sessions are active', () => {
+    const group = [
+      sess('a', 0), sess('b', 0.5), sess('c', 1), sess('d', 1.5),
+      sess('e', 2), sess('f', 2.5), sess('g', 2.9), // all active (<=3d)
+      sess('s1', 4), sess('s2', 5),
+    ]
+    const { visible, stale } = splitGroupRows(group, NOW)
+    expect(ids(visible)).toEqual(['a', 'b', 'c', 'd', 'e', 'f'])
+    expect(ids(stale)).toEqual(['g', 's1', 's2'])
   })
 
   it('fills up to minVisible with the most-recent stale when fewer than 3 are active (group A: 1 active + 9 stale)', () => {
@@ -68,11 +79,11 @@ describe('splitGroupRows', () => {
     expect(ids(visible)).toEqual(['edge', 's1', 's2'])
   })
 
-  it('honors custom staleDays / minVisible options', () => {
-    const group = [sess('a', 0), sess('b', 2), sess('c', 5), sess('d', 8)]
+  it('honors custom staleDays / minVisible / maxVisible options', () => {
+    const group = [sess('a', 0), sess('b', 2), sess('c', 5), sess('d', 8), sess('e', 9)]
     // staleDays=1 → only 'a' active; minVisible=2 → a + newest stale 'b'
-    const { visible, stale } = splitGroupRows(group, NOW, { staleDays: 1, minVisible: 2 })
+    const { visible, stale } = splitGroupRows(group, NOW, { staleDays: 1, minVisible: 2, maxVisible: 4 })
     expect(ids(visible)).toEqual(['a', 'b'])
-    expect(ids(stale)).toEqual(['c', 'd'])
+    expect(ids(stale)).toEqual(['c', 'd', 'e'])
   })
 })

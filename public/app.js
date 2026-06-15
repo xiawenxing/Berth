@@ -30,6 +30,50 @@ let allTodos = [];
 let selectedId = null;
 let activeMenu = null;
 let currentMode = 'now'; // 'now' | 'projects' | 'sessions'
+let editingSessionTitle = null; // { sessionId, previous, draft, selectAll, selectionStart, selectionEnd }
+let editingTodoTitle = null;    // { id, previous, draft, projectName }
+let renderingSidebar = false;
+
+/**
+ * Keep a fixed-position popover/menu fully visible near its anchor.
+ * The element must be in the document before measuring.
+ */
+function positionFloatingPanel(panel, anchor, opts = {}) {
+  const gap = opts.gap ?? 4;
+  const margin = opts.margin ?? 8;
+  const align = opts.align || 'start';
+  const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  const rect = anchor.getBoundingClientRect();
+
+  panel.style.maxHeight = '';
+  panel.style.overflowY = '';
+  if (vh > 0) {
+    const maxHeight = Math.max(120, vh - margin * 2);
+    if (panel.offsetHeight > maxHeight) {
+      panel.style.maxHeight = maxHeight + 'px';
+      panel.style.overflowY = 'auto';
+    }
+  }
+
+  const panelW = panel.offsetWidth;
+  const panelH = panel.offsetHeight;
+  const below = rect.bottom + gap;
+  const above = rect.top - gap - panelH;
+  const spaceBelow = vh - rect.bottom - gap - margin;
+  const spaceAbove = rect.top - gap - margin;
+  const preferAbove = panelH > spaceBelow && spaceAbove > spaceBelow;
+  let top = preferAbove ? above : below;
+  let left = align === 'end' ? rect.right - panelW : rect.left;
+
+  const maxTop = Math.max(margin, vh - panelH - margin);
+  const maxLeft = Math.max(margin, vw - panelW - margin);
+  top = Math.min(Math.max(margin, top), maxTop);
+  left = Math.min(Math.max(margin, left), maxLeft);
+
+  panel.style.top = top + 'px';
+  panel.style.left = left + 'px';
+}
 
 function projectById(id) {
   if (!id) return null;
@@ -369,6 +413,14 @@ function shortCwd(cwd) {
   return parts.slice(-2).join('/');
 }
 
+/** Browser-side path key for UI-only matching/grouping. The server does realpath matching. */
+function cwdKey(cwd) {
+  if (!cwd) return '';
+  let p = String(cwd).replace(/\/+$/, '') || '/';
+  if (p.startsWith('/private/')) p = p.slice('/private'.length) || '/';
+  return p.normalize ? p.normalize('NFC') : p;
+}
+
 /** Get display title for a session */
 function displayTitle(s) {
   if (s.title && s.title.trim()) return s.title.trim();
@@ -450,7 +502,8 @@ function reconcilePendingLaunches() {
     if (p.realId && allSessions.some(s => s.sessionId === p.realId)) {
       realId = p.realId;
     } else {
-      const cand = allSessions.find(s => s.cli === p.cli && s.cwd === p.cwd && !p.knownIds.has(s.sessionId));
+      const pendingCwd = cwdKey(p.cwd);
+      const cand = allSessions.find(s => s.cli === p.cli && cwdKey(s.cwd) === pendingCwd && !p.knownIds.has(s.sessionId));
       if (cand) realId = cand.sessionId;
     }
     if (!realId) continue;
@@ -882,6 +935,26 @@ async function assignTask(sessionId, todoKey, projectName) {
 }
 
 /**
+ * Call POST /api/sessions/:id/consolidate — Berth reads this session's transcript and updates its
+ * linked task/project context file (appends a progress-log line, refreshes the status section).
+ * @param {string} sessionId
+ * @param {HTMLButtonElement|null} btn  the ⟳ button in a session row (may be null)
+ */
+async function consolidateSession(sessionId, btn) {
+  if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+  try {
+    const res = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/consolidate', { method: 'POST' });
+    const d = await res.json().catch(() => ({ error: res.statusText }));
+    if (!res.ok) { alert('刷新上下文失败: ' + (d.error || res.statusText)); return; }
+    alert('已刷新上下文' + (d.progress ? '：' + d.progress : '（无新增进展）'));
+  } catch (e) {
+    alert('刷新上下文失败: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+  }
+}
+
+/**
  * Call POST /api/sessions/:id/title — AI-generate and persist a title.
  * Updates in-memory session, re-renders sidebar rows + header.
  * @param {string} sessionId
@@ -960,22 +1033,40 @@ async function saveSessionTitle(sessionId, title) {
 }
 
 function startSessionTitleEdit(row, session) {
-  if (!row || !session || session.__pending || session.deleted || row.classList.contains('editing-title')) return;
+  if (!row || !session || session.__pending || session.deleted) return;
+  const previous = session.title && session.title.trim() ? session.title.trim() : '';
+  editingSessionTitle = { sessionId: session.sessionId, previous, draft: previous, selectAll: true, selectionStart: 0, selectionEnd: previous.length };
+  mountSessionTitleInput(row, session);
+}
+
+function mountSessionTitleInput(row, session) {
+  if (!row || !session || !editingSessionTitle || editingSessionTitle.sessionId !== session.sessionId) return;
   const titleEl = row.querySelector('.row-title');
   if (!titleEl) return;
-  const previous = session.title && session.title.trim() ? session.title.trim() : '';
   row.classList.add('editing-title');
   row.draggable = false;
-  titleEl.innerHTML = `<input class="row-title-input" type="text" value="${escHtml(previous)}" placeholder="输入会话标题" spellcheck="false" autocomplete="off">`;
+  titleEl.classList.remove('untitled');
+  titleEl.innerHTML = `<input class="row-title-input" type="text" value="${escHtml(editingSessionTitle.draft)}" placeholder="输入会话标题" spellcheck="false" autocomplete="off">`;
   const input = titleEl.querySelector('input');
+  const shouldSelectAll = !!editingSessionTitle.selectAll;
+  const selectionStart = editingSessionTitle.selectionStart;
+  const selectionEnd = editingSessionTitle.selectionEnd;
+  editingSessionTitle.selectAll = false;
   let done = false;
+  const rememberSelection = () => {
+    if (!editingSessionTitle || editingSessionTitle.sessionId !== session.sessionId) return;
+    editingSessionTitle.selectionStart = input.selectionStart;
+    editingSessionTitle.selectionEnd = input.selectionEnd;
+  };
   const finish = async (commit) => {
     if (done) return;
     done = true;
+    const state = editingSessionTitle;
+    editingSessionTitle = null;
     row.classList.remove('editing-title');
     row.draggable = true;
     const next = input.value.trim();
-    if (!commit || !next || next === previous) {
+    if (!commit || !next || !state || next === state.previous) {
       renderSidebar();
       return;
     }
@@ -987,14 +1078,32 @@ function startSessionTitleEdit(row, session) {
       alert('标题保存失败：' + (e && e.message ? e.message : String(e)));
     }
   };
+  input.addEventListener('input', () => {
+    if (editingSessionTitle && editingSessionTitle.sessionId === session.sessionId) editingSessionTitle.draft = input.value;
+    rememberSelection();
+  });
   input.addEventListener('click', e => e.stopPropagation());
   input.addEventListener('mousedown', e => e.stopPropagation());
+  input.addEventListener('keyup', rememberSelection);
+  input.addEventListener('select', rememberSelection);
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); finish(true); }
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
-  input.addEventListener('blur', () => finish(true));
-  requestAnimationFrame(() => { input.focus(); input.select(); });
+  input.addEventListener('blur', () => {
+    if (renderingSidebar || !input.isConnected) return;
+    finish(true);
+  });
+  requestAnimationFrame(() => {
+    if (!input.isConnected) return;
+    input.focus();
+    if (shouldSelectAll) {
+      input.select();
+    } else if (selectionStart != null && selectionEnd != null) {
+      const max = input.value.length;
+      input.setSelectionRange(Math.min(selectionStart, max), Math.min(selectionEnd, max));
+    }
+  });
 }
 
 function startHeaderSessionTitleEdit(session) {
@@ -1234,6 +1343,8 @@ function activateEntry(entry, session) {
   // measure — otherwise the first frame can still read the old (collapsed) size.
   requestAnimationFrame(() => requestAnimationFrame(() => {
     fitAndResize(entry);
+    if (editingSessionTitle) return;
+    if (document.activeElement && document.activeElement.matches('input, textarea, [contenteditable="true"]')) return;
     try { entry.term.focus(); } catch (e) {}
   }));
 }
@@ -1253,16 +1364,6 @@ function updateTerminalHeader(session, entry) {
     metaEl.insertAdjacentHTML('beforeend', `<span style="margin-left:6px;color:var(--text-muted)">${escHtml(shortCwd(session.cwd))}</span>`);
   }
 
-  // Header title controls
-  const existingEditBtn = document.getElementById('header-edit-title-btn');
-  if (existingEditBtn) existingEditBtn.remove();
-  const editBtn = document.createElement('button');
-  editBtn.id = 'header-edit-title-btn';
-  editBtn.className = 'btn-edit-title';
-  editBtn.title = '编辑标题';
-  editBtn.innerHTML = icon('pencil');
-  editBtn.addEventListener('click', () => startHeaderSessionTitleEdit(session));
-
   // ✨ Generate-title button in header
   const existingGenBtn = document.getElementById('header-gen-title-btn');
   if (existingGenBtn) existingGenBtn.remove();
@@ -1274,7 +1375,6 @@ function updateTerminalHeader(session, entry) {
   genBtn.addEventListener('click', () => generateTitle(session.sessionId));
   const mainHeader = document.getElementById('main-header');
   const statusBadge = document.getElementById('status-badge');
-  mainHeader.insertBefore(editBtn, statusBadge);
   mainHeader.insertBefore(genBtn, statusBadge);
 
   // ■ End-session (kill) button — actually stops the agent
@@ -1334,7 +1434,7 @@ function clearTerminalHeader() {
   showEmptyState();
   selectedId = null;
   document.querySelectorAll('.session-row').forEach(row => row.classList.remove('selected'));
-  for (const id of ['header-edit-title-btn', 'header-gen-title-btn', 'header-kill-btn', 'header-close-btn']) {
+  for (const id of ['header-gen-title-btn', 'header-kill-btn', 'header-close-btn']) {
     const b = document.getElementById(id); if (b) b.remove();
   }
   document.getElementById('main-title').textContent = 'Berth';
@@ -1674,9 +1774,11 @@ function openLaunchPopover(anchorEl, ctx, cwdHint) {
     if (select.value === '__custom__') {
       customRow.style.display = 'flex';
       customInput.focus();
+      positionFloatingPanel(pop, anchorEl, { align: 'start' });
       browse();   // 选「自定义路径…」即打开文件夹选择
     } else {
       customRow.style.display = 'none';
+      positionFloatingPanel(pop, anchorEl, { align: 'start' });
     }
   });
 
@@ -1702,11 +1804,7 @@ function openLaunchPopover(anchorEl, ctx, cwdHint) {
     launchFreshSession({ cli, cwd, todoKey: ctx.todoKey, projectId });
   });
 
-  // Position near anchor
-  const rect = anchorEl.getBoundingClientRect();
-  pop.style.top = (rect.bottom + 4) + 'px';
-  const left = Math.min(rect.left, window.innerWidth - pop.offsetWidth - 12);
-  pop.style.left = Math.max(8, left) + 'px';
+  positionFloatingPanel(pop, anchorEl, { align: 'start' });
 
   // Close on outside click / escape
   pop._onDocClick = e => {
@@ -1776,7 +1874,7 @@ function launchFreshSession({ cli, cwd, todoKey, projectId, prompt }) {
     bound: false,
     status: 'launching',
     createdAt: Math.floor(Date.now() / 1000),
-    knownIds: new Set(allSessions.filter(s => s.cli === cli && s.cwd === cwd).map(s => s.sessionId)),
+    knownIds: new Set(allSessions.filter(s => s.cli === cli && cwdKey(s.cwd) === cwdKey(cwd)).map(s => s.sessionId)),
   });
   renderSidebar();
   ensurePendingReconcilePoll();   // keep refreshing until this placeholder matches (slow clis like coco)
@@ -2073,10 +2171,12 @@ function todoRowExtrasHtml(info) {
 function buildWorkspaceTodoItem(t, projectName) {
   const item = document.createElement('div');
   item.className = 'todo-item';
+  item.dataset.todoId = t.id;
   const priorityClass = (t.priority || 'p?').toLowerCase().replace(/\s+/g, '');
   const info = todoExpandInfo(t);
   const row = document.createElement('div');
   row.className = 'todo-row' + (info.hasExpand ? ' expandable' : '');
+  row.dataset.todoId = t.id;
   row.innerHTML = `
     <span class="priority-chip priority-${escHtml(priorityClass)}">${escHtml(t.priority || '—')}</span>
     <span class="todo-title">${escHtml(t.title)}</span>
@@ -2093,6 +2193,10 @@ function buildWorkspaceTodoItem(t, projectName) {
 function makeTodoDraggable(el, t) {
   el.draggable = true;
   el.addEventListener('dragstart', e => {
+    if (editingTodoTitle && editingTodoTitle.id === t.id) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.setData('text/berth-todo', t.id);
     e.dataTransfer.effectAllowed = 'move';
     el.classList.add('dragging');
@@ -2207,6 +2311,15 @@ function wireTodoRow(t, item, row, projectName, info) {
   });
   if (launchBtn) row.insertBefore(menuBtn, launchBtn); else row.appendChild(menuBtn);
 
+  const titleEl = row.querySelector('.todo-title, .now-row-title');
+  if (titleEl) {
+    titleEl.title = '双击编辑任务名称';
+    titleEl.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      startTodoTitleEdit(t, projectName);
+    });
+  }
+
   row.addEventListener('dragover', e => {
     if (![...e.dataTransfer.types].includes('text/berth-session')) return;
     e.preventDefault(); row.classList.add('drop-target');
@@ -2220,6 +2333,8 @@ function wireTodoRow(t, item, row, projectName, info) {
     expandedTodos.add(t.id);   // reveal the just-associated session after re-render
     assignTask(sid, t.id, projectName);
   });
+
+  if (editingTodoTitle && editingTodoTitle.id === t.id) mountTodoTitleInput(row, t, projectName);
 
   if (!info.hasExpand) return;
   const exp = document.createElement('div');
@@ -2274,6 +2389,50 @@ function wireTodoRow(t, item, row, projectName, info) {
     row.classList.toggle('expanded', !isOpen);
     if (isOpen) expandedTodos.delete(t.id); else expandedTodos.add(t.id);
   });
+}
+
+function startTodoTitleEdit(t, projectName) {
+  if (!t) return;
+  const previous = t.title && t.title.trim() ? t.title.trim() : '';
+  editingTodoTitle = { id: t.id, previous, draft: previous, projectName };
+  rerenderTodosView(projectName);
+  requestAnimationFrame(() => {
+    const input = document.querySelector(`.todo-title-input[data-todo-id="${CSS.escape(t.id)}"]`);
+    if (input) { input.focus(); input.select(); }
+  });
+}
+
+function mountTodoTitleInput(row, t, projectName) {
+  const titleEl = row.querySelector('.todo-title, .now-row-title');
+  if (!titleEl || !editingTodoTitle || editingTodoTitle.id !== t.id) return;
+  row.classList.add('editing-title');
+  const draft = editingTodoTitle.draft;
+  titleEl.innerHTML = `<input class="todo-title-input" data-todo-id="${escHtml(t.id)}" type="text" value="${escHtml(draft)}" placeholder="输入任务名称" spellcheck="false" autocomplete="off">`;
+  const input = titleEl.querySelector('input');
+  let done = false;
+  const finish = async (commit) => {
+    if (done) return;
+    done = true;
+    const state = editingTodoTitle;
+    editingTodoTitle = null;
+    const next = input.value.trim();
+    if (!commit || !next || !state || next === state.previous) {
+      rerenderTodosView(projectName);
+      return;
+    }
+    await renameTodo(t, next, projectName);
+  };
+  input.addEventListener('input', () => {
+    if (editingTodoTitle && editingTodoTitle.id === t.id) editingTodoTitle.draft = input.value;
+  });
+  input.addEventListener('click', e => e.stopPropagation());
+  input.addEventListener('mousedown', e => e.stopPropagation());
+  input.addEventListener('dblclick', e => e.stopPropagation());
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
 }
 
 // ── Now View ───────────────────────────────────────────────────────────────
@@ -2483,8 +2642,10 @@ function renderNow() {
     const info = todoExpandInfo(t);
     const wrap = document.createElement('div');
     wrap.className = 'now-todo-item';
+    wrap.dataset.todoId = t.id;
     const row = document.createElement('div');
     row.className = 'now-row' + (info.hasExpand ? ' expandable' : '');
+    row.dataset.todoId = t.id;
     row.innerHTML = `
       <span class="status-chip status-inprogress">${escHtml(t.status)}</span>
       <span class="priority-chip priority-${escHtml((t.priority || 'P?').toLowerCase())}">${escHtml(t.priority || '—')}</span>
@@ -2868,15 +3029,35 @@ function renderWorkspace(name) {
   }
   container.appendChild(todoSection);
 
-  // ── Section 2: 上下文 (detail docs)
+  // ── Section 2: 上下文
   const ctxSection = document.createElement('div');
   ctxSection.className = 'ws-section';
   ctxSection.innerHTML = `<div class="ws-section-title">${icon('paperclip')} 上下文</div>`;
 
+  // 项目自身的上下文文件（projects/<name>/index.md）。点击：先 ensure 再打开。
+  const projCtx = document.createElement('div');
+  projCtx.className = 'doc-list';
+  const projLink = document.createElement('div');
+  projLink.className = 'doc-link';
+  projLink.innerHTML = `<span class="doc-link-icon">${icon('file-text')}</span><span class="doc-link-title">项目上下文</span>`;
+  projLink.title = '查看/编辑该项目的上下文文件（不存在则自动创建）';
+  projLink.addEventListener('click', async () => {
+    try {
+      const r = await fetch('/api/context', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'project', key: name, title: name }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert('创建上下文失败: ' + (d.error || r.statusText)); return; }
+      openDocEditor(d.ref, name + ' — 项目上下文');
+    } catch (e) { alert('创建上下文失败: ' + e.message); }
+  });
+  projCtx.appendChild(projLink);
+  ctxSection.appendChild(projCtx);
+
+  // 任务详情文档（保持原行为）
   const docTodos = projTodos.filter(t => t.detailDoc);
-  if (docTodos.length === 0) {
-    ctxSection.innerHTML += '<div class="ws-empty">（暂无详情文档）</div>';
-  } else {
+  if (docTodos.length > 0) {
     const docList = document.createElement('div');
     docList.className = 'doc-list';
     for (const t of docTodos) {
@@ -2915,6 +3096,7 @@ function renderWorkspace(name) {
       <span class="ws-sess-title" title="${escHtml(wst)}">${escHtml(wst)}</span>
       <span class="ws-sess-meta">${s.cwd ? escHtml(shortCwd(s.cwd)) : ''}</span>
       <span class="ws-sess-time">${relativeTime(s.updatedAt)}</span>
+      <button class="ws-sess-ctx-btn" title="刷新上下文（让 Berth 读本会话并更新任务/项目上下文文件）">${icon('refresh-cw')}</button>
       ${taskBtnHtml}
     `;
     row.addEventListener('dragstart', e => {
@@ -2925,11 +3107,16 @@ function renderWorkspace(name) {
     row.addEventListener('dragend', () => row.classList.remove('dragging'));
     row.addEventListener('click', e => {
       if (e.target.closest('.ws-sess-task-btn')) return;
+      if (e.target.closest('.ws-sess-ctx-btn')) return;
       openTerminalFor(s.sessionId);
     });
     row.querySelector('.ws-sess-task-btn').addEventListener('click', e => {
       e.stopPropagation();
       openTaskMenu(e.currentTarget, s, projTodos, name);
+    });
+    row.querySelector('.ws-sess-ctx-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      consolidateSession(s.sessionId, e.currentTarget);
     });
     return row;
   };
@@ -3100,7 +3287,6 @@ function buildRow(s) {
     </div>
     <span class="row-time">${relativeTime(s.updatedAt)}</span>
     <div class="row-actions">
-      <button class="action-btn edit-title-btn" title="编辑标题">${icon('pencil')}</button>
       <button class="action-btn btn-gen-title" title="用 AI 生成标题">${icon('sparkles')}</button>
       <button class="action-btn pin-btn ${s.pinned ? 'pinned' : ''}" title="${s.pinned ? 'Unpin' : 'Pin'}">${icon('pin')}</button>
       <button class="action-btn menu-btn" title="More…">${icon('ellipsis')}</button>
@@ -3114,11 +3300,6 @@ function buildRow(s) {
   });
 
   div.querySelector('.row-title').addEventListener('dblclick', e => {
-    e.stopPropagation();
-    startSessionTitleEdit(div, s);
-  });
-
-  div.querySelector('.edit-title-btn').addEventListener('click', e => {
     e.stopPropagation();
     startSessionTitleEdit(div, s);
   });
@@ -3140,6 +3321,8 @@ function buildRow(s) {
     e.stopPropagation();
     openMenu(e.currentTarget, s);
   });
+
+  if (editingSessionTitle && editingSessionTitle.sessionId === s.sessionId) mountSessionTitleInput(div, s);
 
   return div;
 }
@@ -3216,12 +3399,8 @@ function openMenu(anchor, session) {
     });
   });
 
-  // Position near anchor
-  const rect = anchor.getBoundingClientRect();
-  menu.style.top = (rect.bottom + 4) + 'px';
-  menu.style.left = Math.max(0, rect.right - 180) + 'px';
-
   document.body.appendChild(menu);
+  positionFloatingPanel(menu, anchor, { align: 'end' });
   activeMenu = menu;
 
   // Close on outside click
@@ -3259,10 +3438,8 @@ function openTaskMenu(anchor, session, projTodos, projectName) {
     });
   });
 
-  const rect = anchor.getBoundingClientRect();
-  menu.style.top = (rect.bottom + 4) + 'px';
-  menu.style.left = Math.max(8, rect.right - 220) + 'px';
   document.body.appendChild(menu);
+  positionFloatingPanel(menu, anchor, { align: 'end' });
   activeMenu = menu;
   setTimeout(() => document.addEventListener('click', closeMenu, { once: true }), 0);
 }
@@ -3310,8 +3487,7 @@ function openTodoEditMenu(anchor, t, projectName) {
   menu.querySelector('[data-act="rename"]').addEventListener('click', e => {
     e.stopPropagation();
     closeMenu();
-    const name = prompt('任务名称', t.title);
-    if (name && name.trim() && name.trim() !== t.title) renameTodo(t, name.trim(), projectName);
+    startTodoTitleEdit(t, projectName);
   });
   menu.querySelector('[data-act="delete"]').addEventListener('click', e => {
     e.stopPropagation();
@@ -3319,10 +3495,8 @@ function openTodoEditMenu(anchor, t, projectName) {
     if (confirm(`确定删除任务「${t.title}」？此操作不可撤销。`)) deleteTodoRemote(t, projectName);
   });
 
-  const rect = anchor.getBoundingClientRect();
-  menu.style.top = (rect.bottom + 4) + 'px';
-  menu.style.left = Math.max(8, rect.right - 200) + 'px';
   document.body.appendChild(menu);
+  positionFloatingPanel(menu, anchor, { align: 'end' });
   activeMenu = menu;
   setTimeout(() => document.addEventListener('click', closeMenu, { once: true }), 0);
 }
@@ -3394,146 +3568,151 @@ function selectSession(id) {
 function renderSidebar() {
   const query = document.getElementById('search').value.trim().toLowerCase();
   const list = document.getElementById('session-list');
+  renderingSidebar = true;
 
-  let filtered = allSessions;
-  if (query) {
-    filtered = allSessions.filter(s =>
-      (s.title || '').toLowerCase().includes(query) ||
-      (s.cwd || '').toLowerCase().includes(query) ||
-      s.cli.toLowerCase().includes(query)
-    );
-  }
-
-  // In-flight launches render as "创建中…" placeholder rows at the top of their target group.
-  // Always shown (a brand-new launch shouldn't vanish behind an active search filter).
-  filtered = pendingPseudoSessions().concat(filtered);
-
-  // Update count
-  document.getElementById('session-count').textContent = filtered.length + (query ? ' / ' + allSessions.length : '');
-
-  list.innerHTML = '';
-
-  // ── Pinned section ──
-  const pinned = filtered.filter(s => s.pinned);
-  if (pinned.length > 0) {
-    list.appendChild(buildSection('pinned', 'Pinned', pinned, collapsedSections.has('pinned'), 'pinned-section'));
-  }
-
-  // ── Projects section ──
-  const projMap = new Map();
-  for (const s of filtered) {
-    if (s.projectId !== null) {
-      if (!projMap.has(s.projectId)) projMap.set(s.projectId, []);
-      projMap.get(s.projectId).push(s);
-    }
-  }
-  if (projMap.size > 0) {
-    const projWrap = document.createElement('div');
-    projWrap.className = 'projects-group';
-
-    const projCollapsed = collapsedSections.has('projects-top');
-    const hdr = document.createElement('div');
-    hdr.className = 'section-header' + (projCollapsed ? ' collapsed' : '');
-    hdr.dataset.sectionKey = 'projects-top';
-    hdr.innerHTML = `<span class="section-chevron">${icon('chevron-down')}</span><span class="section-title" style="color:var(--purple)">${icon('folder')} Projects</span><button class="proj-create-btn" title="新建项目">${COMPOSE_NEWPROJ_SVG}</button>${unreadHeaderDot([...projMap.values()].flat())}<span class="section-count">${[...projMap.values()].reduce((a,b) => a + b.length, 0)}</span>`;
-    projWrap.appendChild(hdr);
-    hdr.querySelector('.proj-create-btn').addEventListener('click', e => {
-      e.stopPropagation();
-      openCreateProjectDialog();
-    });
-
-    const body = document.createElement('div');
-    body.className = 'section-body' + (projCollapsed ? ' collapsed' : '');
-
-    // toggle projects group (state persisted across re-renders)
-    wireSectionToggle(hdr, body, 'projects-top');
-
-    for (const [projId, sessions] of projMap) {
-      const sub = buildSection('proj:' + projId, projectLabel(projId), sessions, collapsedSections.has('proj:' + projId), 'project-section');
-      makeSessionDropTarget(sub, projId);   // drop a session here → assign to this project
-      addSectionLaunchBtn(sub, { projectName: projId, todoKey: null });   // ✎ new session for this project
-      body.appendChild(sub);
-    }
-    projWrap.appendChild(body);
-    list.appendChild(projWrap);
-  }
-
-  // ── 无归属 section: group by cwd ──
-  // Always render the header (when not searching) so the 导入目录 affordance is reachable even when
-  // empty — that's how the session list is seeded under the directory-import model.
-  const ungrouped = filtered.filter(s => s.projectId === null);
-  if (ungrouped.length > 0 || !query) {
-    const cwdMap = new Map();
-    for (const s of ungrouped) {
-      const key = s.cwd || '__no_cwd__';
-      if (!cwdMap.has(key)) cwdMap.set(key, []);
-      cwdMap.get(key).push(s);
+  try {
+    let filtered = allSessions;
+    if (query) {
+      filtered = allSessions.filter(s =>
+        (s.title || '').toLowerCase().includes(query) ||
+        (s.cwd || '').toLowerCase().includes(query) ||
+        s.cli.toLowerCase().includes(query)
+      );
     }
 
-    // Sort cwd groups by most recent session in each group
-    const sortedCwds = [...cwdMap.entries()].sort((a, b) => {
-      const aMax = Math.max(...a[1].map(s => s.updatedAt));
-      const bMax = Math.max(...b[1].map(s => s.updatedAt));
-      return bMax - aMax;
-    });
+    // In-flight launches render as "创建中…" placeholder rows at the top of their target group.
+    // Always shown (a brand-new launch shouldn't vanish behind an active search filter).
+    filtered = pendingPseudoSessions().concat(filtered);
 
-    const ugCollapsed = collapsedSections.has('ungrouped-top');
-    const ungroupedWrap = document.createElement('div');
-    const ugHdr = document.createElement('div');
-    ugHdr.className = 'section-header' + (ugCollapsed ? ' collapsed' : '');
-    ugHdr.dataset.sectionKey = 'ungrouped-top';
-    ugHdr.innerHTML = `<span class="section-chevron">${icon('chevron-down')}</span><span class="section-title">${icon('ban')} 无归属</span>${unreadHeaderDot(ungrouped)}<span class="section-count">${ungrouped.length}</span>`;
-    // 导入目录 button (like 新建项目's cwd) — adds a session-import root, then re-scans.
-    const importBtn = document.createElement('button');
-    importBtn.className = 'proj-launch-btn';
-    importBtn.title = '导入目录（扫描该目录下的会话）';
-    importBtn.innerHTML = icon('folder-input');
-    importBtn.addEventListener('click', e => { e.stopPropagation(); importSessionDir(); });
-    ugHdr.insertBefore(importBtn, ugHdr.querySelector('.section-count'));
-    ungroupedWrap.appendChild(ugHdr);
-    makeSessionDropTarget(ungroupedWrap, null);   // drop here → detach (move to 无归属)
+    // Update count
+    document.getElementById('session-count').textContent = filtered.length + (query ? ' / ' + allSessions.length : '');
 
-    const ugBody = document.createElement('div');
-    ugBody.className = 'section-body' + (ugCollapsed ? ' collapsed' : '');
-    wireSectionToggle(ugHdr, ugBody, 'ungrouped-top');
+    list.innerHTML = '';
 
-    // Show first 5 cwd groups expanded, rest collapsed
-    const INITIAL_EXPANDED = 5;
-
-    if (ungrouped.length === 0) {
-      const hint = document.createElement('div');
-      hint.className = 'import-dir-hint';
-      hint.innerHTML = `${icon('folder-input')} 还没有导入会话目录 · <button class="import-dir-link">导入目录</button>`;
-      hint.querySelector('.import-dir-link').addEventListener('click', importSessionDir);
-      ugBody.appendChild(hint);
+    // ── Pinned section ──
+    const pinned = filtered.filter(s => s.pinned);
+    if (pinned.length > 0) {
+      list.appendChild(buildSection('pinned', 'Pinned', pinned, collapsedSections.has('pinned'), 'pinned-section'));
     }
 
-    sortedCwds.forEach(([cwd, sessions], idx) => {
-      const groupKey = 'cwd:' + cwd;
-      // Apply the "first N expanded, rest collapsed" default exactly once per group;
-      // after that the user's own toggles (in collapsedSections) are authoritative.
-      if (!seenCwdGroups.has(groupKey)) {
-        seenCwdGroups.add(groupKey);
-        if (idx >= INITIAL_EXPANDED) collapsedSections.add(groupKey);
+    // ── Projects section ──
+    const projMap = new Map();
+    for (const s of filtered) {
+      if (s.projectId !== null) {
+        if (!projMap.has(s.projectId)) projMap.set(s.projectId, []);
+        projMap.get(s.projectId).push(s);
       }
-      const collapsed = collapsedSections.has(groupKey);
-      const label = cwd === '__no_cwd__' ? '(no cwd)' : shortCwd(cwd);
-      const section = buildSection(groupKey, label, sessions, collapsed, '');
-      if (cwd !== '__no_cwd__') addSectionLaunchBtn(section, { projectName: null, todoKey: null }, cwd);  // ✎ new session in this cwd
-      ugBody.appendChild(section);
-    });
+    }
+    if (projMap.size > 0) {
+      const projWrap = document.createElement('div');
+      projWrap.className = 'projects-group';
 
-    ungroupedWrap.appendChild(ugBody);
-    list.appendChild(ungroupedWrap);
-  }
+      const projCollapsed = collapsedSections.has('projects-top');
+      const hdr = document.createElement('div');
+      hdr.className = 'section-header' + (projCollapsed ? ' collapsed' : '');
+      hdr.dataset.sectionKey = 'projects-top';
+      hdr.innerHTML = `<span class="section-chevron">${icon('chevron-down')}</span><span class="section-title" style="color:var(--purple)">${icon('folder')} Projects</span><button class="proj-create-btn" title="新建项目">${COMPOSE_NEWPROJ_SVG}</button>${unreadHeaderDot([...projMap.values()].flat())}<span class="section-count">${[...projMap.values()].reduce((a,b) => a + b.length, 0)}</span>`;
+      projWrap.appendChild(hdr);
+      hdr.querySelector('.proj-create-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        openCreateProjectDialog();
+      });
 
-  // When searching with no match, show a plain message. When NOT searching and empty, the 无归属
-  // section already renders the 导入目录 hint, so don't add a redundant "No sessions" line.
-  if (filtered.length === 0 && query) {
-    const empty = document.createElement('div');
-    empty.style.cssText = 'padding:20px;text-align:center;color:var(--text-dim);font-size:12px;';
-    empty.textContent = 'No sessions match "' + query + '"';
-    list.appendChild(empty);
+      const body = document.createElement('div');
+      body.className = 'section-body' + (projCollapsed ? ' collapsed' : '');
+
+      // toggle projects group (state persisted across re-renders)
+      wireSectionToggle(hdr, body, 'projects-top');
+
+      for (const [projId, sessions] of projMap) {
+        const sub = buildSection('proj:' + projId, projectLabel(projId), sessions, collapsedSections.has('proj:' + projId), 'project-section');
+        makeSessionDropTarget(sub, projId);   // drop a session here → assign to this project
+        addSectionLaunchBtn(sub, { projectName: projId, todoKey: null });   // ✎ new session for this project
+        body.appendChild(sub);
+      }
+      projWrap.appendChild(body);
+      list.appendChild(projWrap);
+    }
+
+    // ── 无归属 section: group by cwd ──
+    // Always render the header (when not searching) so the 导入目录 affordance is reachable even when
+    // empty — that's how the session list is seeded under the directory-import model.
+    const ungrouped = filtered.filter(s => s.projectId === null);
+    if (ungrouped.length > 0 || !query) {
+      const cwdMap = new Map();
+      for (const s of ungrouped) {
+        const key = s.cwd || '__no_cwd__';
+        if (!cwdMap.has(key)) cwdMap.set(key, []);
+        cwdMap.get(key).push(s);
+      }
+
+      // Sort cwd groups by most recent session in each group
+      const sortedCwds = [...cwdMap.entries()].sort((a, b) => {
+        const aMax = Math.max(...a[1].map(s => s.updatedAt));
+        const bMax = Math.max(...b[1].map(s => s.updatedAt));
+        return bMax - aMax;
+      });
+
+      const ugCollapsed = collapsedSections.has('ungrouped-top');
+      const ungroupedWrap = document.createElement('div');
+      const ugHdr = document.createElement('div');
+      ugHdr.className = 'section-header' + (ugCollapsed ? ' collapsed' : '');
+      ugHdr.dataset.sectionKey = 'ungrouped-top';
+      ugHdr.innerHTML = `<span class="section-chevron">${icon('chevron-down')}</span><span class="section-title">${icon('ban')} 无归属</span>${unreadHeaderDot(ungrouped)}<span class="section-count">${ungrouped.length}</span>`;
+      // 导入目录 button (like 新建项目's cwd) — adds a session-import root, then re-scans.
+      const importBtn = document.createElement('button');
+      importBtn.className = 'proj-launch-btn';
+      importBtn.title = '导入目录（扫描该目录下的会话）';
+      importBtn.innerHTML = icon('folder-input');
+      importBtn.addEventListener('click', e => { e.stopPropagation(); importSessionDir(); });
+      ugHdr.insertBefore(importBtn, ugHdr.querySelector('.section-count'));
+      ungroupedWrap.appendChild(ugHdr);
+      makeSessionDropTarget(ungroupedWrap, null);   // drop here → detach (move to 无归属)
+
+      const ugBody = document.createElement('div');
+      ugBody.className = 'section-body' + (ugCollapsed ? ' collapsed' : '');
+      wireSectionToggle(ugHdr, ugBody, 'ungrouped-top');
+
+      // Show first 5 cwd groups expanded, rest collapsed
+      const INITIAL_EXPANDED = 5;
+
+      if (ungrouped.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'import-dir-hint';
+        hint.innerHTML = `${icon('folder-input')} 还没有导入会话目录 · <button class="import-dir-link">导入目录</button>`;
+        hint.querySelector('.import-dir-link').addEventListener('click', importSessionDir);
+        ugBody.appendChild(hint);
+      }
+
+      sortedCwds.forEach(([cwd, sessions], idx) => {
+        const groupKey = 'cwd:' + cwd;
+        // Apply the "first N expanded, rest collapsed" default exactly once per group;
+        // after that the user's own toggles (in collapsedSections) are authoritative.
+        if (!seenCwdGroups.has(groupKey)) {
+          seenCwdGroups.add(groupKey);
+          if (idx >= INITIAL_EXPANDED) collapsedSections.add(groupKey);
+        }
+        const collapsed = collapsedSections.has(groupKey);
+        const label = cwd === '__no_cwd__' ? '(no cwd)' : shortCwd(cwd);
+        const section = buildSection(groupKey, label, sessions, collapsed, '');
+        if (cwd !== '__no_cwd__') addSectionLaunchBtn(section, { projectName: null, todoKey: null }, cwd);  // ✎ new session in this cwd
+        ugBody.appendChild(section);
+      });
+
+      ungroupedWrap.appendChild(ugBody);
+      list.appendChild(ungroupedWrap);
+    }
+
+    // When searching with no match, show a plain message. When NOT searching and empty, the 无归属
+    // section already renders the 导入目录 hint, so don't add a redundant "No sessions" line.
+    if (filtered.length === 0 && query) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding:20px;text-align:center;color:var(--text-dim);font-size:12px;';
+      empty.textContent = 'No sessions match "' + query + '"';
+      list.appendChild(empty);
+    }
+  } finally {
+    renderingSidebar = false;
   }
 }
 
@@ -3550,7 +3729,7 @@ function buildSection(key, title, sessions, collapsed, extraClass) {
   const body = document.createElement('div');
   body.className = 'section-body' + (collapsed ? ' collapsed' : '');
 
-  // Tuck sessions inactive >3d behind "Show more" (always keep ≥3 rows on screen).
+  // Tuck overflow rows behind "Show more" (keep 3-6 rows on screen by recency/activity).
   // Pinned rows are exempt — a pin is an explicit "always show me".
   const split = (key !== 'pinned' && typeof window.splitGroupRows === 'function')
     ? window.splitGroupRows(sessions, Math.floor(Date.now() / 1000))

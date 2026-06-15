@@ -140,4 +140,13 @@ describe('pty-registry', () => {
     expect(c.kill).toHaveBeenCalled()
     expect(liveCount()).toBe(0)
   })
+
+  it('registerPty calls opts.onExit when the pty exits', () => {
+    let exitCb: () => void = () => {}
+    const fakePty: any = { pid: 0, onData: () => {}, onExit: (cb: () => void) => { exitCb = cb }, kill: () => {} }
+    let called = false
+    registerPty('k-onexit', fakePty, { onExit: () => { called = true } })
+    exitCb()
+    expect(called).toBe(true)
+  })
 })

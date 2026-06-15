@@ -77,7 +77,7 @@ export function liveCount(): number { return registry.size }
  * `opts.running` marks a turn as already underway (a fresh launch with an auto-fired prompt); a
  * passive resume/open-to-view omits it, so opening a session does NOT light the spinner.
  */
-export function registerPty(key: string, pty: IPty, opts?: { running?: boolean }): void {
+export function registerPty(key: string, pty: IPty, opts?: { running?: boolean; onExit?: () => void }): void {
   killPty(key)   // never leak a previous pty for the same key
   const entry: Entry = { key, pty, chunks: [], bytes: 0, attached: new Set(), exited: false, quietUntil: 0 }
   registry.set(key, entry)
@@ -96,6 +96,7 @@ export function registerPty(key: string, pty: IPty, opts?: { running?: boolean }
     for (const ws of entry.attached) { try { ws.send('\r\n[berth] session ended.\r\n') } catch {} ; try { ws.close() } catch {} }
     registry.delete(key)
     activity.exit(key)
+    try { opts?.onExit?.() } catch {}   // mechanical context-log rotation (§7 Phase 1); never throws into pty
   })
 }
 

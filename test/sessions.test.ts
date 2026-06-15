@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { collectLogicalSessions, filterImportedSessions } from '../src/sessions'
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { collectLogicalSessions, filterImportedSessions, curatedSessionIds } from '../src/sessions'
 import type { LogicalSession } from '../src/types'
 
 function mk(id: string, cwd: string | null): LogicalSession {
@@ -82,6 +85,22 @@ describe('filterImportedSessions', () => {
     expect(kept).toEqual(['a', 'c'])
   })
 
+  it('matches cwd and import roots that resolve to the same real directory', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'berth-path-'))
+    try {
+      const real = join(tmp, 'real')
+      const alias = join(tmp, 'alias')
+      mkdirSync(real)
+      symlinkSync(real, alias, 'dir')
+      expect(filterImportedSessions([mk('alias-session', alias)], [real], empty).map(s => s.sessionId))
+        .toEqual(['alias-session'])
+      expect(filterImportedSessions([mk('real-session', real)], [alias], empty).map(s => s.sessionId))
+        .toEqual(['real-session'])
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
   it('includes a subdirectory only when it is imported explicitly', () => {
     const kept = filterImportedSessions(sessions, ['/Users/me/proj-a', '/Users/me/proj-a/sub'], empty).map(s => s.sessionId)
     expect(kept).toEqual(['a', 'b'])
@@ -99,5 +118,28 @@ describe('filterImportedSessions', () => {
   it('null-cwd sessions are never matched by a root (only via the curated net)', () => {
     const kept = filterImportedSessions([mk('x', null)], ['/Users/me'], empty)
     expect(kept).toEqual([])
+  })
+})
+
+describe('curatedSessionIds', () => {
+  const attach = (...rows: Array<[string, string | null]>) =>
+    new Map(rows.map(([id, projectId]) => [id, { projectId }]))
+
+  it('curates pinned, edged, and real-project attaches', () => {
+    const ids = curatedSessionIds(['pin1'], attach(['att1', 'projA']), [['edge1', 'edge2']])
+    expect([...ids].sort()).toEqual(['att1', 'edge1', 'edge2', 'pin1'])
+  })
+
+  it('does NOT curate a project-less attach (the "(NO CWD)" ghost bug)', () => {
+    // A Berth plain-launch wrote setAttach(id, null, 'confirmed'); that marker must not curate, else
+    // a null-cwd session is force-kept and surfaces under a phantom "(NO CWD)" group.
+    const ids = curatedSessionIds([], attach(['ghost', null], ['empty', ''], ['real', 'projB']), [])
+    expect([...ids]).toEqual(['real'])
+  })
+
+  it('a null-cwd, project-less-attached session is filtered out (regression)', () => {
+    const sessions = [mk('ghost', null)]
+    const curated = curatedSessionIds([], attach(['ghost', null]), [])
+    expect(filterImportedSessions(sessions, ['/Users/me'], curated)).toEqual([])
   })
 })

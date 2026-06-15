@@ -8,6 +8,8 @@ import { getDocStore, getDocsRoot } from '../data/docstore'
 import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, setAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getLocale, normalizeLocale, LOCALES } from '../i18n'
+import { ensureContextDoc } from '../data/context-doc'
+import { getContextConfig, setContextConfig } from '../data/context-config'
 import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
@@ -15,6 +17,7 @@ import { generateTitle } from '../agent/index'
 import { extractUserGist } from '../agent/transcript'
 import { readFileSync } from 'node:fs'
 import { snapshotActivity } from './pty-registry'
+import { runConsolidation } from './context-consolidate-service'
 
 function truncate(s: string | null, max: number): string | null {
   if (!s) return null
@@ -232,6 +235,27 @@ api.post('/doc', (req, res) => {
   }
 })
 
+// Ensure (lazily create) the context file for a task/project. Idempotent — never overwrites.
+api.post('/context', (req, res) => {
+  const { kind, key, title } = req.body ?? {}
+  if ((kind !== 'task' && kind !== 'project') || typeof key !== 'string' || !key.trim())
+    return res.status(400).json({ error: 'kind:task|project, key:string required' })
+  const store = getStore()
+  const ds = getDocStore(store)
+  const locale = getLocale(store)
+  try {
+    const task = kind === 'task' ? listTasks(store).find(t => t.id === key) : undefined
+    const projectName = kind === 'project' ? key : (task?.project ?? null)
+    const ensured = ensureContextDoc(ds, kind, key, { title: typeof title === 'string' && title.trim() ? title : key, projectName, locale })
+    if (kind === 'task' && ensured.created && task && !task.detailDoc) {
+      store.updateTaskFields(key, { detailDoc: ensured.ref }, Date.now())
+    }
+    res.json({ ref: ensured.ref, created: ensured.created })
+  } catch (e: any) {
+    res.status(500).json({ error: String(e?.message ?? e) })
+  }
+})
+
 api.get('/todos', (_req, res) => {
   const store = getStore()
   const edgesMap = store.edgesByTodo()
@@ -259,9 +283,9 @@ api.post('/todos', async (req, res) => {
 
 // Edit a task's title / priority / status.
 api.patch('/todos/:id', (req, res) => {
-  const { title, priority, status } = req.body ?? {}
+  const { title, priority, status, progress } = req.body ?? {}
   try {
-    updateTask(getStore(), req.params.id, { title, priority, status })
+    updateTask(getStore(), req.params.id, { title, priority, status, progress })
     res.json({ ok: true })
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
@@ -372,21 +396,22 @@ api.delete('/data-sources/:id', (req, res) => {
 // ── App settings (docsRoot, locale, task status/priority vocabularies, …) ──
 api.get('/settings', (_req, res) => {
   const store = getStore()
-  res.json({ docsRoot: getDocsRoot(store), locale: getLocale(store), locales: LOCALES, ...getTaskFieldConfig(store), agents: getAgentConfig(store) })
+  res.json({ docsRoot: getDocsRoot(store), locale: getLocale(store), locales: LOCALES, ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
 })
 
 api.post('/settings', (req, res) => {
-  const { docsRoot, locale, statuses, priorities, agents } = req.body ?? {}
+  const { docsRoot, locale, statuses, priorities, agents, context } = req.body ?? {}
   const store = getStore()
   if (typeof docsRoot === 'string' && docsRoot.trim()) store.setSetting('docsRoot', docsRoot.trim())
   if (typeof locale === 'string') store.setSetting('locale', normalizeLocale(locale))
   try {
     if (statuses !== undefined || priorities !== undefined) setTaskFieldConfig(store, { statuses, priorities })
     if (agents !== undefined) setAgentConfig(store, agents)
+    if (context !== undefined) setContextConfig(store, context)
   } catch (e: any) {
     return res.status(400).json({ error: e?.message || 'invalid settings' })
   }
-  res.json({ ok: true, docsRoot: getDocsRoot(store), locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store) })
+  res.json({ ok: true, docsRoot: getDocsRoot(store), locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
 })
 
 api.post('/sessions/:id/title', async (req, res) => {
@@ -411,4 +436,32 @@ api.patch('/sessions/:id/title', (req, res) => {
   if (!title) return res.status(400).json({ error: 'title required' })
   getStore().setTitleOverride(s.sessionId, title)
   res.json({ title })
+})
+
+api.post('/sessions/:id/consolidate', async (req, res) => {
+  const s = getCache().find(x => x.sessionId === req.params.id)
+  if (!s) return res.status(404).json({ error: 'unknown session' })
+  const store = getStore()
+  const docStore = getDocStore(store)
+  const locale = getLocale(store)
+  // Resolve todoKey from edgesByTodo() reverse-lookup (as serialize() does) — the raw cache session
+  // does not carry it.
+  let todoKey: string | null = null
+  for (const [tk, sids] of store.edgesByTodo()) {
+    for (const sid of sids) { if (sid === s.sessionId) { todoKey = tk; break } }
+    if (todoKey) break
+  }
+  // Resolve projectId from allAttachMap() (same pattern as serialize()).
+  const projectId = store.allAttachMap().get(s.sessionId)?.projectId ?? null
+  const task = todoKey ? (listTasks(store).find(t => t.id === todoKey) ?? null) : null
+  try {
+    const outcome = await runConsolidation({
+      session: { sessionId: s.sessionId, todoKey, projectId, contentSourcePath: s.contentSourcePath },
+      task: task ? { title: task.title, project: task.project } : null,
+      docStore, locale, agent: resolveBerthAgent(store),
+      getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
+    })
+    if (!outcome.ok) return res.status(409).json({ error: outcome.reason })
+    res.json({ ok: true, progress: outcome.progress, status: outcome.status, rotated: outcome.rotated })
+  } catch (e: any) { res.status(502).json({ error: String(e?.message ?? e) }) }
 })

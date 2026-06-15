@@ -102,6 +102,43 @@ Options: `berth start --port <n> --host <h> --no-open`, plus `berth --help` / `b
 </details>
 
 <details>
+<summary><b>Tasks & projects from any agent — <code>berth skill install</code></b></summary>
+
+Berth is the canonical store for your tasks/projects (external systems like a Feishu base are just
+optional sync sources). Manage them from the terminal with `berth task` / `berth project`, and — the
+recommended way — **install the bundled skill so any AI agent can drive Berth for you**:
+
+```bash
+berth skill install               # install the berth-tasks skill into every agent you have
+berth start                       # the task commands talk to a running server
+```
+
+`berth skill install` runs the cross-agent installer (`npx skills add`), so the **same skill** lands in
+**Claude Code, Codex, Coco, Cursor, Gemini, Copilot, …** — each reads it from its own
+`~/.<agent>/skills/`. (If that can't run, it falls back to symlinking the skill into the agent dirs you
+have.) After that, just tell your agent *"新增待办 / 处理任务 / 查看待办"* and it drives Berth.
+
+Don't have the `berth` package? Install **just the skill straight from GitHub** — no account, no Feishu,
+works with any [`skills`](https://www.npmjs.com/package/skills)-supported agent:
+
+```bash
+npx skills add xiawenxing/Berth   # clones the public repo, installs skills/berth-tasks into all your agents
+```
+
+```bash
+berth task add "<text>" [--project P]      # AI-classifies the project if omitted
+berth task list [--status S] [--project P] [--json]
+berth task done <id|title>                 # also: status / set / progress / rm
+berth task sync                            # push local edits + pull external changes
+berth project list | berth project add <name>
+```
+
+> The `berth task`/`project` commands need a running server (`berth start`); they'll tell you exactly
+> how to start it (incl. the right `--port`) if it isn't up.
+
+</details>
+
+<details>
 <summary><b>Desktop app — Electron</b></summary>
 
 ```bash

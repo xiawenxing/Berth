@@ -10,6 +10,7 @@ const mockAddEdge = vi.fn((..._a: any[]) => {})
 const mockSetAttach = vi.fn((..._a: any[]) => {})
 const mockSetTitleOverride = vi.fn((..._a: any[]) => {})
 const mockAddProjectPath = vi.fn((..._a: any[]) => {})
+const mockUpdateTaskFields = vi.fn((..._a: any[]) => {})
 const mockGetStore = vi.fn((..._a: any[]) => ({
   allPinnedSet: () => new Set<string>(),
   allAttachMap: () => new Map(),
@@ -25,6 +26,7 @@ const mockGetStore = vi.fn((..._a: any[]) => ({
   setArchived: vi.fn(),
   allProjectPaths: () => new Map(),
   addProjectPath: mockAddProjectPath,
+  updateTaskFields: mockUpdateTaskFields,
   getSetting: (k: string) => mockSettings.get(k) ?? null,
   setSetting: (k: string, v: string) => { mockSettings.set(k, v) },
   allSessionImportDirs: () => [...mockImportDirs],
@@ -74,9 +76,25 @@ vi.mock('../src/server/pty-ws', () => ({
   createPtyWss: vi.fn(),
 }))
 
+// ── Mock context-doc so ensureContextDoc doesn't touch the filesystem ─────────
+const mockEnsureContextDoc = vi.fn((..._a: any[]) => ({
+  ref: 'projects/Berth/index.md',
+  abs: '/tmp/docs/projects/Berth/index.md',
+  created: true,
+}))
+vi.mock('../src/data/context-doc', () => ({
+  ensureContextDoc: (...a: any[]) => mockEnsureContextDoc(...a),
+}))
+
 // ── Mock reconcile so refresh has no side-effects ────────────────────────────
 vi.mock('../src/server/reconcile', () => ({
   reconcileLaunchIntents: vi.fn(),
+}))
+
+// ── Mock context-consolidate-service so no real CLI/agent runs ────────────────
+const mockRunConsolidation = vi.fn().mockResolvedValue({ ok: true, progress: 'p', status: 's', rotated: false })
+vi.mock('../src/server/context-consolidate-service', () => ({
+  runConsolidation: (...a: any[]) => mockRunConsolidation(...a),
 }))
 
 import { createApp } from '../src/server/index'
@@ -515,5 +533,87 @@ describe('POST /api/edge', () => {
       body: JSON.stringify({ todoKey: 'rec_X' }),
     })
     expect(res.status).toBe(400)
+  })
+})
+
+// ── T9: POST /api/context ─────────────────────────────────────────────────────
+describe('POST /api/context', () => {
+  it('ensures a project context file', async () => {
+    mockEnsureContextDoc.mockReturnValueOnce({ ref: 'projects/Berth/index.md', abs: '/tmp/docs/projects/Berth/index.md', created: true })
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/context`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'project', key: 'Berth', title: 'Berth' }),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.ref).toBe('projects/Berth/index.md')
+    expect(typeof body.created).toBe('boolean')
+  })
+
+  it('returns 400 when kind is invalid', async () => {
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/context`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'unknown', key: 'Berth' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 when key is missing', async () => {
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/context`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'project' }),
+    })
+    expect(res.status).toBe(400)
+  })
+})
+
+// ── POST /api/sessions/:id/consolidate ───────────────────────────────────────
+describe('POST /api/sessions/:id/consolidate', () => {
+  it('consolidates a known session (200)', async () => {
+    mockRunConsolidation.mockResolvedValueOnce({ ok: true, progress: 'p', status: 's', rotated: false })
+    mockGetCache.mockReturnValue([
+      { sessionId: 's1', cli: 'claude', cwd: '/x', title: 'old', updatedAt: 100, deleted: false, copies: [], contentSourcePath: '/tmp/session.jsonl' },
+    ])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/sessions/s1/consolidate`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.ok).toBe(true)
+    expect(body.progress).toBe('p')
+    expect(body.status).toBe('s')
+    expect(body.rotated).toBe(false)
+  })
+
+  it('returns 404 for an unknown session', async () => {
+    mockGetCache.mockReturnValue([])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/sessions/nope-not-real/consolidate`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(404)
+    const body = await res.json() as any
+    expect(body.error).toBeTruthy()
+  })
+
+  it('returns 409 when runConsolidation returns ok:false', async () => {
+    mockRunConsolidation.mockResolvedValueOnce({ ok: false, reason: 'session not linked to a task or project' })
+    mockGetCache.mockReturnValue([
+      { sessionId: 's1', cli: 'claude', cwd: '/x', title: 'old', updatedAt: 100, deleted: false, copies: [], contentSourcePath: null },
+    ])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/sessions/s1/consolidate`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(409)
+    const body = await res.json() as any
+    expect(body.error).toBeTruthy()
   })
 })

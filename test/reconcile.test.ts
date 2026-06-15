@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { openStore } from '../src/db/store'
 import { reconcileLaunchIntents } from '../src/server/reconcile'
 import type { LogicalSession } from '../src/types'
@@ -30,6 +33,28 @@ describe('reconcileLaunchIntents', () => {
     s.upsertSessions(cache)
     reconcileLaunchIntents(s, cache)
     expect(s.pendingIntents().length).toBe(1)  // unmatched, still pending
+  })
+
+  it('binds codex intents when launch cwd and session cwd are path aliases', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'berth-reconcile-'))
+    try {
+      const real = join(tmp, 'real')
+      const alias = join(tmp, 'alias')
+      mkdirSync(real)
+      symlinkSync(real, alias, 'dir')
+
+      const s = openStore(':memory:')
+      s.addLaunchIntent({ id: 'i1', cli: 'codex', cwd: alias, projectId: 'P', todoKey: 'rec_A', sessionId: null, createdAt: 1000, bound: false })
+      const cache = [makeSession('sess1', real, 1100)]
+      s.upsertSessions(cache)
+      reconcileLaunchIntents(s, cache)
+
+      expect(s.pendingIntents()).toEqual([])
+      expect(s.todoKeyForSession('sess1')).toBe('rec_A')
+      expect(s.getAttach('sess1')).toMatchObject({ projectId: 'P', state: 'confirmed' })
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
   })
 
   it('does not bind a session already used in this pass', () => {
