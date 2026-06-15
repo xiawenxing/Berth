@@ -29,16 +29,14 @@ function run(root: string, args: string[]): string {
   return execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
 }
 
-const ensured = new Set<string>()
 /** Ensure `root` is a git repo. Inits + makes an initial commit if not. Idempotent. */
 export function ensureRepo(root: string): GitResult {
-  if (existsSync(join(root, '.git'))) { ensured.add(root); return { ok: true } }
+  if (existsSync(join(root, '.git'))) { return { ok: true } }
   if (!hasGit()) return { ok: false, reason: 'git-not-installed' }
   try {
     run(root, ['init'])
     run(root, ['add', '-A'])                                  // only ever runs on a brand-new root
     run(root, [...IDENT, 'commit', '--allow-empty', '-m', 'chore(berth): initialize docs repo', '--no-verify'])
-    ensured.add(root)
     return { ok: true }
   } catch (e: any) { return { ok: false, reason: String(e?.message ?? e) } }
 }
@@ -49,6 +47,7 @@ export function commitDoc(root: string, fileAbs: string, message: string): GitRe
   const ready = ensureRepo(root)
   if (!ready.ok) return ready
   const rel = isAbsolute(fileAbs) ? relative(root, fileAbs) : fileAbs
+  if (rel.startsWith('..')) return { ok: false, reason: 'path outside root' }
   try {
     run(root, ['add', '--', rel])
     const staged = run(root, ['diff', '--cached', '--name-only', '--', rel]).trim()

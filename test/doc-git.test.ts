@@ -1,14 +1,11 @@
 // test/doc-git.test.ts
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { ensureRepo, commitDoc, revertCommit, headCommit, hasGit, setDocGitEnabled, __resetDocGit } from '../src/data/doc-git'
 
-function gitLog(root: string): string[] {
-  return execFileSync('git', ['log', '--pretty=%s'], { cwd: root }).toString().trim().split('\n').filter(Boolean)
-}
 function filesInHead(root: string): string[] {
   return execFileSync('git', ['show', '--name-only', '--pretty=format:', 'HEAD'], { cwd: root }).toString().trim().split('\n').filter(Boolean)
 }
