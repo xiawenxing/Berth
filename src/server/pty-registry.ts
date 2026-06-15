@@ -1,6 +1,6 @@
 import type { IPty } from 'node-pty'
 import type { WebSocket } from 'ws'
-import { ActivityHub, hasVisibleOutput, type ActivityEvent } from './activity'
+import { ActivityHub, hasVisibleOutput, type ActivityEvent, type HoldRunning } from './activity'
 import { currentDocStore } from '../data/docstore'
 
 /**
@@ -77,7 +77,7 @@ export function liveCount(): number { return registry.size }
  * `opts.running` marks a turn as already underway (a fresh launch with an auto-fired prompt); a
  * passive resume/open-to-view omits it, so opening a session does NOT light the spinner.
  */
-export function registerPty(key: string, pty: IPty, opts?: { running?: boolean; onExit?: () => void }): void {
+export function registerPty(key: string, pty: IPty, opts?: { running?: boolean; holdRunning?: HoldRunning; onExit?: () => void }): void {
   killPty(key)   // never leak a previous pty for the same key
   const entry: Entry = { key, pty, chunks: [], bytes: 0, attached: new Set(), exited: false, quietUntil: 0 }
   registry.set(key, entry)

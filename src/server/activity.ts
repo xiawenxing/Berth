@@ -34,10 +34,13 @@ export type ActivityEvent =
   | { kind: 'state'; sessionId: string; state: ActivityState }
   | { kind: 'rekey'; from: string; to: string }
 
+export type HoldRunning = (sessionId: string) => boolean
+
 interface Tracked {
   state: 'running' | 'settled' | 'idle'   // 'idle' = a live pty that hasn't started a turn (resume/open)
   timer: ReturnType<typeof setTimeout> | null
   started: boolean                        // has a turn ever started? gates whether output counts
+  holdRunning?: HoldRunning               // optional CLI-specific guard before an idle settle is emitted
 }
 
 export class ActivityHub {
@@ -65,9 +68,10 @@ export class ActivityHub {
    * A pty was registered. `running:true` (a fresh launch with an auto-fired prompt) starts a turn;
    * otherwise it's a passive resume/open-to-view → idle (no spinner until the user acts).
    */
-  register(key: string, opts?: { running?: boolean }): void {
-    if (opts?.running) this.setRunning(key)
-    else if (!this.tracked.has(key)) this.tracked.set(key, { state: 'idle', timer: null, started: false })
+  register(key: string, opts?: { running?: boolean; holdRunning?: HoldRunning }): void {
+    if (opts?.running) this.setRunning(key, opts.holdRunning)
+    else if (!this.tracked.has(key)) this.tracked.set(key, { state: 'idle', timer: null, started: false, holdRunning: opts?.holdRunning })
+    else if (opts?.holdRunning) this.tracked.get(key)!.holdRunning = opts.holdRunning
   }
 
   /** Output arrived. It only sustains a turn already in progress — a resume redraw / idle repaint
@@ -105,13 +109,14 @@ export class ActivityHub {
     if (t.state === 'running') this.arm(to, t)  // re-arm so settle fires under the new key
   }
 
-  private setRunning(key: string): void {
+  private setRunning(key: string, holdRunning?: HoldRunning): void {
     let t = this.tracked.get(key)
     if (!t) {
-      t = { state: 'running', timer: null, started: true }
+      t = { state: 'running', timer: null, started: true, holdRunning }
       this.tracked.set(key, t)
       this.emit({ kind: 'state', sessionId: key, state: 'running' })
     } else {
+      if (holdRunning) t.holdRunning = holdRunning
       t.started = true
       if (t.state !== 'running') {
         t.state = 'running'
@@ -126,6 +131,9 @@ export class ActivityHub {
     t.timer = setTimeout(() => {
       t.timer = null
       if (t.state === 'running') {
+        try {
+          if (t.holdRunning?.(key)) { this.arm(key, t); return }
+        } catch {}
         t.state = 'settled'
         this.emit({ kind: 'state', sessionId: key, state: 'settled' })
       }

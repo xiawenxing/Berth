@@ -17,6 +17,7 @@ import { getContextConfig } from '../data/context-config'
 import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
 import { ensureContextDoc, rotateContextDocOnDisk } from '../data/context-doc'
 import { getLocale, promptStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
+import { latestCodexTurnState, type CodexTurnState } from '../adapters/codex-turn'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent } from '../types'
 
@@ -52,6 +53,16 @@ export function buildTaskInitialPrompt(todo: Task, detailPath?: string | null, l
   if (detailPath) lines.push(t.detail(detailPath))
   lines.push(t.finish)
   return lines.join('\n')
+}
+
+function codexHoldRunning(initialState: CodexTurnState = 'unknown') {
+  let lastState = initialState
+  return (sessionId: string): boolean => {
+    const s = getCache().find(x => x.sessionId === sessionId)
+    const next = s?.contentSourcePath ? latestCodexTurnState(s.contentSourcePath) : 'unknown'
+    if (next !== 'unknown') lastState = next
+    return lastState === 'running'
+  }
 }
 
 /**
@@ -204,7 +215,9 @@ export function createPtyWss(): WebSocketServer {
       pty = resumeSession(s, { cols, rows })
     } catch (e: any) { try { ws.send(`\r\n[berth] launch failed: ${e?.message}\r\n`) } catch {} ; ws.close(); return }
 
-    registerPty(sessionId, pty)
+    registerPty(sessionId, pty, {
+      holdRunning: s.cli === 'codex' ? codexHoldRunning() : undefined,
+    })
     attachViewer(sessionId, ws)
   })
   return wss
@@ -327,6 +340,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // a plain empty session is idle until the user types.
   registerPty(plan.sessionId ?? plan.intent.id, pty, {
     running: !!initialPrompt,
+    holdRunning: cli === 'codex' ? codexHoldRunning(initialPrompt ? 'running' : 'unknown') : undefined,
     onExit: contextAbs ? () => {
       try { rotateContextDocOnDisk(getDocStore(store), contextAbs!, { maxLines: ctxCfg.logMaxLines, keep: ctxCfg.logKeep, locale }) } catch {}
     } : undefined,

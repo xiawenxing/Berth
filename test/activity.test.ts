@@ -82,6 +82,22 @@ describe('ActivityHub', () => {
     expect(events).toEqual([{ kind: 'state', sessionId: 's1', state: 'settled' }])
   })
 
+  it('can hold a silent running turn until a CLI-specific completion guard clears', () => {
+    const hub = new ActivityHub({ idleMs: 1000 })
+    let stillRunning = true
+    hub.register('s1', { running: true, holdRunning: () => stillRunning })
+    const events: any[] = []
+    hub.subscribe(e => events.push(e))
+
+    vi.advanceTimersByTime(1000)
+    expect(events).toEqual([])
+    expect(hub.snapshot()).toEqual([{ sessionId: 's1', state: 'running' }])
+
+    stillRunning = false
+    vi.advanceTimersByTime(1000)
+    expect(events).toEqual([{ kind: 'state', sessionId: 's1', state: 'settled' }])
+  })
+
   it('does not re-emit running while already running (dedupe)', () => {
     const hub = new ActivityHub({ idleMs: 1000 })
     hub.register('s1', { running: true })
