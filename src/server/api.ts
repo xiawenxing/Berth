@@ -7,13 +7,14 @@ import { listTasks, createTask, updateTask, deleteTask } from '../data/tasks'
 import { getDocStore, getDocsRoot } from '../data/docstore'
 import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, setAgentConfig, resolveBerthAgent } from '../data/agent-config'
-import { getLocale, normalizeLocale, LOCALES } from '../i18n'
-import { ensureContextDoc } from '../data/context-doc'
+import { getLocale, normalizeLocale, LOCALES, contextStrings } from '../i18n'
+import { ensureContextDoc, appendContextLogOnDisk } from '../data/context-doc'
 import { getContextConfig, setContextConfig } from '../data/context-config'
+import { lastLogEntries } from '../data/context-log'
 import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
-import { generateTitle } from '../agent/index'
+import { generateTitle, generateProgressSummary } from '../agent/index'
 import { extractUserGist } from '../agent/transcript'
 import { readFileSync } from 'node:fs'
 import { snapshotActivity } from './pty-registry'
@@ -256,6 +257,33 @@ api.post('/context', (req, res) => {
   }
 })
 
+// Mechanically append a dated entry to an entity's progress-log section (canonical B).
+api.post('/context/log', (req, res) => {
+  const { kind, key, text } = req.body ?? {}
+  if ((kind !== 'task' && kind !== 'project') || typeof key !== 'string' || !key.trim())
+    return res.status(400).json({ error: 'kind:task|project, key:string required' })
+  if (typeof text !== 'string' || !text.trim())
+    return res.status(400).json({ error: 'text required' })
+  const store = getStore()
+  const ds = getDocStore(store)
+  const locale = getLocale(store)
+  const cfg = getContextConfig(store)
+  try {
+    const task = kind === 'task' ? listTasks(store).find(t => t.id === key) : undefined
+    const projectName = kind === 'project' ? key : (task?.project ?? null)
+    const ensured = ensureContextDoc(ds, kind, key, { title: task?.title ?? key, projectName, locale })
+    if (kind === 'task' && ensured.created && task && !task.detailDoc) {
+      store.updateTaskFields(key, { detailDoc: ensured.ref }, Date.now())
+    }
+    const date = new Date().toISOString().slice(0, 10)
+    const oneLine = text.replace(/\s*\n\s*/g, ' ').trim()
+    const r = appendContextLogOnDisk(ds, ensured.abs, { text: oneLine, date, maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })
+    res.json({ ref: ensured.ref, appended: r.appended, rotated: r.rotated })
+  } catch (e: any) {
+    res.status(500).json({ error: String(e?.message ?? e) })
+  }
+})
+
 api.get('/todos', (_req, res) => {
   const store = getStore()
   const edgesMap = store.edgesByTodo()
@@ -265,6 +293,24 @@ api.get('/todos', (_req, res) => {
     sessions: edgesMap.get(t.id) ?? [],
   }))
   res.json({ error: null, todos })
+})
+
+// Progress for one task: the A snapshot + the last few B-log entries (UI lazy-loads this on expand).
+api.get('/todos/:id/progress', (req, res) => {
+  const store = getStore()
+  const task = listTasks(store).find(t => t.id === req.params.id)
+  if (!task) return res.status(404).json({ error: 'unknown task' })
+  const ds = getDocStore(store)
+  const ref = task.detailDoc ?? ds.taskDocRef(task.id)
+  const abs = ds.resolveDocPath(ref)
+  let logTail: { date: string | null; text: string }[] = []
+  if (abs) {
+    try {
+      const { content } = ds.readDoc(abs)
+      logTail = lastLogEntries(content, contextStrings(getLocale(store)).logHeading, 3)
+    } catch { /* doc not created yet */ }
+  }
+  res.json({ summary: task.progress, logTail })
 })
 
 api.post('/todos', async (req, res) => {
@@ -287,6 +333,26 @@ api.patch('/todos/:id', (req, res) => {
   try {
     updateTask(getStore(), req.params.id, { title, priority, status, progress })
     res.json({ ok: true })
+  } catch (e: any) {
+    res.status(502).json({ error: String(e?.message ?? e) })
+  }
+})
+
+// Summarize the task's context doc (B) into the short progress snapshot (A). Mirrors the title pipeline.
+api.post('/todos/:id/progress-summary', async (req, res) => {
+  const store = getStore()
+  const task = listTasks(store).find(t => t.id === req.params.id)
+  if (!task) return res.status(404).json({ error: 'unknown task' })
+  const ds = getDocStore(store)
+  const locale = getLocale(store)
+  try {
+    const ensured = ensureContextDoc(ds, 'task', task.id, { title: task.title, projectName: task.project, locale })
+    if (ensured.created && !task.detailDoc) store.updateTaskFields(task.id, { detailDoc: ensured.ref }, Date.now())
+    const { content } = ds.readDoc(ensured.abs)
+    const summary = await generateProgressSummary(content, contextStrings(locale).summaryPrompt, resolveBerthAgent(store))
+    if (!summary) return res.status(502).json({ error: 'agent returned empty summary' })
+    updateTask(store, task.id, { progress: summary })
+    res.json({ summary })
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
   }
