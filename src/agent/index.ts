@@ -21,7 +21,7 @@ function ensureAgentCwd(): string {
 
 /** claude headless: `claude -p` prints a reply-only stdout. An empty model → claude's own default. */
 async function runClaude(bin: string, prompt: string, model: string | undefined, timeoutMs: number): Promise<string> {
-  const args = ['-p', prompt, ...(model ? ['--model', model] : [])]
+  const args = ['-p', prompt, '--dangerously-skip-permissions', ...(model ? ['--model', model] : [])]
   const { stdout } = await exec(bin, args, { cwd: ensureAgentCwd(), timeout: timeoutMs, maxBuffer: BUF })
   return stdout.trim()
 }

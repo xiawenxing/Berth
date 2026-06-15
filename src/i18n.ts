@@ -38,9 +38,11 @@ export interface ManifestStrings {
 }
 
 export interface PromptStrings {
+  // The visible first turn is intentionally just a title-naming directive. The detail-doc path and
+  // the maintenance/finish rules are NOT repeated here — they ride in the manifest (claude system
+  // prompt / codex+coco context hook), so the agent gets them implicitly without cluttering the
+  // prompt the user sees in the terminal.
   start: (title: string) => string
-  detail: (path: string) => string
-  finish: string
 }
 
 const MANIFEST: Record<Locale, ManifestStrings> = {
@@ -81,13 +83,9 @@ const MANIFEST: Record<Locale, ManifestStrings> = {
 const PROMPT: Record<Locale, PromptStrings> = {
   'zh-CN': {
     start: (t) => `请开始处理任务：「${t}」。`,
-    detail: (p) => `详情文档：${p}（动手前请先 Read 展开）。`,
-    finish: '完成后向该任务上下文文档的「进展日志」追加一条 `- YYYY-MM-DD: <一句话>`；遇到需要我确认的关键决策再停下来问我。',
   },
   en: {
     start: (t) => `Please start working on the task: "${t}".`,
-    detail: (p) => `Detail doc: ${p} (Read it before you begin).`,
-    finish: "When done, append `- YYYY-MM-DD: <one line>` to the task context doc's progress log; stop and ask me when you hit a key decision that needs my confirmation.",
   },
 }
 

@@ -29,6 +29,13 @@ export function stripCodeFence(s: string): string {
   return (m ? m[1] : t).trim()
 }
 
+/** Keep the markdown document even if the agent prepends a short explanation before the first H1. */
+export function extractMarkdownDoc(s: string): string {
+  const t = stripCodeFence(s)
+  if (/^#\s+/m.test(t) && !t.startsWith('#')) return t.slice(t.search(/^#\s+/m)).trim()
+  return t
+}
+
 export async function updateContext(input: ContextUpdateInput, runAgentFn: RunAgentFn): Promise<ContextUpdateResult> {
   const c = contextStrings(input.locale)
   const prompt = c.updatePrompt(input.kind, input.contextDoc, {
@@ -36,7 +43,7 @@ export async function updateContext(input: ContextUpdateInput, runAgentFn: RunAg
   })
   try {
     const raw = await runAgentFn(prompt, { cli: input.agent.cli, model: input.agent.model || undefined, timeoutMs: 120000 })
-    const newDoc = stripCodeFence(raw)
+    const newDoc = extractMarkdownDoc(raw)
     // Guard: empty, or shorter than 40% of the source (a truncated/gutted reply) → refuse to write.
     if (!newDoc || newDoc.length < Math.max(40, input.contextDoc.length * 0.4)) return { newDoc: '', diff: EMPTY }
     const diff = diffSections(input.contextDoc, newDoc)

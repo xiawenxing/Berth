@@ -62,12 +62,14 @@ describe('planFreshLaunch', () => {
     expect(missing.initialPrompt).toBeNull()
   })
 
-  it('directive names the title always; includes the detail-doc path when present, omits the mention when absent', () => {
+  it('first prompt is just the title-naming directive; the detail-doc path is NOT inlined (it rides in the manifest)', () => {
     const withDoc = [{ id: 'task_A', title: '修红点', project: 'Berth', detailDoc: 'projects/foo.md', progress: null, status: null, priority: null, updatedAt: 1, syncedAt: 0, deleted: false }] as any
     const a = planFreshLaunch({ cli: 'claude', cwd: '/c', todoKey: 'task_A', projectId: 'Berth' }, withDoc, 1000, () => 'm', DOCS)
     expect(a.initialPrompt).toContain('修红点')
-    expect(a.initialPrompt).toContain('详情文档')
-    expect(a.initialPrompt).toContain('projects/foo.md')
+    expect(a.initialPrompt).not.toContain('详情文档')
+    expect(a.initialPrompt).not.toContain('projects/foo.md')
+    // no finish/maintenance clutter either — that lives in the manifest's maintenance block
+    expect(a.initialPrompt).not.toContain('进展日志')
 
     const noDoc = [{ id: 'task_A', title: '修红点', project: 'Berth', detailDoc: null, progress: null, status: null, priority: null, updatedAt: 1, syncedAt: 0, deleted: false }] as any
     const b = planFreshLaunch({ cli: 'claude', cwd: '/c', todoKey: 'task_A', projectId: 'Berth' }, noDoc, 1000, () => 'm', DOCS)
@@ -94,10 +96,10 @@ describe('buildTaskInitialPrompt i18n', () => {
   it('defaults to zh-CN', () => {
     expect(buildTaskInitialPrompt(todo)).toContain('请开始处理任务')
   })
-  it('renders English when locale=en, with the detail-doc line', () => {
-    const p = buildTaskInitialPrompt(todo, '/docs/x.md', 'en')
+  it('renders English when locale=en — just the title directive, no detail/finish lines', () => {
+    const p = buildTaskInitialPrompt(todo, 'en')
     expect(p).toContain('Please start working on the task: "fix the thing"')
-    expect(p).toContain('Detail doc: /docs/x.md')
+    expect(p).not.toContain('Detail doc')
     expect(p).not.toContain('请开始处理任务')
   })
 })

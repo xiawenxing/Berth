@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { getCache, getStore } from './store-singleton'
 import { resumeSession, launchFresh } from '../pty/launch'
 import { hasLivePty, registerPty, attachViewer } from './pty-registry'
-import { buildManifest, detailRefToPath, type ManifestInput } from '../agent/manifest'
+import { buildManifest, type ManifestInput } from '../agent/manifest'
 import { listTasks, updateTask } from '../data/tasks'
 import { getTaskFieldConfig, type TaskFieldConfig } from '../data/task-config'
 import { getAgentConfig } from '../data/agent-config'
@@ -44,15 +44,12 @@ export interface FreshLaunchPlan {
 
 /**
  * A directive first turn so a task-launched agent actually starts working (not just loads context).
- * Always names the task title; includes the detail-doc path only when the task actually has one
- * (so the agent can Read it) — no dangling "go read the doc" when there is none.
+ * Intentionally minimal: it just names the task title. The detail-doc path and the
+ * maintenance/finish rules are delivered implicitly via the manifest (claude system prompt /
+ * codex+coco context hook), so we don't repeat them in the prompt the user sees in the terminal.
  */
-export function buildTaskInitialPrompt(todo: Task, detailPath?: string | null, locale: Locale = DEFAULT_LOCALE): string {
-  const t = promptStrings(locale)
-  const lines = [t.start(todo.title)]
-  if (detailPath) lines.push(t.detail(detailPath))
-  lines.push(t.finish)
-  return lines.join('\n')
+export function buildTaskInitialPrompt(todo: Task, locale: Locale = DEFAULT_LOCALE): string {
+  return promptStrings(locale).start(todo.title)
 }
 
 function codexHoldRunning(initialState: CodexTurnState = 'unknown') {
@@ -102,10 +99,10 @@ export function planFreshLaunch(
 
   const manifestInput = buildManifestInput(params, todos, docsRoot)
 
-  // Synthesize a first turn only for a task that actually resolves to a todo.
+  // Synthesize a first turn only for a task that actually resolves to a todo. The detail doc itself
+  // is surfaced to the agent through the manifest, not the prompt.
   const todo = todoKey ? todos.find(t => t.id === todoKey) : undefined
-  const detailPath = todo?.detailDoc ? detailRefToPath(todo.detailDoc, docsRoot) : null
-  const initialPrompt = todo ? buildTaskInitialPrompt(todo, detailPath, locale) : null
+  const initialPrompt = todo ? buildTaskInitialPrompt(todo, locale) : null
 
   return { sessionId, intent, bindNow, manifestInput, initialPrompt }
 }
