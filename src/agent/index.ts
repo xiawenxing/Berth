@@ -7,7 +7,7 @@ import { resolveAgentBinary } from '../pty/binaries'
 import { HEADLESS_CLIS } from '../data/agent-config'
 import { berthAgentCwd } from '../paths'
 import type { AgentCli } from '../types'
-import { extractTitleContext, extractUserGist } from './transcript'
+import { titleInputFromTranscript } from './transcript'
 const exec = promisify(execFile)
 const BUF = 8 * 1024 * 1024
 
@@ -74,7 +74,8 @@ export async function runAgent(prompt: string, opts: { cli?: AgentCli; model?: s
 
 /** Generate a concise human title from a raw session transcript head. */
 export async function generateTitle(transcriptHead: string, agent?: BerthAgent): Promise<string> {
-  const sampled = extractTitleContext(transcriptHead) || extractUserGist(transcriptHead) || transcriptHead.slice(0, 5000)
+  const sampled = titleInputFromTranscript(transcriptHead)
+  if (!sampled) return ''
   const prompt =
     `Below are sampled clues from a coding-assistant session transcript. ` +
     `They may include user requests, assistant progress, and tool/grep/command/path clues. ` +

@@ -3252,6 +3252,7 @@ function applyContextSupplementPanelState(panel, busy) {
   panel.setAttribute('aria-busy', busy ? 'true' : 'false');
   const input = panel.querySelector('.ctx-supplement-input');
   if (input) input.disabled = busy;
+  panel.querySelectorAll('.todo-thumb-x').forEach(b => { b.disabled = busy; });
   const send = panel.querySelector('.ctx-supplement-send');
   if (!send) return;
   if (!send.dataset.idleHtml) send.dataset.idleHtml = send.innerHTML;
@@ -3277,29 +3278,69 @@ function buildSupplementPanel(opts) {
   panel.className = 'ctx-supplement-panel';
   panel.dataset.contextKey = stateKey;
   panel.innerHTML = `
-    <textarea class="ctx-supplement-input" placeholder="告诉 agent 要补充/修正什么（prompt / 数据 / 信息）…"></textarea>
+    <textarea class="ctx-supplement-input" placeholder="告诉 agent 要补充/修正什么…（⌘/Ctrl+回车提交，可粘贴图片）"></textarea>
+    <div class="create-todo-thumbs ctx-supplement-thumbs" style="display:none"></div>
     <div class="ctx-supplement-actions">
       <span class="ctx-supplement-status"></span>
       <button class="ctx-supplement-send">${icon('arrow-right')} 让 agent 更新</button>
     </div>`;
+  const input = panel.querySelector('.ctx-supplement-input');
   const send = panel.querySelector('.ctx-supplement-send');
   const statusEl = panel.querySelector('.ctx-supplement-status');
+  const thumbs = panel.querySelector('.ctx-supplement-thumbs');
+  const pendingImages = [];
+
+  const renderThumbs = () => {
+    thumbs.innerHTML = '';
+    thumbs.style.display = pendingImages.length ? 'flex' : 'none';
+    pendingImages.forEach((src, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'todo-thumb';
+      wrap.innerHTML = `<img src="${src}"><button class="todo-thumb-x" title="移除">${icon('x')}</button>`;
+      wrap.querySelector('.todo-thumb-x').addEventListener('click', () => { pendingImages.splice(i, 1); renderThumbs(); });
+      thumbs.appendChild(wrap);
+    });
+    applyContextSupplementPanelState(panel, contextUpdatePending.has(stateKey));
+  };
+
+  input.addEventListener('paste', e => {
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    let handled = false;
+    for (const it of items) {
+      if (it.type && it.type.startsWith('image/')) {
+        const file = it.getAsFile();
+        if (file) {
+          handled = true;
+          const reader = new FileReader();
+          reader.onload = () => { pendingImages.push(reader.result); renderThumbs(); };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
+    if (handled) e.preventDefault();
+  });
+
   applyContextSupplementPanelState(panel, contextUpdatePending.has(stateKey));
-  send.addEventListener('click', async () => {
+  const submit = async () => {
     if (contextUpdatePending.has(stateKey)) return;
-    const userInput = panel.querySelector('textarea').value.trim();
-    if (!userInput) { statusEl.textContent = '先写点要补充的内容'; return; }
+    const userInput = input.value.trim();
+    if (!userInput && pendingImages.length === 0) { statusEl.textContent = '先写点要补充的内容，或粘贴图片'; return; }
+    const images = pendingImages.slice();
     setContextSupplementBusy(stateKey, true); statusEl.textContent = 'agent 更新中…';
     try {
       const r = await fetch('/api/context/update', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: opts.kind, key: opts.key, userInput }),
+        body: JSON.stringify({ kind: opts.kind, key: opts.key, userInput, images }),
       });
       const d = await r.json();
       if (!r.ok) { statusEl.textContent = '失败: ' + contextAgentErrorText(d, r.statusText); return; }
       renderSupplementResult(panel, opts, d);
     } catch (e) { statusEl.textContent = '失败: ' + e.message; }
     finally { setContextSupplementBusy(stateKey, false); }
+  };
+  send.addEventListener('click', submit);
+  input.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
   });
   return panel;
 }

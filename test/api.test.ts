@@ -1,5 +1,8 @@
-import { describe, it, expect, afterAll, vi, beforeEach } from 'vitest'
+import { describe, it, expect, afterAll, afterEach, vi, beforeEach } from 'vitest'
 import type { Server } from 'node:http'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 // ── Mock store-singleton so tests control getStore() + getCache() ─────────────
 // These must be declared before any imports that pull in api.ts
@@ -70,6 +73,7 @@ vi.mock('../src/agent/index', () => ({
 vi.mock('../src/agent/transcript', () => ({
   extractTitleContext: vi.fn(() => ''),
   extractUserGist: vi.fn(() => ''),
+  titleInputFromTranscript: vi.fn((text: string) => text.trim() ? 'sampled title clue' : ''),
 }))
 
 // ── Mock pty-ws so its node-pty imports don't load (createApp never wires WS) ─
@@ -115,10 +119,14 @@ import { createApp } from '../src/server/index'
 import { registerPty, killPty } from '../src/server/pty-registry'
 
 let server: Server
+const tmpRoots: string[] = []
 function listen(): Promise<number> {
   return new Promise(r => { server = createApp().listen(0, () => r((server.address() as any).port)) })
 }
 afterAll(() => server?.close())
+afterEach(() => {
+  for (const root of tmpRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 function fakePty() {
   return { onData: () => ({ dispose() {} }), onExit: () => ({ dispose() {} }), write() {}, resize() {}, kill() {} } as any
@@ -657,6 +665,22 @@ describe('POST /api/context/update', () => {
     // userInput was forwarded; no sessionId means no transcript read.
     expect(mockRunContextUpdate.mock.calls[0][0]).toMatchObject({ userInput: 'remember this' })
     expect(mockReadTranscript).not.toHaveBeenCalled()
+  })
+
+  it('saves pasted images beside the context doc and forwards markdown refs', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'berth-api-'))
+    tmpRoots.push(root)
+    mockSettings.set('docsRoot', root)
+    const port = await listen()
+    const png = 'data:image/png;base64,' + Buffer.from('x').toString('base64')
+    const res = await fetch(`http://localhost:${port}/api/context/update`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'project', key: 'Berth', images: [png] }),
+    })
+    expect(res.status).toBe(200)
+    const assetNames = readdirSync(join(root, 'projects', 'Berth', 'assets'))
+    expect(assetNames).toHaveLength(1)
+    expect(mockRunContextUpdate.mock.calls[0][0].userInput).toMatch(/^Pasted images:\n!\[\]\(assets\/context-/)
   })
 
   it('reads the session transcript when sessionId is supplied', async () => {

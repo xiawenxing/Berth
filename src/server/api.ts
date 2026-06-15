@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { openSync, readSync, closeSync } from 'node:fs'
+import { openSync, readSync, closeSync, fstatSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { getStore, getCache, refresh } from './store-singleton'
 import { listProjects, createProject } from '../data/projects'
@@ -15,8 +15,9 @@ import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
 import { generateTitle, generateProgressSummary } from '../agent/index'
-import { extractTitleContext, extractUserGist } from '../agent/transcript'
+import { titleInputFromTranscript } from '../agent/transcript'
 import { readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { snapshotActivity } from './pty-registry'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { revertCommit } from '../data/doc-git'
@@ -29,6 +30,33 @@ function truncate(s: string | null, max: number): string | null {
 
 function contextAgentError(error: unknown) {
   return { error: String((error as any)?.message ?? error), contextAgentCwd: berthAgentCwd() }
+}
+
+function readTitleTranscriptSample(path: string): string {
+  const fd = openSync(path, 'r')
+  try {
+    const size = fstatSync(fd).size
+    const maxBytes = 1024 * 1024
+    if (size <= maxBytes) {
+      const b = Buffer.alloc(size)
+      const n = readSync(fd, b, 0, size, 0)
+      return b.toString('utf8', 0, n)
+    }
+
+    const headBytes = 256 * 1024
+    const tailBytes = maxBytes - headBytes
+    const head = Buffer.alloc(headBytes)
+    const hn = readSync(fd, head, 0, headBytes, 0)
+    const tailStart = Math.max(0, size - tailBytes)
+    const tail = Buffer.alloc(size - tailStart)
+    const tn = readSync(fd, tail, 0, tail.length, tailStart)
+    let tailText = tail.toString('utf8', 0, tn)
+    const firstNewline = tailText.indexOf('\n')
+    if (tailStart > 0 && firstNewline >= 0) tailText = tailText.slice(firstNewline + 1)
+    return head.toString('utf8', 0, hn) + '\n' + tailText
+  } finally {
+    closeSync(fd)
+  }
 }
 
 export interface ApiSession {
@@ -303,11 +331,12 @@ api.post('/context/log', (req, res) => {
 // Agent-driven context update: fold user-supplied info (and/or a session transcript) into the
 // entity's context file. Any section may change; the write is git-committed (revertable).
 api.post('/context/update', async (req, res) => {
-  const { kind, key, userInput, sessionId } = req.body ?? {}
+  const { kind, key, userInput, sessionId, images } = req.body ?? {}
+  const imgs = Array.isArray(images) ? images.filter((s: any) => typeof s === 'string') : []
   if ((kind !== 'task' && kind !== 'project') || typeof key !== 'string' || !key.trim())
     return res.status(400).json({ error: 'kind:task|project, key:string required' })
-  if ((typeof userInput !== 'string' || !userInput.trim()) && typeof sessionId !== 'string')
-    return res.status(400).json({ error: 'userInput or sessionId required' })
+  if ((typeof userInput !== 'string' || !userInput.trim()) && typeof sessionId !== 'string' && imgs.length === 0)
+    return res.status(400).json({ error: 'userInput, images, or sessionId required' })
   const store = getStore(); const ds = getDocStore(store); const locale = getLocale(store)
   try {
     const task = kind === 'task' ? (listTasks(store).find(t => t.id === key) ?? null) : null
@@ -316,6 +345,13 @@ api.post('/context/update', async (req, res) => {
     const abs = ds.resolveDocPath(ref)
     if (!abs) return res.status(400).json({ error: 'cannot resolve context path' })
     const target: ContextTarget = { kind, key, title: task?.title ?? key, projectName, ref, abs }
+    const savedImages = imgs
+      .map((d: string) => ds.saveAttachment(d, 'context', dirname(ref)))
+      .filter((s): s is { rel: string; abs: string } => !!s)
+    const imageInput = savedImages.length
+      ? `Pasted images:\n${savedImages.map(s => `![](${s.rel})`).join('\n')}`
+      : ''
+    const effectiveUserInput = [typeof userInput === 'string' ? userInput.trim() : '', imageInput].filter(Boolean).join('\n\n')
     let transcript: string | undefined
     if (typeof sessionId === 'string') {
       const s = getCache().find(x => x.sessionId === sessionId)
@@ -323,7 +359,7 @@ api.post('/context/update', async (req, res) => {
     }
     const outcome = await runContextUpdate({
       target, docStore: ds, locale, agent: resolveBerthAgent(store),
-      userInput: typeof userInput === 'string' ? userInput : undefined, transcript,
+      userInput: effectiveUserInput || undefined, transcript,
       date: new Date().toISOString().slice(0, 10),
       getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
     })
@@ -537,10 +573,10 @@ api.post('/settings', (req, res) => {
 api.post('/sessions/:id/title', async (req, res) => {
   const s = getCache().find(x => x.sessionId === req.params.id)
   if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
-  let head = ''
-  // Read a larger head (65536 bytes) so that real user messages after big injected blocks are captured
-  try { const fd = openSync(s.contentSourcePath, 'r'); const b = Buffer.alloc(65536); const n = readSync(fd, b, 0, 65536, 0); closeSync(fd); head = b.toString('utf8', 0, n) } catch {}
-  const gist = extractTitleContext(head) || extractUserGist(head) || head
+  let sample = ''
+  try { sample = readTitleTranscriptSample(s.contentSourcePath) } catch {}
+  const gist = titleInputFromTranscript(sample)
+  if (!gist) return res.status(422).json({ error: 'no usable session content for title' })
   try {
     const title = await generateTitle(gist, resolveBerthAgent(getStore()))
     if (!title) return res.status(502).json({ error: 'agent returned empty title' })

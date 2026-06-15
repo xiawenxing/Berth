@@ -269,6 +269,35 @@ export function extractTitleContext(head: string): string {
   return formatTitleContextSample(sample)
 }
 
+function looksLikeJsonlTranscript(text: string): boolean {
+  let parsed = 0
+  for (const line of text.split('\n')) {
+    const s = line.trim()
+    if (!s) continue
+    if (!(s.startsWith('{') && s.endsWith('}'))) continue
+    try {
+      const o = JSON.parse(s)
+      if (o && typeof o === 'object' && ('type' in o || 'timestamp' in o || 'payload' in o)) parsed++
+    } catch {}
+    if (parsed >= 1) return true
+  }
+  return false
+}
+
+/**
+ * Build the actual text handed to the title agent.
+ * For structured transcripts, only extracted user/assistant/tool clues are valid input.
+ * Raw JSONL metadata is intentionally not a fallback because agents tend to turn it
+ * into refusal prose ("I don't see the session clues...") that then gets saved as a title.
+ */
+export function titleInputFromTranscript(text: string): string {
+  const sampled = extractTitleContext(text) || extractUserGist(text)
+  if (sampled) return sampled
+  const fallback = stripNoise(text).replace(/\s+/g, ' ').trim()
+  if (!fallback || looksLikeJsonlTranscript(fallback)) return ''
+  return fallback.slice(0, 5000)
+}
+
 export function deriveTitleFromTranscript(head: string): string | null {
   const sample = extractTitleContextSample(head)
   const firstUser = sample.users[0]

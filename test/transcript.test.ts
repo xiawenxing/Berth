@@ -4,6 +4,7 @@ import {
   extractTitleContext,
   extractTitleContextSample,
   extractUserGist,
+  titleInputFromTranscript,
   stripNoise,
   isInjectedText,
 } from '../src/agent/transcript'
@@ -228,5 +229,25 @@ describe('extractTitleContext', () => {
     ].join('\n')
 
     expect(deriveTitleFromTranscript(sessionHead)).toBe('Fix title generation / shell command: rg -n "extractTitleContext" src/agent')
+  })
+})
+
+describe('titleInputFromTranscript', () => {
+  it('does not fall back to raw codex metadata', () => {
+    const sessionHead = JSON.stringify({
+      timestamp: '2026-06-16T00:00:00Z',
+      type: 'session_meta',
+      payload: {
+        id: '019ea000-0000-7000-8000-000000000001',
+        cwd: '/Users/me/Code/berth',
+        originator: 'codex-tui',
+      },
+    })
+
+    expect(titleInputFromTranscript(sessionHead)).toBe('')
+  })
+
+  it('keeps plain text input for live agent tests and manual callers', () => {
+    expect(titleInputFromTranscript('user: Fix title generation')).toBe('user: Fix title generation')
   })
 })
