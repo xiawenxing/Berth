@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { openStore } from '../src/db/store'
 import {
   getContextConfig, setContextConfig,
-  DEFAULT_LOG_MAX_LINES, DEFAULT_LOG_KEEP,
+  DEFAULT_LOG_MAX_LINES, DEFAULT_LOG_KEEP, DEFAULT_GIT_ENABLED,
 } from '../src/data/context-config'
 
 describe('data/context-config', () => {
@@ -11,6 +11,14 @@ describe('data/context-config', () => {
     expect(cfg.logMaxLines).toBe(DEFAULT_LOG_MAX_LINES)   // 40
     expect(cfg.logKeep).toBe(DEFAULT_LOG_KEEP)            // 15
     expect(cfg.protocolEnabled).toBe(true)
+    expect(cfg.gitEnabled).toBe(DEFAULT_GIT_ENABLED)      // true
+  })
+
+  it('gitEnabled defaults to true and round-trips false', () => {
+    const store = openStore(':memory:')
+    expect(getContextConfig(store).gitEnabled).toBe(true)
+    setContextConfig(store, { gitEnabled: false })
+    expect(getContextConfig(store).gitEnabled).toBe(false)
   })
 
   it('round-trips overrides', () => {
