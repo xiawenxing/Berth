@@ -626,7 +626,6 @@ html, body {
 .btn-summarize-progress:hover, .btn-open-doc:hover { color: var(--text); border-color: var(--border); background: var(--bg3); }
 .btn-summarize-progress:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-summarize-progress.error { color: var(--red); border-color: var(--red); }
-.todo-note { white-space: pre-wrap; }
 
 /* in row-actions, reuse action-btn style but differentiate gen-title */
 .action-btn.btn-gen-title {

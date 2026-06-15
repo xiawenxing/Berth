@@ -997,22 +997,22 @@ async function generateTitle(sessionId, rowBtn) {
 }
 
 async function generateProgressSummary(todoId, btn, noteEl) {
-  const orig = btn.textContent;
-  btn.textContent = '…'; btn.disabled = true; btn.classList.remove('error');
+  const orig = btn.innerHTML;
+  btn.innerHTML = '…'; btn.disabled = true; btn.classList.remove('error');
   try {
     const res = await fetch('/api/todos/' + encodeURIComponent(todoId) + '/progress-summary', { method: 'POST' });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.summary) {
-      btn.textContent = orig; btn.disabled = false; btn.classList.add('error');
+      btn.innerHTML = orig; btn.disabled = false; btn.classList.add('error');
       setTimeout(() => btn.classList.remove('error'), 2000);
       return;
     }
     if (noteEl) noteEl.textContent = d.summary;
-    const todo = (typeof allTodos !== 'undefined' ? allTodos : []).find(x => x.id === todoId);
+    const todo = allTodos.find(x => x.id === todoId);
     if (todo) todo.progress = d.summary;
-    btn.textContent = orig; btn.disabled = false;
+    btn.innerHTML = orig; btn.disabled = false;
   } catch {
-    btn.textContent = orig; btn.disabled = false; btn.classList.add('error');
+    btn.innerHTML = orig; btn.disabled = false; btn.classList.add('error');
     setTimeout(() => btn.classList.remove('error'), 2000);
   }
 }
@@ -1021,7 +1021,8 @@ function openTaskDoc(t) {
   if (t.detailDoc) { openDocEditor(t.detailDoc, t.title); return; }
   fetch('/api/context', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'task', key: t.id, title: t.title }) })
     .then(r => r.json())
-    .then(d => { if (d.ref) { t.detailDoc = d.ref; openDocEditor(d.ref, t.title); } });
+    .then(d => { if (d.ref) { t.detailDoc = d.ref; openDocEditor(d.ref, t.title); } })
+    .catch(err => console.warn('[berth] openTaskDoc failed', err));
 }
 
 function updateSessionTitleLocal(sessionId, title) {
