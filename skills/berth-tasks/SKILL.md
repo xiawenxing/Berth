@@ -22,7 +22,8 @@ metadata:
 |---|---|
 | 新增任务 / 记一条待办 / 加个 todo | `berth task add "<内容>" [--project P]` |
 | 处理 X / 把 X 改成进行中 / 关掉 X / X 完成了 | **先** `berth task list` 反查 → `berth task done <ref>` 或 `berth task status <ref> <状态>` |
-| 记录/追加进展 | `berth task progress <ref> "<文本>"` |
+| 记录/追加进展 | `berth task log <ref> "<文本>"`（**追加**到任务上下文文档的「进展日志」，不覆盖） |
+| 读/改任务上下文文档（长背景/计划/决策） | `berth task doc <ref> --print` 拿路径+正文 → 用 Read/Edit 改对应小节 |
 | 改标题/优先级/状态 | `berth task set <ref> [--title T] [--status S] [--priority P]` |
 | 删除任务 | `berth task rm <ref>` |
 | 查看 / 列出任务 | `berth task list [--status S] [--project P] [--json]` |
@@ -37,7 +38,12 @@ metadata:
 2. **新增任务的项目归属**：`berth task add` 不带 `--project` 时服务端会用 AI 归类；若不确定会返回 needs-confirm 并给候选——把候选转述给用户，用 `--project <名称>` 指定，或 `--confirm` 建为无项目任务，或 `--project <新名> --create-option` 顺带建项目。
 3. **状态/优先级取值**有限（在 Berth 设置里配置）。写错值服务端会报 `invalid status/priority`；不确定就先 `berth task list --json` 看现有取值，或让用户在 Berth 设置页确认。
 4. **不要直接动数据库或外部表格**。一切经 `berth` CLI（服务端是唯一写入者，并负责同步）。
-5. **详情文档**（长背景/拆解）目前在 Berth 界面里的文档编辑器维护，CLI 只管任务字段与进展短记录。
+5. **上下文文档可由 CLI 读写**：`berth task doc <ref>` 披露 `tasks/<id>/index.md` 的路径，agent 用自带 Read/Edit 编辑；进展用 `berth task log` 追加。详见下条。
+6. **进展正本在上下文文档**：每个任务有 `tasks/<id>/index.md`，含稳定段（目标/背景，勿擅改）、活跃段（计划/TODO、决策/风险，推进中更新）、追加型「## 进展日志」。
+   - 记一条进展：`berth task log <ref> "<一句话>"`（追加，不覆盖；Berth 自动滚动归档）。
+   - 改计划/勾选 TODO/记决策：`berth task doc <ref> --print` 看路径与结构，再用 Read/Edit 改对应小节（按文档内 `<!-- 稳定 -->`/`<!-- 活跃 -->`/`<!-- 追加型 -->` 注释行事）。
+   - **不要手写短进展摘要（A）**：A 由 Berth 界面的 ✨ 按钮按进展日志生成；skill 只维护进展日志（B）。
+7. **`berth task progress` 已废弃**：旧「覆盖式短进展」改为「追加式进展日志」。命中旧命令会报错并指向 `berth task log`。
 
 ## 命令参考
 
@@ -47,8 +53,9 @@ berth task list [--status S] [--project P] [--json]
 berth task add "<text>" [--project P] [--confirm] [--create-option]
 berth task done <ref>                       # 置为“完成”类状态
 berth task status <ref> <status>
-berth task set <ref> [--title T] [--status S] [--priority P] [--progress TEXT]
-berth task progress <ref> "<text>"          # 记录/替换进展记录
+berth task set <ref> [--title T] [--status S] [--priority P]
+berth task log <ref> "<text>"               # 追加一行 `- YYYY-MM-DD: <text>` 到「进展日志」（不覆盖；超阈值自动归档）
+berth task doc <ref> [--print]              # 打印任务上下文文档绝对路径（--print 附正文）；agent 用自带 Read/Edit 编辑
 berth task rm <ref>
 berth task sync [--source ID]               # 推本地改动 + 拉外部变更，冲突在界面解决
 berth project [list] [--json]
