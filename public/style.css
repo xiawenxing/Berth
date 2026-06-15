@@ -1266,6 +1266,12 @@ html, body {
   margin-bottom: 12px;
 }
 
+/* Height-capped, scrollable body for a module (keeps its title fixed above). */
+.ws-section-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 .ws-empty {
   font-size: 12px;
   color: var(--text-dim);
@@ -1761,6 +1767,20 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+/* Collapsible cwd group headers in the workspace 会话 module. */
+.ws-cwd-collapsible {
+  cursor: pointer;
+  user-select: none;
+}
+.ws-cwd-collapsible .ws-task-icon {
+  transition: transform 0.12s ease;
+}
+.ws-cwd-collapsible:not(.collapsed) .ws-task-icon {
+  transform: rotate(90deg);
 }
 
 .ws-cwd-header {

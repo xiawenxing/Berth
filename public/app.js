@@ -246,6 +246,10 @@ const expandedStale = new Set();
 // Track which todos are expanded (by id) so re-renders (e.g. after assignTask) keep them open
 const expandedTodos = new Set();
 
+// Workspace 会话 module: which cwd groups the user has collapsed (key = project name   cwd),
+// persisted across re-renders. Default = expanded.
+const wsCollapsedCwds = new Set();
+
 // 待办 status board: column order + accent colors, and the currently-expanded column.
 // STATUS_ORDER / TODO_PRIORITIES are seeded with the defaults and refreshed from /api/settings
 // (loadTaskFieldConfig) so the user can edit the vocabularies in the Settings page.
@@ -3060,8 +3064,13 @@ function buildContextSection(name, projTodos) {
   sec.className = 'ws-section';
   sec.innerHTML = `<div class="ws-section-title">${icon('paperclip')} 上下文</div>`;
 
+  // Rows live in a height-capped, scrollable body so a project with many tasks doesn't push the
+  // 会话 section off-screen. The section title above stays fixed.
+  const body = document.createElement('div');
+  body.className = 'ws-section-scroll';
+
   // Project context (top).
-  sec.appendChild(buildContextRow({
+  body.appendChild(buildContextRow({
     label: '项目上下文', cls: 'proj', kind: 'project', key: name, title: name,
   }));
 
@@ -3070,11 +3079,12 @@ function buildContextSection(name, projTodos) {
     const grp = document.createElement('div');
     grp.className = 'ctx-group-title';
     grp.textContent = '▸ ' + t.title;
-    sec.appendChild(grp);
-    sec.appendChild(buildContextRow({
+    body.appendChild(grp);
+    body.appendChild(buildContextRow({
       label: '任务上下文', cls: 'task', kind: 'task', key: t.id, title: t.title,
     }));
   }
+  sec.appendChild(body);
   return sec;
 }
 
@@ -3298,8 +3308,10 @@ function renderWorkspace(name) {
       Math.max(...b[1].map(s => s.updatedAt)) - Math.max(...a[1].map(s => s.updatedAt)));
 
     for (const [cwd, sessions] of sortedCwds) {
+      const collapseKey = name + ' ' + cwd;
+      const collapsed = wsCollapsedCwds.has(collapseKey);
       const grpHdr = document.createElement('div');
-      grpHdr.className = 'ws-task-header';
+      grpHdr.className = 'ws-task-header ws-cwd-collapsible' + (collapsed ? ' collapsed' : '');
       const label = cwd === '__no_cwd__' ? '(无 cwd)' : shortCwd(cwd);
       const full = cwd === '__no_cwd__' ? '(no cwd)' : cwd;
       grpHdr.innerHTML = `
@@ -3307,10 +3319,21 @@ function renderWorkspace(name) {
         <span class="ws-task-title" title="${escHtml(full)}">${escHtml(label)}</span>
         <span class="ws-task-count">${sessions.length}</span>
       `;
-      sessList.appendChild(grpHdr);
+      // Rows for this group live in their own wrapper so the header can toggle them.
+      const grpRows = document.createElement('div');
+      grpRows.className = 'ws-cwd-rows';
+      if (collapsed) grpRows.style.display = 'none';
       [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).forEach(s => {
-        sessList.appendChild(buildWsSessionRow(s));
+        grpRows.appendChild(buildWsSessionRow(s));
       });
+      grpHdr.addEventListener('click', () => {
+        const nowCollapsed = !wsCollapsedCwds.has(collapseKey);
+        if (nowCollapsed) wsCollapsedCwds.add(collapseKey); else wsCollapsedCwds.delete(collapseKey);
+        grpHdr.classList.toggle('collapsed', nowCollapsed);
+        grpRows.style.display = nowCollapsed ? 'none' : '';
+      });
+      sessList.appendChild(grpHdr);
+      sessList.appendChild(grpRows);
     }
     sessSection.appendChild(sessList);
   }
