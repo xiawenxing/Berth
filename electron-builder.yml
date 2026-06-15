@@ -1,0 +1,33 @@
+# electron-builder config for the Berth desktop app. The packaged app's entry is electron/main.cjs
+# (set via extraMetadata.main so the repo's package.json stays CLI-oriented). Native addons and
+# node-pty's spawn-helper MUST be unpacked from the asar so the OS loader can dlopen them.
+appId: dev.berth.app
+productName: Berth
+directories:
+  output: release
+extraMetadata:
+  main: electron/main.cjs
+files:
+  - electron/**
+  - dist/**
+  - public/**
+  - package.json
+# .node binaries + node-pty's spawn-helper cannot run from inside an asar archive — unpack them.
+asarUnpack:
+  - "**/*.node"
+  - "node_modules/node-pty/**"
+  - "node_modules/better-sqlite3/**"
+  - "dist/**"
+  - "public/**"
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  # arm64 first; add x64/universal when needed. Signing/notarization is a later step (P2c):
+  # build with notarize disabled, then submit the .dmg via `xcrun notarytool`.
+  notarize: false
+win:
+  target: nsis
+linux:
+  target: AppImage

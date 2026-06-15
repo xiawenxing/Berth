@@ -1,0 +1,207 @@
+/* ============================================================================
+ * Berth component layer — hand-written vanilla CSS classes that mirror
+ * shadcn/ui's geometry and observable behavior (no React, no build).
+ * Consumes tokens from tokens.css. Use these classes as the vocabulary for
+ * new/refit UI; legacy bespoke styles in style.css migrate onto them over time.
+ * ========================================================================== */
+
+/* ── Button ──────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s, opacity 0.12s;
+}
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn .icon { font-size: 16px; }
+
+.btn-default {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.btn-default:hover { background: color-mix(in oklab, var(--primary) 90%, transparent); }
+
+.btn-brand {
+  background: var(--brand);
+  color: var(--brand-foreground);
+}
+.btn-brand:hover { background: color-mix(in oklab, var(--brand) 88%, white); }
+
+.btn-secondary {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+.btn-secondary:hover { background: color-mix(in oklab, var(--secondary) 80%, transparent); }
+
+.btn-outline {
+  background: transparent;
+  color: var(--foreground);
+  border-color: var(--border);
+}
+.btn-outline:hover { background: var(--accent); color: var(--accent-foreground); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--foreground);
+}
+.btn-ghost:hover { background: var(--accent); color: var(--accent-foreground); }
+
+.btn-destructive {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+.btn-destructive:hover { background: color-mix(in oklab, var(--destructive) 88%, transparent); }
+
+/* sizes */
+.btn-sm { height: 30px; padding: 0 10px; font-size: 12px; border-radius: var(--radius-sm); }
+.btn-icon { width: 36px; height: 36px; padding: 0; }
+.btn-icon.btn-sm { width: 30px; height: 30px; }
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+.card-header { padding: 14px 16px 0; }
+.card-body   { padding: 14px 16px; }
+.card-footer { padding: 0 16px 14px; }
+.card-title  { font-size: 14px; font-weight: 600; }
+.card-desc   { font-size: 12px; color: var(--muted-foreground); }
+
+/* ── Badge ───────────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  border: 1px solid transparent;
+  border-radius: var(--badge-radius);
+  white-space: nowrap;
+}
+.badge-neutral     { background: var(--secondary); color: var(--secondary-foreground); }
+.badge-outline     { background: transparent; color: var(--muted-foreground); border-color: var(--border); }
+.badge-success     { background: color-mix(in oklab, var(--success) 18%, transparent);     color: var(--success); }
+.badge-warning     { background: color-mix(in oklab, var(--warning) 18%, transparent);     color: var(--warning); }
+.badge-info        { background: color-mix(in oklab, var(--info) 18%, transparent);        color: var(--info); }
+.badge-priority    { background: color-mix(in oklab, var(--priority) 18%, transparent);    color: var(--priority); }
+.badge-destructive { background: color-mix(in oklab, var(--destructive) 18%, transparent); color: var(--destructive); }
+.badge-brand       { background: color-mix(in oklab, var(--brand) 18%, transparent);       color: var(--brand); }
+
+/* ── Input / Textarea ────────────────────────────────────────────────────── */
+.input,
+.textarea {
+  width: 100%;
+  background: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.textarea { resize: vertical; min-height: 64px; }
+.input::placeholder,
+.textarea::placeholder { color: var(--muted-foreground); }
+.input:focus-visible,
+.textarea:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 35%, transparent);
+}
+
+/* ── Separator ───────────────────────────────────────────────────────────── */
+.separator { height: 1px; background: var(--border); border: 0; margin: 8px 0; }
+.separator-vertical { width: 1px; align-self: stretch; background: var(--border); }
+
+/* ── Dialog ──────────────────────────────────────────────────────────────── */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: oklch(0 0 0 / 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.dialog {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 480px;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+}
+.dialog-header { padding: 18px 20px 0; }
+.dialog-title  { font-size: 16px; font-weight: 600; }
+.dialog-desc   { font-size: 13px; color: var(--muted-foreground); margin-top: 4px; }
+.dialog-body   { padding: 16px 20px; }
+.dialog-footer { padding: 0 20px 18px; display: flex; gap: 8px; justify-content: flex-end; }
+
+/* NOTE: dropdown menus (.dropdown-menu .menu-item / .menu-section / .menu-sep)
+   and chips (.chip / .chip-candidate / …) already exist in style.css and are
+   theme-token-aware after the migration — not redefined here to avoid collisions. */
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+.tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--muted);
+  border-radius: var(--radius-md);
+}
+.tab {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+}
+.tab:hover { color: var(--foreground); }
+.tab.active {
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+}
+
+/* ── Tooltip ─────────────────────────────────────────────────────────────── */
+.tooltip {
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+

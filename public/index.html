@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Berth</title>
+  <!-- Set theme before first paint to avoid a flash. Default dark; `light` opt-in. -->
+  <script>
+    try {
+      var q = new URLSearchParams(location.search).get("theme");
+      var t = q || localStorage.getItem("berth-theme");
+      if (t === "light") document.documentElement.classList.add("light");
+    } catch (_) {}
+  </script>
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/components.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Left nav ──────────────────────────────────────────── -->
+  <nav id="left-nav">
+    <div id="nav-logo">
+      <span class="logo"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#anchor"></use></svg> Berth</span>
+      <button id="btn-theme" class="btn btn-ghost btn-icon btn-sm" title="切换主题"></button>
+    </div>
+    <div id="nav-items">
+      <div class="nav-item active" data-mode="now"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#house"></use></svg> Now</div>
+      <div class="nav-item" data-mode="projects"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#folder"></use></svg> 项目</div>
+      <div class="nav-item" data-mode="sessions"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#layout-grid"></use></svg> 全部会话</div>
+      <div class="nav-item" data-mode="settings"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#settings"></use></svg> 设置</div>
+    </div>
+    <!-- Global quick-add task (always visible) -->
+    <div class="create-todo-bar nav-create" id="nav-create-todo"></div>
+  </nav>
+
+  <!-- ── Sidebar (sessions mode only) ────────────────────── -->
+  <aside id="sidebar">
+
+    <div id="sidebar-header">
+      <span id="session-count">…</span>
+      <button id="sidebar-toggle-all" class="sidebar-tree-btn" title="收起全部"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#chevron-down"></use></svg></button>
+      <button id="btn-sync-sessions" class="sidebar-tree-btn" title="同步本地会话（重扫已导入目录）"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#refresh-cw"></use></svg></button>
+      <button id="sidebar-new-session-btn" class="btn-new-session btn-new-session-sm" title="新建会话（默认无归属，可后续认领）"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#plus"></use></svg> 新建会话</button>
+    </div>
+
+    <div id="search-wrap">
+      <input id="search" type="search" placeholder="搜索 标题 / 路径 / CLI…" autocomplete="off" spellcheck="false">
+    </div>
+
+    <div id="session-list"></div>
+
+  </aside>
+
+  <!-- ── Sidebar drag handle ──────────────────────────────── -->
+  <div id="sidebar-resize-handle"></div>
+
+  <!-- ── Main pane ───────────────────────────────────────── -->
+  <main id="main">
+
+    <!-- Terminal view (sessions mode) -->
+    <div id="terminal-view">
+      <div id="main-header">
+        <span id="main-title" class="session-title">Berth</span>
+        <span id="main-meta" class="session-meta"></span>
+        <span id="status-badge"></span>
+      </div>
+      <div id="terminal-wrap">
+        <div id="terminal"></div>
+        <div id="empty-state">
+          <div class="empty-icon"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#anchor"></use></svg></div>
+          <div class="empty-text"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#arrow-left"></use></svg> pick a session</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Now view -->
+    <div id="now-view" class="content-view">
+      <div class="view-header">
+        <span class="view-title"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#house"></use></svg> Now</span>
+      </div>
+      <div id="now-composer"></div>
+      <div id="now-content" class="view-body"></div>
+    </div>
+
+    <!-- Projects list view -->
+    <div id="projects-view" class="content-view">
+      <div class="view-header">
+        <span class="view-title"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#folder"></use></svg> 项目</span>
+        <input id="project-search" type="search" placeholder="搜索项目 / 任务…" autocomplete="off" spellcheck="false">
+        <button id="projects-new-btn" class="btn-new-session" title="新建项目"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#folder-plus"></use></svg> 新建项目</button>
+      </div>
+      <div id="projects-content" class="view-body"></div>
+    </div>
+
+    <!-- Settings view (data sources + docs root) -->
+    <div id="settings-view" class="content-view">
+      <div class="view-header">
+        <span class="view-title"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#settings"></use></svg> 设置</span>
+      </div>
+      <div id="settings-content" class="view-body"></div>
+    </div>
+
+    <!-- Project workspace view -->
+    <div id="workspace-view" class="content-view">
+      <div id="workspace-split">
+        <aside id="project-sidebar">
+          <div id="project-sidebar-title"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#folder"></use></svg> 项目</div>
+          <div id="project-list"></div>
+        </aside>
+        <div id="workspace-main">
+          <div class="view-header workspace-nav">
+            <button id="btn-back-projects" class="btn-back"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#arrow-left"></use></svg> 项目</button>
+            <span id="workspace-title" class="view-title"></span>
+            <!-- Sync local tasks/projects with external data sources, split into pull (external→Berth) and push (Berth→external) -->
+            <button id="btn-pull" class="btn btn-ghost btn-sm nav-sync" title="拉取：外部数据源 → Berth"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#download"></use></svg> Pull</button>
+            <button id="btn-push" class="btn btn-ghost btn-sm nav-sync" title="推送：Berth → 外部数据源"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#upload"></use></svg> Push<span id="sync-conflict-badge" class="sync-conflict-badge" style="display:none"></span></button>
+            <span id="sync-label" class="sync-label"></span>
+            <button id="ws-new-session-btn" class="btn-new-session" title="为该项目新建会话"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#plus"></use></svg> 新建会话</button>
+          </div>
+          <div class="create-todo-bar" id="ws-create-todo"></div>
+          <div id="workspace-content" class="view-body"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+</div>
+
+<!-- Markdown doc editor (上下文) -->
+<div id="doc-modal" class="doc-modal" style="display:none">
+  <div class="doc-modal-box">
+    <div class="doc-modal-header">
+      <span id="doc-modal-title" class="doc-modal-title"></span>
+      <span id="doc-modal-status" class="doc-modal-status"></span>
+      <a id="doc-open-obsidian" class="doc-obsidian-link" title="在 Obsidian 打开" target="_blank"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#external-link"></use></svg> Obsidian</a>
+      <button id="doc-save-btn" class="doc-save-btn">保存</button>
+      <button id="doc-modal-close" class="doc-modal-close" title="关闭"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#x"></use></svg></button>
+    </div>
+    <div class="doc-modal-body">
+      <textarea id="doc-editor" class="doc-editor" spellcheck="false" placeholder="# 标题…"></textarea>
+      <div id="doc-preview" class="doc-preview markdown-body"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Conflict-resolution modal (sync found both sides changed) -->
+<div id="conflict-modal" class="doc-modal" style="display:none">
+  <div class="doc-modal-box conflict-modal-box">
+    <div class="doc-modal-header">
+      <span class="doc-modal-title"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#triangle-alert"></use></svg> 同步冲突</span>
+      <span id="conflict-count" class="doc-modal-status"></span>
+      <button id="conflict-modal-close" class="doc-modal-close" title="关闭"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#x"></use></svg></button>
+    </div>
+    <div id="conflict-modal-body" class="doc-modal-body conflict-modal-body"></div>
+  </div>
+</div>
+
+<!-- Add-data-source modal: pick a type, paste the URL, Berth parses + connects (config hidden) -->
+<div id="datasource-modal" class="doc-modal" style="display:none">
+  <div class="doc-modal-box datasource-modal-box">
+    <div class="doc-modal-header">
+      <span class="doc-modal-title"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#database"></use></svg> 新增数据源</span>
+      <span class="settings-spacer"></span>
+      <button id="datasource-modal-close" class="doc-modal-close" title="关闭"><svg class="icon" aria-hidden="true"><use href="/vendor/lucide.svg#x"></use></svg></button>
+    </div>
+    <div class="doc-modal-body datasource-modal-body">
+      <label class="ds-field">数据源类型
+        <select id="datasource-kind" class="input">
+          <option value="feishu-bitable">飞书多维表格</option>
+        </select>
+      </label>
+      <label class="ds-field" id="datasource-url-field">表格地址
+        <input id="datasource-url" class="input" type="text" spellcheck="false" placeholder="粘贴多维表格链接（浏览器地址栏，含 /base/… 或 /wiki/…）">
+        <span class="ds-hint">在浏览器打开目标多维表格 → 复制地址栏链接 → 粘贴。Berth 会自动解析表格与字段。</span>
+      </label>
+      <div id="datasource-error" class="ds-error" style="display:none"></div>
+      <div class="datasource-modal-actions">
+        <button id="datasource-connect-btn" class="btn">连接</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- xterm vendor (UMD → window.Terminal, window.FitAddon); marked (UMD → window.marked) -->
+<script src="/vendor/xterm.js"></script>
+<script src="/vendor/addon-fit.js"></script>
+<script src="/vendor/marked.umd.js"></script>
+<!-- pure sidebar-grouping helper (ESM) → exposed on window for app.js (classic script) -->
+<script type="module">import { splitGroupRows } from '/session-grouping.js'; window.splitGroupRows = splitGroupRows;</script>
+<!-- pure preload-priority picker (ESM) → exposed on window for app.js (classic script) -->
+<script type="module">import { selectPreloadSessions } from '/preload-select.js'; window.selectPreloadSessions = selectPreloadSessions;</script>
+<script src="/app.js"></script>
+
+</body>
+</html>

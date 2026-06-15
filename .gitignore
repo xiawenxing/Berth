@@ -1,0 +1,16 @@
+node_modules
+dist
+release
+*.sqlite
+log/
+*.log
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local, machine-specific config — never commit personal connection config
+.claude/settings.local.json
+seed.json
+.berth/

@@ -1,0 +1,77 @@
+{
+  "name": "@corusco/berth",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A local, cross-CLI agent-session cockpit — one UI over your Claude Code / Codex / Coco sessions, resumed live in embedded terminals.",
+  "bin": {
+    "berth": "bin/berth.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiawenxing/Berth.git"
+  },
+  "homepage": "https://github.com/xiawenxing/Berth#readme",
+  "files": [
+    "bin",
+    "dist",
+    "public",
+    "!public/__*.html",
+    "scripts/vendor.mjs",
+    "scripts/build-lucide-sprite.mjs",
+    "scripts/postinstall.mjs"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:live": "BERTH_LIVE=1 vitest run",
+    "postinstall": "node scripts/postinstall.mjs",
+    "build": "npm run vendor && node scripts/build.mjs",
+    "prepublishOnly": "npm run build",
+    "start": "npm run vendor && tsx bin/berth-serve.ts",
+    "serve": "tsx bin/berth-serve.ts",
+    "vendor": "node scripts/vendor.mjs",
+    "electron:dev": "npm run build && electron-rebuild -f -w better-sqlite3,node-pty && electron electron/main.cjs",
+    "electron:release": "node scripts/electron-release.mjs",
+    "rebuild:node": "npm rebuild better-sqlite3 node-pty"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "agent",
+    "cli",
+    "terminal",
+    "cockpit"
+  ],
+  "author": "xiawenxing",
+  "license": "ISC",
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "better-sqlite3": "^12.10.0",
+    "express": "^5.2.1",
+    "fast-glob": "^3.3.3",
+    "marked": "^18.0.5",
+    "node-pty": "^1.1.0",
+    "ws": "^8.21.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.9.3",
+    "@types/ws": "^8.18.1",
+    "electron": "^41.7.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
+    "lucide-static": "^1.18.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

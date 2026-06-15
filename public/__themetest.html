@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Berth 整套配色方案预览</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 28px 60px;
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #1b1d22; color: #e6e6e6;
+  }
+  h1 { font-size: 19px; margin: 0 0 6px; }
+  .sub { font-size: 13px; opacity:.6; margin: 0 0 26px; max-width: 900px; line-height:1.6; }
+  .family { margin-bottom: 40px; }
+  .fam-title { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+  .fam-desc { font-size: 12.5px; opacity:.55; margin: 0 0 14px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 1100px){ .pair { grid-template-columns: 1fr; } }
+
+  .win {
+    border-radius: 12px; overflow: hidden;
+    box-shadow: 0 8px 30px rgba(0,0,0,.45);
+    display: grid; grid-template-columns: 92px 200px 1fr;
+    height: 290px; font-size: 11.5px;
+    border: 1px solid rgba(128,128,128,.2);
+  }
+  .mode-tag {
+    font-size: 11px; font-weight:600; opacity:.7; margin: 0 0 6px;
+    display:flex; align-items:center; gap:6px;
+  }
+
+  /* rail */
+  .rail { padding: 12px 10px; display:flex; flex-direction:column; gap:3px; }
+  .rail .logo { font-weight:700; font-size:13px; margin-bottom:14px; display:flex; align-items:center; gap:5px; }
+  .rail .navi { padding:6px 9px; border-radius:7px; display:flex; align-items:center; gap:7px; }
+  .rail .ico { width:13px; height:13px; border-radius:3px; opacity:.8; }
+
+  /* list */
+  .list { padding: 10px 0; overflow:hidden; }
+  .list .lhead { font-size:10px; font-weight:700; letter-spacing:.04em; padding: 2px 14px 8px; opacity:.55; }
+  .row { padding: 7px 14px; display:flex; flex-direction:column; gap:4px; position:relative; }
+  .row .t { font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .meta { display:flex; align-items:center; gap:6px; font-size:9.5px; }
+  .badge { font-size:8.5px; font-weight:700; padding:1px 5px; border-radius:4px; letter-spacing:.03em; }
+  .dot { position:absolute; left:5px; top:11px; width:6px; height:6px; border-radius:50%; }
+
+  /* terminal */
+  .termpane { font-family: "JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    font-size:10.5px; line-height:1.5; padding:11px 13px; white-space:pre-wrap; overflow:hidden; }
+
+  .swatches { display:flex; gap:5px; margin-top:8px; flex-wrap:wrap; }
+  .sw { width:16px; height:16px; border-radius:4px; border:1px solid rgba(128,128,128,.3); }
+  .lbl { font-size:10px; opacity:.5; margin-top:8px; font-family:ui-monospace,monospace; }
+</style>
+</head>
+<body>
+<h1>Berth 整套配色方案 — UI 与终端联动预览</h1>
+<p class="sub">每套方案同时定义 <b>Berth 界面色</b> 与 <b>配套终端色</b>，终端底色是 UI 画布的同色系，强调色与品牌色统一，消除「界面 ↔ 终端」割裂感。每套含 ☀ 浅色 / 🌙 深色两态（与 Berth 现有 light/dark 架构对应）。挑一套告诉我编号即可落地。</p>
+<div id="root"></div>
+
+<script>
+// 每个 variant: ui{canvas,sidebar,panel,sel,border,text,muted,brand,brandFg,purple,green,red}
+//              term{bg,fg,cursor,red,green,yellow,blue,magenta,cyan,dim}
+const FAMILIES = [
+  {
+    name: "① GitHub", desc: "VSCode 最主流的中性专业风 · 干净、克制、长时间看不累",
+    light: {
+      ui:{canvas:"#ffffff",sidebar:"#f6f8fa",panel:"#eef1f4",sel:"#ddf4ff",border:"#d0d7de",text:"#1f2328",muted:"#656d76",brand:"#0969da",brandFg:"#fff",purple:"#8250df",green:"#1a7f37",red:"#cf222e"},
+      term:{bg:"#f6f8fa",fg:"#1f2328",cursor:"#0969da",red:"#cf222e",green:"#1a7f37",yellow:"#9a6700",blue:"#0969da",magenta:"#8250df",cyan:"#1b7c83",dim:"#8c959f"}
+    },
+    dark: {
+      ui:{canvas:"#0d1117",sidebar:"#010409",panel:"#161b22",sel:"#1f2d3d",border:"#30363d",text:"#e6edf3",muted:"#7d8590",brand:"#2f81f7",brandFg:"#fff",purple:"#bc8cff",green:"#3fb950",red:"#f85149"},
+      term:{bg:"#0d1117",fg:"#e6edf3",cursor:"#2f81f7",red:"#ff7b72",green:"#3fb950",yellow:"#d29922",blue:"#58a6ff",magenta:"#bc8cff",cyan:"#39c5cf",dim:"#6e7681"}
+    }
+  },
+  {
+    name: "② One (Atom/VSCode 经典)", desc: "One Light / One Dark Pro · 暖灰调，圈内最长青的配色之一",
+    light: {
+      ui:{canvas:"#fafafa",sidebar:"#eaeaeb",panel:"#e5e5e6",sel:"#dbe7ff",border:"#d4d4d4",text:"#383a42",muted:"#8a8f98",brand:"#4078f2",brandFg:"#fff",purple:"#a626a4",green:"#50a14f",red:"#e45649"},
+      term:{bg:"#fafafa",fg:"#383a42",cursor:"#4078f2",red:"#e45649",green:"#50a14f",yellow:"#c18401",blue:"#4078f2",magenta:"#a626a4",cyan:"#0184bc",dim:"#a0a1a7"}
+    },
+    dark: {
+      ui:{canvas:"#282c34",sidebar:"#21252b",panel:"#2c313a",sel:"#3a4150",border:"#3e4451",text:"#abb2bf",muted:"#7f848e",brand:"#61afef",brandFg:"#fff",purple:"#c678dd",green:"#98c379",red:"#e06c75"},
+      term:{bg:"#282c34",fg:"#abb2bf",cursor:"#61afef",red:"#e06c75",green:"#98c379",yellow:"#e5c07b",blue:"#61afef",magenta:"#c678dd",cyan:"#56b6c2",dim:"#5c6370"}
+    }
+  },
+  {
+    name: "③ Tokyo Night", desc: "近年大热 · 蓝紫霓虹深色 + Tokyo Day 浅色，气质偏现代/酷",
+    light: {
+      ui:{canvas:"#e1e2e7",sidebar:"#d4d6e0",panel:"#cdd0dd",sel:"#b7c1e3",border:"#c4c8da",text:"#343b58",muted:"#6c7299",brand:"#2e7de9",brandFg:"#fff",purple:"#9854f1",green:"#587539",red:"#f52a65"},
+      term:{bg:"#e1e2e7",fg:"#343b58",cursor:"#2e7de9",red:"#f52a65",green:"#587539",yellow:"#8c6c3e",blue:"#2e7de9",magenta:"#9854f1",cyan:"#007197",dim:"#848cb5"}
+    },
+    dark: {
+      ui:{canvas:"#1a1b26",sidebar:"#16161e",panel:"#1f2335",sel:"#283457",border:"#2a2e42",text:"#c0caf5",muted:"#787c99",brand:"#7aa2f7",brandFg:"#1a1b26",purple:"#bb9af7",green:"#9ece6a",red:"#f7768e"},
+      term:{bg:"#1a1b26",fg:"#c0caf5",cursor:"#7aa2f7",red:"#f7768e",green:"#9ece6a",yellow:"#e0af68",blue:"#7aa2f7",magenta:"#bb9af7",cyan:"#7dcfff",dim:"#565f89"}
+    }
+  },
+  {
+    name: "④ 水墨宣纸（国风·暖）", desc: "浅=宣纸米白＋墨字＋朱砂/黛青；深=玄墨底＋宣白字 · 温润、书卷气",
+    light: {
+      ui:{canvas:"#f3ede0",sidebar:"#ece3d2",panel:"#e3d8c2",sel:"#e0d2b8",border:"#d8cbb2",text:"#2b2620",muted:"#8a7e68",brand:"#9c3a32",brandFg:"#f5efe3",purple:"#8a5a83",green:"#5b7a4f",red:"#b33b32"},
+      term:{bg:"#ece3d2",fg:"#2b2620",cursor:"#9c3a32",red:"#b33b32",green:"#5b7a4f",yellow:"#b8860b",blue:"#3a6b7e",magenta:"#8a5a83",cyan:"#4a8b8b",dim:"#a89c84"}
+    },
+    dark: {
+      ui:{canvas:"#1c1a17",sidebar:"#16140f",panel:"#24211c",sel:"#332e25",border:"#3a352c",text:"#e8e0d0",muted:"#9a907c",brand:"#d96a5e",brandFg:"#1c1a17",purple:"#b08bb5",green:"#8aa86b",red:"#d96a5e"},
+      term:{bg:"#1c1a17",fg:"#e8e0d0",cursor:"#d96a5e",red:"#d96a5e",green:"#8aa86b",yellow:"#d4a843",blue:"#6fa3b5",magenta:"#b08bb5",cyan:"#6fb5b0",dim:"#6b6253"}
+    }
+  },
+  {
+    name: "⑤ 青瓷黛色（国风·青绿）", desc: "以青瓷绿＋黛蓝为骨，浅雅深沉两态 · 清冷、文人画气质",
+    light: {
+      ui:{canvas:"#eef3ee",sidebar:"#e0e9e2",panel:"#d6e2d8",sel:"#cadfd6",border:"#c3d3c6",text:"#233430",muted:"#6f8279",brand:"#2f6d6a",brandFg:"#fff",purple:"#7a5a8a",green:"#3d8b7a",red:"#b5524a"},
+      term:{bg:"#e0e9e2",fg:"#233430",cursor:"#2f6d6a",red:"#b5524a",green:"#3d8b7a",yellow:"#b08642",blue:"#2f5d7c",magenta:"#7a5a8a",cyan:"#3d8b8b",dim:"#9aab9f"}
+    },
+    dark: {
+      ui:{canvas:"#15201e",sidebar:"#101917",panel:"#1d2a27",sel:"#293b37",border:"#2e3e3a",text:"#d4e0db",muted:"#7d918b",brand:"#5fb3a3",brandFg:"#15201e",purple:"#a585b5",green:"#6cc0ab",red:"#d4736a"},
+      term:{bg:"#15201e",fg:"#d4e0db",cursor:"#5fb3a3",red:"#d4736a",green:"#6cc0ab",yellow:"#d0a85a",blue:"#6a9bbf",magenta:"#a585b5",cyan:"#5fb3b3",dim:"#5a6b66"}
+    }
+  }
+];
+
+function box(c){ return `<span class="ico" style="background:${c}"></span>`; }
+
+function miniBerth(v){
+  const {ui,term}=v;
+  const t=(txt,c,b)=>`<span style="color:${c}${b?';font-weight:700':''}">${txt}</span>`;
+  const dim=txt=>`<span style="color:${term.fg};opacity:.5">${txt}</span>`;
+  const fg=txt=>`<span style="color:${term.fg}">${txt}</span>`;
+
+  const rail = `
+    <div class="rail" style="background:${ui.sidebar};color:${ui.text}">
+      <div class="logo">⚓ Berth</div>
+      <div class="navi" style="background:${ui.sel};color:${ui.brand}">${box(ui.brand)} Now</div>
+      <div class="navi">${box(ui.muted)} 项目</div>
+      <div class="navi">${box(ui.muted)} 全部会话</div>
+    </div>`;
+
+  const badge=(txt,bg,fgc)=>`<span class="badge" style="background:${bg};color:${fgc}">${txt}</span>`;
+  const claudeB=badge("CLAUDE", "color-mix(in srgb,"+ui.brand+" 18%, transparent)", ui.brand);
+  const cocoB=badge("COCO", "color-mix(in srgb,"+ui.purple+" 18%, transparent)", ui.purple);
+  const codexB=badge("CODEX", "color-mix(in srgb,"+ui.green+" 18%, transparent)", ui.green);
+
+  const row=(title,bdg,sel,unread)=>`
+    <div class="row" style="${sel?'background:'+ui.sel+';':''}color:${ui.text}">
+      ${unread?`<span class="dot" style="background:${ui.red}"></span>`:''}
+      <div class="t">${title}</div>
+      <div class="meta">${bdg}<span style="color:${ui.muted}">Code/berth</span></div>
+    </div>`;
+
+  const list = `
+    <div class="list" style="background:${ui.canvas};color:${ui.text}">
+      <div class="lhead" style="color:${ui.muted}">PROJECTS · BERTH</div>
+      ${row("请开始处理任务：「启动 berth 预加载…」",claudeB,true,false)}
+      ${row("这个 terminal 的颜色可以改吗？",claudeB,false,true)}
+      ${row("项目卡片上面的 border 没展示",claudeB,false,false)}
+      ${row("这些信息是哪里来的？",cocoB,false,false)}
+      ${row("Berth 会话管理 UI 和功能优化",codexB,false,false)}
+    </div>`;
+
+  const term_ = `
+    <div class="termpane" style="background:${term.bg};color:${term.fg}">${
+`${t("Claude Code",term.cyan,1)} ${dim("v2.1.177")}
+${dim("Opus 4.8 (1M) · Claude Max")}
+${dim("~/Code/berth")}
+
+${t("⚠",term.yellow)} ${t("6 setup issues: MCP",term.yellow,1)} ${dim("· /doctor")}
+
+${fg("› npm test")}
+${t("✓",term.green,1)} ${fg("149 passed")} ${dim("(12.6s)")}
+${t("✗",term.red,1)} ${fg("1 failing: ")}${t("unread badge",term.magenta)}
+${fg("› git status")}  ${t("feat/v1",term.blue,1)}
+
+${dim("▶▶")} ${t("bypass permissions on",term.red,1)}
+${fg("›")} ${t("▋",term.cursor)}`}</div>`;
+
+  return `<div class="win">${rail}${list}${term_}</div>`;
+}
+
+function swatches(v){
+  const u=v.ui, t=v.term;
+  const cells=[["canvas",u.canvas],["sidebar",u.sidebar],["panel",u.panel],["brand",u.brand],["term.bg",t.bg],["red",t.red],["green",t.green],["blue",t.blue]];
+  return `<div class="swatches">${cells.map(([n,c])=>`<span class="sw" style="background:${c}" title="${n} ${c}"></span>`).join("")}</div>`;
+}
+
+const root=document.getElementById("root");
+FAMILIES.forEach(f=>{
+  const el=document.createElement("div");
+  el.className="family";
+  el.innerHTML=`
+    <div class="fam-title">${f.name}</div>
+    <div class="fam-desc">${f.desc}</div>
+    <div class="pair">
+      <div><div class="mode-tag">☀ 浅色</div>${miniBerth(f.light)}${swatches(f.light)}</div>
+      <div><div class="mode-tag">🌙 深色</div>${miniBerth(f.dark)}${swatches(f.dark)}</div>
+    </div>`;
+  root.appendChild(el);
+});
+</script>
+</body>
+</html>

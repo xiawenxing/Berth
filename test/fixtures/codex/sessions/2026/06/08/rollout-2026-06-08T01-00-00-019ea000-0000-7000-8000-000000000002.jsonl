@@ -1,0 +1,2 @@
+{"timestamp":"2026-06-08T01:00:00Z","type":"session_meta","payload":{"id":"019ea000-0000-7000-8000-000000000002","cwd":"/Users/me/Code/y","originator":"codex-tui","base_instructions":{"text":"Imported from Claude Code session: /Users/me/.claude/projects/enc/cccc1111.jsonl"}}}
+{"timestamp":"2026-06-08T01:00:01Z","type":"event_msg","payload":{"type":"task_started","turn_id":"external-import-turn-1"}}

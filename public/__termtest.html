@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Berth terminal 配色预览</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Helvetica Neue", "PingFang SC", sans-serif;
+    background: #f3f4f6;
+    color: #111;
+    padding: 28px;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #14161a; color: #e6edf3; }
+  }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  .sub { font-size: 13px; opacity: .65; margin: 0 0 24px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+    gap: 22px;
+  }
+  .card {
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 18px rgba(0,0,0,.18);
+    border: 1px solid rgba(128,128,128,.25);
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px;
+    font-size: 12.5px; font-weight: 600;
+    letter-spacing: .01em;
+  }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .name { flex: 1; }
+  .hex { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; opacity: .55; font-weight: 500; }
+  .term {
+    font-family: "JetBrains Mono", "Cascadia Code", Menlo, Consolas, ui-monospace, monospace;
+    font-size: 12.5px;
+    line-height: 1.45;
+    padding: 14px 16px 16px;
+    white-space: pre-wrap;
+    min-height: 250px;
+  }
+  .palette { display: flex; height: 14px; }
+  .palette span { flex: 1; }
+  b { font-weight: 700; }
+  .dim { opacity: .55; }
+</style>
+</head>
+<body>
+  <h1>Berth 终端配色预览</h1>
+  <p class="sub">每张卡片 = 一套 xterm theme（background / foreground / cursor + 16 色 ANSI 调色板）。底部色条是该主题的 16 色。挑一个告诉我编号即可，我直接改进 <code>public/app.js</code>。</p>
+  <div class="grid" id="grid"></div>
+
+<script>
+// 每套主题：bg, fg, cursor, 然后 16 个 ANSI 色 (0-7 normal, 8-15 bright)
+const THEMES = [
+  {
+    id: 1, name: "① 当前（纯黑 / 现状）",
+    bg:"#000000", fg:"#e6edf3", cursor:"#e6edf3",
+    ansi:["#000000","#ff5f56","#5af78e","#f3f99d","#57c7ff","#ff6ac1","#9aedfe","#cccccc",
+          "#686868","#ff5f56","#5af78e","#f3f99d","#57c7ff","#ff6ac1","#9aedfe","#ffffff"]
+  },
+  {
+    id: 2, name: "② GitHub Dark（柔和深灰）",
+    bg:"#0d1117", fg:"#e6edf3", cursor:"#58a6ff",
+    ansi:["#484f58","#ff7b72","#3fb950","#d29922","#58a6ff","#bc8cff","#39c5cf","#b1bac4",
+          "#6e7681","#ffa198","#56d364","#e3b341","#79c0ff","#d2a8ff","#56d4dd","#f0f6fc"]
+  },
+  {
+    id: 3, name: "③ Dracula",
+    bg:"#282a36", fg:"#f8f8f2", cursor:"#f8f8f2",
+    ansi:["#21222c","#ff5555","#50fa7b","#f1fa8c","#bd93f9","#ff79c6","#8be9fd","#f8f8f2",
+          "#6272a4","#ff6e6e","#69ff94","#ffffa5","#d6acff","#ff92df","#a4ffff","#ffffff"]
+  },
+  {
+    id: 4, name: "④ One Dark（VS Code 暖深灰）",
+    bg:"#1e2127", fg:"#abb2bf", cursor:"#528bff",
+    ansi:["#2d3139","#e06c75","#98c379","#e5c07b","#61afef","#c678dd","#56b6c2","#abb2bf",
+          "#5c6370","#e06c75","#98c379","#e5c07b","#61afef","#c678dd","#56b6c2","#ffffff"]
+  },
+  {
+    id: 5, name: "⑤ Solarized Dark",
+    bg:"#002b36", fg:"#93a1a1", cursor:"#93a1a1",
+    ansi:["#073642","#dc322f","#859900","#b58900","#268bd2","#d33682","#2aa198","#eee8d5",
+          "#586e75","#cb4b16","#586e75","#657b83","#839496","#6c71c4","#93a1a1","#fdf6e3"]
+  },
+  {
+    id: 6, name: "⑥ Solarized Light（浅底）",
+    bg:"#fdf6e3", fg:"#586e75", cursor:"#586e75",
+    ansi:["#073642","#dc322f","#859900","#b58900","#268bd2","#d33682","#2aa198","#eee8d5",
+          "#002b36","#cb4b16","#586e75","#657b83","#839496","#6c71c4","#93a1a1","#fdf6e3"]
+  },
+  {
+    id: 7, name: "⑦ GitHub Light（纯净浅底）",
+    bg:"#ffffff", fg:"#24292f", cursor:"#0969da",
+    ansi:["#24292f","#cf222e","#1a7f37","#9a6700","#0969da","#8250df","#1b7c83","#6e7781",
+          "#57606a","#a40e26","#2da44e","#bf8700","#218bff","#a475f9","#3192aa","#8c959f"]
+  },
+  {
+    id: 8, name: "⑧ Tokyo Night（蓝紫深色）",
+    bg:"#1a1b26", fg:"#c0caf5", cursor:"#c0caf5",
+    ansi:["#15161e","#f7768e","#9ece6a","#e0af68","#7aa2f7","#bb9af7","#7dcfff","#a9b1d6",
+          "#414868","#f7768e","#9ece6a","#e0af68","#7aa2f7","#bb9af7","#7dcfff","#c0caf5"]
+  }
+];
+
+// 模拟 Claude Code 输出，用 ANSI index 标注颜色
+function render(t) {
+  const c = (i) => t.ansi[i];
+  // 行内染色 helper
+  const s = (txt, idx, bold) => `<span style="color:${c(idx)}${bold?';font-weight:700':''}">${txt}</span>`;
+  const fg = (txt) => `<span style="color:${t.fg}">${txt}</span>`;
+  const dim = (txt) => `<span style="color:${t.fg};opacity:.55">${txt}</span>`;
+
+  const body =
+`${s("Claude Code",6,1)} ${dim("v2.1.177")}
+${dim("Opus 4.8 (1M context) · Claude Max")}
+${dim("~/Documents/Code/berth")}
+
+${s("⚠",3)} ${s("3 setup issues: MCP",3,1)} ${dim("· /doctor")}
+
+${fg("› git status")}
+${s("On branch",4)} ${s("feat/v1",2,1)}
+${fg("Changes not staged for commit:")}
+  ${s("modified:",1)}   ${fg("public/app.js")}
+  ${s("modified:",1)}   ${fg("docs/ARCHITECTURE.md")}
+${s("?? ",2)}${fg("public/__termtest.html")}
+
+${fg("› npm test")}
+${s("✓",2,1)} ${fg("147 tests passed")} ${dim("(2.3s)")}
+${s("✗",1,1)} ${fg("1 failing:")} ${s("unread badge",5)}
+
+${dim("▶▶")} ${s("bypass permissions on",1,1)} ${dim("(shift+tab)")}
+${fg("›")} ${s("█",0).replace(c(0),t.cursor)}`;
+  return body;
+}
+
+const grid = document.getElementById('grid');
+for (const t of THEMES) {
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const headBg = t.bg;
+  const headFg = t.fg;
+  const dots = `<div class="dots"><span class="dot" style="background:${t.ansi[1]}"></span><span class="dot" style="background:${t.ansi[3]}"></span><span class="dot" style="background:${t.ansi[2]}"></span></div>`;
+
+  card.innerHTML = `
+    <div class="card-head" style="background:${t.bg};color:${t.fg};border-bottom:1px solid rgba(128,128,128,.2)">
+      ${dots}
+      <span class="name">${t.name}</span>
+      <span class="hex">bg ${t.bg}</span>
+    </div>
+    <div class="term" style="background:${t.bg};color:${t.fg}">${render(t)}</div>
+    <div class="palette">${t.ansi.map(h=>`<span style="background:${h}" title="${h}"></span>`).join('')}</div>
+  `;
+  grid.appendChild(card);
+}
+</script>
+</body>
+</html>
