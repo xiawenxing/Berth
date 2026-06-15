@@ -3,7 +3,6 @@ import type { Task } from '../data/types'
 import { manifestStrings, contextStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
 
 // Budget constants
-const PROGRESS_BUDGET = 600   // max chars per progress block
 const TOTAL_BUDGET = 3000     // max chars for total manifest text
 
 export interface TaskManifestInput {
@@ -71,15 +70,6 @@ export function buildManifest(input: ManifestInput, locale: Locale = DEFAULT_LOC
       if (detailPath) {
         lines.push(`${m.labelDetailDoc}${detailPath}`)
       }
-    }
-
-    if (todo.progress) {
-      const truncated = todo.progress.length > PROGRESS_BUDGET
-        ? todo.progress.slice(0, PROGRESS_BUDGET) + '…'
-        : todo.progress
-      lines.push('')
-      lines.push(m.sectionProgress)
-      lines.push(truncated)
     }
 
   } else {

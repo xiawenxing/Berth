@@ -3,7 +3,7 @@ import { buildManifest, detailRefToPath } from '../src/agent/manifest'
 
 const DOCS_ROOT = '/tmp/berth-test/docs'
 
-it('task manifest carries title, progress, detail path, and a progressive-disclosure instruction', () => {
+it('task manifest carries title, detail path, and a progressive-disclosure instruction', () => {
   const { text, addDirs } = buildManifest({
     kind: 'task', projectName: 'Berth', docsRoot: DOCS_ROOT,
     todo: { id: 'u1', title: '加新建会话', status: '进行中', priority: 'P1', projectId: 'p1', project: 'Berth',
@@ -11,7 +11,7 @@ it('task manifest carries title, progress, detail path, and a progressive-disclo
             updatedAt: 1, syncedAt: 0, deleted: false },
   })
   expect(text).toContain('加新建会话')
-  expect(text).toContain('2026-06-11: 起步')
+  expect(text).not.toContain('2026-06-11: 起步')   // A 不再单独注入；进展正本在上下文文档
   expect(text).toContain('20260611N3-berth-p0-foundations-plan.md')
   expect(text).toMatch(/Read|渐进|progressive/i)
   expect(addDirs).toContain(DOCS_ROOT)
@@ -39,7 +39,6 @@ it('renders the task manifest in English when locale=en', () => {
   expect(text).toContain('Below is a context index')
   expect(text).toContain('## Task')
   expect(text).toContain('- Title: light the red dot')
-  expect(text).toContain('## Progress')
   expect(text).not.toContain('上下文索引')   // no zh-CN leakage
 })
 
