@@ -377,9 +377,11 @@ api.post('/context/update', async (req, res) => {
 api.get('/todos', (_req, res) => {
   const store = getStore()
   const edgesMap = store.edgesByTodo()
+  const ddlMap = store.allTaskDdls()
   const todos = listTasks(store).map(t => ({
     id: t.id, title: t.title, status: t.status, priority: t.priority, projectId: t.projectId, project: t.project,
     detailDoc: t.detailDoc, progress: truncate(t.progress, 300),
+    ddl: ddlMap.get(t.id) ?? null,
     sessions: edgesMap.get(t.id) ?? [],
   }))
   res.json({ error: null, todos })
@@ -417,11 +419,16 @@ api.post('/todos', async (req, res) => {
   }
 })
 
-// Edit a task's title / priority / status.
+// Edit a task's title / priority / status / progress, and/or its local-only ddl (deadline).
 api.patch('/todos/:id', (req, res) => {
-  const { title, priority, status, progress } = req.body ?? {}
+  const { title, priority, status, progress, ddl } = req.body ?? {}
+  // ddl is a local overlay (not a TaskField): null clears, 'YYYY-MM-DD' sets, undefined leaves alone.
+  if (ddl !== undefined && ddl !== null && !/^\d{4}-\d{2}-\d{2}$/.test(ddl))
+    return res.status(400).json({ error: 'ddl must be null or YYYY-MM-DD' })
   try {
-    updateTask(getStore(), req.params.id, { title, priority, status, progress })
+    const store = getStore()
+    updateTask(store, req.params.id, { title, priority, status, progress })
+    if (ddl !== undefined) store.setTaskDdl(req.params.id, ddl)
     res.json({ ok: true })
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })

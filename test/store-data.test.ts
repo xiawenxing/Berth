@@ -93,6 +93,30 @@ describe('store data layer', () => {
     expect(db.getSetting('docsRoot')).toBe('/z')
   })
 
+  it('task ddl set / clear / allTaskDdls roundtrip', () => {
+    const db = openStore(':memory:')
+    db.insertTask(mkTask({ id: 'a' }))
+    db.insertTask(mkTask({ id: 'b' }))
+    expect(db.allTaskDdls().size).toBe(0)
+    db.setTaskDdl('a', '2026-06-16')
+    db.setTaskDdl('b', '2026-06-20')
+    expect(db.allTaskDdls().get('a')).toBe('2026-06-16')
+    db.setTaskDdl('a', '2026-06-18')   // overwrite
+    expect(db.allTaskDdls().get('a')).toBe('2026-06-18')
+    db.setTaskDdl('a', null)           // clear
+    expect(db.allTaskDdls().has('a')).toBe(false)
+    expect(db.allTaskDdls().get('b')).toBe('2026-06-20')
+  })
+
+  it('setTaskDdl rejects malformed dates', () => {
+    const db = openStore(':memory:')
+    db.insertTask(mkTask({ id: 'a' }))
+    expect(() => db.setTaskDdl('a', '2026-6-1')).toThrow()
+    expect(() => db.setTaskDdl('a', 'tomorrow')).toThrow()
+    expect(() => db.setTaskDdl('a', '')).not.toThrow()   // empty clears, like null
+    expect(db.allTaskDdls().has('a')).toBe(false)
+  })
+
   it('conflict add / open / resolve', () => {
     const db = openStore(':memory:')
     db.addConflict({ id: 'c1', entityKind: 'task', entityId: 't1', sourceId: 'feishu-main', berth: { title: 'B' }, external: { title: 'E' }, detectedAt: 10, resolved: false })

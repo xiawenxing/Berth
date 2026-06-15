@@ -56,6 +56,9 @@ CREATE TABLE IF NOT EXISTS app_setting (
   key   TEXT PRIMARY KEY,
   value TEXT
 );
+-- Local-only (NOT synced) per-task deadline overlay, keyed by task.id. ddl is a bare local date
+-- string 'YYYY-MM-DD'. Soft FK (foreign_keys is OFF repo-wide); orphan rows are harmless.
+CREATE TABLE IF NOT EXISTS task_ddl ( task_id TEXT PRIMARY KEY, ddl TEXT NOT NULL );
 `
 
 function cols(db: Database.Database, table: string): Set<string> {
@@ -340,6 +343,20 @@ export function dataMethods(db: Database.Database) {
     setSetting(key: string, value: string) {
       db.prepare(`INSERT INTO app_setting (key,value) VALUES (?,?)
         ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(key, value)
+    },
+
+    // ── task ddl (local-only deadline overlay, NOT synced) ────────────────────
+    setTaskDdl(id: string, date: string | null) {
+      const d = (date ?? '').trim()
+      if (!d) { db.prepare('DELETE FROM task_ddl WHERE task_id=?').run(id); return }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error(`invalid ddl date: ${date}`)
+      db.prepare(`INSERT INTO task_ddl (task_id,ddl) VALUES (?,?)
+        ON CONFLICT(task_id) DO UPDATE SET ddl=excluded.ddl`).run(id, d)
+    },
+    allTaskDdls(): Map<string, string> {
+      const m = new Map<string, string>()
+      for (const r of db.prepare('SELECT task_id, ddl FROM task_ddl').all() as any[]) m.set(r.task_id, r.ddl)
+      return m
     },
 
     // ── identity-migration helpers (used once by migrate.ts) ──────────────────

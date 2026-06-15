@@ -14,6 +14,8 @@ const mockSetAttach = vi.fn((..._a: any[]) => {})
 const mockSetTitleOverride = vi.fn((..._a: any[]) => {})
 const mockAddProjectPath = vi.fn((..._a: any[]) => {})
 const mockUpdateTaskFields = vi.fn((..._a: any[]) => {})
+const mockSetTaskDdl = vi.fn((..._a: any[]) => {})
+const mockTaskDdls = new Map<string, string>()
 const mockGetStore = vi.fn((..._a: any[]) => ({
   allPinnedSet: () => new Set<string>(),
   allAttachMap: () => new Map(),
@@ -30,6 +32,8 @@ const mockGetStore = vi.fn((..._a: any[]) => ({
   allProjectPaths: () => new Map(),
   addProjectPath: mockAddProjectPath,
   updateTaskFields: mockUpdateTaskFields,
+  setTaskDdl: mockSetTaskDdl,
+  allTaskDdls: () => mockTaskDdls,
   getSetting: (k: string) => mockSettings.get(k) ?? null,
   setSetting: (k: string, v: string) => { mockSettings.set(k, v) },
   allSessionImportDirs: () => [...mockImportDirs],
@@ -519,6 +523,66 @@ describe('GET /api/todos with sessions[]', () => {
     const ty = body.todos.find((t: any) => t.id === 'task_Y')
     expect(ty.sessions).toEqual([])
     expect(body).toHaveProperty('error')
+  })
+})
+
+// ── PATCH /api/todos/:id ddl + GET /api/todos ddl ─────────────────────────────
+describe('task ddl via /api/todos', () => {
+  it('GET /todos includes ddl from allTaskDdls (null when unset)', async () => {
+    const port = await listen()
+    const base = `http://localhost:${port}/api`
+    mockListTasks.mockReturnValueOnce([
+      { id: 'task_X', title: 'X', status: '待办', priority: 'P1', project: null, detailDoc: null, progress: null, updatedAt: 1, syncedAt: 1, deleted: false },
+      { id: 'task_Y', title: 'Y', status: '待办', priority: 'P1', project: null, detailDoc: null, progress: null, updatedAt: 1, syncedAt: 1, deleted: false },
+    ])
+    mockTaskDdls.clear(); mockTaskDdls.set('task_X', '2026-06-16')
+    const body = await (await fetch(`${base}/todos`)).json() as any
+    expect(body.todos.find((t: any) => t.id === 'task_X').ddl).toBe('2026-06-16')
+    expect(body.todos.find((t: any) => t.id === 'task_Y').ddl).toBeNull()
+  })
+
+  it('PATCH /todos/:id sets ddl', async () => {
+    mockSetTaskDdl.mockClear()
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/task_X`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ddl: '2026-06-20' }),
+    })
+    expect(res.status).toBe(200)
+    expect(mockSetTaskDdl).toHaveBeenCalledWith('task_X', '2026-06-20')
+  })
+
+  it('PATCH /todos/:id clears ddl with null', async () => {
+    mockSetTaskDdl.mockClear()
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/task_X`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ddl: null }),
+    })
+    expect(res.status).toBe(200)
+    expect(mockSetTaskDdl).toHaveBeenCalledWith('task_X', null)
+  })
+
+  it('PATCH /todos/:id rejects malformed ddl with 400', async () => {
+    mockSetTaskDdl.mockClear()
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/task_X`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ddl: 'next week' }),
+    })
+    expect(res.status).toBe(400)
+    expect(mockSetTaskDdl).not.toHaveBeenCalled()
+  })
+
+  it('PATCH /todos/:id without ddl key does not touch ddl', async () => {
+    mockSetTaskDdl.mockClear()
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/task_X`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: '进行中' }),
+    })
+    expect(res.status).toBe(200)
+    expect(mockSetTaskDdl).not.toHaveBeenCalled()
   })
 })
 
