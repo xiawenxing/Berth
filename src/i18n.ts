@@ -115,6 +115,8 @@ export interface ContextStrings {
   statusHeadingTask: string
   statusHeadingProject: string
   consolidatePrompt: (kind: 'task' | 'project', contextDoc: string, transcript: string) => string
+  updatePrompt: (kind: 'task' | 'project', contextDoc: string,
+                 src: { userInput: string; transcript: string; date: string }) => string
 }
 
 const CONTEXT: Record<Locale, ContextStrings> = {
@@ -165,6 +167,15 @@ const CONTEXT: Record<Locale, ContextStrings> = {
       `"status":"<刷新后的${kind === 'task' ? '计划/TODO 勾选与下一步' : '当前状态'}，<=300字；不确定则空字符串>"}\n` +
       `规则：不要臆造未发生的事；不要重写目标/背景等稳定内容；只如实总结。\n` +
       `\n=== 当前上下文文件 ===\n${contextDoc.slice(0, 4000)}\n\n=== 会话 transcript（节选）===\n${transcript.slice(0, 8000)}`,
+    updatePrompt: (kind, contextDoc, src) =>
+      `你在维护一个${kind === 'task' ? '任务' : '项目'}的上下文文件（markdown）。下面给你「当前上下文文件全文」` +
+      `${src.userInput ? '、用户补充的信息' : ''}${src.transcript ? '、本次会话 transcript' : ''}。\n` +
+      `请把新信息融进上下文：可改写/新增任意段（目标、背景、当前状态/计划、关键资料等都可改），` +
+      `并向「## 进展日志」追加一行 \`- ${src.date}: <一句话>\`。保持模板的标题结构。\n` +
+      `只输出更新后的**完整 markdown 文档全文**，不要任何解释、不要代码围栏。若没有任何需要更新的内容，原样输出当前全文。\n` +
+      (src.userInput ? `\n=== 用户补充的信息 ===\n${src.userInput.slice(0, 6000)}\n` : '') +
+      (src.transcript ? `\n=== 会话 transcript（节选）===\n${src.transcript.slice(0, 8000)}\n` : '') +
+      `\n=== 当前上下文文件全文 ===\n${contextDoc.slice(0, 8000)}`,
   },
   en: {
     compactRules: [
@@ -213,6 +224,15 @@ const CONTEXT: Record<Locale, ContextStrings> = {
       `"status":"<refreshed ${kind === 'task' ? 'plan/TODO checkmarks and next step' : 'current status'}, <=300 chars; empty string if unsure>"}\n` +
       `Rules: do not invent things that did not happen; do not rewrite stable content like goal/background; summarize faithfully only.\n` +
       `\n=== Current context file ===\n${contextDoc.slice(0, 4000)}\n\n=== Session transcript (excerpt) ===\n${transcript.slice(0, 8000)}`,
+    updatePrompt: (kind, contextDoc, src) =>
+      `You maintain the context file (markdown) of a ${kind}. Below is the FULL current context file` +
+      `${src.userInput ? ', user-supplied info' : ''}${src.transcript ? ', this session transcript' : ''}.\n` +
+      `Fold the new info into the context: you may rewrite/add ANY section (goal, background, status/plan, key references, etc.), ` +
+      `and append one line to "## Progress log": \`- ${src.date}: <one line>\`. Keep the template heading structure.\n` +
+      `Output ONLY the FULL updated markdown document, with no explanation and no code fences. If nothing needs updating, output the current full text unchanged.\n` +
+      (src.userInput ? `\n=== User-supplied info ===\n${src.userInput.slice(0, 6000)}\n` : '') +
+      (src.transcript ? `\n=== Session transcript (excerpt) ===\n${src.transcript.slice(0, 8000)}\n` : '') +
+      `\n=== Full current context file ===\n${contextDoc.slice(0, 8000)}`,
   },
 }
 
