@@ -59,7 +59,7 @@ export async function runContextUpdate(args: {
     runAgent,
   )
   if (!newDoc) return { ok: false, reason: 'agent produced no usable update' }
-  const msg = `context(${target.kind} ${target.key}): ${args.userInput?.trim() ? '补充上下文' : '刷新上下文'}`
+  const msg = `context(${target.kind} ${target.key}): ${args.userInput?.trim() ? 'supplement' : 'refresh'}`
   docStore.writeDoc(target.abs, newDoc, { message: msg })
   const cfg = args.getCfg()
   const rotated = rotateContextDocOnDisk(docStore, target.abs, { maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })

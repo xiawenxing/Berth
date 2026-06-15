@@ -37,8 +37,8 @@ export async function updateContext(input: ContextUpdateInput, runAgentFn: RunAg
   try {
     const raw = await runAgentFn(prompt, { cli: input.agent.cli, model: input.agent.model || undefined, timeoutMs: 120000 })
     const newDoc = stripCodeFence(raw)
-    // Guard: empty, or a catastrophic truncation that would gut the doc → refuse to write.
-    if (!newDoc || newDoc.length < Math.min(40, input.contextDoc.length / 2)) return { newDoc: '', diff: EMPTY }
+    // Guard: empty, or shorter than 40% of the source (a truncated/gutted reply) → refuse to write.
+    if (!newDoc || newDoc.length < Math.max(40, input.contextDoc.length * 0.4)) return { newDoc: '', diff: EMPTY }
     const diff = diffSections(input.contextDoc, newDoc)
     if (!diff.changed.length && !diff.added.length && !diff.removed.length) return { newDoc: '', diff: EMPTY }
     return { newDoc, diff }

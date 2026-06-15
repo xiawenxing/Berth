@@ -11,7 +11,7 @@ vi.mock('../src/agent/index', () => ({
   runAgent: (...args: any[]) => runAgentMock(...args),
 }))
 
-import { resolveSessionContextTarget, runConsolidation } from '../src/server/context-consolidate-service'
+import { resolveSessionContextTarget, runConsolidation, runContextUpdate, type ContextTarget } from '../src/server/context-consolidate-service'
 import { DocStore } from '../src/data/docstore'
 import { contextStrings } from '../src/i18n'
 
@@ -102,5 +102,60 @@ describe('runConsolidation', () => {
     })
     expect(outcome.ok).toBe(false)
     expect(outcome.reason).toBe('agent produced no usable update')
+  })
+})
+
+describe('runContextUpdate', () => {
+  beforeEach(() => runAgentMock.mockReset())
+
+  it('userInput-only: runs the updater and reports the section diff (git off)', async () => {
+    const ds = new DocStore(tmpRoot())
+    const c = contextStrings('zh-CN')
+    // The mocked agent appends a new line under the progress-log section of whatever doc it's given.
+    runAgentMock.mockImplementation(async () => {
+      const ref = ds.taskDocRef('u2')
+      const abs = ds.resolveDocPath(ref)!
+      const doc = readFileSync(abs, 'utf8')
+      const lines = doc.split('\n')
+      const idx = lines.findIndex(l => l.trim() === c.logHeading.trim())
+      lines.splice(idx + 1, 0, '- 2026-06-16: did the userInput thing')
+      return lines.join('\n')
+    })
+
+    const target: ContextTarget = {
+      kind: 'task', key: 'u2', title: 'UserInput Task', projectName: 'P',
+      ref: ds.taskDocRef('u2'), abs: ds.resolveDocPath(ds.taskDocRef('u2'))!,
+    }
+
+    const outcome = await runContextUpdate({
+      target, docStore: ds, locale: 'zh-CN', agent: { cli: 'claude' },
+      userInput: '补充一些信息', date: '2026-06-16', getCfg,
+    })
+
+    expect(outcome.ok).toBe(true)
+    expect(runAgentMock).toHaveBeenCalledOnce()
+    expect(outcome.changed).toContain(c.logHeading.replace(/^#+\s*/, '').trim())
+    expect(outcome.added ?? []).toEqual([])
+    expect(outcome.removed ?? []).toEqual([])
+    // The new line was actually written to disk.
+    const abs = ds.resolveDocPath(ds.taskDocRef('u2'))!
+    expect(readFileSync(abs, 'utf8')).toContain('did the userInput thing')
+  })
+
+  it('no input guard: returns !ok with reason "no input or transcript" when neither userInput nor transcript is given', async () => {
+    const ds = new DocStore(tmpRoot())
+    const target: ContextTarget = {
+      kind: 'task', key: 'u3', title: 'Guard Task', projectName: null,
+      ref: ds.taskDocRef('u3'), abs: ds.resolveDocPath(ds.taskDocRef('u3'))!,
+    }
+
+    const outcome = await runContextUpdate({
+      target, docStore: ds, locale: 'zh-CN', agent: { cli: 'claude' },
+      date: '2026-06-16', getCfg,
+    })
+
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('no input or transcript')
+    expect(runAgentMock).not.toHaveBeenCalled()
   })
 })
