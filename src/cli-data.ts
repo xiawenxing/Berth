@@ -4,7 +4,7 @@
 
 export interface ParsedFlags { flags: Record<string, string | boolean>; pos: string[] }
 
-const BOOL_FLAGS = new Set(['json', 'confirm', 'create-option'])
+const BOOL_FLAGS = new Set(['json', 'confirm', 'create-option', 'print'])
 
 /** Tiny flag parser: `--key val`, `--bool`, and positionals. Side-effect-free. */
 export function parseFlags(argv: string[]): ParsedFlags {
@@ -115,8 +115,9 @@ const TASK_HELP = `berth task — manage tasks (talks to a running \`berth start
   berth task add "<text>" [--project P] [--confirm] [--create-option]
   berth task done <id|title>                              Mark a task done
   berth task status <id|title> <status>                   Set status
-  berth task set <id|title> [--title T] [--status S] [--priority P] [--progress TEXT]
-  berth task progress <id|title> "<text>"                 Record/replace the progress note
+  berth task set <id|title> [--title T] [--status S] [--priority P]
+  berth task log <id|title> "<text>"                      Append a dated entry to the task's progress log
+  berth task doc <id|title> [--print]                     Print the task's context-doc path (and body with --print)
   berth task rm <id|title>                                Delete a task
   berth task sync [--source ID]                           Push local edits + pull external changes
 
@@ -173,17 +174,27 @@ export async function runTaskCli(argv: string[]): Promise<void> {
       if (flags.title) body.title = flags.title
       if (flags.status) body.status = flags.status
       if (flags.priority) body.priority = flags.priority
-      if (typeof flags.progress === 'string') body.progress = flags.progress
-      if (!Object.keys(body).length) throw new Error('用 --title / --status / --priority / --progress 指定要修改的字段。')
+      if (!Object.keys(body).length) throw new Error('用 --title / --status / --priority 指定要修改的字段。')
       await patch(base, `/api/todos/${encodeURIComponent(t.id)}`, body)
       console.log(`✓ 已更新  ${t.title}`)
       return
     }
-    case 'progress': {
-      const text = pos.slice(1).join(' ')
+    case 'progress':
+      throw new Error("'berth task progress' 已废弃：进展现在追加到任务上下文文档的「进展日志」。\n请改用：  berth task log <id|title> \"<进展文本>\"")
+    case 'doc': {
+      const t = await resolveOne(base, pos.join(' '))
+      const { ref } = await post(base, '/api/context', { kind: 'task', key: t.id, title: t.title })
+      const d = await json(base, `/api/doc?path=${encodeURIComponent(ref)}`)
+      console.log(d.path)
+      if (flags.print) { console.log(''); console.log(d.content) }
+      return
+    }
+    case 'log': {
+      const text = pos.slice(1).join(' ').trim()
+      if (!text) throw new Error('用法：berth task log <id|title> "<进展文本>"')
       const t = await resolveOne(base, pos[0] ?? '')
-      await patch(base, `/api/todos/${encodeURIComponent(t.id)}`, { progress: text })
-      console.log(`✓ 已记录进展  ${t.title}`)
+      const r = await post(base, '/api/context/log', { kind: 'task', key: t.id, text })
+      console.log(`✓ 已追加进展  ${t.title}${r.rotated ? '（已滚动归档）' : ''}`)
       return
     }
     case 'rm': {

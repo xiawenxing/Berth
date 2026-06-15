@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseFlags, selectTask, pickDoneStatus, formatTaskLine, type TaskLite } from '../src/cli-data'
+import { parseFlags, selectTask, pickDoneStatus, formatTaskLine, runTaskCli, type TaskLite } from '../src/cli-data'
 
 const T = (over: Partial<TaskLite>): TaskLite => ({ id: 'id', title: 't', status: '待办', priority: 'P1', project: null, ...over })
 
@@ -48,5 +48,11 @@ describe('formatTaskLine', () => {
     expect(line).toContain('Berth')
     expect(line).toContain('写文档')
     expect(line).toContain('[abcdef12]')
+  })
+})
+
+describe('berth task progress deprecation', () => {
+  it('throws pointing at `berth task log` before any I/O', async () => {
+    await expect(runTaskCli(['progress', 'some-task', 'hello'])).rejects.toThrow(/berth task log/)
   })
 })

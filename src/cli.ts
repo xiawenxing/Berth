@@ -40,7 +40,7 @@ const HELP = `berth — agent-session cockpit
 
 Usage:
   berth start [options]   Start the local server and open the UI in your browser
-  berth task ...          Manage tasks (list/add/done/status/set/progress/rm/sync) — needs a running server
+  berth task ...          Manage tasks (list/add/done/status/set/log/doc/rm/sync) — needs a running server
   berth project ...       Manage projects (list/add) — needs a running server
   berth skill install     Install the bundled Berth skill into ~/.claude/skills (use --force to overwrite)
   berth --help            Show this help
