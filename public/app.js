@@ -946,7 +946,8 @@ async function consolidateSession(sessionId, btn) {
     const res = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/consolidate', { method: 'POST' });
     const d = await res.json().catch(() => ({ error: res.statusText }));
     if (!res.ok) { alert('刷新上下文失败: ' + (d.error || res.statusText)); return; }
-    alert('已刷新上下文' + (d.progress ? '：' + d.progress : '（无新增进展）'));
+    const touched = [...(d.changed || []), ...(d.added || [])];
+    alert('已刷新上下文' + (touched.length ? '：' + touched.join('、') : '（无新增进展）'));
   } catch (e) {
     alert('刷新上下文失败: ' + e.message);
   } finally {
@@ -3050,6 +3051,130 @@ function closeDocEditor() {
 
 // ── Project Workspace ──────────────────────────────────────────────────────
 
+/**
+ * Context section, grouped by task. Project context sits on top; each task gets a "▸ 任务名"
+ * subheading with its own context-doc row. Every context row carries an inline "＋补充" button.
+ */
+function buildContextSection(name, projTodos) {
+  const sec = document.createElement('div');
+  sec.className = 'ws-section';
+  sec.innerHTML = `<div class="ws-section-title">${icon('paperclip')} 上下文</div>`;
+
+  // Project context (top).
+  sec.appendChild(buildContextRow({
+    label: '项目上下文', cls: 'proj', kind: 'project', key: name, title: name,
+  }));
+
+  // One group per task.
+  for (const t of projTodos) {
+    const grp = document.createElement('div');
+    grp.className = 'ctx-group-title';
+    grp.textContent = '▸ ' + t.title;
+    sec.appendChild(grp);
+    sec.appendChild(buildContextRow({
+      label: '任务上下文', cls: 'task', kind: 'task', key: t.id, title: t.title,
+    }));
+  }
+  return sec;
+}
+
+/** One clickable context-doc row (opens the doc, lazily creating it) + its inline supplement control. */
+function buildContextRow(opts) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ctx-row-wrap';
+  const row = document.createElement('div');
+  row.className = 'doc-link ctx-row';
+  row.innerHTML = `<span class="doc-link-icon">${icon('file-text')}</span>` +
+    `<span class="doc-link-title ${opts.cls === 'proj' ? 'ctx-proj' : ''}">${escHtml(opts.label)}</span>`;
+  // Open the doc on click (lazily create via /api/context if it doesn't exist yet).
+  row.addEventListener('click', async () => {
+    try {
+      const r = await fetch('/api/context', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: opts.kind, key: opts.key, title: opts.title }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert('打开上下文失败: ' + (d.error || r.statusText)); return; }
+      openDocEditor(d.ref, opts.title + ' — ' + opts.label);
+    } catch (e) { alert('打开上下文失败: ' + e.message); }
+  });
+  addSupplementButton(row, opts);
+  wrap.appendChild(row);
+  return wrap;
+}
+
+/**
+ * Add a "＋补充" button to a context row. Clicking toggles an inline panel: a textarea for
+ * prompt/data/info, then POSTs to /api/context/update so the backend agent folds it into the doc.
+ * Result shows which sections changed + a revert link.
+ */
+function addSupplementButton(row, opts) {
+  const btn = document.createElement('button');
+  btn.className = 'ctx-supplement-btn';
+  btn.title = '补充上下文：给 agent 一些信息，它据此更新这份上下文';
+  btn.innerHTML = `${icon('plus')} 补充`;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();                                    // don't trigger the row's open-doc click
+    const wrap = row.parentElement;
+    const existing = wrap.querySelector('.ctx-supplement-panel');
+    if (existing) { existing.remove(); return; }            // toggle off
+    const panel = buildSupplementPanel(opts);
+    wrap.appendChild(panel);
+    panel.querySelector('textarea').focus();
+  });
+  row.appendChild(btn);
+}
+
+function buildSupplementPanel(opts) {
+  const panel = document.createElement('div');
+  panel.className = 'ctx-supplement-panel';
+  panel.innerHTML = `
+    <textarea class="ctx-supplement-input" placeholder="告诉 agent 要补充/修正什么（prompt / 数据 / 信息）…"></textarea>
+    <div class="ctx-supplement-actions">
+      <span class="ctx-supplement-status"></span>
+      <button class="ctx-supplement-send">${icon('arrow-right')} 让 agent 更新</button>
+    </div>`;
+  const send = panel.querySelector('.ctx-supplement-send');
+  const statusEl = panel.querySelector('.ctx-supplement-status');
+  send.addEventListener('click', async () => {
+    const userInput = panel.querySelector('textarea').value.trim();
+    if (!userInput) { statusEl.textContent = '先写点要补充的内容'; return; }
+    send.disabled = true; statusEl.textContent = 'agent 更新中…';
+    try {
+      const r = await fetch('/api/context/update', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: opts.kind, key: opts.key, userInput }),
+      });
+      const d = await r.json();
+      if (!r.ok) { statusEl.textContent = '失败: ' + (d.error || r.statusText); send.disabled = false; return; }
+      renderSupplementResult(panel, opts, d);
+    } catch (e) { statusEl.textContent = '失败: ' + e.message; send.disabled = false; }
+  });
+  return panel;
+}
+
+/** After a successful update: show changed sections + 查看全文 / 回滚此次. */
+function renderSupplementResult(panel, opts, d) {
+  const touched = [...(d.changed || []), ...(d.added || [])];
+  const summary = touched.length ? '已更新：' + touched.join('、') : '无实质改动';
+  panel.innerHTML =
+    `<div class="ctx-supplement-done">✅ ${escHtml(summary)}</div>` +
+    `<div class="ctx-supplement-links">` +
+    `<a class="ctx-link-open">查看全文</a>` +
+    (d.commit ? ` · <a class="ctx-link-revert">回滚此次</a>` : '') +
+    `</div>`;
+  panel.querySelector('.ctx-link-open').addEventListener('click', () => openDocEditor(d.ref, opts.title + ' — ' + opts.label));
+  const revert = panel.querySelector('.ctx-link-revert');
+  if (revert) revert.addEventListener('click', async () => {
+    if (!confirm('回滚此次 agent 更新？')) return;
+    const r = await fetch('/api/doc/revert', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commit: d.commit }),
+    });
+    const rd = await r.json();
+    panel.querySelector('.ctx-supplement-done').textContent = r.ok ? '↩ 已回滚' : '回滚失败: ' + (rd.error || r.statusText);
+  });
+}
+
 function renderWorkspace(name) {
   const container = document.getElementById('workspace-content');
   container.innerHTML = '';
@@ -3102,48 +3227,8 @@ function renderWorkspace(name) {
   }
   container.appendChild(todoSection);
 
-  // ── Section 2: 上下文
-  const ctxSection = document.createElement('div');
-  ctxSection.className = 'ws-section';
-  ctxSection.innerHTML = `<div class="ws-section-title">${icon('paperclip')} 上下文</div>`;
-
-  // 项目自身的上下文文件（projects/<name>/index.md）。点击：先 ensure 再打开。
-  const projCtx = document.createElement('div');
-  projCtx.className = 'doc-list';
-  const projLink = document.createElement('div');
-  projLink.className = 'doc-link';
-  projLink.innerHTML = `<span class="doc-link-icon">${icon('file-text')}</span><span class="doc-link-title">项目上下文</span>`;
-  projLink.title = '查看/编辑该项目的上下文文件（不存在则自动创建）';
-  projLink.addEventListener('click', async () => {
-    try {
-      const r = await fetch('/api/context', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'project', key: name, title: name }),
-      });
-      const d = await r.json();
-      if (!r.ok) { alert('创建上下文失败: ' + (d.error || r.statusText)); return; }
-      openDocEditor(d.ref, name + ' — 项目上下文');
-    } catch (e) { alert('创建上下文失败: ' + e.message); }
-  });
-  projCtx.appendChild(projLink);
-  ctxSection.appendChild(projCtx);
-
-  // 任务详情文档（保持原行为）
-  const docTodos = projTodos.filter(t => t.detailDoc);
-  if (docTodos.length > 0) {
-    const docList = document.createElement('div');
-    docList.className = 'doc-list';
-    for (const t of docTodos) {
-      const link = document.createElement('div');
-      link.className = 'doc-link';
-      link.innerHTML = `<span class="doc-link-icon">${icon('file-text')}</span><span class="doc-link-title">${escHtml(t.title)}</span>`;
-      link.title = '点击在 Berth 内编辑/预览';
-      link.addEventListener('click', () => openDocEditor(t.detailDoc, t.title));
-      docList.appendChild(link);
-    }
-    ctxSection.appendChild(docList);
-  }
-  container.appendChild(ctxSection);
+  // ── Section 2: 上下文 (grouped by task — layout C)
+  container.appendChild(buildContextSection(name, projTodos));
 
   // ── Section 3: 会话 (nested under tasks)
   const sessSection = document.createElement('div');
