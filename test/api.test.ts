@@ -573,7 +573,7 @@ describe('POST /api/context', () => {
 // ── POST /api/sessions/:id/consolidate ───────────────────────────────────────
 describe('POST /api/sessions/:id/consolidate', () => {
   it('consolidates a known session (200)', async () => {
-    mockRunConsolidation.mockResolvedValueOnce({ ok: true, progress: 'p', status: 's', rotated: false })
+    mockRunConsolidation.mockResolvedValueOnce({ ok: true, changed: ['进展日志'], added: [], removed: [], commit: 'abc1234', rotated: false })
     mockGetCache.mockReturnValue([
       { sessionId: 's1', cli: 'claude', cwd: '/x', title: 'old', updatedAt: 100, deleted: false, copies: [], contentSourcePath: '/tmp/session.jsonl' },
     ])
@@ -585,8 +585,10 @@ describe('POST /api/sessions/:id/consolidate', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as any
     expect(body.ok).toBe(true)
-    expect(body.progress).toBe('p')
-    expect(body.status).toBe('s')
+    expect(body.changed).toEqual(['进展日志'])
+    expect(body.added).toEqual([])
+    expect(body.removed).toEqual([])
+    expect(body.commit).toBe('abc1234')
     expect(body.rotated).toBe(false)
   })
 

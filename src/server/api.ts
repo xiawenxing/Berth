@@ -528,6 +528,6 @@ api.post('/sessions/:id/consolidate', async (req, res) => {
       getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
     })
     if (!outcome.ok) return res.status(409).json({ error: outcome.reason })
-    res.json({ ok: true, progress: outcome.progress, status: outcome.status, rotated: outcome.rotated })
+    res.json({ ok: true, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
   } catch (e: any) { res.status(502).json({ error: String(e?.message ?? e) }) }
 })

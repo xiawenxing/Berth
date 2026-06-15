@@ -1,13 +1,13 @@
 // src/server/context-consolidate-service.ts
-// Server glue for §7 Phase-2 consolidation: resolve a session to its task/project context file,
-// read the transcript, run the headless consolidation, and write the result back deterministically.
+// Server glue for §7 context updates: resolve a session to its task/project context file, read the
+// transcript, run the unified updater, and write the result back deterministically (then rotate).
 import { openSync, readSync, closeSync, existsSync, readFileSync } from 'node:fs'
 import type { DocStore } from '../data/docstore'
 import { ensureContextDoc, rotateContextDocOnDisk } from '../data/context-doc'
-import { applyConsolidation } from '../data/context-apply'
-import { consolidateContext } from '../agent/context-consolidate'
+import { updateContext } from '../agent/context-update'
+import { headCommit } from '../data/doc-git'
 import { runAgent, type BerthAgent } from '../agent/index'
-import { contextStrings, type Locale } from '../i18n'
+import { type Locale } from '../i18n'
 
 export interface ContextTarget {
   kind: 'task' | 'project'; key: string; title: string; projectName: string | null; ref: string; abs: string
@@ -29,7 +29,7 @@ export function resolveSessionContextTarget(session: SessionLite, task: TaskLite
   return null
 }
 
-function readTranscript(path: string | null | undefined, maxBytes = 200_000): string {
+export function readTranscript(path: string | null | undefined, maxBytes = 200_000): string {
   if (!path || !existsSync(path)) return ''
   try {
     const fd = openSync(path, 'r'); const b = Buffer.alloc(maxBytes)
@@ -38,27 +38,43 @@ function readTranscript(path: string | null | undefined, maxBytes = 200_000): st
   } catch { return '' }
 }
 
-export interface ConsolidationOutcome { ok: boolean; reason?: string; progress?: string; status?: string; rotated?: boolean }
+export interface ContextUpdateOutcome {
+  ok: boolean; reason?: string
+  changed?: string[]; added?: string[]; removed?: string[]
+  commit?: string | null; rotated?: boolean
+}
 
-/** Full consolidation for one session. */
+/** Core: run the unified updater against a resolved context target, write + rotate, report the diff. */
+export async function runContextUpdate(args: {
+  target: ContextTarget; docStore: DocStore; locale: Locale; agent: BerthAgent
+  userInput?: string; transcript?: string; date: string
+  getCfg: () => { logMaxLines: number; logKeep: number }
+}): Promise<ContextUpdateOutcome> {
+  const { target, docStore, locale, agent } = args
+  if (!args.userInput?.trim() && !args.transcript?.trim()) return { ok: false, reason: 'no input or transcript' }
+  ensureContextDoc(docStore, target.kind, target.key, { title: target.title, projectName: target.projectName, locale })
+  const contextDoc = readFileSync(target.abs, 'utf8')
+  const { newDoc, diff } = await updateContext(
+    { kind: target.kind, contextDoc, userInput: args.userInput, transcript: args.transcript, date: args.date, locale, agent },
+    runAgent,
+  )
+  if (!newDoc) return { ok: false, reason: 'agent produced no usable update' }
+  const msg = `context(${target.kind} ${target.key}): ${args.userInput?.trim() ? '补充上下文' : '刷新上下文'}`
+  docStore.writeDoc(target.abs, newDoc, { message: msg })
+  const cfg = args.getCfg()
+  const rotated = rotateContextDocOnDisk(docStore, target.abs, { maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })
+  return { ok: true, changed: diff.changed, added: diff.added, removed: diff.removed, commit: headCommit(docStore.root), rotated }
+}
+
+/** Session wrapper: resolve the session's target, read its transcript, run the update. */
 export async function runConsolidation(args: {
   session: SessionLite; task: TaskLite | null; docStore: DocStore; locale: Locale; agent: BerthAgent
   getCfg: () => { logMaxLines: number; logKeep: number }
-}): Promise<ConsolidationOutcome> {
-  const { session, task, docStore, locale, agent } = args
-  const target = resolveSessionContextTarget(session, task, docStore)
+}): Promise<ContextUpdateOutcome> {
+  const target = resolveSessionContextTarget(args.session, args.task, args.docStore)
   if (!target) return { ok: false, reason: 'session not linked to a task or project' }
-  ensureContextDoc(docStore, target.kind, target.key, { title: target.title, projectName: target.projectName, locale })
-  const transcript = readTranscript(session.contentSourcePath)
+  const transcript = readTranscript(args.session.contentSourcePath)
   if (!transcript) return { ok: false, reason: 'no readable transcript' }
-  const contextDoc = readFileSync(target.abs, 'utf8')
-  const result = await consolidateContext({ kind: target.kind, contextDoc, transcript, locale, agent }, runAgent)
-  if (!result.progress && !result.status) return { ok: false, reason: 'agent produced nothing to write' }
-  const c = contextStrings(locale)
-  const statusHeading = target.kind === 'task' ? c.statusHeadingTask : c.statusHeadingProject
-  const newDoc = applyConsolidation(contextDoc, result, { logHeading: c.logHeading, statusHeading })
-  docStore.writeDoc(target.abs, newDoc)
-  const cfg = args.getCfg()
-  const rotated = rotateContextDocOnDisk(docStore, target.abs, { maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })
-  return { ok: true, progress: result.progress, status: result.status, rotated }
+  const date = new Date().toISOString().slice(0, 10)
+  return runContextUpdate({ target, docStore: args.docStore, locale: args.locale, agent: args.agent, transcript, date, getCfg: args.getCfg })
 }
