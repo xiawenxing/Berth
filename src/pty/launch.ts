@@ -2,7 +2,7 @@ import { spawn, type IPty } from 'node-pty'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { resolveAgentBinary } from './binaries'
+import { resolveAgentBinary, codexSupportsHookTrust } from './binaries'
 import { ensureClaudeTrust } from './trust'
 import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
 import type { AgentCli, LogicalSession } from '../types'
@@ -106,16 +106,23 @@ export function launchFresh(cli: AgentCli, o: FreshOpts): IPty {
   const cwd = existsSync(o.cwd) ? o.cwd : homedir()
   const bin = resolveAgentBinary(cli)
   if (cli === 'claude') ensureClaudeTrust(cwd)   // interactive PTY → trust dialog isn't auto-skipped
+  // codex's context hook rides `--dangerously-bypass-hook-trust`; on builds that lack the flag,
+  // passing it aborts the launch. Drop context injection for this launch rather than crash — the
+  // session still starts, just without the silent SessionStart context.
+  let opts = o
+  if (cli === 'codex' && o.injectFile && !codexSupportsHookTrust(bin)) {
+    opts = { ...o, injectFile: undefined }
+  }
   const env = { ...(process.env as any) }
-  if (cli === 'codex' && o.injectFile) {
+  if (cli === 'codex' && opts.injectFile) {
     ensureCodexBerthHookProfile()
-    env.BERTH_CONTEXT_FILE = o.injectFile               // codex hook cats raw text as context
+    env.BERTH_CONTEXT_FILE = opts.injectFile            // codex hook cats raw text as context
   }
-  if (cli === 'coco' && o.injectFile) {
+  if (cli === 'coco' && opts.injectFile) {
     ensureCocoBerthHook()                               // register the session_start context hook (idempotent)
-    env.BERTH_CONTEXT_FILE = writeCocoContextPayload(o.injectFile)   // coco hook cats a JSON envelope
+    env.BERTH_CONTEXT_FILE = writeCocoContextPayload(opts.injectFile)   // coco hook cats a JSON envelope
   }
-  return spawn(bin, freshArgv(cli, o), {
-    name: 'xterm-color', cols: o.cols ?? 120, rows: o.rows ?? 30, cwd, env,
+  return spawn(bin, freshArgv(cli, opts), {
+    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env,
   })
 }

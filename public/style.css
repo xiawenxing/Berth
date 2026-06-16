@@ -486,6 +486,10 @@ html, body {
   padding: 4px 0;
   font-size: 12px;
 }
+.dropdown-menu.todo-edit-menu {
+  min-width: 220px;
+  max-height: min(420px, calc(100vh - 24px));
+}
 .dropdown-menu .menu-section {
   padding: 4px 8px 2px;
   font-size: 10px;
@@ -1478,29 +1482,30 @@ html, body {
 
 .todo-row {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 9px 10px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
   border-radius: 0;
   transition: background 0.1s;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
-/* Forces a flex line break so the action cluster drops to its own footer row,
-   leaving the task title the full card width (no narrow-ribbon squeeze). The
-   title keeps its default flex:1 so it shares the first line with the chips. */
-.todo-row-break {
-  flex-basis: 100%;
-  width: 100%;
-  height: 0;
-  margin: 0;
+/* 收起态单行：标题 flex:1 吃掉空白，把截止/会话数/⋯/起会话 顶到行尾。
+   起会话默认只显图标，hover 卡片时展开文字，避免一个大按钮把卡片撑空。 */
+.todo-item .launch-sess-btn.primary {
+  min-height: 26px;
+  padding: 3px 8px;
+  font-size: 12px;
+  gap: 0;
 }
-/* Footer cluster (below the break): status glyph / link-count / chevron sit on
-   the left, ⋯ + 起会话 get pushed to the right. */
-.todo-row .todo-menu-btn { margin-left: auto; }
-.todo-row .launch-sess-btn,
-.todo-row .todo-expand-hint,
-.todo-row .todo-sess-count { align-self: center; }
+.todo-item .launch-sess-btn .launch-lbl {
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.18s;
+}
+.todo-item:hover .launch-sess-btn.primary { gap: 5px; }
+.todo-item:hover .launch-sess-btn .launch-lbl { max-width: 64px; }
 
 .todo-row:hover {
   background: color-mix(in oklab, var(--bg3) 84%, var(--text) 16%);
@@ -1530,7 +1535,9 @@ html, body {
   font-size: 12px;
   color: var(--text);
   line-height: 1.5;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .todo-title-input {
   display: block;
@@ -2294,7 +2301,7 @@ html, body {
   font-size: 13.5px;
 }
 
-/* ⋯ task edit menu trigger (改名 / 优先级 / 删除) */
+/* ⋯ task edit menu trigger (截止日期 / 状态 / 优先级 / 删除) */
 .todo-menu-btn {
   background: transparent;
   border: 1px solid transparent;

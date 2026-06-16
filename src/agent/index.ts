@@ -1,5 +1,4 @@
-import { execFile, spawn } from 'node:child_process'
-import { promisify } from 'node:util'
+import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,8 +7,9 @@ import { HEADLESS_CLIS } from '../data/agent-config'
 import { berthAgentCwd } from '../paths'
 import type { AgentCli } from '../types'
 import { titleInputFromTranscript } from './transcript'
-const exec = promisify(execFile)
+import { classifyAgentFailure, looksLikeAuthBlock, InternalAgentBlocked, isInternalAgentBlocked } from './agent-failure'
 const BUF = 8 * 1024 * 1024
+const STDERR_CAP = 64 * 1024
 
 export interface BerthAgent { cli: AgentCli; model?: string }
 
@@ -19,10 +19,45 @@ function ensureAgentCwd(): string {
   return cwd
 }
 
+/**
+ * Spawn a headless CLI, stream stderr, and resolve with stdout (when captured). On failure throw a
+ * typed `InternalAgentBlocked` classified into auth/timeout/other — so callers can give the user an
+ * actionable error instead of a silent hang. stdin is `/dev/null` for BOTH CLIs (codex otherwise
+ * waits for stdin; claude `-p` reads its prompt from argv). We **kill early** the moment an auth
+ * signature shows up in stderr, rather than waiting the full timeout — that is what makes it fast.
+ */
+function runHeadless(bin: string, args: string[], opts: { cli: AgentCli; timeoutMs: number; captureStdout: boolean }): Promise<string> {
+  const { cli, timeoutMs, captureStdout } = opts
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(bin, args, { cwd: ensureAgentCwd(), stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const settle = (fn: () => void) => { if (settled) return; settled = true; clearTimeout(timer); fn() }
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      settle(() => reject(new InternalAgentBlocked('timeout', cli, stderr.trim().slice(-300))))
+    }, timeoutMs)
+    if (captureStdout) child.stdout?.on('data', d => { if (stdout.length < BUF) stdout += d.toString() })
+    child.stderr?.on('data', d => {
+      if (stderr.length < STDERR_CAP) stderr += d.toString()
+      if (looksLikeAuthBlock(cli, stderr)) {
+        child.kill('SIGKILL')
+        settle(() => reject(new InternalAgentBlocked('auth', cli, stderr.trim().slice(-300))))
+      }
+    })
+    child.on('error', e => settle(() => reject(e)))
+    child.on('close', code => settle(() => {
+      if (code === 0) return resolve(stdout)
+      reject(new InternalAgentBlocked(classifyAgentFailure(cli, stderr, false), cli, stderr.trim().slice(-300)))
+    }))
+  })
+}
+
 /** claude headless: `claude -p` prints a reply-only stdout. An empty model → claude's own default. */
 async function runClaude(bin: string, prompt: string, model: string | undefined, timeoutMs: number): Promise<string> {
   const args = ['-p', prompt, '--dangerously-skip-permissions', ...(model ? ['--model', model] : [])]
-  const { stdout } = await exec(bin, args, { cwd: ensureAgentCwd(), timeout: timeoutMs, maxBuffer: BUF })
+  const stdout = await runHeadless(bin, args, { cli: 'claude', timeoutMs, captureStdout: true })
   return stdout.trim()
 }
 
@@ -41,18 +76,9 @@ async function runCodex(bin: string, prompt: string, model: string | undefined, 
     ...(model ? ['-m', model] : []), '-o', outFile, prompt,
   ]
   try {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn(bin, args, { cwd: ensureAgentCwd(), stdio: ['ignore', 'ignore', 'pipe'] })
-      let stderr = ''
-      child.stderr?.on('data', d => { if (stderr.length < 8192) stderr += d.toString() })
-      const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('codex timed out')) }, timeoutMs)
-      child.on('error', e => { clearTimeout(timer); reject(e) })
-      child.on('close', code => {
-        clearTimeout(timer)
-        if (code === 0) resolve()
-        else reject(new Error(`codex exited ${code}: ${stderr.slice(-300)}`))
-      })
-    })
+    // stdout carries banner noise; the real reply is read from outFile. runHeadless still throws a
+    // typed InternalAgentBlocked on auth/timeout/non-zero exit (using captured stderr).
+    await runHeadless(bin, args, { cli: 'codex', timeoutMs, captureStdout: false })
     return readFileSync(outFile, 'utf8').trim()
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -72,6 +98,20 @@ export async function runAgent(prompt: string, opts: { cli?: AgentCli; model?: s
   }
 }
 
+/**
+ * Run the agent with one transient-failure retry (the CLI's own default model), but NEVER retry an
+ * auth block — re-running an unauthenticated CLI just doubles the wait and re-throws. Auth (and any
+ * other failure from the retry) propagates as `InternalAgentBlocked` so the endpoint can surface it.
+ */
+async function runAgentWithFallback(prompt: string, primary: { cli: AgentCli; model?: string; timeoutMs: number }, fallback: { cli: AgentCli; timeoutMs: number }): Promise<string> {
+  try {
+    return await runAgent(prompt, primary)
+  } catch (e) {
+    if (isInternalAgentBlocked(e) && e.kind === 'auth') throw e
+    return runAgent(prompt, fallback)
+  }
+}
+
 /** Generate a concise human title from a raw session transcript head. */
 export async function generateTitle(transcriptHead: string, agent?: BerthAgent): Promise<string> {
   const sampled = titleInputFromTranscript(transcriptHead)
@@ -87,7 +127,7 @@ export async function generateTitle(transcriptHead: string, agent?: BerthAgent):
   // No agent configured at all → preserve the historical claude+haiku default. A configured agent
   // carries its own model (possibly empty = the CLI's own default), so don't force a claude model.
   const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
-  let out = await runAgent(prompt, { cli, model, timeoutMs: 45000 }).catch(async () => runAgent(prompt, { cli, timeoutMs: 60000 }))
+  let out = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 45000 }, { cli, timeoutMs: 60000 })
   out = (out.split('\n').find(l => l.trim()) ?? '').replace(/^["'""\s]+|["'""\s]+$/g, '').slice(0, 100)
   return out
 }
@@ -97,7 +137,7 @@ export async function generateProgressSummary(docText: string, summaryPrompt: st
   const prompt = summaryPrompt + '\n\n---\n' + docText.slice(0, 4000)
   const cli = agent?.cli ?? 'claude'
   const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
-  let out = await runAgent(prompt, { cli, model, timeoutMs: 45000 }).catch(async () => runAgent(prompt, { cli, timeoutMs: 60000 }))
+  let out = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 45000 }, { cli, timeoutMs: 60000 })
   out = out.split('\n').map(l => l.trim()).filter(Boolean).join(' ').replace(/^["'""\s]+|["'""\s]+$/g, '').slice(0, 500)
   return out
 }

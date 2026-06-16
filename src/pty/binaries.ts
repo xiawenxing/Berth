@@ -36,3 +36,20 @@ export function verifyCoco(bin: string): boolean {
   if (ok) cocoVerified.set(bin, true)
   return ok
 }
+
+// Older codex builds predate `--dangerously-bypass-hook-trust` (the SessionStart-hook feature).
+// Passing it to such a build aborts the launch with "unexpected argument", so we probe `--help`
+// once per binary before relying on the flag. A definitive answer (flag present or absent) is
+// cached — a codex binary's CLI surface can't change within a process — but a probe that fails to
+// run at all (timeout/spawn error) is NOT cached, so a transient hiccup gets retried next launch.
+const codexHookTrust = new Map<string, boolean>()
+export function codexSupportsHookTrust(bin: string): boolean {
+  const cached = codexHookTrust.get(bin)
+  if (cached !== undefined) return cached
+  let help: string
+  try { help = execFileSync(bin, ['--help'], { encoding: 'utf8', timeout: 20000 }) }
+  catch { return false }   // probe couldn't run; degrade to no-hook for this launch, retry later
+  const ok = help.includes('--dangerously-bypass-hook-trust')
+  codexHookTrust.set(bin, ok)
+  return ok
+}

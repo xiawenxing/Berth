@@ -15,7 +15,9 @@ import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
 import { generateTitle, generateProgressSummary } from '../agent/index'
+import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { titleInputFromTranscript } from '../agent/transcript'
+import type { Locale } from '../i18n'
 import { readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { snapshotActivity } from './pty-registry'
@@ -30,6 +32,21 @@ function truncate(s: string | null, max: number): string | null {
 
 function contextAgentError(error: unknown) {
   return { error: String((error as any)?.message ?? error), contextAgentCwd: berthAgentCwd() }
+}
+
+/**
+ * Map an internal-agent failure to a response. A typed `InternalAgentBlocked` (auth/timeout/other)
+ * becomes a 409 with a structured, actionable body the UI renders directly; everything else keeps the
+ * previous generic 502. `res` is returned for `return sendAgentError(...)` call sites.
+ */
+function sendAgentError(res: import('express').Response, error: unknown, locale: Locale) {
+  if (isInternalAgentBlocked(error)) {
+    return res.status(409).json({
+      blocked: error.kind, cli: error.cli, hint: agentBlockHint(error.kind, error.cli, locale),
+      ...contextAgentError(error),
+    })
+  }
+  return res.status(502).json(contextAgentError(error))
 }
 
 function readTitleTranscriptSample(path: string): string {
@@ -478,7 +495,7 @@ api.post('/todos/:id/progress-summary', async (req, res) => {
     updateTask(store, task.id, { progress: summary })
     res.json({ summary })
   } catch (e: any) {
-    res.status(502).json({ error: String(e?.message ?? e) })
+    sendAgentError(res, e, locale)
   }
 })
 
@@ -616,7 +633,7 @@ api.post('/sessions/:id/title', async (req, res) => {
     if (!title) return res.status(502).json({ error: 'agent returned empty title' })
     getStore().setTitleOverride(s.sessionId, title)
     res.json({ title })
-  } catch (e: any) { res.status(502).json({ error: String(e?.message ?? e) }) }
+  } catch (e: any) { sendAgentError(res, e, getLocale(getStore())) }
 })
 
 api.patch('/sessions/:id/title', (req, res) => {
@@ -658,6 +675,6 @@ api.post('/sessions/:id/consolidate', async (req, res) => {
     res.json({ ok: true, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
   } catch (e: any) {
     try { refresh() } catch {}
-    res.status(502).json(contextAgentError(e))
+    sendAgentError(res, e, locale)
   }
 })

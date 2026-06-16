@@ -92,6 +92,15 @@ function todoProjectId(t) {
 function todoProjectLabel(t) {
   return t ? (t.project || projectLabel(t.projectId) || '') : '';
 }
+function sessionProjectTarget(session) {
+  if (!session) return null;
+  const linkedTask = session.todoKey ? allTodos.find(t => t.id === session.todoKey) : null;
+  const direct = projectById(session.projectId) || projectById(session.project);
+  const project = direct || (linkedTask
+    ? (projectById(todoProjectId(linkedTask)) || projectById(todoProjectLabel(linkedTask)))
+    : null);
+  return project ? { project, task: linkedTask || null } : null;
+}
 
 // ── Terminal color themes ────────────────────────────────────────────────────
 // Registry of available xterm color schemes (background/foreground/cursor +
@@ -983,6 +992,7 @@ async function assignTask(sessionId, todoKey, projectName) {
  */
 async function consolidateSession(sessionId, btn) {
   if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+  const stopHeartbeat = startAgentHeartbeat(btn);
   try {
     const res = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/consolidate', { method: 'POST' });
     const d = await res.json().catch(() => ({ error: res.statusText }));
@@ -992,6 +1002,7 @@ async function consolidateSession(sessionId, btn) {
   } catch (e) {
     alert('刷新上下文失败: ' + e.message);
   } finally {
+    stopHeartbeat();
     if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
   }
 }
@@ -1012,12 +1023,15 @@ async function generateTitle(sessionId, rowBtn) {
   // Loading state
   const origTexts = btns.map(b => b.textContent);
   btns.forEach(b => { b.textContent = '…'; b.disabled = true; b.classList.remove('error'); });
+  const stopHeartbeat = startAgentHeartbeat(btns);
 
   try {
     const res = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/title', { method: 'POST' });
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({ error: res.statusText }));
       console.warn('[berth] generateTitle error:', errJson);
+      // An auth/timeout block is actionable — tell the user how to fix it instead of a silent flash.
+      if (errJson && errJson.blocked) alert('AI 标题失败: ' + contextAgentErrorText(errJson, res.statusText));
       btns.forEach((b, i) => { b.textContent = origTexts[i]; b.disabled = false; b.classList.add('error'); });
       // Flash error for 2s then restore
       setTimeout(() => btns.forEach(b => b.classList.remove('error')), 2000);
@@ -1035,16 +1049,20 @@ async function generateTitle(sessionId, rowBtn) {
     console.warn('[berth] generateTitle exception:', err);
     btns.forEach((b, i) => { b.textContent = origTexts[i]; b.disabled = false; b.classList.add('error'); });
     setTimeout(() => btns.forEach(b => b.classList.remove('error')), 2000);
+  } finally {
+    stopHeartbeat();
   }
 }
 
 async function generateProgressSummary(todoId, btn, noteEl) {
   const orig = btn.innerHTML;
   btn.innerHTML = '…'; btn.disabled = true; btn.classList.remove('error');
+  const stopHeartbeat = startAgentHeartbeat(btn);
   try {
     const res = await fetch('/api/todos/' + encodeURIComponent(todoId) + '/progress-summary', { method: 'POST' });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.summary) {
+      if (d && d.blocked) alert('生成进展摘要失败: ' + contextAgentErrorText(d, res.statusText));
       btn.innerHTML = orig; btn.disabled = false; btn.classList.add('error');
       setTimeout(() => btn.classList.remove('error'), 2000);
       return;
@@ -1056,6 +1074,8 @@ async function generateProgressSummary(todoId, btn, noteEl) {
   } catch {
     btn.innerHTML = orig; btn.disabled = false; btn.classList.add('error');
     setTimeout(() => btn.classList.remove('error'), 2000);
+  } finally {
+    stopHeartbeat();
   }
 }
 
@@ -2288,13 +2308,15 @@ function buildWorkspaceTodoItem(t, projectName) {
   const row = document.createElement('div');
   row.className = 'todo-row' + (info.hasExpand ? ' expandable' : '');
   row.dataset.todoId = t.id;
+  // 收起态单行紧凑：优先级 + 标题(省略号) + 截止/会话数等元信息 + 起会话。
+  // 不再用 .todo-row-break 强制换行——整张收起态卡片只占一行；起会话默认收成图标，
+  // hover 卡片时展开「起会话」文字，避免一个大按钮把卡片撑得又高又空。
   row.innerHTML = `
     <span class="priority-chip priority-${escHtml(priorityClass)}">${escHtml(t.priority || '—')}</span>
-    ${ddlChipHtml(t)}
     <span class="todo-title">${escHtml(t.title)}</span>
-    <span class="todo-row-break"></span>
+    ${ddlChipHtml(t)}
     ${todoRowExtrasHtml(info)}
-    <button class="launch-sess-btn primary" title="新建一个会话">${icon('play')} 起会话</button>
+    <button class="launch-sess-btn primary" title="新建一个会话">${icon('play')}<span class="launch-lbl">起会话</span></button>
   `;
   item.appendChild(row);
   wireTodoRow(t, item, row, projectName, info);
@@ -2334,7 +2356,15 @@ function wireStatusDrop(col, status, projectName) {
     col.classList.remove('col-drop-target');
     const rid = e.dataTransfer.getData('text/berth-todo');
     const t = allTodos.find(x => x.id === rid);
-    if (t && t.status !== status) setTodoStatus(t, status, projectName);
+    if (!t) return;
+    if (t.status !== status) {
+      setTodoStatus(t, status, projectName, { activateTarget: true });
+      return;
+    }
+    if (activeTodoStatus !== status) {
+      activeTodoStatus = status;
+      rerenderTodosView(projectName);
+    }
   });
 }
 
@@ -2412,11 +2442,11 @@ function wireTodoRow(t, item, row, projectName, info) {
     openLaunchPopover(e.currentTarget, { projectName, todoKey: t.id });
   });
 
-  // ⋯ edit menu (改名 / 优先级 / 删除). Injected here so every wireTodoRow site gets it without
+  // ⋯ edit menu (截止日期 / 状态 / 优先级 / 删除). Injected here so every wireTodoRow site gets it without
   // touching each row template; placed before 起会话 so the launch button stays right-most.
   const menuBtn = document.createElement('button');
   menuBtn.className = 'todo-menu-btn';
-  menuBtn.title = '更多（改名 / 优先级 / 删除）';
+  menuBtn.title = '更多（截止日期 / 状态 / 优先级 / 删除）';
   menuBtn.innerHTML = icon('ellipsis');
   menuBtn.addEventListener('click', e => {
     e.stopPropagation();
@@ -2426,7 +2456,8 @@ function wireTodoRow(t, item, row, projectName, info) {
 
   const titleEl = row.querySelector('.todo-title, .now-row-title');
   if (titleEl) {
-    titleEl.title = '双击编辑任务名称';
+    // 收起态标题单行省略，hover tooltip 给出完整标题（外加双击编辑提示）。
+    titleEl.title = t.title + '\n（双击编辑名称）';
     titleEl.addEventListener('dblclick', e => {
       e.stopPropagation();
       startTodoTitleEdit(t, projectName);
@@ -3359,10 +3390,25 @@ function contextSupplementKey(opts) {
 }
 
 function contextAgentErrorText(data, fallback) {
-  const msg = (data && data.error) || fallback || 'unknown error';
-  return data && data.contextAgentCwd
-    ? `${msg}。如后台 Berth agent 需要交互，可在会话列表中查找 cwd：${data.contextAgentCwd}`
-    : msg;
+  // Auth/timeout/other blocks carry an actionable hint (e.g. "运行 `claude login` 后重试") — prefer it.
+  if (data && data.blocked && data.hint) return data.hint;
+  return (data && data.error) || fallback || 'unknown error';
+}
+
+/**
+ * After a silent delay, hint on the given button(s) that the internal agent may be blocked on auth —
+ * so a long wait is never silent. Returns a canceller to call in `finally`.
+ */
+function startAgentHeartbeat(btns, ms = 15000) {
+  const list = (Array.isArray(btns) ? btns : [btns]).filter(Boolean);
+  const origTitles = list.map(b => b.getAttribute('title'));
+  const timer = setTimeout(() => {
+    list.forEach(b => { b.title = '仍在处理…内部 agent 可能需要重新登录（claude login / codex login）'; });
+  }, ms);
+  return () => {
+    clearTimeout(timer);
+    list.forEach((b, i) => { if (origTitles[i] == null) b.removeAttribute('title'); else b.title = origTitles[i]; });
+  };
 }
 
 function applyContextSupplementButtonState(btn, busy) {
@@ -3860,6 +3906,7 @@ function openMenu(anchor, session) {
 
   const menu = document.createElement('div');
   menu.className = 'dropdown-menu';
+  const targetProject = sessionProjectTarget(session);
 
   // Project assignment items
   const currentProjectId = session.projectId;
@@ -3872,11 +3919,28 @@ function openMenu(anchor, session) {
     { id: null, label: '无归属 (detach)', active: currentProjectId === null, cls: 'detach' }
   ];
 
-  let html = '<div class="menu-section">Assign to project</div>';
+  let html = '';
+  if (targetProject) {
+    html += `<div class="menu-section">操作</div>`;
+    html += `<div class="menu-item" data-act="open-project">${icon('folder-open')} 跳转到项目页面</div>`;
+    html += '<div class="menu-sep"></div>';
+  }
+  html += '<div class="menu-section">Assign to project</div>';
   for (const p of projItems) {
     html += `<div class="menu-item ${p.active ? 'active' : ''} ${p.cls || ''}" data-project-id="${p.id === null ? '__null__' : escHtml(p.id)}">${p.id === null ? icon('ban') + ' ' : ''}${escHtml(p.label)}</div>`;
   }
   menu.innerHTML = html;
+
+  const openProjectItem = menu.querySelector('[data-act="open-project"]');
+  if (openProjectItem && targetProject) {
+    openProjectItem.addEventListener('click', e => {
+      e.stopPropagation();
+      closeMenu();
+      setMode('projects');
+      if (targetProject.task && targetProject.task.status) activeTodoStatus = targetProject.task.status;
+      openProject(targetProject.project.id);
+    });
+  }
 
   menu.querySelectorAll('.menu-item[data-project-id]').forEach(item => {
     item.addEventListener('click', e => {
@@ -3964,7 +4028,7 @@ function openProjectEditMenu(anchor, proj) {
   setTimeout(() => document.addEventListener('click', closeMenu, { once: true }), 0);
 }
 
-// ── Task edit menu (改名 / 优先级 / 删除) ──────────────────────────────────────
+// ── Task edit menu (截止日期 / 状态 / 优先级 / 删除) ─────────────────────────────
 
 let TODO_PRIORITIES = ['P0', 'P1', 'P2', 'P3'];   // refreshed from /api/settings (loadTaskFieldConfig)
 
@@ -3978,9 +4042,14 @@ function rerenderTodosView(projectName) {
 function openTodoEditMenu(anchor, t, projectName) {
   closeMenu();
   const menu = document.createElement('div');
-  menu.className = 'dropdown-menu';
+  menu.className = 'dropdown-menu todo-edit-menu';
 
-  let html = '<div class="menu-section">状态</div>';
+  let html = '<div class="menu-section">截止日期</div>';
+  html += `<div class="menu-item ${t.ddl === todayStr() ? 'active' : ''}" data-act="ddl-today">${icon('hourglass')} 今日处理</div>`;
+  html += `<label class="menu-item ddl-later" data-act="ddl-later">${icon('clock')} later…`
+        + `<input type="date" class="ddl-date-input" value="${escHtml(t.ddl || offsetDayStr(1))}"></label>`;
+  if (t.ddl) html += `<div class="menu-item detach" data-act="ddl-clear">${icon('x')} 清除日期</div>`;
+  html += '<div class="menu-section">状态</div>';
   for (const s of STATUS_ORDER) {
     html += `<div class="menu-item ${t.status === s ? 'active' : ''}" data-status="${escHtml(s)}">`
           + `<span class="menu-status-dot" style="background:${statusColor(s)}"></span>${escHtml(s)}</div>`;
@@ -3989,13 +4058,8 @@ function openTodoEditMenu(anchor, t, projectName) {
   for (const p of TODO_PRIORITIES) {
     html += `<span class="menu-prio priority-${p.toLowerCase()} ${t.priority === p ? 'active' : ''}" data-prio="${p}">${p}</span>`;
   }
-  html += '</div><div class="menu-section">截止日期</div>';
-  html += `<div class="menu-item ${t.ddl === todayStr() ? 'active' : ''}" data-act="ddl-today">${icon('hourglass')} 今日处理</div>`;
-  html += `<label class="menu-item ddl-later" data-act="ddl-later">${icon('clock')} later…`
-        + `<input type="date" class="ddl-date-input" value="${escHtml(t.ddl || offsetDayStr(1))}"></label>`;
-  if (t.ddl) html += `<div class="menu-item detach" data-act="ddl-clear">${icon('x')} 清除日期</div>`;
+  html += '</div>';
   html += '<div class="menu-section">操作</div>';
-  html += `<div class="menu-item" data-act="rename">${icon('pencil')} 改名</div>`;
   html += `<div class="menu-item detach" data-act="delete">${icon('trash-2')} 删除任务</div>`;
   menu.innerHTML = html;
 
@@ -4028,11 +4092,6 @@ function openTodoEditMenu(anchor, t, projectName) {
     setTodoPriority(t, el.dataset.prio, projectName);
     closeMenu();
   }));
-  menu.querySelector('[data-act="rename"]').addEventListener('click', e => {
-    e.stopPropagation();
-    closeMenu();
-    startTodoTitleEdit(t, projectName);
-  });
   menu.querySelector('[data-act="delete"]').addEventListener('click', e => {
     e.stopPropagation();
     closeMenu();
@@ -4061,15 +4120,20 @@ async function setTodoPriority(t, priority, projectName) {
   catch (e) { t.priority = prev; rerenderTodosView(projectName); alert('优先级修改失败：' + e.message); }
 }
 
-async function setTodoStatus(t, status, projectName) {
+async function setTodoStatus(t, status, projectName, options = {}) {
   if (t.status === status) return;
   const prev = t.status;
+  const prevActive = activeTodoStatus;
   t.status = status;                           // optimistic
-  // Surface the moved card in its new column so the change is visible after re-render.
-  activeTodoStatus = status;
+  if (options.activateTarget) activeTodoStatus = status;
   rerenderTodosView(projectName);
   try { await patchTodo(t.id, { status }); }
-  catch (e) { t.status = prev; rerenderTodosView(projectName); alert('状态修改失败：' + e.message); }
+  catch (e) {
+    t.status = prev;
+    if (options.activateTarget) activeTodoStatus = prevActive;
+    rerenderTodosView(projectName);
+    alert('状态修改失败：' + e.message);
+  }
 }
 
 async function setTodoDdl(t, ddl, projectName) {
