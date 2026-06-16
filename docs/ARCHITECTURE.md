@@ -60,9 +60,18 @@ Run: `npm start` (vendors xterm+marked, then `tsx bin/berth-serve.ts`) → http:
   (`enqueueWrite(key, exec)`); coalesces concurrent same-key writes (see gotchas). Used by the adapter.
 - `agent/index.ts` — `runAgent` (headless one-shot; cli+model from the configured **berth agent**,
   default `claude -p` / haiku) + `generateTitle`. claude reads the reply from stdout; codex runs
-  `codex exec -o <file>` and reads the final reply from that file (stdout has banner noise). The
+  `codex exec -o <file>` and reads the final reply from that file (stdout has banner noise). Both go
+  through `runHeadless` (spawn + streamed stderr): on failure it throws a typed `InternalAgentBlocked`
+  (see `agent/agent-failure.ts`) classified `auth`/`timeout`/`other`, **killing early** the moment an
+  auth signature shows in stderr instead of waiting the full timeout. `generateTitle`/
+  `generateProgressSummary` do NOT retry an `auth` block. Endpoints map the typed error to
+  `409 {blocked,cli,hint}` (`sendAgentError` in `api.ts`) so the UI shows an actionable "run
+  `claude login` / `codex login`" message instead of a silent ~105s spinner (gotcha #7). The
   cli/model come from `data/agent-config.ts` (`resolveBerthAgent`), resolved at the call site
   (`api.ts`, `data/tasks.ts`) — the agent module stays pure.
+- `agent/agent-failure.ts` — pure failure classifier (`classifyAgentFailure`/`looksLikeAuthBlock` +
+  per-CLI auth signature tables), the `InternalAgentBlocked` error, and `agentBlockHint` (locale-aware
+  actionable message). Signatures are best-effort — confirm against real CLI output.
 - `data/agent-config.ts` — user-configurable launch agents (per-CLI enable + default model) and the
   berth management agent (cli+model), in `app_setting`. `HEADLESS_CLIS`=['claude','codex'] (CLIs that
   can be the management agent — claude via `claude -p`, codex via `codex exec -o <file>`; coco has no

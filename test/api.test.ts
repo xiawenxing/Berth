@@ -80,6 +80,7 @@ vi.mock('../src/data/projects', () => ({
 // ── Mock agent modules ────────────────────────────────────────────────────────
 vi.mock('../src/agent/index', () => ({
   generateTitle: vi.fn(async () => 'mocked title'),
+  generateProgressSummary: vi.fn(async () => 'mocked summary'),
 }))
 vi.mock('../src/agent/transcript', () => ({
   extractTitleContext: vi.fn(() => ''),
@@ -128,6 +129,7 @@ vi.mock('../src/data/doc-git', async (importOriginal) => ({
 import { createApp } from '../src/server/index'
 // pty-registry is NOT mocked here — drive the real singleton so /api/sessions reflects live activity.
 import { registerPty, killPty } from '../src/server/pty-registry'
+import { InternalAgentBlocked } from '../src/agent/agent-failure'
 
 let server: Server
 const tmpRoots: string[] = []
@@ -712,6 +714,24 @@ describe('POST /api/sessions/:id/consolidate', () => {
     expect(res.status).toBe(409)
     const body = await res.json() as any
     expect(body.error).toBeTruthy()
+  })
+
+  it('maps an InternalAgentBlocked (auth) to 409 {blocked,cli,hint}', async () => {
+    mockRunConsolidation.mockRejectedValueOnce(new InternalAgentBlocked('auth', 'codex', 'not logged in'))
+    mockGetCache.mockReturnValue([
+      { sessionId: 's1', cli: 'claude', cwd: '/x', title: 'old', updatedAt: 100, deleted: false, copies: [], contentSourcePath: '/tmp/session.jsonl' },
+    ])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/sessions/s1/consolidate`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(409)
+    const body = await res.json() as any
+    expect(body.blocked).toBe('auth')
+    expect(body.cli).toBe('codex')
+    expect(body.hint).toContain('codex login')
+    expect(body.contextAgentCwd).toMatch(/\.berth\/agent-cwd$/)
   })
 })
 

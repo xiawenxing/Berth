@@ -983,6 +983,7 @@ async function assignTask(sessionId, todoKey, projectName) {
  */
 async function consolidateSession(sessionId, btn) {
   if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+  const stopHeartbeat = startAgentHeartbeat(btn);
   try {
     const res = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/consolidate', { method: 'POST' });
     const d = await res.json().catch(() => ({ error: res.statusText }));
@@ -992,6 +993,7 @@ async function consolidateSession(sessionId, btn) {
   } catch (e) {
     alert('刷新上下文失败: ' + e.message);
   } finally {
+    stopHeartbeat();
     if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
   }
 }
@@ -1012,12 +1014,15 @@ async function generateTitle(sessionId, rowBtn) {
   // Loading state
   const origTexts = btns.map(b => b.textContent);
   btns.forEach(b => { b.textContent = '…'; b.disabled = true; b.classList.remove('error'); });
+  const stopHeartbeat = startAgentHeartbeat(btns);
 
   try {
     const res = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/title', { method: 'POST' });
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({ error: res.statusText }));
       console.warn('[berth] generateTitle error:', errJson);
+      // An auth/timeout block is actionable — tell the user how to fix it instead of a silent flash.
+      if (errJson && errJson.blocked) alert('AI 标题失败: ' + contextAgentErrorText(errJson, res.statusText));
       btns.forEach((b, i) => { b.textContent = origTexts[i]; b.disabled = false; b.classList.add('error'); });
       // Flash error for 2s then restore
       setTimeout(() => btns.forEach(b => b.classList.remove('error')), 2000);
@@ -1035,16 +1040,20 @@ async function generateTitle(sessionId, rowBtn) {
     console.warn('[berth] generateTitle exception:', err);
     btns.forEach((b, i) => { b.textContent = origTexts[i]; b.disabled = false; b.classList.add('error'); });
     setTimeout(() => btns.forEach(b => b.classList.remove('error')), 2000);
+  } finally {
+    stopHeartbeat();
   }
 }
 
 async function generateProgressSummary(todoId, btn, noteEl) {
   const orig = btn.innerHTML;
   btn.innerHTML = '…'; btn.disabled = true; btn.classList.remove('error');
+  const stopHeartbeat = startAgentHeartbeat(btn);
   try {
     const res = await fetch('/api/todos/' + encodeURIComponent(todoId) + '/progress-summary', { method: 'POST' });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.summary) {
+      if (d && d.blocked) alert('生成进展摘要失败: ' + contextAgentErrorText(d, res.statusText));
       btn.innerHTML = orig; btn.disabled = false; btn.classList.add('error');
       setTimeout(() => btn.classList.remove('error'), 2000);
       return;
@@ -1056,6 +1065,8 @@ async function generateProgressSummary(todoId, btn, noteEl) {
   } catch {
     btn.innerHTML = orig; btn.disabled = false; btn.classList.add('error');
     setTimeout(() => btn.classList.remove('error'), 2000);
+  } finally {
+    stopHeartbeat();
   }
 }
 
@@ -3359,10 +3370,25 @@ function contextSupplementKey(opts) {
 }
 
 function contextAgentErrorText(data, fallback) {
-  const msg = (data && data.error) || fallback || 'unknown error';
-  return data && data.contextAgentCwd
-    ? `${msg}。如后台 Berth agent 需要交互，可在会话列表中查找 cwd：${data.contextAgentCwd}`
-    : msg;
+  // Auth/timeout/other blocks carry an actionable hint (e.g. "运行 `claude login` 后重试") — prefer it.
+  if (data && data.blocked && data.hint) return data.hint;
+  return (data && data.error) || fallback || 'unknown error';
+}
+
+/**
+ * After a silent delay, hint on the given button(s) that the internal agent may be blocked on auth —
+ * so a long wait is never silent. Returns a canceller to call in `finally`.
+ */
+function startAgentHeartbeat(btns, ms = 15000) {
+  const list = (Array.isArray(btns) ? btns : [btns]).filter(Boolean);
+  const origTitles = list.map(b => b.getAttribute('title'));
+  const timer = setTimeout(() => {
+    list.forEach(b => { b.title = '仍在处理…内部 agent 可能需要重新登录（claude login / codex login）'; });
+  }, ms);
+  return () => {
+    clearTimeout(timer);
+    list.forEach((b, i) => { if (origTitles[i] == null) b.removeAttribute('title'); else b.title = origTitles[i]; });
+  };
 }
 
 function applyContextSupplementButtonState(btn, busy) {

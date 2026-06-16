@@ -5,6 +5,7 @@
 // write power is unconstrained on purpose; git history (doc-git) is the safety net.
 import { contextStrings, type Locale } from '../i18n'
 import { diffSections, type SectionDiff } from '../data/doc-diff'
+import { isInternalAgentBlocked } from './agent-failure'
 import type { BerthAgent } from './index'
 
 export interface ContextUpdateInput {
@@ -49,5 +50,10 @@ export async function updateContext(input: ContextUpdateInput, runAgentFn: RunAg
     const diff = diffSections(input.contextDoc, newDoc)
     if (!diff.changed.length && !diff.added.length && !diff.removed.length) return { newDoc: '', diff: EMPTY }
     return { newDoc, diff }
-  } catch { return { newDoc: '', diff: EMPTY } }
+  } catch (e) {
+    // A typed auth/block error must escape so the endpoint can surface an actionable message rather
+    // than reporting a generic "no usable update". Other (transient) failures stay swallowed.
+    if (isInternalAgentBlocked(e)) throw e
+    return { newDoc: '', diff: EMPTY }
+  }
 }
