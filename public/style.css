@@ -1425,6 +1425,11 @@ html, body {
 }
 .todo-col-body::-webkit-scrollbar { width: 4px; }
 .todo-col-body::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
+/* The body is a flex column; without this its children (task cards / minis)
+   flex-shrink to fit and get clipped (each .todo-item is overflow:hidden) so the
+   body never overflows and overflow-y:auto can't scroll. Keep them at natural
+   height so the column scrolls once content exceeds the capped height. */
+.todo-col-body > * { flex-shrink: 0; }
 
 /* Stacked card: the head isn't separately clickable (the whole card is) */
 .todo-col.stacked .todo-col-head { cursor: pointer; }
