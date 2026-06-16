@@ -92,6 +92,15 @@ function todoProjectId(t) {
 function todoProjectLabel(t) {
   return t ? (t.project || projectLabel(t.projectId) || '') : '';
 }
+function sessionProjectTarget(session) {
+  if (!session) return null;
+  const linkedTask = session.todoKey ? allTodos.find(t => t.id === session.todoKey) : null;
+  const direct = projectById(session.projectId) || projectById(session.project);
+  const project = direct || (linkedTask
+    ? (projectById(todoProjectId(linkedTask)) || projectById(todoProjectLabel(linkedTask)))
+    : null);
+  return project ? { project, task: linkedTask || null } : null;
+}
 
 // ── Terminal color themes ────────────────────────────────────────────────────
 // Registry of available xterm color schemes (background/foreground/cursor +
@@ -3889,6 +3898,7 @@ function openMenu(anchor, session) {
 
   const menu = document.createElement('div');
   menu.className = 'dropdown-menu';
+  const targetProject = sessionProjectTarget(session);
 
   // Project assignment items
   const currentProjectId = session.projectId;
@@ -3901,11 +3911,28 @@ function openMenu(anchor, session) {
     { id: null, label: '无归属 (detach)', active: currentProjectId === null, cls: 'detach' }
   ];
 
-  let html = '<div class="menu-section">Assign to project</div>';
+  let html = '';
+  if (targetProject) {
+    html += `<div class="menu-section">操作</div>`;
+    html += `<div class="menu-item" data-act="open-project">${icon('folder-open')} 跳转到项目页面</div>`;
+    html += '<div class="menu-sep"></div>';
+  }
+  html += '<div class="menu-section">Assign to project</div>';
   for (const p of projItems) {
     html += `<div class="menu-item ${p.active ? 'active' : ''} ${p.cls || ''}" data-project-id="${p.id === null ? '__null__' : escHtml(p.id)}">${p.id === null ? icon('ban') + ' ' : ''}${escHtml(p.label)}</div>`;
   }
   menu.innerHTML = html;
+
+  const openProjectItem = menu.querySelector('[data-act="open-project"]');
+  if (openProjectItem && targetProject) {
+    openProjectItem.addEventListener('click', e => {
+      e.stopPropagation();
+      closeMenu();
+      setMode('projects');
+      if (targetProject.task && targetProject.task.status) activeTodoStatus = targetProject.task.status;
+      openProject(targetProject.project.id);
+    });
+  }
 
   menu.querySelectorAll('.menu-item[data-project-id]').forEach(item => {
     item.addEventListener('click', e => {
