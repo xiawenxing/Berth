@@ -19,7 +19,7 @@ import { ensureContextDoc, rotateContextDocOnDisk } from '../data/context-doc'
 import { getLocale, promptStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
 import { latestCodexTurnState, type CodexTurnState } from '../adapters/codex-turn'
 import type { Task } from '../data/types'
-import type { AgentCli, LaunchIntent } from '../types'
+import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
 
 type Store = ReturnType<typeof getStore>
 const INJECT_DIR = join(berthHome(), 'inject')
@@ -60,6 +60,11 @@ function codexHoldRunning(initialState: CodexTurnState = 'unknown') {
     if (next !== 'unknown') lastState = next
     return lastState === 'running'
   }
+}
+
+export function codexActivityStateForSession(s: Pick<LogicalSession, 'cli' | 'contentSourcePath'>): CodexTurnState {
+  if (s.cli !== 'codex' || !s.contentSourcePath) return 'unknown'
+  return latestCodexTurnState(s.contentSourcePath)
 }
 
 /**
@@ -212,8 +217,10 @@ export function createPtyWss(): WebSocketServer {
       pty = resumeSession(s, { cols, rows })
     } catch (e: any) { try { ws.send(`\r\n[berth] launch failed: ${e?.message}\r\n`) } catch {} ; ws.close(); return }
 
+    const codexState = codexActivityStateForSession(s)
     registerPty(sessionId, pty, {
-      holdRunning: s.cli === 'codex' ? codexHoldRunning() : undefined,
+      running: codexState === 'running',
+      holdRunning: s.cli === 'codex' ? codexHoldRunning(codexState) : undefined,
     })
     attachViewer(sessionId, ws)
   })

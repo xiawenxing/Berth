@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 // Avoid loading the real store singleton (which opens ~/.berth/berth.sqlite + bootstraps).
 vi.mock('../src/server/store-singleton', () => ({ getStore: vi.fn(), getCache: vi.fn(() => []) }))
@@ -7,7 +10,7 @@ vi.mock('../src/data/tasks', () => ({
   updateTask: vi.fn(() => ({ ok: true })),
 }))
 
-import { planFreshLaunch, shouldAdvanceTodoOnLaunch, advanceTodoOnLaunch, buildTaskInitialPrompt } from '../src/server/pty-ws'
+import { planFreshLaunch, shouldAdvanceTodoOnLaunch, advanceTodoOnLaunch, buildTaskInitialPrompt, codexActivityStateForSession } from '../src/server/pty-ws'
 import { updateTask } from '../src/data/tasks'
 
 const DOCS = '/tmp/berth-test/docs'
@@ -18,6 +21,13 @@ function storeWith(settings: Record<string, string> = {}) {
 }
 
 beforeEach(() => { vi.clearAllMocks() })
+
+function rollout(lines: any[]): string {
+  const dir = mkdtempSync(join(tmpdir(), 'berth-pty-ws-codex-'))
+  const p = join(dir, 'rollout.jsonl')
+  writeFileSync(p, lines.map(x => JSON.stringify(x)).join('\n') + '\n')
+  return p
+}
 
 describe('planFreshLaunch', () => {
   it('claude/coco get a minted id and immediate binding; codex stays pending', () => {
@@ -88,6 +98,23 @@ describe('planFreshLaunch', () => {
       expect(plan.manifestInput.projectName).toBe('Berth')
       expect(plan.manifestInput.projectTodos.map(t => t.title)).toEqual(['A'])
     }
+  })
+})
+
+describe('codexActivityStateForSession', () => {
+  it('detects a Codex session that is already mid-turn when resumed/opened', () => {
+    const contentSourcePath = rollout([
+      { timestamp: '2026-06-16T01:00:00.000Z', type: 'session_meta', payload: { id: 's1' } },
+      { timestamp: '2026-06-16T01:00:01.000Z', type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } },
+    ])
+    expect(codexActivityStateForSession({ cli: 'codex', contentSourcePath })).toBe('running')
+  })
+
+  it('does not mark non-Codex sessions running from transcript lifecycle events', () => {
+    const contentSourcePath = rollout([
+      { timestamp: '2026-06-16T01:00:01.000Z', type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } },
+    ])
+    expect(codexActivityStateForSession({ cli: 'claude', contentSourcePath })).toBe('unknown')
   })
 })
 
