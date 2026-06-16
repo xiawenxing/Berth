@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Berth 2.0 · 暗色配色选项（v7）</title>
+<style>
+/* =========================================================================
+   PAGE CHROME — uses Scheme 1 (深空·高分层) as its own theme.
+   Each sample below is wrapped in a scoped class (.s1 .. .s4) that re-defines
+   the CSS custom properties, so the SAME markup renders in every scheme.
+   ========================================================================= */
+:root{
+  color-scheme:dark;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --font-mono:'SF Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --radius:0.625rem; --radius-md:0.5rem; --radius-sm:0.375rem;
+}
+
+/* ---- Scheme 1 · 深空·高分层 (also drives the page chrome) ---- */
+.s1, body{
+  --background:#1b1e24; --foreground:#b6bdc9; --card:#2a2f3a; --card-foreground:#c8cedb;
+  --popover:#323844; --secondary:#363d4a; --muted:#363d4a; --muted-foreground:#8a92a3;
+  --accent:#363d4a; --accent-foreground:#dde2ea; --border:#454d5d; --input:#454d5d; --ring:#61afef;
+  --sidebar:#171a20; --sidebar-accent:#2a2f3a; --canvas:#15171c;
+  --brand:#61afef; --brand-foreground:#fff;
+  --success:#98c379; --warning:#e5c07b; --priority:#d19a66; --purple:#c678dd; --destructive:#e06c75;
+  --text-dim:#69717f;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.30);
+}
+
+/* ---- Scheme 2 · 石墨暖灰 ---- */
+.s2{
+  --background:#1f1e1d; --foreground:#c5c1ba; --card:#2c2a28; --card-foreground:#d6d1c9;
+  --popover:#353230; --secondary:#3a3733; --muted:#3a3733; --muted-foreground:#968f85;
+  --accent:#3a3733; --accent-foreground:#e3ded5; --border:#4b4640; --input:#4b4640; --ring:#d6a85f;
+  --sidebar:#1a1918; --sidebar-accent:#2c2a28; --canvas:#161514;
+  --brand:#e0a458; --brand-foreground:#1f1e1d;
+  --success:#9bbf6e; --warning:#e0b65c; --priority:#dc8f55; --purple:#c189d6; --destructive:#e07065;
+  --text-dim:#74706a;
+  --shadow:0 1px 2px rgba(0,0,0,.42),0 4px 14px rgba(0,0,0,.32);
+}
+
+/* ---- Scheme 3 · 午夜靛蓝 ---- */
+.s3{
+  --background:#141b2e; --foreground:#b3bcd4; --card:#1f2940; --card-foreground:#c7cfe3;
+  --popover:#283450; --secondary:#2c3852; --muted:#2c3852; --muted-foreground:#8089a3;
+  --accent:#2c3852; --accent-foreground:#dbe1f0; --border:#3a4768; --input:#3a4768; --ring:#56b6ff;
+  --sidebar:#101526; --sidebar-accent:#1f2940; --canvas:#0d1220;
+  --brand:#56b6ff; --brand-foreground:#0d1220;
+  --success:#7ed4a6; --warning:#f0c773; --priority:#e0a060; --purple:#b88cf0; --destructive:#f0707f;
+  --text-dim:#5f6884;
+  --shadow:0 1px 2px rgba(0,0,0,.45),0 6px 18px rgba(8,12,28,.45);
+}
+
+/* ---- Scheme 4 · OLED 近黑 · 描边分层 ---- */
+.s4{
+  --background:#0d0f12; --foreground:#c2c8d2; --card:#15181d; --card-foreground:#d2d7e0;
+  --popover:#1c2028; --secondary:#20242c; --muted:#20242c; --muted-foreground:#8b92a0;
+  --accent:#20242c; --accent-foreground:#e4e8ef; --border:#2d333d; --input:#2d333d; --ring:#67b3f0;
+  --sidebar:#0a0c0f; --sidebar-accent:#15181d; --canvas:#070809;
+  --brand:#67b3f0; --brand-foreground:#0d0f12;
+  --success:#86cf7e; --warning:#e7c574; --priority:#dd9a5e; --purple:#cf85e0; --destructive:#ec6a78;
+  --text-dim:#646b78;
+  --shadow:0 0 0 1px rgba(255,255,255,.02),0 2px 10px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--canvas); color:var(--foreground);
+  font:13px/1.5 var(--font-sans); margin:0; min-height:100vh;
+}
+button{font-family:inherit;color:inherit;cursor:pointer}
+a{color:inherit;text-decoration:none}
+.icon{display:inline-flex;vertical-align:middle;flex:none}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
+
+/* =========================================================================
+   PAGE HEADER
+   ========================================================================= */
+.page-head{
+  padding:28px 34px 14px; border-bottom:1px solid var(--border);
+  background:var(--background); position:sticky; top:0; z-index:30;
+}
+.page-head h1{margin:0;font-size:21px;font-weight:700;letter-spacing:.2px;color:var(--foreground);display:flex;align-items:center;gap:11px}
+.page-head h1 .icon{color:var(--brand)}
+.page-head p{margin:7px 0 0;font-size:13px;color:var(--muted-foreground);max-width:980px;line-height:1.6}
+.page-head p b{color:var(--foreground);font-weight:600}
+
+/* =========================================================================
+   GRID OF SCHEMES
+   ========================================================================= */
+.grid{
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px;
+  padding:24px 34px 90px; max-width:1680px; margin:0 auto;
+}
+@media (max-width:1180px){ .grid{grid-template-columns:1fr} }
+
+.scheme-card{
+  border:1px solid var(--border); border-radius:var(--radius);
+  background:var(--card); overflow:hidden; box-shadow:var(--shadow);
+}
+.scheme-head{
+  display:flex; align-items:center; gap:12px; padding:13px 16px;
+  border-bottom:1px solid var(--border); background:var(--popover);
+}
+.scheme-num{
+  width:26px;height:26px;flex:none;border-radius:7px;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;background:var(--brand);color:var(--brand-foreground);
+}
+.scheme-title{font-size:15px;font-weight:700;color:var(--foreground)}
+.scheme-sub{font-size:11.5px;color:var(--text-dim);margin-top:1px}
+
+/* the sample lives directly on a scoped wrapper (.s1..s4) */
+.sample-frame{ background:var(--canvas); padding:14px; }
+
+/* =========================================================================
+   SWATCH ROW
+   ========================================================================= */
+.swatches{
+  display:flex; flex-wrap:wrap; gap:7px; padding:11px 16px 13px;
+  border-top:1px solid var(--border); background:var(--card);
+}
+.sw{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted-foreground)}
+.sw .chip{width:15px;height:15px;border-radius:4px;border:1px solid rgba(255,255,255,.12);flex:none}
+.sw .lbl{font-weight:600;color:var(--foreground)}
+.sw .hex{font-family:var(--font-mono);color:var(--text-dim);font-size:10px}
+
+/* =========================================================================
+   ============  THE BERTH SAMPLE (rendered once per scheme)  ============
+   All inner selectors read the scoped vars from the wrapper above.
+   ========================================================================= */
+.smp{ display:flex; gap:0; height:430px; border-radius:var(--radius-md); overflow:hidden;
+  border:1px solid var(--border); box-shadow:var(--shadow); font-size:12px; }
+
+/* ---- mini left rail ---- */
+.smp-rail{
+  width:158px;flex:none;background:var(--sidebar);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+}
+.smp-wordmark{display:flex;align-items:center;gap:7px;padding:13px 13px 11px;font-weight:700;font-size:13.5px;color:var(--foreground)}
+.smp-wordmark .icon{color:var(--brand)}
+.smp-nav{display:flex;flex-direction:column;gap:2px;padding:2px 7px}
+.smp-nav-item{
+  display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:var(--radius-sm);
+  color:var(--muted-foreground);font-size:12px;
+}
+.smp-nav-item:hover{background:var(--sidebar-accent);color:var(--foreground)}
+.smp-nav-item.active{background:var(--sidebar-accent);color:var(--accent-foreground);font-weight:600;position:relative}
+.smp-nav-item.active::before{content:"";position:absolute;left:-7px;top:6px;bottom:6px;width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
+.smp-rail-divider{height:1px;background:var(--border);margin:9px 12px 4px}
+.smp-rail-label{padding:3px 13px;color:var(--text-dim);font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+.smp-proj{
+  display:flex;align-items:flex-start;gap:8px;padding:7px 8px;margin:0 7px;border-radius:var(--radius-sm);
+  position:relative;
+}
+.smp-proj:hover{background:var(--sidebar-accent)}
+.smp-proj.selected{background:var(--sidebar-accent)}
+.smp-proj.selected::before{content:"";position:absolute;left:-7px;top:7px;bottom:7px;width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
+.smp-proj-dot{margin-top:3px;width:7px;height:7px;flex:none;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px color-mix(in srgb,var(--success) 22%,transparent)}
+.smp-proj-main{min-width:0}
+.smp-proj-name{display:block;font-size:12px;font-weight:600;color:var(--accent-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smp-proj-meta{display:block;font-size:10px;color:var(--text-dim);margin-top:1px}
+
+/* ---- main column ---- */
+.smp-main{flex:1;min-width:0;background:var(--background);display:flex;flex-direction:column;overflow:hidden}
+
+/* overview bar */
+.smp-overview{
+  display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--border);
+  background:var(--background);
+}
+.smp-overview .ov-title{font-size:12.5px;font-weight:700;color:var(--foreground);display:flex;align-items:center;gap:6px}
+.smp-overview .ov-title .icon{color:var(--brand)}
+.smp-pills{display:flex;gap:6px;margin-left:auto}
+.pill{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:600;
+  background:var(--secondary);color:var(--muted-foreground);border:1px solid var(--border);
+}
+.pill .dot{width:6px;height:6px;border-radius:50%}
+.pill.run{color:var(--success)} .pill.run .dot{background:var(--success)}
+.pill.dock{color:var(--brand)} .pill.dock .dot{background:var(--brand)}
+.pill.idle .dot{background:var(--text-dim)}
+
+/* body: kanban + sessions */
+.smp-body{flex:1;overflow:hidden;padding:13px 14px;display:flex;flex-direction:column;gap:13px;background:var(--background)}
+.smp-section-label{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:7px}
+
+/* kanban cards */
+.kanban{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.kcard{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:7px;
+}
+.kcard-top{display:flex;align-items:center;gap:6px}
+.prio{display:inline-flex;align-items:center;font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:5px;letter-spacing:.3px}
+.prio.p0{color:var(--destructive);background:color-mix(in srgb,var(--destructive) 16%,transparent);border:1px solid color-mix(in srgb,var(--destructive) 40%,transparent)}
+.prio.p1{color:var(--warning);background:color-mix(in srgb,var(--warning) 15%,transparent);border:1px solid color-mix(in srgb,var(--warning) 38%,transparent)}
+.kcard-title{font-size:12px;font-weight:600;color:var(--card-foreground);line-height:1.4}
+.kcard-foot{display:flex;align-items:center;gap:8px;color:var(--text-dim);font-size:10.5px}
+.kcard-foot .meta{display:inline-flex;align-items:center;gap:4px}
+.kstatus{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:14px}
+.kstatus.run{color:var(--success);background:color-mix(in srgb,var(--success) 15%,transparent)}
+.kstatus.run .dot{width:6px;height:6px;border-radius:50%;background:var(--success)}
+.kstatus.dock{color:var(--brand);background:color-mix(in srgb,var(--brand) 15%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--brand) 45%,transparent)}
+.kstatus.dock .dot{width:6px;height:6px;border-radius:50%;background:var(--brand)}
+
+/* session rows */
+.sessions{display:flex;flex-direction:column;gap:7px}
+.srow{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--card);
+  border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow);
+}
+.srow:hover{border-color:var(--muted-foreground)}
+.cli-badge{
+  display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:5px;
+  letter-spacing:.3px;flex:none;
+}
+.cli-badge .icon{width:11px;height:11px}
+.cli-claude{color:var(--brand);background:color-mix(in srgb,var(--brand) 16%,transparent)}
+.cli-codex{color:var(--success);background:color-mix(in srgb,var(--success) 16%,transparent)}
+.cli-coco{color:var(--purple);background:color-mix(in srgb,var(--purple) 18%,transparent)}
+.srow-title{font-size:12px;font-weight:500;color:var(--foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.sstatus{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;flex:none}
+.sstatus .dot{width:7px;height:7px;border-radius:50%}
+.sstatus.run{color:var(--success)} .sstatus.run .dot{background:var(--success);box-shadow:0 0 0 3px color-mix(in srgb,var(--success) 22%,transparent)}
+.sstatus.dock{color:var(--brand)} .sstatus.dock .dot{background:transparent;border:2px solid var(--brand)}
+
+/* =========================================================================
+   CAPTION CHIP
+   ========================================================================= */
+.caption-chip{
+  position:fixed;right:18px;bottom:16px;z-index:50;
+  display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border-radius:20px;
+  background:var(--popover);border:1px solid var(--border);box-shadow:var(--shadow);
+  font-size:11.5px;font-weight:600;color:var(--muted-foreground);
+}
+.caption-chip .icon{color:var(--brand)}
+.caption-chip b{color:var(--foreground)}
+</style>
+</head>
+<body>
+
+<header class="page-head">
+  <h1>
+    <svg class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>
+    Berth 暗色配色选项
+  </h1>
+  <p>当前暗色主题（One&nbsp;Dark&nbsp;Pro）的<b>表层分层不足</b>——背景、卡片、浮层混在一起。亮色主题之所以耐看，正因为它的 card(#fff) / background(#fafafa) / secondary(#eaeaeb) 清晰分层。以下 4 套方案都<b>恢复了清晰的表层层级</b>（背景 &lt; 抬升卡片 &lt; 浮层，配合可读的描边）。每套用<b>同一份 Berth 示例</b>渲染，便于横向对比。请挑一套。</p>
+</header>
+
+<main class="grid">
+
+  <!-- ============ SCHEME 1 ============ -->
+  <section class="scheme-card">
+    <div class="scheme-head">
+      <div class="scheme-num">1</div>
+      <div><div class="scheme-title">深空 · 高分层</div><div class="scheme-sub">沿用 One-Dark-Pro 色相，加大表层对比 · 原生口味升级</div></div>
+    </div>
+    <div class="sample-frame s1">
+      <div class="smp">
+
+        <!-- mini left rail -->
+        <div class="smp-rail">
+          <div class="smp-wordmark">
+            <svg class="icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>
+            Berth
+          </div>
+          <div class="smp-nav">
+            <a class="smp-nav-item active">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              港湾概览
+            </a>
+            <a class="smp-nav-item">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              全部任务
+            </a>
+          </div>
+          <div class="smp-rail-divider"></div>
+          <div class="smp-rail-label">项目</div>
+          <div class="smp-proj selected">
+            <span class="smp-proj-dot"></span>
+            <span class="smp-proj-main">
+              <span class="smp-proj-name">berth</span>
+              <span class="smp-proj-meta">2 在航 · 1 已停泊</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- main column -->
+        <div class="smp-main">
+          <div class="smp-overview">
+            <span class="ov-title">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>
+              港湾概览
+            </span>
+            <span class="smp-pills">
+              <span class="pill run"><span class="dot"></span>2 在航</span>
+              <span class="pill dock"><span class="dot"></span>1 已停泊</span>
+              <span class="pill idle"><span class="dot"></span>4 待处理</span>
+            </span>
+          </div>
+
+          <div class="smp-body">
+            <div>
+              <div class="smp-section-label">任务看板</div>
+              <div class="kanban">
+                <div class="kcard">
+                  <div class="kcard-top">
+                    <span class="prio p1">P1</span>
+                  </div>
+                  <div class="kcard-title">会话列表改为 pin + cwd 分组</div>
+                  <div class="kcard-foot">
+                    <span class="meta">
+                      <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      link2
+                    </span>
+                    <span class="kstatus run"><span class="dot"></span>在航</span>
+                  </div>
+                </div>
+                <div class="kcard">
+                  <div class="kcard-top">
+                    <span class="prio p0">P0</span>
+                  </div>
+                  <div class="kcard-title">废弃全部会话页</div>
+                  <div class="kcard-foot">
+                    <span class="meta">
+                      <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      session.ts
+                    </span>
+                    <span class="kstatus dock"><span class="dot"></span>已停泊</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="smp-section-label">会话</div>
+              <div class="sessions">
+                <div class="srow">
+                  <span class="cli-badge cli-claude">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>
+                    claude
+                  </span>
+                  <span class="srow-title">重构会话分组逻辑</span>
+                  <span class="sstatus run"><span class="dot"></span>在航</span>
+                </div>
+                <div class="srow">
+                  <span class="cli-badge cli-codex">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    codex
+                  </span>
+                  <span class="srow-title">补 theme tokens 测试</span>
+                  <span class="sstatus dock"><span class="dot"></span>已停泊</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="swatches s1">
+      <span class="sw"><span class="chip" style="background:#1b1e24"></span><span class="lbl">背景</span><span class="hex">#1b1e24</span></span>
+      <span class="sw"><span class="chip" style="background:#2a2f3a"></span><span class="lbl">卡片</span><span class="hex">#2a2f3a</span></span>
+      <span class="sw"><span class="chip" style="background:#323844"></span><span class="lbl">浮层</span><span class="hex">#323844</span></span>
+      <span class="sw"><span class="chip" style="background:#454d5d"></span><span class="lbl">描边</span><span class="hex">#454d5d</span></span>
+      <span class="sw"><span class="chip" style="background:#61afef"></span><span class="lbl">品牌</span><span class="hex">#61afef</span></span>
+    </div>
+  </section>
+
+  <!-- ============ SCHEME 2 ============ -->
+  <section class="scheme-card">
+    <div class="scheme-head">
+      <div class="scheme-num">2</div>
+      <div><div class="scheme-title">石墨暖灰</div><div class="scheme-sub">去蓝的中性暖灰阶 · 利落描边 · 高易读、不刺眼</div></div>
+    </div>
+    <div class="sample-frame s2">
+      <div class="smp">
+
+        <!-- mini left rail -->
+        <div class="smp-rail">
+          <div class="smp-wordmark">
+            <svg class="icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>
+            Berth
+          </div>
+          <div class="smp-nav">
+            <a class="smp-nav-item active">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              港湾概览
+            </a>
+            <a class="smp-nav-item">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              全部任务
+            </a>
+          </div>
+          <div class="smp-rail-divider"></div>
+          <div class="smp-rail-label">项目</div>
+          <div class="smp-proj selected">
+            <span class="smp-proj-dot"></span>
+            <span class="smp-proj-main">
+              <span class="smp-proj-name">berth</span>
+              <span class="smp-proj-meta">2 在航 · 1 已停泊</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- main column -->
+        <div class="smp-main">
+          <div class="smp-overview">
+            <span class="ov-title">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>
+              港湾概览
+            </span>
+            <span class="smp-pills">
+              <span class="pill run"><span class="dot"></span>2 在航</span>
+              <span class="pill dock"><span class="dot"></span>1 已停泊</span>
+              <span class="pill idle"><span class="dot"></span>4 待处理</span>
+            </span>
+          </div>
+
+          <div class="smp-body">
+            <div>
+              <div class="smp-section-label">任务看板</div>
+              <div class="kanban">
+                <div class="kcard">
+                  <div class="kcard-top">
+                    <span class="prio p1">P1</span>
+                  </div>
+                  <div class="kcard-title">会话列表改为 pin + cwd 分组</div>
+                  <div class="kcard-foot">
+                    <span class="meta">
+                      <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      link2
+                    </span>
+                    <span class="kstatus run"><span class="dot"></span>在航</span>
+                  </div>
+                </div>
+                <div class="kcard">
+                  <div class="kcard-top">
+                    <span class="prio p0">P0</span>
+                  </div>
+                  <div class="kcard-title">废弃全部会话页</div>
+                  <div class="kcard-foot">
+                    <span class="meta">
+                      <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      session.ts
+                    </span>
+                    <span class="kstatus dock"><span class="dot"></span>已停泊</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="smp-section-label">会话</div>
+              <div class="sessions">
+                <div class="srow">
+                  <span class="cli-badge cli-claude">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>
+                    claude
+                  </span>
+                  <span class="srow-title">重构会话分组逻辑</span>
+                  <span class="sstatus run"><span class="dot"></span>在航</span>
+                </div>
+                <div class="srow">
+                  <span class="cli-badge cli-codex">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    codex
+                  </span>
+                  <span class="srow-title">补 theme tokens 测试</span>
+                  <span class="sstatus dock"><span class="dot"></span>已停泊</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="swatches s2">
+      <span class="sw"><span class="chip" style="background:#1f1e1d"></span><span class="lbl">背景</span><span class="hex">#1f1e1d</span></span>
+      <span class="sw"><span class="chip" style="background:#2c2a28"></span><span class="lbl">卡片</span><span class="hex">#2c2a28</span></span>
+      <span class="sw"><span class="chip" style="background:#353230"></span><span class="lbl">浮层</span><span class="hex">#353230</span></span>
+      <span class="sw"><span class="chip" style="background:#4b4640"></span><span class="lbl">描边</span><span class="hex">#4b4640</span></span>
+      <span class="sw"><span class="chip" style="background:#e0a458"></span><span class="lbl">品牌</span><span class="hex">#e0a458</span></span>
+    </div>
+  </section>
+
+  <!-- ============ SCHEME 3 ============ -->
+  <section class="scheme-card">
+    <div class="scheme-head">
+      <div class="scheme-num">3</div>
+      <div><div class="scheme-title">午夜靛蓝</div><div class="scheme-sub">冷调深靛蓝阶 + 青蓝品牌色 · 适合长时间航行</div></div>
+    </div>
+    <div class="sample-frame s3">
+      <div class="smp">
+
+        <!-- mini left rail -->
+        <div class="smp-rail">
+          <div class="smp-wordmark">
+            <svg class="icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>
+            Berth
+          </div>
+          <div class="smp-nav">
+            <a class="smp-nav-item active">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              港湾概览
+            </a>
+            <a class="smp-nav-item">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              全部任务
+            </a>
+          </div>
+          <div class="smp-rail-divider"></div>
+          <div class="smp-rail-label">项目</div>
+          <div class="smp-proj selected">
+            <span class="smp-proj-dot"></span>
+            <span class="smp-proj-main">
+              <span class="smp-proj-name">berth</span>
+              <span class="smp-proj-meta">2 在航 · 1 已停泊</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- main column -->
+        <div class="smp-main">
+          <div class="smp-overview">
+            <span class="ov-title">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>
+              港湾概览
+            </span>
+            <span class="smp-pills">
+              <span class="pill run"><span class="dot"></span>2 在航</span>
+              <span class="pill dock"><span class="dot"></span>1 已停泊</span>
+              <span class="pill idle"><span class="dot"></span>4 待处理</span>
+            </span>
+          </div>
+
+          <div class="smp-body">
+            <div>
+              <div class="smp-section-label">任务看板</div>
+              <div class="kanban">
+                <div class="kcard">
+                  <div class="kcard-top">
+                    <span class="prio p1">P1</span>
+                  </div>
+                  <div class="kcard-title">会话列表改为 pin + cwd 分组</div>
+                  <div class="kcard-foot">
+                    <span class="meta">
+                      <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      link2
+                    </span>
+                    <span class="kstatus run"><span class="dot"></span>在航</span>
+                  </div>
+                </div>
+                <div class="kcard">
+                  <div class="kcard-top">
+                    <span class="prio p0">P0</span>
+                  </div>
+                  <div class="kcard-title">废弃全部会话页</div>
+                  <div class="kcard-foot">
+                    <span class="meta">
+                      <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      session.ts
+                    </span>
+                    <span class="kstatus dock"><span class="dot"></span>已停泊</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="smp-section-label">会话</div>
+              <div class="sessions">
+                <div class="srow">
+                  <span class="cli-badge cli-claude">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>
+                    claude
+                  </span>
+                  <span class="srow-title">重构会话分组逻辑</span>
+                  <span class="sstatus run"><span class="dot"></span>在航</span>
+                </div>
+                <div class="srow">
+                  <span class="cli-badge cli-codex">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    codex
+                  </span>
+                  <span class="srow-title">补 theme tokens 测试</span>
+                  <span class="sstatus dock"><span class="dot"></span>已停泊</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="swatches s3">
+      <span class="sw"><span class="chip" style="background:#141b2e"></span><span class="lbl">背景</span><span class="hex">#141b2e</span></span>
+      <span class="sw"><span class="chip" style="background:#1f2940"></span><span class="lbl">卡片</span><span class="hex">#1f2940</span></span>
+      <span class="sw"><span class="chip" style="background:#283450"></span><span class="lbl">浮层</span><span class="hex">#283450</span></span>
+      <span class="sw"><span class="chip" style="background:#3a4768"></span><span class="lbl">描边</span><span class="hex">#3a4768</span></span>
+      <span class="sw"><span class="chip" style="background:#56b6ff"></span><span class="lbl">品牌</span><span class="hex">#56b6ff</span></span>
+    </div>
+  </section>
+
+  <!-- ============ SCHEME 4 ============ -->
+  <section class="scheme-card">
+    <div class="scheme-head">
+      <div class="scheme-num">4</div>
+      <div><div class="scheme-title">OLED 近黑 · 描边分层</div><div class="scheme-sub">近黑背景 · 主要靠描边 + 微抬升分层 · 现代高对比</div></div>
+    </div>
+    <div class="sample-frame s4">
+      <div class="smp">
+
+        <!-- mini left rail -->
+        <div class="smp-rail">
+          <div class="smp-wordmark">
+            <svg class="icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>
+            Berth
+          </div>
+          <div class="smp-nav">
+            <a class="smp-nav-item active">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              港湾概览
+            </a>
+            <a class="smp-nav-item">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              全部任务
+            </a>
+          </div>
+          <div class="smp-rail-divider"></div>
+          <div class="smp-rail-label">项目</div>
+          <div class="smp-proj selected">
+            <span class="smp-proj-dot"></span>
+            <span class="smp-proj-main">
+              <span class="smp-proj-name">berth</span>
+              <span class="smp-proj-meta">2 在航 · 1 已停泊</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- main column -->
+        <div class="smp-main">
+          <div class="smp-overview">
+            <span class="ov-title">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>
+              港湾概览
+            </span>
+            <span class="smp-pills">
+              <span class="pill run"><span class="dot"></span>2 在航</span>
+              <span class="pill dock"><span class="dot"></span>1 已停泊</span>
+              <span class="pill idle"><span class="dot"></span>4 待处理</span>
+            </span>
+          </div>
+
+          <div class="smp-body">
+            <div>
+              <div class="smp-section-label">任务看板</div>
+              <div class="kanban">
+                <div class="kcard">
+                  <div class="kcard-top">
+                    <span class="prio p1">P1</span>
+                  </div>
+                  <div class="kcard-title">会话列表改为 pin + cwd 分组</div>
+                  <div class="kcard-foot">
+                    <span class="meta">
+                      <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      link2
+                    </span>
+                    <span class="kstatus run"><span class="dot"></span>在航</span>
+                  </div>
+                </div>
+                <div class="kcard">
+                  <div class="kcard-top">
+                    <span class="prio p0">P0</span>
+                  </div>
+                  <div class="kcard-title">废弃全部会话页</div>
+                  <div class="kcard-foot">
+                    <span class="meta">
+                      <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      session.ts
+                    </span>
+                    <span class="kstatus dock"><span class="dot"></span>已停泊</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="smp-section-label">会话</div>
+              <div class="sessions">
+                <div class="srow">
+                  <span class="cli-badge cli-claude">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>
+                    claude
+                  </span>
+                  <span class="srow-title">重构会话分组逻辑</span>
+                  <span class="sstatus run"><span class="dot"></span>在航</span>
+                </div>
+                <div class="srow">
+                  <span class="cli-badge cli-codex">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    codex
+                  </span>
+                  <span class="srow-title">补 theme tokens 测试</span>
+                  <span class="sstatus dock"><span class="dot"></span>已停泊</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="swatches s4">
+      <span class="sw"><span class="chip" style="background:#0d0f12"></span><span class="lbl">背景</span><span class="hex">#0d0f12</span></span>
+      <span class="sw"><span class="chip" style="background:#15181d"></span><span class="lbl">卡片</span><span class="hex">#15181d</span></span>
+      <span class="sw"><span class="chip" style="background:#1c2028"></span><span class="lbl">浮层</span><span class="hex">#1c2028</span></span>
+      <span class="sw"><span class="chip" style="background:#2d333d"></span><span class="lbl">描边</span><span class="hex">#2d333d</span></span>
+      <span class="sw"><span class="chip" style="background:#67b3f0"></span><span class="lbl">品牌</span><span class="hex">#67b3f0</span></span>
+    </div>
+  </section>
+
+</main>
+
+<div class="caption-chip">
+  <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>
+  <span><b>v7</b> · 暗色配色选项</span>
+</div>
+
+</body>
+</html>

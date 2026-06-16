@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Berth v7 · 任务卡样式选项</title>
+<style>
+:root{ color-scheme:dark;
+  --background:#282c34; --foreground:#abb2bf; --card:#2c313a; --popover:#21252b; --secondary:#3a4150;
+  --muted:#3a4150; --muted-foreground:#828997; --accent:#3a4150; --destructive:#e06c75; --border:#3e4451;
+  --input:#3e4451; --ring:#61afef; --sidebar:#21252b; --sidebar-accent:#2c313a; --brand:#61afef;
+  --success:#98c379; --warning:#e5c07b; --priority:#d19a66; --purple:#c678dd; --text-dim:#6b7280;
+  --radius:0.625rem; --radius-md:0.5rem; --radius-sm:0.375rem;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; --font-mono:'SF Mono',ui-monospace,Menlo,monospace; }
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--background);color:var(--foreground);font-family:var(--font-sans);
+  -webkit-font-smoothing:antialiased;line-height:1.45;min-height:100vh;
+  padding:28px 28px 80px;
+}
+a{color:inherit}
+
+/* ===== page header ===== */
+.page-head{max-width:1180px;margin:0 auto 26px}
+.page-head h1{font-size:20px;font-weight:700;color:#e6e9ee;margin:0 0 6px;letter-spacing:.2px}
+.page-head .sub{font-size:13px;color:var(--muted-foreground);margin:0 0 14px;line-height:1.6;max-width:860px}
+.page-head .sub b{color:var(--foreground);font-weight:600}
+.problem{
+  display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);
+  border-left:3px solid var(--warning);border-radius:var(--radius-md);padding:11px 14px;max-width:860px;
+}
+.problem .icon{color:var(--warning);flex:none;margin-top:1px}
+.problem .ptxt{font-size:12.5px;color:var(--muted-foreground);line-height:1.6}
+.problem .ptxt b{color:var(--foreground);font-weight:600}
+
+/* ===== 3-column layout ===== */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;max-width:1180px;margin:0 auto}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}}
+.variant{display:flex;flex-direction:column;min-width:0}
+.v-head{margin-bottom:11px}
+.v-tag{
+  display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:#e6e9ee;
+}
+.v-tag .letter{
+  width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:800;background:color-mix(in oklab,var(--brand) 20%,transparent);color:var(--brand);flex:none;
+}
+.v-desc{font-size:11.5px;color:var(--text-dim);margin-top:6px;line-height:1.6}
+.v-desc b{color:var(--muted-foreground);font-weight:600}
+
+/* ===== shared kanban column shell ===== */
+.kcol{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);
+  display:flex;flex-direction:column;min-height:120px;
+  border-color:color-mix(in oklab,var(--brand) 45%,var(--border));
+}
+.kcol-head{display:flex;align-items:center;gap:7px;padding:9px 11px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;color:var(--foreground)}
+.kcol-head .kdot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--priority)}
+.kcol-head .kname{white-space:nowrap}
+.kcol-head .kn{margin-left:auto;color:var(--text-dim);font-weight:500;font-size:11px;background:var(--muted);padding:0 7px;border-radius:9px;flex:none}
+.kcol-body{padding:9px;display:flex;flex-direction:column;gap:9px}
+
+/* glyphs reused across variants */
+.dot-running{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 0 rgba(152,195,121,.5);animation:pulse 2s infinite;flex:none}
+.ring-unread{width:9px;height:9px;border-radius:50%;border:2px solid var(--brand);box-sizing:border-box;flex:none}
+.dot-idle{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--text-dim);box-sizing:border-box;flex:none;opacity:.7}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(152,195,121,.5)}70%{box-shadow:0 0 0 6px rgba(152,195,121,0)}100%{box-shadow:0 0 0 0 rgba(152,195,121,0)}}
+
+.icon{display:inline-flex;align-items:center;justify-content:center}
+.icon svg{width:14px;height:14px}
+
+/* generic clickable button reset */
+.gobtn,.morebtn,.chevbtn,.todaybtn{
+  border:none;background:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:5px;color:var(--muted-foreground);padding:0;
+}
+.gobtn:hover{background:var(--secondary);color:var(--success)}
+.morebtn:hover{background:var(--secondary);color:var(--foreground)}
+.chevbtn{color:var(--text-dim);transition:transform .15s}
+.chevbtn:hover{color:var(--foreground)}
+
+/* ========================================================================
+   VARIANT A — 标题优先 · 左色条
+   ===================================================================== */
+.va .kcard{
+  background:var(--background);border:1px solid var(--border);border-left:3px solid transparent;
+  border-radius:var(--radius-sm);padding:10px 11px 9px;position:relative;transition:border-color .15s;
+}
+.va .kcard:hover{border-color:var(--muted-foreground)}
+.va .kcard.prio-p0{border-left-color:var(--destructive)}
+.va .kcard.prio-p1{border-left-color:var(--priority)}
+.va .kcard.prio-p2{border-left-color:color-mix(in oklab,var(--text-dim) 60%,transparent)}
+.va .a-top{display:flex;align-items:flex-start;gap:8px}
+.va .a-title{
+  font-size:15px;font-weight:650;color:#e6e9ee;line-height:1.35;flex:1;min-width:0;letter-spacing:.1px;
+}
+/* today sun toggle, top-right */
+.va .todaybtn{width:24px;height:24px;flex:none;color:var(--text-dim);border:1px solid transparent}
+.va .todaybtn:hover{background:var(--secondary);color:var(--warning)}
+.va .kcard.today .todaybtn{color:var(--warning);background:color-mix(in oklab,var(--warning) 16%,transparent)}
+.va .today-pill{
+  display:none;font-size:9.5px;font-weight:700;letter-spacing:.4px;color:var(--warning);
+  background:color-mix(in oklab,var(--warning) 17%,transparent);padding:1px 6px;border-radius:4px;flex:none;margin-top:1px;
+}
+.va .kcard.today .today-pill{display:inline-block}
+.va .a-foot{display:flex;align-items:center;gap:9px;margin-top:9px;color:var(--text-dim);font-size:11px}
+.va .a-link{display:inline-flex;align-items:center;gap:4px;color:var(--muted-foreground)}
+.va .a-state{display:inline-flex;align-items:center;gap:5px;color:var(--muted-foreground)}
+.va .a-foot .spacer{margin-left:auto}
+.va .gobtn,.va .morebtn,.va .chevbtn{width:22px;height:22px}
+
+/* ========================================================================
+   VARIANT B — 标题优先 · 点标
+   ===================================================================== */
+.vb .kcard{
+  background:var(--background);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:10px 11px 9px;transition:border-color .15s;
+}
+.vb .kcard:hover{border-color:var(--muted-foreground)}
+.vb .b-top{display:flex;align-items:flex-start;gap:8px}
+.vb .b-titlewrap{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px}
+.vb .prio-dot{width:6px;height:6px;border-radius:50%;flex:none;position:relative;top:6px}
+.vb .prio-dot.p0{background:var(--destructive)}
+.vb .prio-dot.p1{background:var(--priority)}
+.vb .prio-dot.p2{background:var(--text-dim);opacity:.6}
+.vb .b-title{font-size:15px;font-weight:650;color:#e6e9ee;line-height:1.35;min-width:0;letter-spacing:.1px}
+.vb .b-glyph{display:inline-flex;align-items:center;flex:none;margin-top:5px}
+/* star today toggle */
+.vb .todaybtn{width:24px;height:24px;flex:none;color:var(--text-dim)}
+.vb .todaybtn:hover{color:var(--warning)}
+.vb .kcard.today .todaybtn{color:var(--warning)}
+.vb .kcard.today .todaybtn svg{fill:var(--warning)}
+.vb .b-foot{
+  display:flex;align-items:center;gap:7px;margin-top:9px;color:var(--text-dim);font-size:11px;
+  padding-left:14px;
+}
+.vb .b-foot .sep{color:var(--border)}
+.vb .b-foot .b-link{color:var(--muted-foreground);display:inline-flex;align-items:center;gap:3px}
+.vb .b-foot .b-go{display:inline-flex;align-items:center;gap:4px;color:var(--muted-foreground);cursor:pointer}
+.vb .b-foot .b-go:hover{color:var(--success)}
+.vb .b-foot .b-more{margin-left:auto}
+.vb .gobtn,.vb .morebtn,.vb .chevbtn{width:20px;height:20px}
+.vb .kcard.today .b-title{}
+
+/* ========================================================================
+   VARIANT C — 留白 · 弱标签
+   ===================================================================== */
+.vc .kcard{
+  background:var(--background);border:1px solid var(--border);border-radius:var(--radius-md);
+  padding:15px 15px 13px;transition:border-color .15s;
+}
+.vc .kcard:hover{border-color:var(--muted-foreground)}
+.vc .c-top{display:flex;align-items:flex-start;gap:10px}
+.vc .c-glyph{display:inline-flex;align-items:center;flex:none;margin-top:5px}
+.vc .c-title{font-size:15px;font-weight:700;color:#e6e9ee;line-height:1.4;flex:1;min-width:0;letter-spacing:.1px}
+/* today text-chip toggle */
+.vc .today-chip{
+  font-size:10.5px;font-weight:600;letter-spacing:.3px;padding:2px 9px;border-radius:11px;flex:none;cursor:pointer;
+  color:var(--text-dim);border:1px solid var(--border);background:transparent;transition:all .15s;
+}
+.vc .today-chip:hover{color:var(--warning);border-color:color-mix(in oklab,var(--warning) 50%,var(--border))}
+.vc .kcard.today .today-chip{color:var(--warning);border-color:color-mix(in oklab,var(--warning) 55%,var(--border));background:color-mix(in oklab,var(--warning) 14%,transparent)}
+.vc .c-foot{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:11px;color:var(--text-dim);min-height:22px}
+/* outline priority chip */
+.vc .prio-chip{
+  font-size:10px;font-weight:700;letter-spacing:.3px;padding:1px 7px;border-radius:5px;flex:none;
+  background:transparent;border:1px solid;
+}
+.vc .prio-chip.p0{color:var(--destructive);border-color:color-mix(in oklab,var(--destructive) 55%,transparent)}
+.vc .prio-chip.p1{color:var(--priority);border-color:color-mix(in oklab,var(--priority) 55%,transparent)}
+.vc .prio-chip.p2{color:var(--text-dim);border-color:color-mix(in oklab,var(--text-dim) 55%,transparent)}
+.vc .c-link{display:inline-flex;align-items:center;gap:4px;color:var(--muted-foreground)}
+.vc .c-foot .c-actions{margin-left:auto;display:flex;align-items:center;gap:2px;opacity:0;transition:opacity .15s}
+.vc .kcard:hover .c-actions{opacity:1}
+.vc .gobtn,.vc .morebtn,.vc .chevbtn{width:24px;height:24px}
+.vc .gobtn:hover{background:var(--secondary)}
+
+/* ===== bottom caption chip ===== */
+.caption{
+  position:fixed;right:18px;bottom:16px;font-size:11px;font-weight:600;letter-spacing:.3px;
+  color:var(--muted-foreground);background:var(--popover);border:1px solid var(--border);
+  padding:6px 12px;border-radius:20px;box-shadow:0 4px 14px rgba(0,0,0,.32);
+}
+.caption b{color:var(--brand);font-weight:700}
+</style>
+</head>
+<body>
+
+<header class="page-head">
+  <h1>任务卡样式 · 三选一</h1>
+  <p class="sub">
+    在「进行中」看板列里，用同一组三张任务卡对比三种重排方案。目标：让 <b>任务标题</b>成为卡片里最显眼的元素，把
+    <b>优先级 / 状态</b>压成低调的标记，并新增一个 <b>「今日处理」</b>开关 —— 打开后该卡计入港湾概览的「今日交付」。
+    每列内容完全相同，便于在真实语境里横向比较。请挑出你想要的层级。
+  </p>
+  <div class="problem">
+    <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg></span>
+    <span class="ptxt"><b>当前问题：</b>标题字号偏小，优先级填充色块和状态标记反而抢眼。重排后标题升为主角，优先级降级为细色条 / 小圆点 / 描边小签，状态收成一个小字形。</span>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- ========================= VARIANT A ========================= -->
+  <section class="variant va">
+    <div class="v-head">
+      <span class="v-tag"><span class="letter">A</span> 标题优先 · 左色条</span>
+      <div class="v-desc">标题为主角（15px）。优先级<b>只作为卡片左侧细色条</b>（P0 红 / P1 琥珀 / P2 暗）。今日 = 右上角太阳图标开关，开启后追加一枚「今日」小标。元信息（link · 状态 · ▷ · ⋯）落到安静的页脚行。</div>
+    </div>
+    <div class="kcol">
+      <div class="kcol-head"><span class="kdot"></span><span class="kname">进行中</span><span class="kn">3</span></div>
+      <div class="kcol-body">
+
+        <!-- A · Card 1: P1, 在航, not today -->
+        <div class="kcard prio-p1">
+          <div class="a-top">
+            <span class="a-title">会话列表改为 pin + cwd 分组</span>
+            <button class="todaybtn" data-today title="今日处理" aria-label="今日处理">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+            </button>
+          </div>
+          <span class="today-pill">今日</span>
+          <div class="a-foot">
+            <span class="a-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> link 2</span>
+            <span class="a-state"><span class="dot-running"></span> 在航</span>
+            <span class="spacer"></span>
+            <button class="gobtn" title="起会话"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg></button>
+            <button class="morebtn" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            <button class="chevbtn" title="展开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+        </div>
+
+        <!-- A · Card 2: P0, 靠岸·待查收, MARKED today -->
+        <div class="kcard prio-p0 today">
+          <div class="a-top">
+            <span class="a-title">废弃全部会话页</span>
+            <button class="todaybtn" data-today title="今日处理" aria-label="今日处理">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+            </button>
+          </div>
+          <span class="today-pill">今日</span>
+          <div class="a-foot">
+            <span class="a-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> link 1</span>
+            <span class="a-state"><span class="ring-unread"></span> 靠岸·待查收</span>
+            <span class="spacer"></span>
+            <button class="gobtn" title="起会话"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg></button>
+            <button class="morebtn" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            <button class="chevbtn" title="展开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+        </div>
+
+        <!-- A · Card 3: P2, no running session, not today -->
+        <div class="kcard prio-p2">
+          <div class="a-top">
+            <span class="a-title">show-more 移植到会话模块</span>
+            <button class="todaybtn" data-today title="今日处理" aria-label="今日处理">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+            </button>
+          </div>
+          <span class="today-pill">今日</span>
+          <div class="a-foot">
+            <span class="a-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> link 1</span>
+            <span class="a-state"><span class="dot-idle"></span> 无在航</span>
+            <span class="spacer"></span>
+            <button class="gobtn" title="起会话"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg></button>
+            <button class="morebtn" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            <button class="chevbtn" title="展开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= VARIANT B ========================= -->
+  <section class="variant vb">
+    <div class="v-head">
+      <span class="v-tag"><span class="letter">B</span> 标题优先 · 点标</span>
+      <div class="v-desc">标题为主角（15px）。优先级 = 标题前一颗 <b>6px 彩色圆点</b>（不再是色块），状态字形紧随其后。今日 = 星标开关。元信息（link N · ▷起会话 · ⋯）收在低饱和页脚。</div>
+    </div>
+    <div class="kcol">
+      <div class="kcol-head"><span class="kdot"></span><span class="kname">进行中</span><span class="kn">3</span></div>
+      <div class="kcol-body">
+
+        <!-- B · Card 1: P1, 在航, not today -->
+        <div class="kcard">
+          <div class="b-top">
+            <span class="b-titlewrap">
+              <span class="prio-dot p1" title="P1"></span>
+              <span class="b-title">会话列表改为 pin + cwd 分组</span>
+            </span>
+            <span class="b-glyph" title="在航"><span class="dot-running"></span></span>
+            <button class="todaybtn" data-today title="今日处理" aria-label="今日处理">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </button>
+          </div>
+          <div class="b-foot">
+            <span class="b-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> link 2</span>
+            <span class="sep">·</span>
+            <span class="b-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg> 起会话</span>
+            <button class="morebtn b-more" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            <button class="chevbtn" title="展开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+        </div>
+
+        <!-- B · Card 2: P0, 靠岸·待查收, MARKED today -->
+        <div class="kcard today">
+          <div class="b-top">
+            <span class="b-titlewrap">
+              <span class="prio-dot p0" title="P0"></span>
+              <span class="b-title">废弃全部会话页</span>
+            </span>
+            <span class="b-glyph" title="靠岸·待查收"><span class="ring-unread"></span></span>
+            <button class="todaybtn" data-today title="今日处理" aria-label="今日处理">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </button>
+          </div>
+          <div class="b-foot">
+            <span class="b-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> link 1</span>
+            <span class="sep">·</span>
+            <span class="b-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg> 起会话</span>
+            <button class="morebtn b-more" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            <button class="chevbtn" title="展开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+        </div>
+
+        <!-- B · Card 3: P2, no running session, not today -->
+        <div class="kcard">
+          <div class="b-top">
+            <span class="b-titlewrap">
+              <span class="prio-dot p2" title="P2"></span>
+              <span class="b-title">show-more 移植到会话模块</span>
+            </span>
+            <span class="b-glyph" title="无在航"><span class="dot-idle"></span></span>
+            <button class="todaybtn" data-today title="今日处理" aria-label="今日处理">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </button>
+          </div>
+          <div class="b-foot">
+            <span class="b-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> link 1</span>
+            <span class="sep">·</span>
+            <span class="b-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg> 起会话</span>
+            <button class="morebtn b-more" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            <button class="chevbtn" title="展开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= VARIANT C ========================= -->
+  <section class="variant vc">
+    <div class="v-head">
+      <span class="v-tag"><span class="letter">C</span> 留白 · 弱标签</span>
+      <div class="v-desc">宽松卡片，标题 15px 加粗、四周留白。优先级 = 页脚一枚 <b>描边小签</b>（非填充）。今日 = 「今日」文字标签开关。状态为标题前的小字形。操作（▷ ⋯ 展开）<b>悬停时浮现</b>。</div>
+    </div>
+    <div class="kcol">
+      <div class="kcol-head"><span class="kdot"></span><span class="kname">进行中</span><span class="kn">3</span></div>
+      <div class="kcol-body">
+
+        <!-- C · Card 1: P1, 在航, not today -->
+        <div class="kcard">
+          <div class="c-top">
+            <span class="c-glyph" title="在航"><span class="dot-running"></span></span>
+            <span class="c-title">会话列表改为 pin + cwd 分组</span>
+            <button class="today-chip" data-today>今日</button>
+          </div>
+          <div class="c-foot">
+            <span class="prio-chip p1">P1</span>
+            <span class="c-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> link 2</span>
+            <span class="c-actions">
+              <button class="gobtn" title="起会话"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg></button>
+              <button class="morebtn" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              <button class="chevbtn" title="展开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            </span>
+          </div>
+        </div>
+
+        <!-- C · Card 2: P0, 靠岸·待查收, MARKED today -->
+        <div class="kcard today">
+          <div class="c-top">
+            <span class="c-glyph" title="靠岸·待查收"><span class="ring-unread"></span></span>
+            <span class="c-title">废弃全部会话页</span>
+            <button class="today-chip" data-today>今日</button>
+          </div>
+          <div class="c-foot">
+            <span class="prio-chip p0">P0</span>
+            <span class="c-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> link 1</span>
+            <span class="c-actions">
+              <button class="gobtn" title="起会话"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg></button>
+              <button class="morebtn" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              <button class="chevbtn" title="展开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            </span>
+          </div>
+        </div>
+
+        <!-- C · Card 3: P2, no running session, not today -->
+        <div class="kcard">
+          <div class="c-top">
+            <span class="c-glyph" title="无在航"><span class="dot-idle"></span></span>
+            <span class="c-title">show-more 移植到会话模块</span>
+            <button class="today-chip" data-today>今日</button>
+          </div>
+          <div class="c-foot">
+            <span class="prio-chip p2">P2</span>
+            <span class="c-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> link 1</span>
+            <span class="c-actions">
+              <button class="gobtn" title="起会话"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg></button>
+              <button class="morebtn" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              <button class="chevbtn" title="展开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            </span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="caption">v7 · <b>任务卡样式选项</b></div>
+
+<script>
+/* Wire the 今日 (mark-for-today) toggle across all three variants.
+   Toggling flips the .today class on the owning .kcard, which drives:
+     A → sun icon lights up + 今日 pill appears
+     B → star icon fills
+     C → 今日 text-chip activates
+   Clicking 今日 must NOT also fire other card affordances. */
+document.querySelectorAll('[data-today]').forEach(function(btn){
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    var card = btn.closest('.kcard');
+    if(card) card.classList.toggle('today');
+  });
+});
+
+/* Keep the demo affordances from doing anything navigational, but show
+   they are live, clickable hit-targets (the real app wires these). */
+document.querySelectorAll('.gobtn,.morebtn,.chevbtn,.b-go,.c-link,.a-link').forEach(function(el){
+  el.addEventListener('click', function(e){ e.stopPropagation(); });
+});
+</script>
+
+</body>
+</html>
