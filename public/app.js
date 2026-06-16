@@ -2285,6 +2285,7 @@ function buildWorkspaceTodoItem(t, projectName) {
     <span class="priority-chip priority-${escHtml(priorityClass)}">${escHtml(t.priority || '—')}</span>
     ${ddlChipHtml(t)}
     <span class="todo-title">${escHtml(t.title)}</span>
+    <span class="todo-row-break"></span>
     ${todoRowExtrasHtml(info)}
     <button class="launch-sess-btn primary" title="新建一个会话">${icon('play')} 起会话</button>
   `;

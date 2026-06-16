@@ -1351,7 +1351,7 @@ html, body {
   display: flex;
   gap: 10px;
   align-items: stretch;
-  height: 500px;
+  height: clamp(360px, calc(100vh - 300px), 760px);
   overflow-x: auto;
   padding-bottom: 4px;
 }
@@ -1367,12 +1367,14 @@ html, body {
   overflow: hidden;
 }
 .todo-col.active {
-  flex: 0 0 440px;
-  min-width: 0;
+  flex: 1 1 380px;
+  min-width: 300px;
+  max-width: 560px;
   border-top: 2px solid var(--col-accent);
 }
 .todo-col.stacked {
-  flex: 0 0 208px;
+  flex: 0 1 200px;
+  min-width: 150px;
   cursor: pointer;
   background: var(--bg);
 }
@@ -1426,19 +1428,21 @@ html, body {
 
 /* Stacked card: the head isn't separately clickable (the whole card is) */
 .todo-col.stacked .todo-col-head { cursor: pointer; }
-.todo-col.stacked .todo-col-body { gap: 2px; padding: 6px; }
+.todo-col.stacked .todo-col-body { gap: 5px; padding: 7px; }
 
 /* Name-only task rows inside a stacked column */
 .todo-mini {
   font-size: 12px;
   color: var(--text-muted);
-  padding: 5px 8px;
-  border-radius: 5px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.todo-col.stacked:hover .todo-mini { color: var(--text); }
+.todo-col.stacked:hover .todo-mini { color: var(--text); border-color: var(--col-accent); }
 
 .todo-item,
 .now-todo-item {
@@ -1468,6 +1472,22 @@ html, body {
   transition: background 0.1s;
   flex-wrap: wrap;
 }
+
+/* Forces a flex line break so the action cluster drops to its own footer row,
+   leaving the task title the full card width (no narrow-ribbon squeeze). The
+   title keeps its default flex:1 so it shares the first line with the chips. */
+.todo-row-break {
+  flex-basis: 100%;
+  width: 100%;
+  height: 0;
+  margin: 0;
+}
+/* Footer cluster (below the break): status glyph / link-count / chevron sit on
+   the left, ⋯ + 起会话 get pushed to the right. */
+.todo-row .todo-menu-btn { margin-left: auto; }
+.todo-row .launch-sess-btn,
+.todo-row .todo-expand-hint,
+.todo-row .todo-sess-count { align-self: center; }
 
 .todo-row:hover {
   background: color-mix(in oklab, var(--bg3) 84%, var(--text) 16%);
