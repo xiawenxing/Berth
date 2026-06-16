@@ -4150,6 +4150,7 @@ function renderSidebar() {
     }
 
     // ── Projects section ──
+    // Group matching sessions by project…
     const projMap = new Map();
     for (const s of filtered) {
       if (s.projectId !== null) {
@@ -4157,7 +4158,20 @@ function renderSidebar() {
         projMap.get(s.projectId).push(s);
       }
     }
-    if (projMap.size > 0) {
+    // …then fold in every non-archived project that has NO sessions, so the Projects栏目
+    // always lists all existing projects (each still offers ✎ new-session). When searching,
+    // suppress the empty ones so the section stays scoped to matches.
+    const projOrder = [...projMap.keys()];   // projects-with-sessions keep their session-encounter order
+    if (!query) {
+      const empties = projects
+        .filter(p => !p.archived && !projMap.has(p.id))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      for (const p of empties) { projMap.set(p.id, []); projOrder.push(p.id); }
+    }
+
+    // Always render the Projects header when not searching so the 新建项目 affordance is reachable
+    // even with zero projects — mirrors how 无归属 always exposes 导入目录.
+    if (projMap.size > 0 || !query) {
       const projWrap = document.createElement('div');
       projWrap.className = 'projects-group';
 
@@ -4178,7 +4192,16 @@ function renderSidebar() {
       // toggle projects group (state persisted across re-renders)
       wireSectionToggle(hdr, body, 'projects-top');
 
-      for (const [projId, sessions] of projMap) {
+      if (projOrder.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'import-dir-hint';
+        hint.innerHTML = `${icon('folder-plus')} 还没有项目 · <button class="import-dir-link">新建项目</button>`;
+        hint.querySelector('.import-dir-link').addEventListener('click', openCreateProjectDialog);
+        body.appendChild(hint);
+      }
+
+      for (const projId of projOrder) {
+        const sessions = projMap.get(projId);
         const sub = buildSection('proj:' + projId, projectLabel(projId), sessions, collapsedSections.has('proj:' + projId), 'project-section');
         makeSessionDropTarget(sub, projId);   // drop a session here → assign to this project
         addSectionLaunchBtn(sub, { projectName: projId, todoKey: null });   // ✎ new session for this project
