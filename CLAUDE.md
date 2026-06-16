@@ -12,8 +12,9 @@ and the landmines that cost real debugging time). This file is just the working 
   ask each time — committing your own completed work is expected. (If the owner explicitly says
   "don't commit" for a given task, honor that for that task.)
 - **Never commit on a broken build.** `npx tsc --noEmit` clean + `npm test` green before you commit.
-- The default branch is `main`. For anything non-trivial, **work on a branch**, not directly on
-  `main`. Push only if asked.
+- `main` is protected by convention: do **not** commit or push directly to `main`.
+- All code/doc changes must be made on a `release/<version-or-scope>` branch. `main` only receives
+  merges from release branches after tests pass. Push only if asked.
 
 ## Parallel tasks — use worktrees + branches autonomously
 
@@ -28,11 +29,12 @@ git worktree remove ../berth-<short-task-name>
 ```
 
 This keeps parallel work from colliding and keeps each branch's history coherent. Do it on your own
-initiative — you don't need to ask for permission to branch/worktree for parallel work. Merge back to
-`main` (or open a PR) when a task is done and green; clean up the worktree afterward.
+initiative — you don't need to ask for permission to branch/worktree for parallel work. Merge the
+finished branch into the active `release/<version-or-scope>` branch (or open a PR) when it is done
+and green; clean up the worktree afterward.
 
-A single linear task does **not** need a worktree — just a branch (or commit straight on a feature
-branch). Reserve worktrees for genuinely concurrent work.
+A single linear task does **not** need a worktree, but it still needs a `release/<version-or-scope>`
+branch. Reserve worktrees for genuinely concurrent work.
 
 ## Build / test
 

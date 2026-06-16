@@ -84,10 +84,12 @@ See `docs/ARCHITECTURE.md` for the per-module breakdown and the data model.
 - **Commit early and often**, in logical chunks — one self-contained change (a fix, a feature, a
   refactor) per commit with a clear message.
 - **Never commit on a broken build:** `npx tsc --noEmit` clean and `npm test` green first.
-- For non-trivial work, use a feature branch. For two or more genuinely independent tasks in flight,
-  use a separate git worktree per task so branches don't collide:
+- Do not commit or push directly on `main`. All changes start on a `release/<version-or-scope>`
+  branch, and `main` only accepts merges from release branches after the build and tests are green.
+- For two or more genuinely independent tasks in flight, use a separate git worktree per task so
+  branches don't collide:
   ```bash
-  git worktree add ../berth-<task> -b feat/<task>
+  git worktree add ../berth-<task> -b release/<version-or-scope>-<task>
   ```
 - Match the surrounding code's style, naming, and comment density.
 
