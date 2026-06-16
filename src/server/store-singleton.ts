@@ -12,7 +12,7 @@ import { getDocsRoot, setDocStoreStore } from '../data/docstore'
 import { getContextConfig } from '../data/context-config'
 import { setDocGitEnabled } from '../data/doc-git'
 import { syncSource } from '../data/sync/engine'
-import { berthAgentCwd, berthHome } from '../paths'
+import { berthHome } from '../paths'
 import type { LogicalSession } from '../types'
 
 const DB_DIR = berthHome()
@@ -42,9 +42,16 @@ export async function initData(): Promise<void> {
   migrateSessionDirsOnce(store)
 }
 
-/** Gather the session-import roots: explicit dirs ∪ project paths ∪ launch-intent cwds ∪ Berth agent cwd. */
+/**
+ * Gather the session-import roots: explicit dirs ∪ project paths ∪ launch-intent cwds.
+ *
+ * NOTE: `berthAgentCwd()` is deliberately NOT a root. The internal management agent (`claude -p` for
+ * AI titles / progress summaries) runs there and would otherwise surface its headless one-shot
+ * sessions in the 无归属 list as noise. These never block and never need user action, so they are
+ * hidden from the list rather than kept as a "Berth activity" log (the earlier choice — reversed).
+ */
 function importRoots(): string[] {
-  const roots = new Set<string>([berthAgentCwd(), ...store.allSessionImportDirs()])
+  const roots = new Set<string>(store.allSessionImportDirs())
   for (const { paths } of store.allProjectPaths().values()) for (const p of paths) roots.add(p)
   for (const cwd of store.allLaunchIntentCwds()) roots.add(cwd)
   return [...roots]
