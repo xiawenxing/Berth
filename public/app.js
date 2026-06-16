@@ -2299,13 +2299,15 @@ function buildWorkspaceTodoItem(t, projectName) {
   const row = document.createElement('div');
   row.className = 'todo-row' + (info.hasExpand ? ' expandable' : '');
   row.dataset.todoId = t.id;
+  // 收起态单行紧凑：优先级 + 标题(省略号) + 截止/会话数等元信息 + 起会话。
+  // 不再用 .todo-row-break 强制换行——整张收起态卡片只占一行；起会话默认收成图标，
+  // hover 卡片时展开「起会话」文字，避免一个大按钮把卡片撑得又高又空。
   row.innerHTML = `
     <span class="priority-chip priority-${escHtml(priorityClass)}">${escHtml(t.priority || '—')}</span>
-    ${ddlChipHtml(t)}
     <span class="todo-title">${escHtml(t.title)}</span>
-    <span class="todo-row-break"></span>
+    ${ddlChipHtml(t)}
     ${todoRowExtrasHtml(info)}
-    <button class="launch-sess-btn primary" title="新建一个会话">${icon('play')} 起会话</button>
+    <button class="launch-sess-btn primary" title="新建一个会话">${icon('play')}<span class="launch-lbl">起会话</span></button>
   `;
   item.appendChild(row);
   wireTodoRow(t, item, row, projectName, info);
@@ -2437,7 +2439,8 @@ function wireTodoRow(t, item, row, projectName, info) {
 
   const titleEl = row.querySelector('.todo-title, .now-row-title');
   if (titleEl) {
-    titleEl.title = '双击编辑任务名称';
+    // 收起态标题单行省略，hover tooltip 给出完整标题（外加双击编辑提示）。
+    titleEl.title = t.title + '\n（双击编辑名称）';
     titleEl.addEventListener('dblclick', e => {
       e.stopPropagation();
       startTodoTitleEdit(t, projectName);
