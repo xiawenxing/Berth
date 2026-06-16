@@ -486,6 +486,10 @@ html, body {
   padding: 4px 0;
   font-size: 12px;
 }
+.dropdown-menu.todo-edit-menu {
+  min-width: 220px;
+  max-height: min(420px, calc(100vh - 24px));
+}
 .dropdown-menu .menu-section {
   padding: 4px 8px 2px;
   font-size: 10px;
@@ -2297,7 +2301,7 @@ html, body {
   font-size: 13.5px;
 }
 
-/* ⋯ task edit menu trigger (改名 / 优先级 / 删除) */
+/* ⋯ task edit menu trigger (截止日期 / 状态 / 优先级 / 删除) */
 .todo-menu-btn {
   background: transparent;
   border: 1px solid transparent;

@@ -2356,7 +2356,15 @@ function wireStatusDrop(col, status, projectName) {
     col.classList.remove('col-drop-target');
     const rid = e.dataTransfer.getData('text/berth-todo');
     const t = allTodos.find(x => x.id === rid);
-    if (t && t.status !== status) setTodoStatus(t, status, projectName);
+    if (!t) return;
+    if (t.status !== status) {
+      setTodoStatus(t, status, projectName, { activateTarget: true });
+      return;
+    }
+    if (activeTodoStatus !== status) {
+      activeTodoStatus = status;
+      rerenderTodosView(projectName);
+    }
   });
 }
 
@@ -2434,11 +2442,11 @@ function wireTodoRow(t, item, row, projectName, info) {
     openLaunchPopover(e.currentTarget, { projectName, todoKey: t.id });
   });
 
-  // ⋯ edit menu (改名 / 优先级 / 删除). Injected here so every wireTodoRow site gets it without
+  // ⋯ edit menu (截止日期 / 状态 / 优先级 / 删除). Injected here so every wireTodoRow site gets it without
   // touching each row template; placed before 起会话 so the launch button stays right-most.
   const menuBtn = document.createElement('button');
   menuBtn.className = 'todo-menu-btn';
-  menuBtn.title = '更多（改名 / 优先级 / 删除）';
+  menuBtn.title = '更多（截止日期 / 状态 / 优先级 / 删除）';
   menuBtn.innerHTML = icon('ellipsis');
   menuBtn.addEventListener('click', e => {
     e.stopPropagation();
@@ -4020,7 +4028,7 @@ function openProjectEditMenu(anchor, proj) {
   setTimeout(() => document.addEventListener('click', closeMenu, { once: true }), 0);
 }
 
-// ── Task edit menu (改名 / 优先级 / 删除) ──────────────────────────────────────
+// ── Task edit menu (截止日期 / 状态 / 优先级 / 删除) ─────────────────────────────
 
 let TODO_PRIORITIES = ['P0', 'P1', 'P2', 'P3'];   // refreshed from /api/settings (loadTaskFieldConfig)
 
@@ -4034,9 +4042,14 @@ function rerenderTodosView(projectName) {
 function openTodoEditMenu(anchor, t, projectName) {
   closeMenu();
   const menu = document.createElement('div');
-  menu.className = 'dropdown-menu';
+  menu.className = 'dropdown-menu todo-edit-menu';
 
-  let html = '<div class="menu-section">状态</div>';
+  let html = '<div class="menu-section">截止日期</div>';
+  html += `<div class="menu-item ${t.ddl === todayStr() ? 'active' : ''}" data-act="ddl-today">${icon('hourglass')} 今日处理</div>`;
+  html += `<label class="menu-item ddl-later" data-act="ddl-later">${icon('clock')} later…`
+        + `<input type="date" class="ddl-date-input" value="${escHtml(t.ddl || offsetDayStr(1))}"></label>`;
+  if (t.ddl) html += `<div class="menu-item detach" data-act="ddl-clear">${icon('x')} 清除日期</div>`;
+  html += '<div class="menu-section">状态</div>';
   for (const s of STATUS_ORDER) {
     html += `<div class="menu-item ${t.status === s ? 'active' : ''}" data-status="${escHtml(s)}">`
           + `<span class="menu-status-dot" style="background:${statusColor(s)}"></span>${escHtml(s)}</div>`;
@@ -4045,13 +4058,8 @@ function openTodoEditMenu(anchor, t, projectName) {
   for (const p of TODO_PRIORITIES) {
     html += `<span class="menu-prio priority-${p.toLowerCase()} ${t.priority === p ? 'active' : ''}" data-prio="${p}">${p}</span>`;
   }
-  html += '</div><div class="menu-section">截止日期</div>';
-  html += `<div class="menu-item ${t.ddl === todayStr() ? 'active' : ''}" data-act="ddl-today">${icon('hourglass')} 今日处理</div>`;
-  html += `<label class="menu-item ddl-later" data-act="ddl-later">${icon('clock')} later…`
-        + `<input type="date" class="ddl-date-input" value="${escHtml(t.ddl || offsetDayStr(1))}"></label>`;
-  if (t.ddl) html += `<div class="menu-item detach" data-act="ddl-clear">${icon('x')} 清除日期</div>`;
+  html += '</div>';
   html += '<div class="menu-section">操作</div>';
-  html += `<div class="menu-item" data-act="rename">${icon('pencil')} 改名</div>`;
   html += `<div class="menu-item detach" data-act="delete">${icon('trash-2')} 删除任务</div>`;
   menu.innerHTML = html;
 
@@ -4084,11 +4092,6 @@ function openTodoEditMenu(anchor, t, projectName) {
     setTodoPriority(t, el.dataset.prio, projectName);
     closeMenu();
   }));
-  menu.querySelector('[data-act="rename"]').addEventListener('click', e => {
-    e.stopPropagation();
-    closeMenu();
-    startTodoTitleEdit(t, projectName);
-  });
   menu.querySelector('[data-act="delete"]').addEventListener('click', e => {
     e.stopPropagation();
     closeMenu();
@@ -4117,15 +4120,20 @@ async function setTodoPriority(t, priority, projectName) {
   catch (e) { t.priority = prev; rerenderTodosView(projectName); alert('优先级修改失败：' + e.message); }
 }
 
-async function setTodoStatus(t, status, projectName) {
+async function setTodoStatus(t, status, projectName, options = {}) {
   if (t.status === status) return;
   const prev = t.status;
+  const prevActive = activeTodoStatus;
   t.status = status;                           // optimistic
-  // Surface the moved card in its new column so the change is visible after re-render.
-  activeTodoStatus = status;
+  if (options.activateTarget) activeTodoStatus = status;
   rerenderTodosView(projectName);
   try { await patchTodo(t.id, { status }); }
-  catch (e) { t.status = prev; rerenderTodosView(projectName); alert('状态修改失败：' + e.message); }
+  catch (e) {
+    t.status = prev;
+    if (options.activateTarget) activeTodoStatus = prevActive;
+    rerenderTodosView(projectName);
+    alert('状态修改失败：' + e.message);
+  }
 }
 
 async function setTodoDdl(t, ddl, projectName) {
