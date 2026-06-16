@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseCliArgs } from '../src/cli'
 import { resolvePublicDir } from '../src/server/public-dir'
 
 describe('parseCliArgs', () => {
+  it('keeps the published CLI entry executable', () => {
+    expect(statSync(join(process.cwd(), 'bin', 'berth.mjs')).mode & 0o111).not.toBe(0)
+  })
+
   it('defaults: start command, no port, browser opens', () => {
     expect(parseCliArgs([])).toEqual({ command: 'start', port: undefined, host: undefined, open: true })
     expect(parseCliArgs(['start'])).toEqual({ command: 'start', port: undefined, host: undefined, open: true })

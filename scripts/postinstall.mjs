@@ -10,6 +10,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PREBUILDS = join(ROOT, 'node_modules', 'node-pty', 'prebuilds')
 
 try {
+  const cli = join(ROOT, 'bin', 'berth.mjs')
+  if (existsSync(cli)) chmodSync(cli, 0o755)
+} catch { /* never block install */ }
+
+try {
   if (existsSync(PREBUILDS)) {
     for (const platform of readdirSync(PREBUILDS)) {
       const helper = join(PREBUILDS, platform, 'spawn-helper')
