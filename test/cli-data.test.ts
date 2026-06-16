@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseFlags, selectTask, pickDoneStatus, formatTaskLine, runTaskCli, type TaskLite } from '../src/cli-data'
+import { parseFlags, selectTask, selectProject, pickDoneStatus, formatTaskLine, runTaskCli, type TaskLite } from '../src/cli-data'
 
 const T = (over: Partial<TaskLite>): TaskLite => ({ id: 'id', title: 't', status: '待办', priority: 'P1', project: null, ...over })
 
@@ -29,6 +29,20 @@ describe('selectTask', () => {
     expect(selectTask(tasks, '修红点').map(t => t.id)).toEqual(['bbbbbbbb-2222', 'cccccccc-3333'])
     expect(selectTask(tasks, '加能力')).toHaveLength(1)
     expect(selectTask(tasks, 'nope')).toHaveLength(0)
+  })
+})
+
+describe('selectProject', () => {
+  const projects = [
+    { id: 'aaaaaaaa-1111', name: 'Berth' },
+    { id: 'bbbbbbbb-2222', name: 'Meego Bridge' },
+    { id: 'cccccccc-3333', name: 'Meego Sync' },
+  ]
+  it('matches exact id, id prefix, exact name, and name substring', () => {
+    expect(selectProject(projects, 'aaaaaaaa-1111').map(p => p.id)).toEqual(['aaaaaaaa-1111'])
+    expect(selectProject(projects, 'bbbbbb').map(p => p.id)).toEqual(['bbbbbbbb-2222'])
+    expect(selectProject(projects, 'Berth').map(p => p.id)).toEqual(['aaaaaaaa-1111'])
+    expect(selectProject(projects, 'Meego').map(p => p.id)).toEqual(['bbbbbbbb-2222', 'cccccccc-3333'])
   })
 })
 

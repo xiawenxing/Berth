@@ -61,6 +61,30 @@ export function formatTaskTable(tasks: TaskLite[]): string {
   return tasks.map(formatTaskLine).join('\n')
 }
 
+export interface ProjectLite { id: string; name: string; hue?: string | null; archived?: boolean }
+
+export function selectProject<T extends ProjectLite>(projects: T[], query: string): T[] {
+  const q = query.trim()
+  if (!q) return []
+  const exact = projects.find(p => p.id === q || p.name === q)
+  if (exact) return [exact]
+  if (q.length >= 6) {
+    const byPrefix = projects.filter(p => p.id.startsWith(q))
+    if (byPrefix.length) return byPrefix
+  }
+  const lc = q.toLowerCase()
+  return projects.filter(p => (p.name || '').toLowerCase().includes(lc))
+}
+
+function formatProjectLine(p: ProjectLite): string {
+  return `${p.archived ? '归档' : '活跃'} ${padEndW(p.name, 20)} [${p.id.slice(0, 8)}]`
+}
+
+function formatProjectTable(projects: ProjectLite[]): string {
+  if (!projects.length) return '（没有项目）'
+  return projects.map(formatProjectLine).join('\n')
+}
+
 // ── HTTP plumbing ─────────────────────────────────────────────────────────────
 
 function baseUrl(flags: Record<string, string | boolean>): string {
@@ -105,6 +129,18 @@ async function resolveOne(base: string, query: string): Promise<TaskLite> {
   if (matches.length === 0) throw new Error(`未找到匹配的任务：「${query}」`)
   if (matches.length > 1) {
     throw new Error(`「${query}」匹配到多个任务，请用更精确的标题或 id：\n` + formatTaskTable(matches))
+  }
+  return matches[0]
+}
+
+async function getProjects(base: string): Promise<ProjectLite[]> {
+  return (await json(base, '/api/projects')).projects ?? []
+}
+async function resolveProjectOne(base: string, query: string): Promise<ProjectLite> {
+  const matches = selectProject(await getProjects(base), query)
+  if (matches.length === 0) throw new Error(`未找到匹配的项目：「${query}」`)
+  if (matches.length > 1) {
+    throw new Error(`「${query}」匹配到多个项目，请用更精确的名称或 id：\n` + formatProjectTable(matches))
   }
   return matches[0]
 }
@@ -218,7 +254,12 @@ export async function runTaskCli(argv: string[]): Promise<void> {
 const PROJECT_HELP = `berth project — manage projects
 
   berth project [list] [--json]                List projects
-  berth project add <name> [--hue HUE]         Create a project`
+  berth project add <name> [--hue HUE]         Create a project
+  berth project rename <id|name> <new-name>    Rename a project
+  berth project set <id|name> [--name N] [--hue HUE]
+  berth project archive <id|name>              Archive a project
+  berth project unarchive <id|name>            Unarchive a project
+  berth project rm <id|name>                   Delete a project`
 
 export async function runProjectCli(argv: string[]): Promise<void> {
   const sub = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'list'
@@ -231,9 +272,7 @@ export async function runProjectCli(argv: string[]): Promise<void> {
     case 'list': {
       const projects = (await json(base, '/api/projects')).projects ?? []
       if (flags.json) { console.log(JSON.stringify(projects, null, 2)); return }
-      console.log(projects.length
-        ? projects.map((p: any) => `${p.archived ? '🗄 ' : '   '}${p.name}`).join('\n')
-        : '（没有项目）')
+      console.log(formatProjectTable(projects))
       return
     }
     case 'add': {
@@ -241,6 +280,46 @@ export async function runProjectCli(argv: string[]): Promise<void> {
       if (!name) throw new Error('用法：berth project add <项目名>')
       await post(base, '/api/projects/create', { name, hue: flags.hue })
       console.log(`✓ 已创建项目  ${name}`)
+      return
+    }
+    case 'rename': {
+      const ref = pos[0]
+      const name = pos.slice(1).join(' ').trim()
+      if (!ref || !name) throw new Error('用法：berth project rename <id|name> <新项目名>')
+      const p = await resolveProjectOne(base, ref)
+      const r = await patch(base, `/api/projects/${encodeURIComponent(p.id)}`, { name })
+      console.log(`✓ 已重命名项目  ${p.name} → ${r.project?.name ?? name}`)
+      return
+    }
+    case 'set': {
+      const ref = pos.join(' ')
+      if (!ref) throw new Error('用法：berth project set <id|name> [--name N] [--hue HUE]')
+      const body: any = {}
+      if (flags.name) body.name = flags.name
+      if (flags.hue) body.hue = flags.hue
+      if (!Object.keys(body).length) throw new Error('用 --name / --hue 指定要修改的字段。')
+      const p = await resolveProjectOne(base, ref)
+      const r = await patch(base, `/api/projects/${encodeURIComponent(p.id)}`, body)
+      console.log(`✓ 已更新项目  ${r.project?.name ?? p.name}`)
+      return
+    }
+    case 'archive':
+    case 'unarchive': {
+      const ref = pos.join(' ')
+      if (!ref) throw new Error(`用法：berth project ${sub} <id|name>`)
+      const p = await resolveProjectOne(base, ref)
+      const on = sub === 'archive'
+      await post(base, '/api/projects/archive', { projectId: p.id, on })
+      console.log(`✓ 已${on ? '归档' : '取消归档'}项目  ${p.name}`)
+      return
+    }
+    case 'rm':
+    case 'delete': {
+      const ref = pos.join(' ')
+      if (!ref) throw new Error(`用法：berth project ${sub} <id|name>`)
+      const p = await resolveProjectOne(base, ref)
+      await del(base, `/api/projects/${encodeURIComponent(p.id)}`)
+      console.log(`✓ 已删除项目  ${p.name}`)
       return
     }
     default:

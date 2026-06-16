@@ -73,6 +73,8 @@ vi.mock('../src/data/tasks', () => ({
 vi.mock('../src/data/projects', () => ({
   listProjects: vi.fn(() => []),
   createProject: vi.fn(),
+  updateProject: vi.fn((_store: any, id: string, patch: any) => ({ id, name: patch.name ?? 'Project', hue: patch.hue })),
+  deleteProject: vi.fn(),
 }))
 
 // ── Mock agent modules ────────────────────────────────────────────────────────

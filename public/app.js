@@ -2178,6 +2178,13 @@ function openProject(name) {
   const titleEl = document.getElementById('workspace-title');
   titleEl.textContent = proj.name;
   titleEl.dataset.projectId = projectId;
+  const projectMenuBtn = document.getElementById('ws-project-menu-btn');
+  if (projectMenuBtn) {
+    projectMenuBtn.onclick = e => {
+      e.stopPropagation();
+      openProjectEditMenu(e.currentTarget, proj);
+    };
+  }
 
   // ⊕ 新建待办 bar preset to this project
   renderCreateTodoBar(document.getElementById('ws-create-todo'), projectId);
@@ -2961,7 +2968,7 @@ function buildProjectCard(proj) {
   card.className = 'project-card' + (proj.archived ? ' archived' : '');
   card.style.setProperty('--proj-accent', projAccentColor(proj.hue));
   card.innerHTML = `
-    <button class="project-archive-btn" title="${proj.archived ? '取消归档' : '归档项目'}">${proj.archived ? icon('archive-restore') : icon('archive')}</button>
+    <button class="project-menu-btn" title="项目操作">${icon('ellipsis')}</button>
     <div class="project-card-name">${aggGlyph(sum.running, sum.unread, '该项目下', sum.sessionRows)}${escHtml(proj.name)}</div>
     <div class="project-card-stats">
       <span class="proj-stat" title="进行中任务">${icon('hourglass')} <strong>${sum.inProgress}</strong> 进行中</span>
@@ -2969,9 +2976,9 @@ function buildProjectCard(proj) {
       <span class="proj-stat" title="关联会话">${icon('square-terminal')} <strong>${sum.sessions}</strong> 会话</span>
     </div>
   `;
-  card.querySelector('.project-archive-btn').addEventListener('click', e => {
+  card.querySelector('.project-menu-btn').addEventListener('click', e => {
     e.stopPropagation();
-    archiveProject(proj.id, !proj.archived);
+    openProjectEditMenu(e.currentTarget, proj);
   });
   card.addEventListener('click', () => openProject(proj.id));
   return card;
@@ -3088,16 +3095,83 @@ function renderProjectSidebar(currentName) {
 
 async function archiveProject(name, on) {
   try {
-    await fetch('/api/projects/archive', {
+    const res = await fetch('/api/projects/archive', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectId: name, on }),
     });
-  } catch (e) { console.warn('[berth] archiveProject failed', e); }
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || ('HTTP ' + res.status));
+  } catch (e) { alert('项目归档失败：' + e.message); return; }
   const p = projectById(name);
   if (p) p.archived = on;
   renderProjects();
   if (document.getElementById('workspace-view').style.display !== 'none') {
     renderProjectSidebar(document.getElementById('workspace-title').dataset.projectId);
+  }
+}
+
+function renderProjectSurfaces(projectId) {
+  renderProjects();
+  if (document.getElementById('workspace-view').style.display !== 'none') {
+    const titleEl = document.getElementById('workspace-title');
+    const currentId = titleEl?.dataset.projectId;
+    if (currentId === projectId) {
+      const p = projectById(projectId);
+      if (p) {
+        titleEl.textContent = p.name;
+        renderWorkspace(projectId);
+      } else {
+        setMode('projects');
+      }
+    }
+    renderProjectSidebar(currentId);
+  }
+  updateNavUnreadIndicators();
+}
+
+async function renameProjectRemote(proj) {
+  const next = (prompt('项目新名称', proj.name) || '').trim();
+  if (!next || next === proj.name) return;
+  const prevName = proj.name;
+  proj.name = next;
+  for (const t of allTodos) if (todoProjectId(t) === proj.id || t.project === prevName) t.project = next;
+  for (const s of allSessions) if (s.projectId === proj.id || s.project === prevName) s.project = next;
+  renderProjectSurfaces(proj.id);
+  try {
+    const res = await fetch('/api/projects/' + encodeURIComponent(proj.id), {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: next }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || ('HTTP ' + res.status));
+    if (d.project?.name) proj.name = d.project.name;
+    renderProjectSurfaces(proj.id);
+  } catch (e) {
+    proj.name = prevName;
+    for (const t of allTodos) if (todoProjectId(t) === proj.id || t.project === next) t.project = prevName;
+    for (const s of allSessions) if (s.projectId === proj.id || s.project === next) s.project = prevName;
+    renderProjectSurfaces(proj.id);
+    alert('项目重命名失败：' + e.message);
+  }
+}
+
+async function deleteProjectRemote(proj) {
+  if (!confirm(`确定删除项目「${proj.name}」？任务和会话会保留，但会清除项目归属。`)) return;
+  const prevProjects = projects.slice();
+  const prevTodos = allTodos.map(t => ({ ref: t, projectId: t.projectId, project: t.project }));
+  const prevSessions = allSessions.map(s => ({ ref: s, projectId: s.projectId, project: s.project }));
+  projects = projects.filter(p => p.id !== proj.id);
+  for (const t of allTodos) if (todoProjectId(t) === proj.id || t.project === proj.name) { t.projectId = null; t.project = null; }
+  for (const s of allSessions) if (s.projectId === proj.id || s.project === proj.name) { s.projectId = null; s.project = null; }
+  renderProjectSurfaces(proj.id);
+  try {
+    const res = await fetch('/api/projects/' + encodeURIComponent(proj.id), { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || ('HTTP ' + res.status));
+  } catch (e) {
+    projects = prevProjects;
+    for (const x of prevTodos) { x.ref.projectId = x.projectId; x.ref.project = x.project; }
+    for (const x of prevSessions) { x.ref.projectId = x.projectId; x.ref.project = x.project; }
+    renderProjectSurfaces(proj.id);
+    alert('项目删除失败：' + e.message);
   }
 }
 
@@ -3853,6 +3927,37 @@ function openTaskMenu(anchor, session, projTodos, projectName) {
     });
   });
 
+  document.body.appendChild(menu);
+  positionFloatingPanel(menu, anchor, { align: 'end' });
+  activeMenu = menu;
+  setTimeout(() => document.addEventListener('click', closeMenu, { once: true }), 0);
+}
+
+function openProjectEditMenu(anchor, proj) {
+  closeMenu();
+  const menu = document.createElement('div');
+  menu.className = 'dropdown-menu';
+  menu.innerHTML = `
+    <div class="menu-section">项目</div>
+    <div class="menu-item" data-act="rename">${icon('pencil')} 重命名</div>
+    <div class="menu-item" data-act="archive">${proj.archived ? icon('archive-restore') + ' 取消归档' : icon('archive') + ' 归档项目'}</div>
+    <div class="menu-item detach" data-act="delete">${icon('trash-2')} 删除项目</div>
+  `;
+  menu.querySelector('[data-act="rename"]').addEventListener('click', e => {
+    e.stopPropagation();
+    closeMenu();
+    renameProjectRemote(proj);
+  });
+  menu.querySelector('[data-act="archive"]').addEventListener('click', e => {
+    e.stopPropagation();
+    closeMenu();
+    archiveProject(proj.id, !proj.archived);
+  });
+  menu.querySelector('[data-act="delete"]').addEventListener('click', e => {
+    e.stopPropagation();
+    closeMenu();
+    deleteProjectRemote(proj);
+  });
   document.body.appendChild(menu);
   positionFloatingPanel(menu, anchor, { align: 'end' });
   activeMenu = menu;

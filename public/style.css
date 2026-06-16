@@ -1033,7 +1033,7 @@ html, body {
 .project-card.archived { opacity: 0.62; }
 .project-card.archived:hover { opacity: 1; }
 
-.project-archive-btn {
+.project-menu-btn {
   position: absolute;
   top: 7px;
   right: 7px;
@@ -1047,8 +1047,16 @@ html, body {
   opacity: 0;
   transition: opacity 0.12s, background 0.12s;
 }
-.project-card:hover .project-archive-btn { opacity: 0.7; }
-.project-archive-btn:hover { opacity: 1; background: var(--bg4); }
+.project-card:hover .project-menu-btn { opacity: 0.7; }
+.project-menu-btn:hover { opacity: 1; background: var(--bg4); }
+.workspace-project-menu {
+  position: static;
+  opacity: 0.7;
+  margin-left: -4px;
+  margin-right: 8px;
+  color: var(--text-muted);
+}
+.workspace-project-menu:hover { opacity: 1; }
 
 /* Project / task search input in the 项目 header */
 #project-search {

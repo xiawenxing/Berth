@@ -263,6 +263,45 @@ export function dataMethods(db: Database.Database) {
     resolveProjectId(input: string): string | null {
       return resolveProjectId(input, false)
     },
+    updateProject(id: string, patch: { name?: string; hue?: string | null }, updatedAt: number) {
+      const existing = db.prepare('SELECT id, name, hue FROM project WHERE id=?').get(id) as any
+      if (!existing) throw new Error('unknown project')
+      const sets: string[] = []
+      const params: any = { id }
+      if (patch.name !== undefined) {
+        const n = patch.name.trim()
+        if (!n) throw new Error('empty project name')
+        const dup = db.prepare('SELECT id FROM project WHERE name=? AND id<>?').get(n, id) as any
+        if (dup) throw new Error('project name already exists')
+        sets.push('name=@name')
+        params.name = n
+      }
+      if (patch.hue !== undefined) {
+        sets.push('hue=@hue')
+        params.hue = patch.hue
+      }
+      if (!sets.length) throw new Error('no editable fields in patch')
+      db.prepare(`UPDATE project SET ${sets.join(', ')} WHERE id=@id`).run(params)
+      // Project name is part of a task's synced field projection, so mark member tasks dirty.
+      db.prepare('UPDATE task SET updated_at=? WHERE project_id=?').run(updatedAt, id)
+      const r = db.prepare('SELECT id, name, hue FROM project WHERE id=?').get(id) as any
+      return { id: r.id, name: r.name, hue: r.hue ?? undefined }
+    },
+    deleteProject(id: string, updatedAt: number) {
+      const existing = db.prepare('SELECT id FROM project WHERE id=?').get(id) as any
+      if (!existing) throw new Error('unknown project')
+      const tx = db.transaction(() => {
+        db.prepare('UPDATE task SET project_id=NULL, updated_at=? WHERE project_id=?').run(updatedAt, id)
+        db.prepare('UPDATE attach SET project_id=NULL WHERE project_id=?').run(id)
+        db.prepare('UPDATE launch_intent SET project_id=NULL WHERE project_id=?').run(id)
+        db.prepare('DELETE FROM archived_project WHERE project_id=?').run(id)
+        db.prepare('DELETE FROM project_path WHERE project_id=?').run(id)
+        db.prepare("DELETE FROM external_ref WHERE entity_kind='project' AND entity_id=?").run(id)
+        db.prepare("DELETE FROM sync_conflict WHERE entity_kind='project' AND entity_id=?").run(id)
+        db.prepare('DELETE FROM project WHERE id=?').run(id)
+      })
+      tx()
+    },
 
     // ── external refs ────────────────────────────────────────────────────────
     putRef(ref: ExternalRef) {

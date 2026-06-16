@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { openSync, readSync, closeSync, fstatSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { getStore, getCache, refresh } from './store-singleton'
-import { listProjects, createProject } from '../data/projects'
+import { listProjects, createProject, updateProject, deleteProject } from '../data/projects'
 import { listTasks, createTask, updateTask, deleteTask } from '../data/tasks'
 import { getDocStore, getDocsRoot } from '../data/docstore'
 import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
@@ -176,6 +176,30 @@ api.post('/projects/archive', (req, res) => {
     return res.status(400).json({ error: 'projectId:string, on:boolean required' })
   store.setArchived(id, on)
   res.json({ ok: true })
+})
+
+api.patch('/projects/:id', (req, res) => {
+  const { name, hue } = req.body ?? {}
+  const patch: { name?: string; hue?: string | null } = {}
+  if (name !== undefined) patch.name = name
+  if (hue !== undefined) patch.hue = hue
+  if (!Object.keys(patch).length)
+    return res.status(400).json({ error: 'name or hue required' })
+  try {
+    const project = updateProject(getStore(), req.params.id, patch)
+    res.json({ ok: true, project })
+  } catch (e: any) {
+    res.status(502).json({ error: String(e?.message ?? e) })
+  }
+})
+
+api.delete('/projects/:id', (req, res) => {
+  try {
+    deleteProject(getStore(), req.params.id)
+    res.json({ ok: true })
+  } catch (e: any) {
+    res.status(502).json({ error: String(e?.message ?? e) })
+  }
 })
 
 // Create a project in the internal store + record its home cwd locally. (External sources pick up
