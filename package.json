@@ -1,6 +1,6 @@
 {
   "name": "@corusco/berth",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "type": "module",
   "description": "A local, cross-CLI agent-session cockpit — one UI over your Claude Code / Codex / Coco sessions, resumed live in embedded terminals.",
   "bin": {
