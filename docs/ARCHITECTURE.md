@@ -47,7 +47,8 @@ Run: `npm start` (vendors xterm+marked, then `tsx bin/berth-serve.ts`) → http:
   **FK enforcement is deliberately OFF** (`pragma foreign_keys = OFF`) — see gotchas.
 - `server/store-singleton.ts` — process-wide store + in-memory session cache; `refresh()` re-scans
   disk, **filters to imported directories** (`importRoots()` = `session_import_dir` ∪ project paths ∪
-  launch-intent cwds; `curatedSessionIds()` is the attach/edge/pin safety net), upserts, then runs
+  launch-intent cwds — `berthAgentCwd()` is deliberately excluded so internal title/summary sessions
+  stay hidden, gotcha #7; `curatedSessionIds()` is the attach/edge/pin safety net), upserts, then runs
   codex reconcile.
 
 **Data layer (canonical; see "Data-source seam" below):**
@@ -250,8 +251,11 @@ existing installs don't empty out; fresh installs start empty and prompt the use
 6. **claude/coco `--session-id <uuid>` creates a session at exactly that id** → deterministic capture.
    codex has no `--session-id` → bound later by `reconcile.ts` (newest codex session in that cwd after
    launch time). Verified empirically.
-7. **The management agent (`claude -p` for titles) writes its own session jsonl** into Berth's cwd
-   group — the owner chose to keep these visible as a "Berth activity" log rather than hide them.
+7. **The management agent (`claude -p` for titles/summaries) writes its own session jsonl** into
+   `~/.berth/agent-cwd`. These are **hidden** from the session list: `berthAgentCwd()` is deliberately
+   NOT an import root (`store-singleton.importRoots`). They are headless one-shots that never block and
+   never need user action, so surfacing them in 无归属 was pure noise. (Earlier the owner kept them
+   visible as a "Berth activity" log; that choice was reversed.)
 8. **lark-cli envelope shapes:** `+record-search`/`+record-list` return column arrays
    (`data.fields` / `data.data` / `data.record_id_list`), NOT `items[].fields`. `+record-batch-create`
    returns `data.record_id_list`. Field options use `hue`/`lightness`.
