@@ -79,6 +79,17 @@ export function ProjectWorkspace() {
   const inProgress = tasks.filter((t) => t.status === '进行中').length
   const pct = Math.round((done / total) * 100)
 
+  // 港湾概览 + 最近活动, derived from real sessions/tasks.
+  const sailN = projSessions.filter((s) => live.shipStatus(s.sessionId, s.updatedAt) === 'sail').length
+  const dockN = projSessions.filter((s) => live.shipStatus(s.sessionId, s.updatedAt) === 'dock').length
+  const todayISO = (() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+  const todayTasks = apiTasks.filter((t) => t.projectId === id && t.ddl === todayISO)
+  const todayDone = todayTasks.filter((t) => normStatus(t.status) === '已完成').length
+  const lastActivity = projSessions.length ? relTime(Math.max(...projSessions.map((s) => s.updatedAt))) : '—'
+
   const launch = (t: string) => openLaunch(t ? { dest: 'task', taskTitle: t } : { dest: 'free' })
   // Open a real session → attach its live /pty terminal in the drawer; mark it seen.
   const openRow = (s: SessionRow) => {
@@ -162,16 +173,16 @@ export function ProjectWorkspace() {
           </div>
           <span>{pct}%</span>
           <span className="ml-2">进行中 <span className="font-semibold text-priority">{inProgress}</span></span>
-          <span className="ml-2">最近活动 <span className="text-foreground">12分钟前</span></span>
+          <span className="ml-2">最近活动 <span className="text-foreground">{lastActivity}</span></span>
         </div>
 
         {/* 港湾概览 */}
         <div className="mt-3 flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2">
           <Anchor size={14} className="text-brand" />
           <span className="text-[12px] font-semibold text-foreground">港湾概览</span>
-          <Pill tone="success">在跑 2</Pill>
-          <Pill tone="brand">靠岸·待查收 1</Pill>
-          <Pill tone="warning">今日交付 1/3</Pill>
+          <Pill tone="success">在跑 {sailN}</Pill>
+          <Pill tone="brand">靠岸·待查收 {dockN}</Pill>
+          <Pill tone="warning">今日交付 {todayDone}/{todayTasks.length}</Pill>
         </div>
       </header>
 
