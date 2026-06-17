@@ -74,8 +74,12 @@ export function TaskCard({
   const done = isDoneStatus(task.status)
   const cancelled = isCancelledStatus(task.status)
   const isLive = !done && !cancelled
-  const expandable = active && isLive
   const linkN = task.links?.length ?? 0
+  // Done/cancelled cards stay expandable when they carry content (linked sessions / a summary) —
+  // matching v7's `.kcard.done.expandable` — so delivered work can still be reviewed. Plain
+  // done cards (no content) collapse to a single line. Expansion only in the active (wide) column.
+  const hasContent = linkN > 0 || !!task.summary
+  const expandable = active && (isLive || hasContent)
   const runningOrUnread = task.links?.find((l) => l.status === 'sail' || l.status === 'dock')
   const [dragging, setDragging] = useState(false)
 
@@ -199,25 +203,33 @@ export function TaskCard({
       {/* expanded: summary + linked sessions — full-bleed block with a top border (design .kcard-exp) */}
       {open && (
         <div className="border-t border-border bg-brand/[0.04] px-[13px] py-2.5">
-          {task.summary && <p className="text-[12px] leading-relaxed text-muted-foreground">{task.summary}</p>}
+          {task.summary && (
+            <>
+              <ExpLabel>进展摘要</ExpLabel>
+              <p className="text-[12px] leading-relaxed text-muted-foreground">{task.summary}</p>
+            </>
+          )}
           {linkN > 0 ? (
-            <div className="mt-2 flex flex-col gap-1">
-              {task.links!.map((l, i) => (
-                <button
-                  key={i}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onOpenSession?.(l)
-                  }}
-                  className="flex items-center gap-2 rounded border border-border bg-card px-2 py-1 text-left hover:border-muted-foreground"
-                >
-                  <ShipGlyph status={l.status} />
-                  <CliBadge cli={l.cli} />
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{l.title}</span>
-                </button>
-              ))}
-            </div>
-          ) : (
+            <>
+              <ExpLabel className="mt-2.5">关联会话</ExpLabel>
+              <div className="flex flex-col gap-1">
+                {task.links!.map((l) => (
+                  <button
+                    key={l.id}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onOpenSession?.(l)
+                    }}
+                    className="flex items-center gap-2 rounded border border-border bg-card px-2 py-1 text-left hover:border-muted-foreground"
+                  >
+                    <ShipGlyph status={l.status} />
+                    <CliBadge cli={l.cli} />
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{l.title}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : isLive ? (
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -227,10 +239,19 @@ export function TaskCard({
             >
               <Play size={12} /> 起会话
             </button>
+          ) : (
+            <p className="mt-2 text-[11.5px] italic text-text-dim">{cancelled ? '已取消 · 无关联会话' : '已交付 · 会话已停泊归档'}</p>
           )}
         </div>
       )}
     </div>
+  )
+}
+
+/** Small uppercase section label inside the card expansion (v7 .exp-label). */
+function ExpLabel({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cn('mb-1 text-[10px] font-bold uppercase tracking-wide text-text-dim', className)}>{children}</div>
   )
 }
 
