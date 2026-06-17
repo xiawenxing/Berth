@@ -15,24 +15,44 @@ export function Kanban({
   tasks,
   onLaunch,
   onOpenSession,
+  onMove,
 }: {
   tasks: Task[]
   onLaunch?: (t: string) => void
   onOpenSession?: (t: string) => void
+  onMove?: (taskId: string, status: TaskStatus) => void
 }) {
   const [active, setActive] = useState<TaskStatus>('进行中') // default active column
+  const [dropOver, setDropOver] = useState<TaskStatus | null>(null)
 
   return (
     <div className="flex max-h-[700px] w-full items-stretch gap-3 overflow-y-auto">
       {STATUS_ORDER.map((status) => {
         const items = tasks.filter((t) => t.status === status)
         const isActive = status === active
+        const isDropOver = dropOver === status
         return (
           <div
             key={status}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+              if (dropOver !== status) setDropOver(status)
+            }}
+            onDragLeave={(e) => {
+              // only clear when leaving the column itself, not when entering a child
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropOver((s) => (s === status ? null : s))
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDropOver(null)
+              const id = e.dataTransfer.getData('text/plain')
+              if (id) onMove?.(id, status)
+            }}
             className={cn(
               'flex min-w-0 flex-col rounded-md border border-border bg-card transition-[flex-grow] duration-300',
               isActive ? 'flex-[2.2] border-brand/45' : 'flex-1',
+              isDropOver && 'border-brand ring-2 ring-brand/60',
             )}
           >
             <button

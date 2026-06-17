@@ -10,7 +10,7 @@ import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
 import { useData, relTime, shortCwd, normStatus, normPriority } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
-import type { Task, SessionRow, CwdGroup } from '@/lib/types'
+import type { Task, SessionRow, CwdGroup, TaskStatus } from '@/lib/types'
 
 /**
  * Project workspace (the hub) — v7 layout: sticky header + 港湾概览,
@@ -49,7 +49,7 @@ export function ProjectWorkspace() {
 
   // Real sessions for this project → Pin section + by-cwd groups.
   const projSessions = useMemo(() => sessions.filter((s) => s.projectId === id), [sessions, id])
-  const toRow = (s: (typeof projSessions)[number]): SessionRow => ({
+  const toRow = (s: (typeof projSessions)[number], pinned: boolean): SessionRow => ({
     id: s.sessionId,
     cli: s.cli,
     title: s.title || '(未命名)',
@@ -57,16 +57,17 @@ export function ProjectWorkspace() {
     time: relTime(s.updatedAt),
     status: live.shipStatus(s.sessionId, s.updatedAt),
     linkedTask: !!s.todoKey,
+    pinned,
   })
   const pin: SessionRow[] = useMemo(
-    () => projSessions.filter((s) => s.pinned).map(toRow),
+    () => projSessions.filter((s) => s.pinned).map((s) => toRow(s, true)),
     [projSessions, live.activity],
   )
   const groups: CwdGroup[] = useMemo(() => {
     const map = new Map<string, SessionRow[]>()
     for (const s of projSessions.filter((x) => !x.pinned)) {
       const key = s.cwd || '(no cwd)'
-      ;(map.get(key) ?? map.set(key, []).get(key)!).push(toRow(s))
+      ;(map.get(key) ?? map.set(key, []).get(key)!).push(toRow(s, false))
     }
     return [...map.entries()]
       .sort((a, b) => b[1].length - a[1].length)
@@ -86,6 +87,23 @@ export function ProjectWorkspace() {
   }
   // From a task mini-row (title only) → chat preview.
   const openSession = (t: string) => openDrawer({ title: t, cli: 'claude', cwd: '~/Code/berth', status: 'sail' })
+
+  // Drag-to-status：optimistic move NOW, persist via PATCH /todos, then reload.
+  const onMove = (taskId: string, status: TaskStatus) => {
+    setTasks((ts) => ts.map((t) => (t.id === taskId && t.status !== status ? { ...t, status } : t)))
+    api
+      .patchTask(taskId, { status })
+      .then(() => reload())
+      .catch(() => reload())
+  }
+
+  // Pin toggle：persist via POST /pin, then reload (re-derives pin section vs groups).
+  const onPin = (sessionId: string, on: boolean) => {
+    api
+      .pin(sessionId, on)
+      .then(() => reload())
+      .catch(() => reload())
+  }
 
   // 即时创建：optimistic card NOW, persist via POST /todos, then reload real data.
   // (The server's createTask guard already classifies + titles; AI-summarize is that pipeline.)
@@ -164,10 +182,10 @@ export function ProjectWorkspace() {
             <h2 className="text-[13px] font-semibold text-brand">任务</h2>
             <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[10.5px] font-medium text-brand">航线</span>
           </div>
-          <Kanban tasks={tasks} onLaunch={launch} onOpenSession={openSession} />
+          <Kanban tasks={tasks} onLaunch={launch} onOpenSession={openSession} onMove={onMove} />
         </section>
 
-        <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onOpen={openRow} />
+        <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onOpen={openRow} onPin={onPin} />
         <CargoDefaults dirs={SAMPLE_CARGO} />
       </div>
 

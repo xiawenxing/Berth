@@ -10,7 +10,17 @@ function Glyph({ status }: { status: SessionRow['status'] }) {
   return <span className="h-1.5 w-1.5 flex-none" /> // moored/idle — empty gutter, keeps alignment
 }
 
-function Row({ s, showCwd, onOpen }: { s: SessionRow; showCwd?: boolean; onOpen?: (s: SessionRow) => void }) {
+function Row({
+  s,
+  showCwd,
+  onOpen,
+  onPin,
+}: {
+  s: SessionRow
+  showCwd?: boolean
+  onOpen?: (s: SessionRow) => void
+  onPin?: (id: string, nextOn: boolean) => void
+}) {
   return (
     <button
       onClick={() => onOpen?.(s)}
@@ -25,12 +35,37 @@ function Row({ s, showCwd, onOpen }: { s: SessionRow; showCwd?: boolean; onOpen?
         </span>
       )}
       {showCwd && <span className="flex-none font-mono text-[11px] text-text-dim">{s.cwd}</span>}
+      <span
+        role="button"
+        tabIndex={-1}
+        title={s.pinned ? '取消 Pin' : 'Pin'}
+        onClick={(e) => {
+          e.stopPropagation()
+          onPin?.(s.id, !s.pinned)
+        }}
+        className={cn(
+          'flex-none rounded p-0.5 hover:bg-secondary',
+          s.pinned
+            ? 'text-brand'
+            : 'text-text-dim opacity-0 hover:text-foreground group-hover:opacity-100',
+        )}
+      >
+        <Pin size={12} className={cn(s.pinned && 'fill-current')} />
+      </span>
       <span className="flex-none text-[11px] text-text-dim">{s.time}</span>
     </button>
   )
 }
 
-function CwdSection({ group, onOpen }: { group: CwdGroup; onOpen?: (s: SessionRow) => void }) {
+function CwdSection({
+  group,
+  onOpen,
+  onPin,
+}: {
+  group: CwdGroup
+  onOpen?: (s: SessionRow) => void
+  onPin?: (id: string, nextOn: boolean) => void
+}) {
   const [collapsed, setCollapsed] = useState(false)
   const [more, setMore] = useState(false)
   const LIMIT = 4
@@ -51,7 +86,7 @@ function CwdSection({ group, onOpen }: { group: CwdGroup; onOpen?: (s: SessionRo
       {!collapsed && (
         <div className="flex flex-col">
           {visible.map((s) => (
-            <Row key={s.id} s={s} onOpen={onOpen} />
+            <Row key={s.id} s={s} onOpen={onOpen} onPin={onPin} />
           ))}
           {hidden > 0 && (
             <button
@@ -72,11 +107,13 @@ export function SessionModule({
   groups,
   onLaunch,
   onOpen,
+  onPin,
 }: {
   pin: SessionRow[]
   groups: CwdGroup[]
   onLaunch?: () => void
   onOpen?: (s: SessionRow) => void
+  onPin?: (id: string, nextOn: boolean) => void
 }) {
   return (
     <section className="rounded-lg border border-border bg-card p-4">
@@ -97,14 +134,14 @@ export function SessionModule({
           <Pin size={12} /> Pin <span className="ml-auto">{pin.length}</span>
         </div>
         {pin.map((s) => (
-          <Row key={s.id} s={s} showCwd onOpen={onOpen} />
+          <Row key={s.id} s={s} showCwd onOpen={onOpen} onPin={onPin} />
         ))}
       </div>
 
       {/* cwd groups */}
       <div className="mt-1 flex flex-col gap-1">
         {groups.map((g) => (
-          <CwdSection key={g.cwd} group={g} onOpen={onOpen} />
+          <CwdSection key={g.cwd} group={g} onOpen={onOpen} onPin={onPin} />
         ))}
       </div>
     </section>

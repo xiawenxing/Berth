@@ -70,13 +70,22 @@ export function TaskCard({
   const expandable = active && !done && !cancelled
   const linkN = task.links?.length ?? 0
   const runningOrUnread = task.links?.find((l) => l.status === 'sail' || l.status === 'dock')
+  const [dragging, setDragging] = useState(false)
 
   return (
     <div
       data-prio={task.priority}
+      draggable
+      onDragStart={(e) => {
+        setDragging(true)
+        e.dataTransfer.setData('text/plain', task.id)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      onDragEnd={() => setDragging(false)}
       className={cn(
-        'relative overflow-hidden rounded-md border border-border bg-card pl-3 pr-2.5 py-1.5',
+        'relative cursor-grab overflow-hidden rounded-md border border-border bg-card pl-3 pr-2.5 py-1.5 active:cursor-grabbing',
         open && 'ring-1 ring-brand/40',
+        dragging && 'opacity-50',
       )}
     >
       {/* 4px priority left-bar */}

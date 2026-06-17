@@ -31,6 +31,7 @@ export interface SessionRow {
   time: string
   status: ShipStatus | 'idle'
   linkedTask?: boolean
+  pinned?: boolean
 }
 
 export interface CwdGroup {
