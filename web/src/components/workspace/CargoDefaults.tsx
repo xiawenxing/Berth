@@ -1,6 +1,10 @@
 import { useState, type ReactNode } from 'react'
 import { FileText, Folder, GitBranch, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { api, type PreviewSession } from '@/lib/api'
+import { relTime } from '@/lib/data'
+import { CliBadge } from '@/components/workspace/TaskCard'
+import { Dialog } from '@/components/ui/Overlay'
 import type { CargoDir } from '@/lib/types'
 
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
@@ -39,17 +43,166 @@ function RegRow({
   )
 }
 
+/** Pick-then-preview dialog: choose which sessions under a dir to import into this project. */
+function ImportDialog({
+  path,
+  sessions,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  path: string
+  sessions: PreviewSession[]
+  busy: boolean
+  onCancel: () => void
+  onConfirm: (ids: string[]) => void
+}) {
+  // Default: all checked.
+  const [checked, setChecked] = useState<Set<string>>(() => new Set(sessions.map((s) => s.sessionId)))
+  const allOn = sessions.length > 0 && checked.size === sessions.length
+  const toggleOne = (id: string) =>
+    setChecked((s) => {
+      const next = new Set(s)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  const toggleAll = () => setChecked(allOn ? new Set() : new Set(sessions.map((s) => s.sessionId)))
+
+  return (
+    <Dialog open onClose={busy ? () => {} : onCancel} width={520}>
+      <div className="flex flex-col">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-[13px] font-semibold text-foreground">导入会话</div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-text-dim">{path}</div>
+        </div>
+
+        {sessions.length === 0 ? (
+          <div className="px-4 py-6 text-[12px] text-muted-foreground">
+            该目录下没有会话，仅登记为代码上下文目录
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between px-4 pt-2.5">
+              <span className="text-[11px] text-text-dim">在该目录下找到 {sessions.length} 个会话</span>
+              <button className="text-[11px] text-brand hover:underline" onClick={toggleAll}>
+                {allOn ? '全不选' : '全选'}
+              </button>
+            </div>
+            <div className="max-h-[44vh] overflow-y-auto px-4 py-2">
+              <div className="flex flex-col gap-1">
+                {sessions.map((s) => {
+                  const on = checked.has(s.sessionId)
+                  return (
+                    <button
+                      key={s.sessionId}
+                      onClick={() => toggleOne(s.sessionId)}
+                      className={cn(
+                        'flex items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors',
+                        on ? 'border-brand/50 bg-brand/5' : 'border-border hover:bg-muted/40',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'flex h-4 w-4 flex-none items-center justify-center rounded border text-[10px]',
+                          on ? 'border-brand bg-brand text-brand-foreground' : 'border-border text-transparent',
+                        )}
+                      >
+                        ✓
+                      </span>
+                      <CliBadge cli={s.cli} />
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                        {s.title || '(未命名)'}
+                      </span>
+                      <span className="flex-none text-[11px] text-text-dim">{relTime(s.updatedAt)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            取消
+          </button>
+          <button
+            className="rounded-md bg-brand px-3 py-1.5 text-[12px] font-medium text-brand-foreground hover:bg-brand/90 disabled:opacity-50"
+            onClick={() => onConfirm([...checked])}
+            disabled={busy}
+          >
+            {busy ? '导入中…' : sessions.length === 0 ? '登记目录' : `导入选中 (${checked.size})`}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
 export function CargoDefaults({
   dirs,
+  projectId,
   projectName,
   onOpenDoc,
+  onDone,
 }: {
   dirs: CargoDir[]
+  projectId?: string
   projectName?: string
   onOpenDoc?: (target: { kind: 'project' | 'task'; key: string; path: string; title: string }) => void
+  onDone?: () => void
 }) {
   const [state, setState] = useState(dirs)
   const toggle = (i: number) => setState((s) => s.map((d, j) => (j === i ? { ...d, on: !d.on } : d)))
+
+  // Folder-pick → preview → pick-sessions dialog state.
+  const [dialog, setDialog] = useState<{ path: string; sessions: PreviewSession[] } | null>(null)
+  const [picking, setPicking] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const onAddDir = async () => {
+    if (picking) return
+    setPicking(true)
+    try {
+      const picked = await api.pickFolder()
+      if (!picked?.path) return
+      const { sessions } = await api.previewDir(picked.path)
+      setDialog({ path: picked.path, sessions })
+    } catch {
+      // swallow — folder pick / preview failures are non-fatal; the button just no-ops.
+    } finally {
+      setPicking(false)
+    }
+  }
+
+  const onConfirm = async (ids: string[]) => {
+    if (!dialog) return
+    setBusy(true)
+    try {
+      // Register the dir as an import root (so the picked sessions become known to the store)…
+      await api.importDir(dialog.path)
+      // …then pin the selected ones to this project. Unselected ones remain under 无归属.
+      if (projectId) {
+        for (const id of ids) await api.attach(id, projectId)
+      }
+      // Reflect the dir locally in the 代码上下文 list.
+      setState((s) =>
+        s.some((d) => d.path === dialog.path)
+          ? s
+          : [...s, { path: dialog.path, label: '', kind: 'repo', on: true }],
+      )
+      setDialog(null)
+      onDone?.()
+    } catch {
+      // Leave the dialog open on error so the user can retry.
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <section className="rounded-lg border border-border bg-card p-4">
@@ -88,11 +241,25 @@ export function CargoDefaults({
               right={<Toggle on={d.on} onChange={() => toggle(i)} />}
             />
           ))}
-          <button className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-[12px] text-muted-foreground hover:border-brand hover:text-brand">
-            <Plus size={13} /> 添加目录
+          <button
+            className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-[12px] text-muted-foreground hover:border-brand hover:text-brand disabled:opacity-50"
+            onClick={onAddDir}
+            disabled={picking}
+          >
+            <Plus size={13} /> {picking ? '选择目录…' : '添加目录'}
           </button>
         </div>
       </div>
+
+      {dialog && (
+        <ImportDialog
+          path={dialog.path}
+          sessions={dialog.sessions}
+          busy={busy}
+          onCancel={() => setDialog(null)}
+          onConfirm={onConfirm}
+        />
+      )}
     </section>
   )
 }

@@ -244,7 +244,7 @@ export function ProjectWorkspace() {
         </section>
 
         <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onOpen={openRow} onPin={onPin} />
-        <CargoDefaults dirs={SAMPLE_CARGO} projectName={projName} onOpenDoc={setCtxDoc} />
+        <CargoDefaults dirs={SAMPLE_CARGO} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={reload} />
       </div>
 
       <NewTaskDialog open={newTask} onClose={() => setNewTask(false)} onCreate={createTask} />

@@ -1,7 +1,9 @@
 import { Router } from 'express'
 import { openSync, readSync, closeSync, fstatSync } from 'node:fs'
 import { execFile } from 'node:child_process'
-import { getStore, getCache, refresh } from './store-singleton'
+import { getStore, getCache, refresh, storeRoots } from './store-singleton'
+import { collectLogicalSessions } from '../sessions'
+import { canonicalPathKey } from '../path-normalize'
 import { listProjects, createProject, updateProject, deleteProject } from '../data/projects'
 import { listTasks, createTask, updateTask, deleteTask } from '../data/tasks'
 import { getDocStore, getDocsRoot } from '../data/docstore'
@@ -266,6 +268,33 @@ api.post('/session-dirs', (req, res) => {
   getStore().addSessionImportDir(cwd)
   refresh()
   res.json({ ok: true, count: getCache().length })
+})
+
+// Preview which CLI sessions a candidate import dir would surface, WITHOUT mutating state (no import,
+// no refresh). Scans the same CLI stores `refresh()` reads and returns sessions whose cwd EQUALS the
+// given cwd — the exact-match rule `filterImportedSessions` applies to import roots. Capped at 200.
+const PREVIEW_CAP = 200
+function normDirForMatch(p: string): string {
+  const key = canonicalPathKey(p)
+  return key.length > 1 ? key.replace(/\/+$/, '') : key
+}
+api.post('/session-dirs/preview', (req, res) => {
+  const cwd = typeof req.body?.cwd === 'string' ? req.body.cwd.trim().replace(/\/+$/, '') : ''
+  if (!cwd) return res.status(400).json({ error: 'cwd required' })
+  const target = normDirForMatch(cwd)
+  const all = collectLogicalSessions(storeRoots())
+  const sessions = all
+    .filter(s => s.cwd != null && normDirForMatch(s.cwd) === target)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, PREVIEW_CAP)
+    .map(s => ({
+      sessionId: s.sessionId,
+      cli: s.cli,
+      title: s.title ?? null,
+      cwd: s.cwd ?? null,
+      updatedAt: s.updatedAt,
+    }))
+  res.json({ sessions })
 })
 
 api.delete('/session-dirs', (req, res) => {

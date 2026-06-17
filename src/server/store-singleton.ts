@@ -66,16 +66,24 @@ function curatedSessionIds(): Set<string> {
 }
 
 /**
+ * The CLI store roots scanned by `collectLogicalSessions`. Centralized so both `refresh()` and the
+ * preview endpoint (which scans without mutating state) agree on exactly which stores to read.
+ */
+export function storeRoots(): { claudeRoot: string; codexRoot: string; cocoRoot: string } {
+  return {
+    claudeRoot: join(homedir(), '.claude', 'projects') + '/',
+    codexRoot: join(homedir(), '.codex') + '/',
+    cocoRoot: join(homedir(), 'Library', 'Caches', 'coco') + '/',
+  }
+}
+
+/**
  * Re-scan all 3 CLI stores, restrict to imported directories, persist identity rows, refresh the
  * in-memory cache. The scanned universe is sessions whose cwd is under an import root (∪ curated
  * sessions) — NOT every session in the CLI stores. See `filterImportedSessions`.
  */
 export function refresh(): LogicalSession[] {
-  const all = collectLogicalSessions({
-    claudeRoot: join(homedir(), '.claude', 'projects') + '/',
-    codexRoot: join(homedir(), '.codex') + '/',
-    cocoRoot: join(homedir(), 'Library', 'Caches', 'coco') + '/',
-  })
+  const all = collectLogicalSessions(storeRoots())
   cache = filterImportedSessions(all, importRoots(), curatedSessionIds())
   store.upsertSessions(cache)
   reconcileLaunchIntents(store, cache)

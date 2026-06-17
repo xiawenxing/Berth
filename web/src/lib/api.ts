@@ -42,6 +42,14 @@ export interface ApiSession {
   deleted?: boolean
 }
 
+export interface PreviewSession {
+  sessionId: string
+  cli: string
+  title: string | null
+  cwd: string | null
+  updatedAt: number
+}
+
 async function getJSON<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: { Accept: 'application/json' } })
   if (!res.ok) throw new Error(`GET ${url} → ${res.status}`)
@@ -75,6 +83,13 @@ export const api = {
   pin: (sessionId: string, on: boolean) => send('POST', '/api/pin', { sessionId, on }),
   // Assign a session to a project (manual attach → state 'confirmed' server-side).
   attach: (sessionId: string, projectId: string) => send('POST', '/api/attach', { sessionId, projectId }),
+  // Native macOS folder picker → absolute path (or cancelled).
+  pickFolder: () => send('POST', '/api/pick-folder', {}) as Promise<{ path?: string; cancelled?: boolean }>,
+  // Preview the sessions a candidate dir would surface (no state mutation).
+  previewDir: (cwd: string) =>
+    send('POST', '/api/session-dirs/preview', { cwd }) as Promise<{ sessions: PreviewSession[] }>,
+  // Register a dir as an import root (surfaces its sessions to the store) + refresh.
+  importDir: (cwd: string) => send('POST', '/api/session-dirs', { cwd }) as Promise<{ ok: boolean; count: number }>,
   createProject: (name: string, cwd?: string) => send('POST', '/api/projects/create', { name, cwd }),
   contextUpdate: (kind: 'task' | 'project', key: string, userInput: string) =>
     send('POST', '/api/context/update', { kind, key, userInput }),
