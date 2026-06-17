@@ -42,14 +42,18 @@ Run: `npm start` (vendors xterm+marked, then `tsx bin/berth-serve.ts`) → http:
 **Local state (the app's own DB, `~/.berth/berth.sqlite`):**
 - `db/store.ts` — `openStore(path)`. Tables: `logical_session`, `physical_copy`, `attach`
   (session→project + confirm state), `pin`, `title_override`, `edge` (task↔session, a SET),
-  `launch_intent`, `archived_project`, `project_path` (per-project home cwd + added paths),
-  `session_import_dir` (the 无归属 import roots — see below).
+  `launch_intent`, `archived_project`, `project_path` (per-project home cwd + added 货舱 paths, each
+  with an `enabled`/默认装载 flag), `session_import_dir` (legacy 无归属 dir-import root — kept for the
+  old vanilla app), `session_import` (the **session-grained** import set — see below).
   **FK enforcement is deliberately OFF** (`pragma foreign_keys = OFF`) — see gotchas.
 - `server/store-singleton.ts` — process-wide store + in-memory session cache; `refresh()` re-scans
-  disk, **filters to imported directories** (`importRoots()` = `session_import_dir` ∪ project paths ∪
-  launch-intent cwds — `berthAgentCwd()` is deliberately excluded so internal title/summary sessions
-  stay hidden, gotcha #7; `curatedSessionIds()` is the attach/edge/pin safety net), upserts, then runs
-  codex reconcile.
+  disk, **filters to the curated/imported set** then upserts, then runs codex reconcile **over the
+  UNFILTERED scan** (a fresh codex session isn't in the filtered cache yet, so reconcile must see the
+  full scan to bind it — see gotcha #14). `importRoots()` is now **only `session_import_dir`**
+  (project paths + launch-intent cwds were dropped — registering a 货舱 cwd must not surface all its
+  sessions). `curatedSessionIds()` = pin ∪ attach(real project) ∪ edge ∪ **`session_import`** ∪
+  **`allBoundLaunchSessionIds()`** (Berth-launched sessions surface per-session). `berthAgentCwd()` is
+  still excluded (internal title/summary sessions stay hidden, gotcha #7).
 
 **Data layer (canonical; see "Data-source seam" below):**
 - `data/tasks.ts` / `data/projects.ts` — internal task/project CRUD against sqlite (the guarded
@@ -176,19 +180,26 @@ A **task** has a Berth-native uuid `id`; `recordId` no longer exists in the core
 project** link is `attach`. **Projects keep name as their key** (in `attach`/`project_path`/
 `archived_project`/`task.project`).
 
-### Session import directories (会话导入目录)
+### Session import — session-grained (as of 2026-06-17, spec `2026-06-17-project-cwd-cargo-session-import-design.md`)
 
-The session list is **not** seeded by scanning every CLI session anymore. It is seeded by importing
-directories (like 新建项目's cwd): the scanned universe is sessions whose `cwd` is under an **import
-root**, computed in `store-singleton.importRoots()` as `session_import_dir` ∪ all `project_path.cwd`
-∪ all `launch_intent.cwd`. So a new project auto-surfaces its sessions, and any Berth-launched session
-surfaces via its launch-intent cwd, without a separate import step. A **safety net**
-(`curatedSessionIds()`) always keeps attached/edged/pinned sessions regardless of cwd. The match is
-**exact** (a session's cwd must equal an import root — importing a directory does NOT recursively pull
-in its subdirectory tree; import a subdirectory explicitly to include it); null-cwd sessions are kept
-only via the safety net. `migrate-session-dirs.ts` runs once (guarded by the
-`session-dirs-migrated` setting) to backfill `session_import_dir` from already-attached sessions, so
-existing installs don't empty out; fresh installs start empty and prompt the user to import a dir.
+A session surfaces iff it is in `curatedSessionIds()` (pin ∪ attach-to-real-project ∪ edge ∪
+`session_import` ∪ bound-launch) **or** its `cwd` ∈ `session_import_dir` (legacy dir-import root,
+kept for the old vanilla `public/` app). **Registering a 货舱 cwd (`project_path`) does NOT surface
+its sessions** — only sessions explicitly added to `session_import` (via the import dialog) do. This
+is the session-grained model that replaced the old directory-grained one (where `project_path` and
+`launch_intent.cwd` were also import roots).
+
+- **Berth-launched sessions** surface per-session via `allBoundLaunchSessionIds()` (claude/coco get a
+  `bound=1` launch_intent at launch; codex binds via `reconcile.ts` then surfaces on the next refresh).
+- **Project default workspace cwd**: a launch with no enabled 货舱 falls back to
+  `~/.berth/workspaces/<projectId>/` (server-resolved in `pty-ws.handleFresh`, created on demand by
+  `launch.ensureLaunchCwd`). The UI masks it as 「项目默认目录」 (never shows the raw path).
+- **Sticky 主 cwd**: `app_setting` key `project_last_cwd:<id>` (written after a real-货舱 launch,
+  cleared on project delete) drives the launch dialog's auto-pick; no `is_home` star in the new UI.
+- **Migrations**: `migrate-session-dirs.ts` (legacy, `session-dirs-migrated`) backfilled
+  `session_import_dir`. `migrate-session-import.ts` (`session-import-migrated`) seeds `session_import`
+  with the OLD visible set (old roots ∪ old curated) so existing installs don't lose any visible
+  session when `project_path`/`launch_intent` stop being roots.
 
 ### Data-source seam (切面)
 
@@ -305,6 +316,12 @@ existing installs don't empty out; fresh installs start empty and prompt the use
 13. **`--add-dir <directories...>` is VARIADIC — it eats the positional prompt.** `freshArgv` must fence
     any positional prompt behind `--` (`… --add-dir <vault> -- <prompt>`) so option parsing stops
     before the prompt. Don't put the prompt directly after `--add-dir`.
+14. **`refresh()` feeds `reconcileLaunchIntents` the UNFILTERED scan, not the cache.** A fresh codex
+    launch is `bound=0` / unattached / not in `session_import`, and its cwd is not an import root — so
+    it is filtered OUT of the cache. If reconcile got the cache it could never find the session →
+    never `bindIntent` → never surface (permanent deadlock). reconcile constrains candidates by intent
+    cwd/cli/time internally, so the wider input is safe. Same trap applies if you ever re-narrow the
+    surfacing filter: re-check that the codex bind path still sees the session.
 
 ---
 
