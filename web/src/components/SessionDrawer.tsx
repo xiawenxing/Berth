@@ -35,10 +35,13 @@ export function SessionDrawer() {
             {drawer.task && <span className="text-[11px] text-muted-foreground">· 航线 {drawer.task}</span>}
           </div>
 
-          {/* body: real live terminal for a real session (/pty); chat preview otherwise */}
+          {/* body: real live terminal for a real session OR a fresh launch (/pty);
+              chat preview only when neither is present (e.g. a task mini-row click) */}
           <div className="min-h-0 flex-1 overflow-hidden">
             {drawer.sessionId ? (
               <Terminal key={drawer.sessionId} sessionId={drawer.sessionId} />
+            ) : drawer.launch ? (
+              <Terminal key="launch" launch={drawer.launch} />
             ) : (
               <div className="h-full overflow-y-auto">
                 <SessionChat firstUser={drawer.task ? `开始处理任务：${drawer.task}` : undefined} />
@@ -46,8 +49,8 @@ export function SessionDrawer() {
             )}
           </div>
 
-          {/* Composer only for the chat preview — a real terminal takes input via xterm directly. */}
-          {!drawer.sessionId && (
+          {/* Composer only for the chat preview — a real/launch terminal takes input via xterm. */}
+          {!drawer.sessionId && !drawer.launch && (
             <div className="border-t border-border p-3">
               <div className="flex items-end gap-2 rounded-md border border-border bg-card p-2">
                 <textarea

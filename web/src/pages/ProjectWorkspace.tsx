@@ -93,7 +93,20 @@ export function ProjectWorkspace() {
   const todayDone = todayTasks.filter((t) => normStatus(t.status) === '已完成').length
   const lastActivity = projSessions.length ? relTime(Math.max(...projSessions.map((s) => s.updatedAt))) : '—'
 
-  const launch = (t: string) => openLaunch(t ? { dest: 'task', taskTitle: t } : { dest: 'free' })
+  // Resolve a real absolute cwd for a fresh launch: project home / a registered path /
+  // the most common cwd among this project's sessions.
+  const resolveCwd = (): string => {
+    if (project?.homeCwd) return project.homeCwd
+    if (project?.paths?.length) return project.paths[0]
+    const counts = new Map<string, number>()
+    for (const s of projSessions) if (s.cwd) counts.set(s.cwd, (counts.get(s.cwd) ?? 0) + 1)
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
+  }
+  const launch = (t: string) => {
+    const cwd = resolveCwd()
+    const todoKey = t ? apiTasks.find((x) => x.projectId === id && x.title === t)?.id : undefined
+    openLaunch(t ? { dest: 'task', taskTitle: t, projectId: id, cwd, todoKey } : { dest: 'free', projectId: id, cwd })
+  }
   // Open a real session → attach its live /pty terminal in the drawer; mark it seen.
   const openRow = (s: SessionRow) => {
     live.markSeen(s.id)

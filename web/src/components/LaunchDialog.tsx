@@ -26,15 +26,26 @@ export function LaunchDialog() {
 
   if (!launch) return null
   const taskTitle = launch.taskTitle
+  const cwd = launch.cwd || '~'
+  const title = dest === 'task' && taskTitle ? taskTitle : freeText || '新会话'
 
   const sail = () => {
     closeLaunch()
     openDrawer({
-      title: dest === 'task' && taskTitle ? taskTitle : freeText || '新会话',
+      title,
       cli: 'claude',
-      cwd: '~/Code/berth',
+      cwd,
       status: 'sail',
       task: dest === 'task' ? taskTitle : undefined,
+      // Fresh launch: spawn a real agent via /pty?new=1. For a free question the typed
+      // text is the first prompt; a task launch lets the server inject its directive.
+      launch: {
+        cli: 'claude',
+        cwd,
+        projectId: launch.projectId,
+        todoKey: launch.todoKey,
+        prompt: dest === 'free' ? freeText || undefined : undefined,
+      },
     })
   }
 
@@ -76,7 +87,7 @@ export function LaunchDialog() {
           >
             <Package size={14} className="text-brand" />
             <span className="text-[13px] text-foreground">
-              货舱：项目上下文 · 任务上下文 · 代码上下文 <span className="font-mono text-[12px] text-muted-foreground">~/Code/berth</span> · claude
+              货舱：项目上下文 · 任务上下文 · 代码上下文 <span className="font-mono text-[12px] text-muted-foreground">{cwd}</span> · claude
             </span>
             <span className="ml-auto flex items-center gap-1 text-[12px] text-muted-foreground">
               {adjust ? '收起装载' : '调整装载'}

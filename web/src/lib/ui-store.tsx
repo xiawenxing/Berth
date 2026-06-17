@@ -3,6 +3,14 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 // Minimal app-wide UI state: which session drawer is open, whether the launch
 // dialog / new-task / new-project dialogs are open. Keeps overlays out of page trees.
 
+export interface LaunchSpec {
+  cli: string
+  cwd: string
+  projectId?: string | null
+  todoKey?: string | null
+  prompt?: string
+}
+
 export interface DrawerSession {
   title: string
   cli: string
@@ -10,11 +18,15 @@ export interface DrawerSession {
   status: 'sail' | 'dock' | 'moored'
   task?: string
   sessionId?: string // real session → attach the live /pty terminal; absent → chat preview
+  launch?: LaunchSpec // fresh launch → spawn a new agent via /pty?new=1
 }
 
 export interface LaunchCtx {
   dest: 'task' | 'free'
   taskTitle?: string
+  projectId?: string
+  cwd?: string // resolved project cwd for the fresh launch
+  todoKey?: string
 }
 
 interface UIState {

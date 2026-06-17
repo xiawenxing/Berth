@@ -3,12 +3,30 @@ import { Terminal as Xterm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 
+export interface LaunchSpec {
+  cli: string
+  cwd: string
+  projectId?: string | null
+  todoKey?: string | null
+  prompt?: string
+}
+
 /**
- * Live terminal bound to a session over the persistent-PTY /pty WebSocket.
- * Skeleton: attaches, streams pty bytes, sends keystrokes. The control-frame
- * protocol ({"__berth":…}) and resize messages are refined in a later phase.
+ * Live terminal over the persistent-PTY /pty WebSocket. Two modes:
+ *  - resume/attach: pass `sessionId` → /pty?sessionId=… (replays scrollback, streams)
+ *  - fresh launch:  pass `launch` → /pty?new=1&cli=…&cwd=… (spawns a new agent); the
+ *    server's first control frame {"__berth":"launched",sessionId} gives the real id,
+ *    surfaced via onLaunched so callers can rebind the drawer to the live session.
  */
-export function Terminal({ sessionId }: { sessionId: string }) {
+export function Terminal({
+  sessionId,
+  launch,
+  onLaunched,
+}: {
+  sessionId?: string
+  launch?: LaunchSpec
+  onLaunched?: (sessionId: string) => void
+}) {
   const hostRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -28,11 +46,30 @@ export function Terminal({ sessionId }: { sessionId: string }) {
     fit.fit()
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${proto}://${location.host}/pty?sessionId=${encodeURIComponent(sessionId)}`)
+    const qs = new URLSearchParams({ cols: String(term.cols), rows: String(term.rows) })
+    if (launch) {
+      qs.set('new', '1')
+      qs.set('cli', launch.cli)
+      qs.set('cwd', launch.cwd)
+      if (launch.projectId) qs.set('projectId', launch.projectId)
+      if (launch.todoKey) qs.set('todoKey', launch.todoKey)
+      if (launch.prompt) qs.set('prompt', launch.prompt)
+    } else if (sessionId) {
+      qs.set('sessionId', sessionId)
+    }
+    const ws = new WebSocket(`${proto}://${location.host}/pty?${qs.toString()}`)
     ws.binaryType = 'arraybuffer'
     ws.onmessage = (e) => {
       const data = typeof e.data === 'string' ? e.data : new TextDecoder().decode(e.data as ArrayBuffer)
-      if (data.startsWith('{"__berth"')) return // control frame — handled later
+      if (data.startsWith('{"__berth"')) {
+        try {
+          const ctl = JSON.parse(data)
+          if (ctl.__berth === 'launched' && ctl.sessionId) onLaunched?.(ctl.sessionId)
+        } catch {
+          /* ignore malformed control frame */
+        }
+        return
+      }
       term.write(data)
     }
     const disp = term.onData((d) => {
@@ -48,7 +85,8 @@ export function Terminal({ sessionId }: { sessionId: string }) {
       ws.close()
       term.dispose()
     }
-  }, [sessionId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, launch?.cli, launch?.cwd, launch?.prompt])
 
   return <div ref={hostRef} className="h-full w-full" />
 }
