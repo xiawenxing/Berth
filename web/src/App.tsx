@@ -4,15 +4,23 @@ import { ProjectWorkspace } from './pages/ProjectWorkspace'
 import { Now } from './pages/Now'
 import { Unassigned } from './pages/Unassigned'
 import { Settings } from './pages/Settings'
+import { UIProvider } from './lib/ui-store'
+import { SessionDrawer } from './components/SessionDrawer'
+import { LaunchDialog } from './components/LaunchDialog'
 
 function Layout() {
   return (
-    <div className="flex h-full w-full overflow-hidden">
-      <Rail />
-      <main className="min-w-0 flex-1 overflow-hidden bg-background">
-        <Outlet />
-      </main>
-    </div>
+    <UIProvider>
+      <div className="flex h-full w-full overflow-hidden">
+        <Rail />
+        <main className="min-w-0 flex-1 overflow-hidden bg-background">
+          <Outlet />
+        </main>
+      </div>
+      {/* app-wide overlays */}
+      <SessionDrawer />
+      <LaunchDialog />
+    </UIProvider>
   )
 }
 

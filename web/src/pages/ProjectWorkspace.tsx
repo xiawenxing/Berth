@@ -5,6 +5,7 @@ import { Kanban } from '@/components/workspace/Kanban'
 import { SessionModule } from '@/components/workspace/SessionModule'
 import { CargoDefaults } from '@/components/workspace/CargoDefaults'
 import { SAMPLE_TASKS, SAMPLE_PIN, SAMPLE_CWD_GROUPS, SAMPLE_CARGO } from '@/data/sample'
+import { useUI } from '@/lib/ui-store'
 
 /**
  * Project workspace (the hub) — v7 layout: sticky header + 港湾概览,
@@ -13,14 +14,16 @@ import { SAMPLE_TASKS, SAMPLE_PIN, SAMPLE_CWD_GROUPS, SAMPLE_CARGO } from '@/dat
  */
 export function ProjectWorkspace() {
   const { id = 'Berth' } = useParams()
+  const { openLaunch, openDrawer } = useUI()
 
   const done = SAMPLE_TASKS.filter((t) => t.status === '已完成').length
   const total = SAMPLE_TASKS.length
   const inProgress = SAMPLE_TASKS.filter((t) => t.status === '进行中').length
   const pct = Math.round((done / total) * 100)
 
-  const launch = (t: string) => console.log('起航', t)
-  const openSession = (t: string) => console.log('打开会话', t)
+  const launch = (t: string) => openLaunch(t ? { dest: 'task', taskTitle: t } : { dest: 'free' })
+  const openSession = (t: string) =>
+    openDrawer({ title: t, cli: 'claude', cwd: '~/Code/berth', status: 'sail' })
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -34,7 +37,7 @@ export function ProjectWorkspace() {
             <button className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground">
               <Plus size={14} /> 新建任务
             </button>
-            <HBtn icon={<Play size={13} />}>起会话</HBtn>
+            <HBtn icon={<Play size={13} />} onClick={() => launch('')}>起会话</HBtn>
             <HBtn icon={<Sparkles size={13} />}>小结</HBtn>
             <button className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent">
               <MoreHorizontal size={15} />
@@ -82,9 +85,9 @@ export function ProjectWorkspace() {
   )
 }
 
-function HBtn({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+function HBtn({ icon, children, onClick }: { icon: ReactNode; children: ReactNode; onClick?: () => void }) {
   return (
-    <button className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
+    <button onClick={onClick} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
       {icon}
       {children}
     </button>
