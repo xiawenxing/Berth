@@ -1,23 +1,15 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Anchor, Inbox, Folder, Settings as SettingsIcon, Plus, Ban } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
+import { useData } from '@/lib/data'
 
-// Placeholder project switcher data — wired to /api/projects in a later phase.
 interface ProjRow {
   id: string
   name: string
   meta: string
-  running?: boolean
-  group: string
 }
-const INITIAL_PROJECTS: ProjRow[] = [
-  { id: 'Berth', name: 'Berth', meta: '13 任务 · 3 进行中 · 7 会话', running: true, group: '置顶' },
-  { id: 'berth test', name: 'berth test', meta: '0 任务 · 0 会话', group: '活跃' },
-  { id: 'Zhang Shuai conversation', name: 'Zhang Shuai conversation', meta: '2 任务 · 1 会话', group: '活跃' },
-  { id: 'dotfiles', name: 'dotfiles', meta: '4 任务 · 2 会话', group: '活跃' },
-]
 
 function NavItem({ to, icon: Icon, label }: { to: string; icon: typeof Inbox; label: string }) {
   return (
@@ -37,12 +29,25 @@ function NavItem({ to, icon: Icon, label }: { to: string; icon: typeof Inbox; la
 }
 
 export function Rail() {
-  const [projects, setProjects] = useState<ProjRow[]>(INITIAL_PROJECTS)
+  const { projects: apiProjects, tasks, sessions } = useData()
+  const [extra, setExtra] = useState<ProjRow[]>([])
   const [newProj, setNewProj] = useState(false)
 
-  const addProject = (name: string) => {
-    setProjects((p) => [...p, { id: name, name, meta: '0 任务 · 0 会话', group: '活跃' }])
-  }
+  // Real projects (non-archived) + counts derived from tasks/sessions.
+  const projects = useMemo<ProjRow[]>(() => {
+    const real = apiProjects
+      .filter((p) => !p.archived)
+      .map((p) => {
+        const tN = tasks.filter((t) => t.projectId === p.id).length
+        const sN = sessions.filter((s) => s.projectId === p.id).length
+        return { id: p.id, name: p.name, meta: `${tN} 任务 · ${sN} 会话` }
+      })
+    return [...real, ...extra]
+  }, [apiProjects, tasks, sessions, extra])
+
+  const unassignedN = useMemo(() => sessions.filter((s) => !s.projectId).length, [sessions])
+
+  const addProject = (name: string) => setExtra((p) => [...p, { id: name, name, meta: '0 任务 · 0 会话' }])
 
   return (
     <aside className="flex w-[260px] flex-none flex-col border-r border-border bg-sidebar">
@@ -81,11 +86,8 @@ export function Rail() {
               )
             }
           >
-            <div className="flex items-center gap-2">
-              {p.running && <span className="h-1.5 w-1.5 flex-none rounded-full bg-success" />}
-              <span className="truncate text-[13px] font-medium text-accent-foreground">{p.name}</span>
-            </div>
-            <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{p.meta}</div>
+            <span className="block truncate text-[13px] font-medium text-accent-foreground">{p.name}</span>
+            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{p.meta}</span>
           </NavLink>
         ))}
 
@@ -98,7 +100,7 @@ export function Rail() {
             )
           }
         >
-          <Ban size={13} /> 无归属会话 <span className="ml-auto">5</span>
+          <Ban size={13} /> 无归属会话 <span className="ml-auto">{unassignedN}</span>
         </NavLink>
       </div>
 

@@ -1,7 +1,6 @@
-// Thin typed client over the Berth Node REST API (proxied by Vite in dev).
-// Response shapes are best-effort from docs/ARCHITECTURE.md and refined as pages wire real data.
+// Thin typed client over the Berth Node REST API (proxied by Vite in dev, same-origin under /app).
 
-export interface Project {
+export interface ApiProject {
   id: string
   name: string
   archived?: boolean
@@ -9,19 +8,20 @@ export interface Project {
   paths?: string[]
 }
 
-export interface Task {
+export interface ApiTask {
   id: string
   title: string
   status: string
   priority?: string
+  projectId?: string | null
   project?: string
-  progress?: string
+  progress?: string | null
   detailDoc?: string | null
-  sessions?: string[]
   ddl?: string | null
+  sessions?: string[]
 }
 
-export interface Session {
+export interface ApiSession {
   sessionId: string
   cli: string
   title?: string | null
@@ -29,8 +29,10 @@ export interface Session {
   updatedAt: number
   pinned?: boolean
   projectId?: string | null
+  project?: string
   todoKey?: string | null
-  attachState?: string
+  activity?: string | null
+  deleted?: boolean
 }
 
 async function getJSON<T>(url: string): Promise<T> {
@@ -40,7 +42,7 @@ async function getJSON<T>(url: string): Promise<T> {
 }
 
 export const api = {
-  projects: () => getJSON<{ projects: Project[] }>('/api/projects'),
-  todos: () => getJSON<{ todos: Task[] }>('/api/todos'),
-  sessions: () => getJSON<Session[]>('/api/sessions'),
+  projects: () => getJSON<{ projects: ApiProject[] }>('/api/projects'),
+  todos: () => getJSON<{ todos: ApiTask[] }>('/api/todos'),
+  sessions: () => getJSON<ApiSession[]>('/api/sessions'),
 }

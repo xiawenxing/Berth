@@ -1,13 +1,14 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { Plus, Play, Sparkles, MoreHorizontal, Anchor } from 'lucide-react'
 import { Kanban } from '@/components/workspace/Kanban'
 import { SessionModule } from '@/components/workspace/SessionModule'
 import { CargoDefaults } from '@/components/workspace/CargoDefaults'
-import { SAMPLE_TASKS, SAMPLE_PIN, SAMPLE_CWD_GROUPS, SAMPLE_CARGO } from '@/data/sample'
+import { SAMPLE_CARGO } from '@/data/sample'
 import { useUI } from '@/lib/ui-store'
 import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
-import type { Task } from '@/lib/types'
+import { useData, relTime, shortCwd, normStatus, normPriority } from '@/lib/data'
+import type { Task, SessionRow, CwdGroup } from '@/lib/types'
 
 /**
  * Project workspace (the hub) — v7 layout: sticky header + 港湾概览,
@@ -17,12 +18,55 @@ import type { Task } from '@/lib/types'
 let taskSeq = 100
 
 export function ProjectWorkspace() {
-  const { id = 'Berth' } = useParams()
+  const { id = '' } = useParams()
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
-  const [tasks, setTasks] = useState<Task[]>(SAMPLE_TASKS)
+  const { projects, tasks: apiTasks, sessions } = useData()
+
+  const project = projects.find((p) => p.id === id)
+  const projName = project?.name ?? id
+
+  // Real tasks for this project → board cards.
+  const realTasks = useMemo<Task[]>(
+    () =>
+      apiTasks
+        .filter((t) => t.projectId === id)
+        .map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: normStatus(t.status),
+          priority: normPriority(t.priority),
+          summary: t.progress ?? undefined,
+          ddl: t.ddl ?? undefined,
+          links: [],
+        })),
+    [apiTasks, id],
+  )
+  const [tasks, setTasks] = useState<Task[]>(realTasks)
+  useEffect(() => setTasks(realTasks), [realTasks])
+
+  // Real sessions for this project → Pin section + by-cwd groups.
+  const projSessions = useMemo(() => sessions.filter((s) => s.projectId === id), [sessions, id])
+  const pin: SessionRow[] = useMemo(
+    () =>
+      projSessions
+        .filter((s) => s.pinned)
+        .map((s) => ({ id: s.sessionId, cli: s.cli, title: s.title || '(未命名)', cwd: shortCwd(s.cwd), time: relTime(s.updatedAt), status: 'moored' as const, linkedTask: !!s.todoKey })),
+    [projSessions],
+  )
+  const groups: CwdGroup[] = useMemo(() => {
+    const map = new Map<string, SessionRow[]>()
+    for (const s of projSessions.filter((x) => !x.pinned)) {
+      const key = s.cwd || '(no cwd)'
+      const row: SessionRow = { id: s.sessionId, cli: s.cli, title: s.title || '(未命名)', cwd: shortCwd(s.cwd), time: relTime(s.updatedAt), status: 'moored', linkedTask: !!s.todoKey }
+      ;(map.get(key) ?? map.set(key, []).get(key)!).push(row)
+    }
+    return [...map.entries()]
+      .sort((a, b) => b[1].length - a[1].length)
+      .map(([cwd, rows]) => ({ cwd: shortCwd(cwd), tag: '上下文', sessions: rows }))
+  }, [projSessions])
 
   const done = tasks.filter((t) => t.status === '已完成').length
-  const total = tasks.length
+  const total = tasks.length || 1
   const inProgress = tasks.filter((t) => t.status === '进行中').length
   const pct = Math.round((done / total) * 100)
 
@@ -56,8 +100,8 @@ export function ProjectWorkspace() {
       <header className="sticky top-0 z-10 border-b border-border bg-background px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-baseline gap-3">
-            <h1 className="text-[17px] font-bold text-foreground">{id}</h1>
-            <span className="font-mono text-[12px] text-muted-foreground">~/Code/berth</span>
+            <h1 className="text-[17px] font-bold text-foreground">{projName}</h1>
+            {project?.homeCwd && <span className="font-mono text-[12px] text-muted-foreground">{shortCwd(project.homeCwd)}</span>}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -107,7 +151,7 @@ export function ProjectWorkspace() {
           <Kanban tasks={tasks} onLaunch={launch} onOpenSession={openSession} />
         </section>
 
-        <SessionModule pin={SAMPLE_PIN} groups={SAMPLE_CWD_GROUPS} onLaunch={() => launch('')} onOpen={openSession} />
+        <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onOpen={openSession} />
         <CargoDefaults dirs={SAMPLE_CARGO} />
       </div>
 
