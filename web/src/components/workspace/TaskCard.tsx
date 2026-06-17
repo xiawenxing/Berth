@@ -115,7 +115,7 @@ export function TaskCard({
       onDragEnd={() => setDragging(false)}
       onClick={onCardClick}
       className={cn(
-        'relative overflow-hidden rounded-md border border-border bg-card pl-3 pr-2.5 py-1.5 active:cursor-grabbing',
+        'group relative overflow-hidden rounded-md border border-border bg-card pl-3 pr-2.5 py-1.5 active:cursor-grabbing',
         expandable || !active ? 'cursor-pointer' : 'cursor-grab',
         open && 'ring-1 ring-brand/40',
         dragging && 'opacity-50',
@@ -159,10 +159,27 @@ export function TaskCard({
           </button>
         )}
         {expandable && <ChevronDown size={14} className={cn('flex-none text-text-dim transition-transform', open && 'rotate-180')} />}
+        {/* done/cancelled cards keep a compact hover ⋯ instead of a footer (#1) */}
+        {active && (done || cancelled) && (
+          <div className="relative flex-none">
+            <button
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation()
+                setMenuOpen((v) => !v)
+              }}
+            >
+              <MoreHorizontal size={13} />
+            </button>
+            {menuOpen && (
+              <TaskMenu task={task} onClose={() => setMenuOpen(false)} onSetStatus={onSetStatus} onSetPriority={onSetPriority} onRename={onRename} onDelete={onDelete} />
+            )}
+          </div>
+        )}
       </div>
 
-      {/* footer */}
-      {active && (
+      {/* footer — only for live tasks (done/cancelled cards stay single-line compact, #1) */}
+      {active && !done && !cancelled && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {linkN > 0 && (
             <span className="inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground">

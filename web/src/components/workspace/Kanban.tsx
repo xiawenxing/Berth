@@ -40,6 +40,8 @@ export function Kanban({
         return (
           <div
             key={status}
+            // Click anywhere in an inactive column (header, body, empty area) to activate+widen it (#2).
+            onClick={() => !isActive && setActive(status)}
             onDragOver={(e) => {
               e.preventDefault()
               e.dataTransfer.dropEffect = 'move'
