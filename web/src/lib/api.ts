@@ -21,6 +21,13 @@ export interface ApiTask {
   sessions?: string[]
 }
 
+export type TurnRole = 'user' | 'agent' | 'tool'
+export interface TranscriptTurn {
+  role: TurnRole
+  text: string
+  collapsed?: boolean
+}
+
 export interface ApiSession {
   sessionId: string
   cli: string
@@ -55,6 +62,9 @@ export const api = {
   projects: () => getJSON<{ projects: ApiProject[] }>('/api/projects'),
   todos: () => getJSON<{ todos: ApiTask[] }>('/api/todos'),
   sessions: () => getJSON<ApiSession[]>('/api/sessions'),
+  // Structured codex-style chat turns for a real session's drawer/right-pane.
+  transcript: (sessionId: string) =>
+    getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),
 
   // ── mutations (wired to existing server endpoints) ──
   createTask: (text: string, projectId?: string) => send('POST', '/api/todos', { text, projectId }),

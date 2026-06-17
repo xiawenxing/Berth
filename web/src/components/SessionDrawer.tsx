@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Send, Square } from 'lucide-react'
 import { Drawer } from './ui/Overlay'
 import { SessionChat } from './SessionChat'
 import { Terminal } from './Terminal'
@@ -9,18 +8,17 @@ import { SHIP_LABEL } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 /**
- * 60vw right-side session drawer (style 2 — no card). Slim header (no ■/×),
- * chat body, bottom composer whose single button is 发送 ▷ / 终止 ■ (when 在航).
+ * 60vw right-side session drawer (style 2 — no card). Slim header (no ■/×).
+ * Body: a real session renders its conversation as a codex-style chat transcript;
+ * a fresh launch renders the live terminal. No composer — the transcript is read-only history.
  */
 export function SessionDrawer() {
   const { drawer, closeDrawer } = useUI()
   const [running, setRunning] = useState(false)
-  const [msg, setMsg] = useState('')
 
-  // Reset composer/running state each time a different session opens.
+  // Reflect 在航 state in the header pill each time a different session opens.
   useEffect(() => {
     setRunning(drawer?.status === 'sail')
-    setMsg('')
   }, [drawer?.title, drawer?.status])
 
   return (
@@ -35,49 +33,17 @@ export function SessionDrawer() {
             {drawer.task && <span className="text-[11px] text-muted-foreground">· 航线 {drawer.task}</span>}
           </div>
 
-          {/* body: real live terminal for a real session OR a fresh launch (/pty);
-              chat preview only when neither is present (e.g. a task mini-row click) */}
+          {/* body: a REAL session renders its conversation as a codex-style chat transcript;
+              a fresh LAUNCH (no sessionId yet) renders the live terminal (watching a new agent sail). */}
           <div className="min-h-0 flex-1 overflow-hidden">
             {drawer.sessionId ? (
-              <Terminal key={drawer.sessionId} sessionId={drawer.sessionId} />
+              <div className="h-full overflow-y-auto">
+                <SessionChat key={drawer.sessionId} sessionId={drawer.sessionId} />
+              </div>
             ) : drawer.launch ? (
               <Terminal key="launch" launch={drawer.launch} />
-            ) : (
-              <div className="h-full overflow-y-auto">
-                <SessionChat firstUser={drawer.task ? `开始处理任务：${drawer.task}` : undefined} />
-              </div>
-            )}
+            ) : null}
           </div>
-
-          {/* Composer only for the chat preview — a real/launch terminal takes input via xterm. */}
-          {!drawer.sessionId && !drawer.launch && (
-            <div className="border-t border-border p-3">
-              <div className="flex items-end gap-2 rounded-md border border-border bg-card p-2">
-                <textarea
-                  value={msg}
-                  onChange={(e) => setMsg(e.target.value)}
-                  placeholder="输入消息发送给 agent…"
-                  rows={2}
-                  className="min-h-0 flex-1 resize-none bg-transparent text-[13px] text-foreground outline-none placeholder:text-text-dim"
-                />
-                {running ? (
-                  <button
-                    onClick={() => setRunning(false)}
-                    className="flex flex-none items-center gap-1 rounded-md bg-destructive px-3 py-1.5 text-[12px] font-semibold text-brand-foreground"
-                  >
-                    <Square size={12} /> 终止
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setMsg('')}
-                    className="flex flex-none items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-[12px] font-semibold text-brand-foreground"
-                  >
-                    <Send size={12} /> 发送
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
         </>
       )}
     </Drawer>

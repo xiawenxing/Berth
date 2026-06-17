@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
-import { Terminal } from '@/components/Terminal'
+import { SessionChat } from '@/components/SessionChat'
 import { useData, relTime, shortCwd } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
@@ -143,8 +143,8 @@ export function Unassigned() {
                 )
               })()}
             </div>
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <Terminal key={sel.sessionId} sessionId={sel.sessionId} />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <SessionChat key={sel.sessionId} sessionId={sel.sessionId} />
             </div>
           </>
         ) : null}

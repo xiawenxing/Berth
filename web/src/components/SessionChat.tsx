@@ -1,50 +1,59 @@
-import { useState } from 'react'
-import { ChevronRight, Copy, FileText } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ChevronRight, Copy, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { api, type TranscriptTurn } from '@/lib/api'
 
 /**
- * Codex-style conversation: user bubbles right, agent rich text left,
- * collapsible 执行过程, code block w/ copy, file-edit card. Mock content for now;
- * a real session feeds parsed transcript turns in a later phase.
+ * Codex-style conversation rendered from a real session transcript:
+ *  - user → right-aligned bubble
+ *  - agent → left-aligned plain rich text (fenced ```code``` as a mono block w/ copy, inline `code` as a chip)
+ *  - tool → collapsible one-line "执行过程 ▸" summary, collapsed by default
+ * Fetches GET /api/sessions/:id/transcript on mount.
  */
-export function SessionChat({ firstUser }: { firstUser?: string }) {
-  const [procOpen, setProcOpen] = useState(false)
+export function SessionChat({ sessionId }: { sessionId: string }) {
+  const [turns, setTurns] = useState<TranscriptTurn[] | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    setTurns(null)
+    setErr(null)
+    api
+      .transcript(sessionId)
+      .then((r) => alive && setTurns(r.turns ?? []))
+      .catch((e) => alive && setErr(String(e?.message ?? e)))
+    return () => {
+      alive = false
+    }
+  }, [sessionId])
+
+  if (err) {
+    return (
+      <div className="px-5 py-6 text-[13px] text-destructive">无法加载会话记录：{err}</div>
+    )
+  }
+  if (turns === null) {
+    return (
+      <div className="flex items-center gap-1.5 px-5 py-6 text-[12px] text-muted-foreground">
+        <Sparkles size={13} className="spk-twinkle" /> 正在解析会话记录…
+      </div>
+    )
+  }
+  if (turns.length === 0) {
+    return <div className="px-5 py-6 text-[13px] text-muted-foreground">该会话暂无可显示的对话内容。</div>
+  }
+
   return (
     <div className="flex flex-col gap-4 px-5 py-4 text-[13px]">
-      <UserMsg>{firstUser ?? '把会话列表从活跃/已归档改成 pin 加 cwd 分组，这周做完'}</UserMsg>
-
-      <AgentMsg>
-        <p>
-          已确定方案：砍掉 <code className="rounded bg-muted px-1 font-mono text-[12px]">活跃/已归档</code>，改为{' '}
-          <code className="rounded bg-muted px-1 font-mono text-[12px]">pin + 按 cwd 分组</code>。下面是核心改动。
-        </p>
-
-        <button
-          onClick={() => setProcOpen((v) => !v)}
-          className="mt-2 flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"
-        >
-          <ChevronRight size={13} className={cn('transition-transform', procOpen && 'rotate-90')} />
-          执行过程 · 用时 1m28s
-        </button>
-        {procOpen && (
-          <div className="mt-1 rounded-md border border-border bg-background/40 p-2 font-mono text-[11.5px] text-text-dim">
-            <div>$ rg "活跃|已归档" public/app.js</div>
-            <div>  4180: 活跃/已归档 grouping…</div>
-            <div>$ npm test — 433 passed</div>
-          </div>
-        )}
-
-        <CodeBlock />
-
-        <FileEditCard />
-        <div className="mt-1 text-[11px] text-text-dim">11:03</div>
-      </AgentMsg>
-
-      <UserMsg>这么改 50 个会话时会不会很长？</UserMsg>
-      <AgentMsg>
-        <p>长 cwd 组加了 show-more（默认显 4 行），已停泊会话不显状态点，列表密度可控。</p>
-        <div className="mt-1 text-[11px] text-text-dim">11:31</div>
-      </AgentMsg>
+      {turns.map((t, i) => {
+        if (t.role === 'user') return <UserMsg key={i}>{t.text}</UserMsg>
+        if (t.role === 'tool') return <ToolMsg key={i} text={t.text} />
+        return (
+          <AgentMsg key={i}>
+            <RichText text={t.text} />
+          </AgentMsg>
+        )
+      })}
     </div>
   )
 }
@@ -52,7 +61,7 @@ export function SessionChat({ firstUser }: { firstUser?: string }) {
 function UserMsg({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[72%] rounded-md bg-secondary px-3 py-2 text-foreground">{children}</div>
+      <div className="max-w-[72%] whitespace-pre-wrap rounded-md bg-secondary px-3 py-2 text-foreground">{children}</div>
     </div>
   )
 }
@@ -61,32 +70,98 @@ function AgentMsg({ children }: { children: React.ReactNode }) {
   return <div className="max-w-[88%] leading-relaxed text-foreground">{children}</div>
 }
 
-function CodeBlock() {
+function ToolMsg({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
   return (
-    <div className="relative mt-2 rounded-md border border-border bg-background/60 p-3 font-mono text-[12px]">
-      <button className="absolute right-2 top-2 rounded p-1 text-text-dim hover:bg-muted hover:text-foreground" title="复制">
-        <Copy size={12} />
+    <div className="max-w-[88%]">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight size={13} className={cn('transition-transform', open && 'rotate-90')} />
+        执行过程
       </button>
-      <pre className="overflow-x-auto text-foreground">{`function groupSessionsByCwd(sessions) {
-  const map = new Map()
-  for (const s of sessions) {
-    const k = s.cwd || '__no_cwd__'
-    ;(map.get(k) ?? map.set(k, []).get(k)).push(s)
-  }
-  return [...map]
-}`}</pre>
+      {open && (
+        <pre className="mt-1 max-h-72 overflow-auto rounded-md border border-border bg-background/60 p-2 font-mono text-[11.5px] leading-relaxed text-text-dim">
+          {text}
+        </pre>
+      )}
     </div>
   )
 }
 
-function FileEditCard() {
+/**
+ * Minimal rich-text renderer: splits on fenced ```code``` blocks, renders each block as a mono code
+ * card with a copy button; the prose segments render inline `code` as chips. No markdown dependency.
+ */
+function RichText({ text }: { text: string }) {
+  const segments = splitFences(text)
   return (
-    <div className="mt-2 flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
-      <FileText size={14} className="text-muted-foreground" />
-      <span className="text-[12px] text-foreground">已编辑 public/app.js</span>
-      <span className="font-mono text-[11px] text-success">+132</span>
-      <span className="font-mono text-[11px] text-destructive">−58</span>
-      <button className="ml-auto text-[11px] text-brand hover:underline">查看</button>
+    <>
+      {segments.map((seg, i) =>
+        seg.type === 'code' ? (
+          <CodeBlock key={i} code={seg.text} />
+        ) : (
+          <Prose key={i} text={seg.text} />
+        ),
+      )}
+    </>
+  )
+}
+
+type Segment = { type: 'text' | 'code'; text: string }
+
+/** Split text into prose + fenced-code segments. Tolerates an unterminated final fence. */
+function splitFences(text: string): Segment[] {
+  const out: Segment[] = []
+  const re = /```[^\n]*\n?([\s\S]*?)```/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) out.push({ type: 'text', text: text.slice(last, m.index) })
+    out.push({ type: 'code', text: m[1].replace(/\n$/, '') })
+    last = re.lastIndex
+  }
+  if (last < text.length) out.push({ type: 'text', text: text.slice(last) })
+  return out.filter((s) => s.text.trim().length > 0)
+}
+
+function Prose({ text }: { text: string }) {
+  // Render inline `code` as chips, keep paragraph whitespace.
+  const parts = text.split(/(`[^`]+`)/g)
+  return (
+    <p className="whitespace-pre-wrap">
+      {parts.map((p, i) =>
+        p.startsWith('`') && p.endsWith('`') && p.length > 2 ? (
+          <code key={i} className="rounded bg-muted px-1 font-mono text-[12px]">
+            {p.slice(1, -1)}
+          </code>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </p>
+  )
+}
+
+function CodeBlock({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    navigator.clipboard?.writeText(code).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    })
+  }
+  return (
+    <div className="relative my-2 rounded-md border border-border bg-background/60 p-3 font-mono text-[12px]">
+      <button
+        onClick={copy}
+        className="absolute right-2 top-2 rounded p-1 text-text-dim hover:bg-muted hover:text-foreground"
+        title={copied ? '已复制' : '复制'}
+      >
+        <Copy size={12} />
+      </button>
+      <pre className="overflow-x-auto whitespace-pre text-foreground">{code}</pre>
     </div>
   )
 }
