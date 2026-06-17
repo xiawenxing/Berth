@@ -7,12 +7,14 @@ import { Unassigned } from './pages/Unassigned'
 import { Settings } from './pages/Settings'
 import { UIProvider } from './lib/ui-store'
 import { DataProvider } from './lib/data'
+import { LiveProvider } from './lib/live'
 import { SessionDrawer } from './components/SessionDrawer'
 import { LaunchDialog } from './components/LaunchDialog'
 
 function Layout() {
   return (
     <DataProvider>
+      <LiveProvider>
       <UIProvider>
         <div className="flex h-full w-full overflow-hidden">
           <Rail />
@@ -24,6 +26,7 @@ function Layout() {
         <SessionDrawer />
         <LaunchDialog />
       </UIProvider>
+      </LiveProvider>
     </DataProvider>
   )
 }

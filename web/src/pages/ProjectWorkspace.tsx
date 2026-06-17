@@ -8,6 +8,7 @@ import { SAMPLE_CARGO } from '@/data/sample'
 import { useUI } from '@/lib/ui-store'
 import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
 import { useData, relTime, shortCwd, normStatus, normPriority } from '@/lib/data'
+import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
 import type { Task, SessionRow, CwdGroup } from '@/lib/types'
 
@@ -22,6 +23,7 @@ export function ProjectWorkspace() {
   const { id = '' } = useParams()
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
   const { projects, tasks: apiTasks, sessions, reload } = useData()
+  const live = useLive()
 
   const project = projects.find((p) => p.id === id)
   const projName = project?.name ?? id
@@ -47,24 +49,29 @@ export function ProjectWorkspace() {
 
   // Real sessions for this project → Pin section + by-cwd groups.
   const projSessions = useMemo(() => sessions.filter((s) => s.projectId === id), [sessions, id])
+  const toRow = (s: (typeof projSessions)[number]): SessionRow => ({
+    id: s.sessionId,
+    cli: s.cli,
+    title: s.title || '(未命名)',
+    cwd: shortCwd(s.cwd),
+    time: relTime(s.updatedAt),
+    status: live.shipStatus(s.sessionId, s.updatedAt),
+    linkedTask: !!s.todoKey,
+  })
   const pin: SessionRow[] = useMemo(
-    () =>
-      projSessions
-        .filter((s) => s.pinned)
-        .map((s) => ({ id: s.sessionId, cli: s.cli, title: s.title || '(未命名)', cwd: shortCwd(s.cwd), time: relTime(s.updatedAt), status: 'moored' as const, linkedTask: !!s.todoKey })),
-    [projSessions],
+    () => projSessions.filter((s) => s.pinned).map(toRow),
+    [projSessions, live.activity],
   )
   const groups: CwdGroup[] = useMemo(() => {
     const map = new Map<string, SessionRow[]>()
     for (const s of projSessions.filter((x) => !x.pinned)) {
       const key = s.cwd || '(no cwd)'
-      const row: SessionRow = { id: s.sessionId, cli: s.cli, title: s.title || '(未命名)', cwd: shortCwd(s.cwd), time: relTime(s.updatedAt), status: 'moored', linkedTask: !!s.todoKey }
-      ;(map.get(key) ?? map.set(key, []).get(key)!).push(row)
+      ;(map.get(key) ?? map.set(key, []).get(key)!).push(toRow(s))
     }
     return [...map.entries()]
       .sort((a, b) => b[1].length - a[1].length)
       .map(([cwd, rows]) => ({ cwd: shortCwd(cwd), tag: '上下文', sessions: rows }))
-  }, [projSessions])
+  }, [projSessions, live.activity])
 
   const done = tasks.filter((t) => t.status === '已完成').length
   const total = tasks.length || 1
@@ -72,9 +79,11 @@ export function ProjectWorkspace() {
   const pct = Math.round((done / total) * 100)
 
   const launch = (t: string) => openLaunch(t ? { dest: 'task', taskTitle: t } : { dest: 'free' })
-  // Open a real session → attach its live /pty terminal in the drawer.
-  const openRow = (s: SessionRow) =>
+  // Open a real session → attach its live /pty terminal in the drawer; mark it seen.
+  const openRow = (s: SessionRow) => {
+    live.markSeen(s.id)
     openDrawer({ title: s.title, cli: s.cli, cwd: s.cwd, status: s.status === 'idle' ? 'moored' : s.status, sessionId: s.id })
+  }
   // From a task mini-row (title only) → chat preview.
   const openSession = (t: string) => openDrawer({ title: t, cli: 'claude', cwd: '~/Code/berth', status: 'sail' })
 
