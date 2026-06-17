@@ -5,10 +5,13 @@ import { api, type ApiProject, type ApiSession, type ApiTask } from './api'
 // Live running/unread status (from the /status WS + local lastSeen) is a follow-up;
 // for now ship status defaults to 已停泊 and 'pinned' drives the Pin section.
 
+const DEFAULT_PRIORITIES = ['P0', 'P1', 'P2']
+
 interface DataState {
   projects: ApiProject[]
   tasks: ApiTask[]
   sessions: ApiSession[]
+  priorities: string[] // ordered high→low, from Settings (drives the priority color ramp + menu)
   loading: boolean
   error: string | null
   reload: () => void
@@ -20,6 +23,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<ApiProject[]>([])
   const [tasks, setTasks] = useState<ApiTask[]>([])
   const [sessions, setSessions] = useState<ApiSession[]>([])
+  const [priorities, setPriorities] = useState<string[]>(DEFAULT_PRIORITIES)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
@@ -27,12 +31,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let alive = true
     setLoading(true)
-    Promise.all([api.projects(), api.todos(), api.sessions()])
-      .then(([p, t, s]) => {
+    // Settings is non-critical: fall back to the default vocabulary if it fails, don't break the page.
+    Promise.all([api.projects(), api.todos(), api.sessions(), api.settings().catch(() => ({}))])
+      .then(([p, t, s, cfg]) => {
         if (!alive) return
         setProjects(p.projects ?? [])
         setTasks(t.todos ?? [])
         setSessions((s ?? []).filter((x) => !x.deleted))
+        setPriorities((cfg as { priorities?: string[] }).priorities?.length ? (cfg as { priorities: string[] }).priorities : DEFAULT_PRIORITIES)
         setError(null)
       })
       .catch((e) => alive && setError(String(e)))
@@ -43,8 +49,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [nonce])
 
   const value = useMemo<DataState>(
-    () => ({ projects, tasks, sessions, loading, error, reload: () => setNonce((n) => n + 1) }),
-    [projects, tasks, sessions, loading, error],
+    () => ({ projects, tasks, sessions, priorities, loading, error, reload: () => setNonce((n) => n + 1) }),
+    [projects, tasks, sessions, priorities, loading, error],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
@@ -81,7 +87,8 @@ export function normStatus(s: string): '待办' | '进行中' | '待评估' | '�
   return '待办'
 }
 
-export function normPriority(p?: string): 'P0' | 'P1' | 'P2' {
-  if (p === 'P0' || p === 'P1' || p === 'P2') return p
-  return 'P2'
+/** Pass the configured priority through as-is (ranked/colored by its position in the Settings
+ *  list, see lib/priority.ts); only fall back when the backend gives nothing. */
+export function normPriority(p?: string): string {
+  return p && p.trim() ? p.trim() : 'P2'
 }

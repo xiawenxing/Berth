@@ -131,6 +131,8 @@ export function applyScheme(scheme: Scheme) {
   const html = document.documentElement
   html.classList.toggle('dark', scheme.mode === 'dark')
   html.classList.toggle('light', scheme.mode === 'light')
+  // Drives CSS light-dark() (used by the priority color ramp) so it tracks the chosen mode.
+  html.style.colorScheme = scheme.mode
   for (const [k, v] of Object.entries({ ...SHARED, ...scheme.vars })) html.style.setProperty(k, v)
   try {
     localStorage.setItem(SCHEME_KEY, scheme.id)

@@ -1,7 +1,9 @@
 // Domain types for the workspace (v7). Mirrors the canonical mockup data;
 // refined against /api shapes as real data is wired in.
 
-export type Priority = 'P0' | 'P1' | 'P2'
+// Priority is whatever the user configured in Settings (ordered list, high→low). Kept loose so
+// custom vocabularies flow through; color/order come from the list's rank (see lib/priority.ts).
+export type Priority = string
 export type TaskStatus = '待办' | '进行中' | '待评估' | '已完成' | '已取消'
 export type ShipStatus = 'sail' | 'dock' | 'moored' // 在航 / 靠岸·待查收 / 已停泊
 

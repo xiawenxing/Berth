@@ -3,12 +3,12 @@ import { Pin, Play, ChevronDown, CalendarClock, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { useUI } from '@/lib/ui-store'
-import { useData, normPriority, normStatus, shortCwd } from '@/lib/data'
+import { useData, normStatus, shortCwd } from '@/lib/data'
+import { priorityColors, priorityRank } from '@/lib/priority'
 import { useLive } from '@/lib/live'
 import type { ShipStatus } from '@/lib/types'
 import type { ApiSession, ApiTask } from '@/lib/api'
 
-const PRIO_BAR = { P0: 'bg-destructive', P1: 'bg-priority', P2: 'bg-border/70' }
 
 /** Local YYYY-MM-DD for "today" — matches the backend ddl format. */
 function todayISO(): string {
@@ -157,13 +157,14 @@ function TaskRow({
 }) {
   const [open, setOpen] = useState(false)
   const live = useLive()
-  const prio = normPriority(t.priority)
+  const { priorities } = useData()
+  const { rank, total } = priorityRank(t.priority, priorities)
   const delivered = normStatus(t.status) === '已完成'
   const linked = (t.sessions ?? []).map((id) => resolve(id)).filter((s): s is ApiSession => !!s)
 
   return (
     <div className="relative overflow-hidden rounded-md border border-border bg-card">
-      <span className={cn('absolute left-0 top-0 h-full w-1', PRIO_BAR[prio])} />
+      <span className="absolute left-0 top-0 h-full w-[2px]" style={{ background: priorityColors(rank, total).bar }} />
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left">
         <ProjTag proj={t.project} />
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{t.title}</span>

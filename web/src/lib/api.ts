@@ -70,6 +70,8 @@ export const api = {
   projects: () => getJSON<{ projects: ApiProject[] }>('/api/projects'),
   todos: () => getJSON<{ todos: ApiTask[] }>('/api/todos'),
   sessions: () => getJSON<ApiSession[]>('/api/sessions'),
+  // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
+  settings: () => getJSON<{ priorities?: string[]; statuses?: string[] }>('/api/settings'),
   // Structured codex-style chat turns for a real session's drawer/right-pane.
   transcript: (sessionId: string) =>
     getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),

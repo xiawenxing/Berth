@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Play,
@@ -15,15 +15,11 @@ import {
   Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useData } from '@/lib/data'
+import { priorityColors, priorityRank } from '@/lib/priority'
 import { STATUS_ORDER, type Priority, type Task, type ShipStatus, type TaskStatus } from '@/lib/types'
 
 const REFINING = '港务助手正在总结进展摘要…'
-
-const SHIP_DOT: Record<ShipStatus, string> = {
-  sail: 'bg-success', // 在航
-  dock: 'ring-1 ring-brand', // 靠岸·待查收 (hollow)
-  moored: 'hidden', // 已停泊 — no dot
-}
 
 function ShipGlyph({ status }: { status: ShipStatus }) {
   if (status === 'moored') return null
@@ -61,10 +57,11 @@ function DdlChip({ ddl }: { ddl?: string | null }) {
   )
 }
 
-const PRIO_BAR: Record<string, string> = {
-  P0: 'bg-destructive',
-  P1: 'bg-priority',
-  P2: 'bg-border/70',
+type MenuActions = {
+  onSetStatus?: (taskId: string, status: TaskStatus) => void
+  onSetPriority?: (taskId: string, priority: Priority) => void
+  onRename?: (taskId: string, title: string) => void
+  onDelete?: (taskId: string) => void
 }
 
 export function TaskCard({
@@ -83,11 +80,8 @@ export function TaskCard({
   onLaunch?: (taskTitle: string) => void
   onOpenSession?: (title: string) => void
   onActivate?: () => void
-  onSetStatus?: (taskId: string, status: TaskStatus) => void
-  onSetPriority?: (taskId: string, priority: Priority) => void
-  onRename?: (taskId: string, title: string) => void
-  onDelete?: (taskId: string) => void
-}) {
+} & MenuActions) {
+  const { priorities } = useData()
   const [open, setOpen] = useState(false)
   const done = task.status === '已完成'
   const cancelled = task.status === '已取消'
@@ -96,6 +90,9 @@ export function TaskCard({
   const linkN = task.links?.length ?? 0
   const runningOrUnread = task.links?.find((l) => l.status === 'sail' || l.status === 'dock')
   const [dragging, setDragging] = useState(false)
+
+  const { rank, total } = priorityRank(task.priority, priorities)
+  const pc = priorityColors(rank, total)
 
   // Clicking the card body: in the active column toggle expand; in an inactive
   // (narrow) column promote that column to active.
@@ -124,12 +121,8 @@ export function TaskCard({
         dragging && 'opacity-45',
       )}
     >
-      {/* 4px priority left-bar */}
-      <button
-        className={cn('absolute left-0 top-0 bottom-0 w-1', PRIO_BAR[task.priority])}
-        title={`优先级 ${task.priority}`}
-        onClick={(e) => e.stopPropagation()}
-      />
+      {/* 2px priority left-bar — color comes from the ordered-priority ramp (lib/priority) */}
+      <span className="pointer-events-none absolute left-0 top-0 bottom-0 z-[1] w-[2px]" style={{ background: pc.bar }} />
 
       {/* head (title row) — padding lives here, not on the card, for tight density */}
       <div className={cn('flex items-center gap-1.5 pr-2.5 pl-[13px]', active ? 'py-[7px]' : 'py-[6px]')}>
@@ -153,6 +146,13 @@ export function TaskCard({
             <Sparkles size={11} className="spk-twinkle" /> 总结中…
           </span>
         )}
+        {/* compact (inactive-column) live cards: ddl-if-set + priority chip ride in the head (single-row, dense) */}
+        {!active && isLive && (
+          <>
+            {task.ddl && <DdlChip ddl={task.ddl} />}
+            <PrioChip task={task} priorities={priorities} onSetPriority={onSetPriority} />
+          </>
+        )}
         {/* ▷启动 — v7 .kcard-go: quiet muted marker (icon + 启动), success only on hover; collapse-only, live cards */}
         {!open && active && isLive && task.summary !== REFINING && (
           <button
@@ -173,6 +173,7 @@ export function TaskCard({
         {(done || cancelled) && (
           <MoreMenu
             task={task}
+            priorities={priorities}
             className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
             onSetStatus={onSetStatus}
             onSetPriority={onSetPriority}
@@ -182,23 +183,21 @@ export function TaskCard({
         )}
       </div>
 
-      {/* footer — live cards only. Active: full (link · glyph · ddl · ⋯). Inactive: compact (set-ddl + ⋯). */}
-      {isLive && (
-        <div className={cn('flex items-center gap-1.5 pr-2 pl-[13px] pb-[6px]', active ? '-mt-0.5' : '-mt-1')}>
-          {active && linkN > 0 && (
+      {/* footer — active live cards: priority chip · link · ddl · ⋯ */}
+      {active && isLive && (
+        <div className="-mt-0.5 flex items-center gap-1.5 pr-2 pl-[13px] pb-[6px]">
+          <PrioChip task={task} priorities={priorities} onSetPriority={onSetPriority} />
+          {linkN > 0 && (
             <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-px text-[10.5px] text-muted-foreground">
               <Link2 size={11} /> {linkN}
             </span>
           )}
-          {/* show ddl: active shows even unset hint; inactive only when set */}
-          {(active || task.ddl) && <DdlChip ddl={task.ddl} />}
+          <DdlChip ddl={task.ddl} />
           <span className="flex-1" />
           <MoreMenu
             task={task}
-            className={cn(
-              'rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground',
-              !active && 'opacity-0 transition-opacity group-hover:opacity-100',
-            )}
+            priorities={priorities}
+            className="rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
             onSetStatus={onSetStatus}
             onSetPriority={onSetPriority}
             onRename={onRename}
@@ -259,63 +258,31 @@ const STATUS_ICON: Record<TaskStatus, typeof Folder> = {
   已取消: X,
 }
 
-const PRIO_CHIP: Record<Priority, string> = {
-  P0: 'bg-destructive/15 text-destructive',
-  P1: 'bg-priority/15 text-priority',
-  P2: 'bg-muted text-muted-foreground',
-}
+// ── shared popover primitive ────────────────────────────────────────────────
 
-type MenuActions = {
-  onSetStatus?: (taskId: string, status: TaskStatus) => void
-  onSetPriority?: (taskId: string, priority: Priority) => void
-  onRename?: (taskId: string, title: string) => void
-  onDelete?: (taskId: string) => void
-}
-
-/** ⋯ trigger + its popover. The popover is portaled to <body> with fixed positioning so it
- *  escapes the card's `overflow-hidden` and the column body's `overflow-y-auto` (which otherwise
- *  clip an in-card absolute menu to nothing — the "menu doesn't open" bug). */
-function MoreMenu({ task, className, ...actions }: { task: Task; className: string } & MenuActions) {
-  const btnRef = useRef<HTMLButtonElement>(null)
-  const [open, setOpen] = useState(false)
-  const toggle = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setOpen((v) => !v)
-  }
-  return (
-    <button ref={btnRef} className={cn('relative flex-none', className)} onClick={toggle}>
-      <MoreHorizontal size={13} />
-      {open && <TaskMenu task={task} anchor={btnRef} onClose={() => setOpen(false)} {...actions} />}
-    </button>
-  )
-}
-
-/** Fixed-position popover anchored under a trigger button, portaled to <body>. 状态 / 优先级 /
- *  重命名 / 删除. Click-outside (button included) + Esc close; flips above when near the viewport bottom. */
-function TaskMenu({
-  task,
+/** A popover portaled to <body> and fixed-positioned under `anchor`, so it escapes the card's
+ *  overflow-hidden and the column body's overflow-y-auto. Closes on outside-click (anchor
+ *  included, so the trigger toggles cleanly) and Esc; flips above when near the viewport bottom. */
+function AnchoredPopover({
   anchor,
   onClose,
-  onSetStatus,
-  onSetPriority,
-  onRename,
-  onDelete,
+  width,
+  children,
 }: {
-  task: Task
-  anchor: React.RefObject<HTMLButtonElement | null>
+  anchor: RefObject<HTMLElement | null>
   onClose: () => void
-} & MenuActions) {
+  width: number
+  children: ReactNode
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
-  // Position under the trigger (right-aligned), flipping above if it would overflow the viewport.
   useLayoutEffect(() => {
     const place = () => {
       const a = anchor.current?.getBoundingClientRect()
       if (!a) return
-      const W = 176 // w-44
-      const H = ref.current?.offsetHeight ?? 300
-      const left = Math.max(8, Math.min(a.right - W, window.innerWidth - W - 8))
+      const H = ref.current?.offsetHeight ?? 280
+      const left = Math.max(8, Math.min(a.right - width, window.innerWidth - width - 8))
       const below = a.bottom + 4
       const top = below + H > window.innerHeight - 8 ? Math.max(8, a.top - H - 4) : below
       setPos({ top, left })
@@ -327,7 +294,7 @@ function TaskMenu({
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
     }
-  }, [anchor])
+  }, [anchor, width])
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -346,67 +313,168 @@ function TaskMenu({
     }
   }, [onClose, anchor])
 
+  return createPortal(
+    <div
+      ref={ref}
+      onClick={(e) => e.stopPropagation()}
+      style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width, visibility: pos ? 'visible' : 'hidden' }}
+      className="fixed z-50 rounded-md border border-border bg-popover p-1 shadow-lg"
+    >
+      {children}
+    </div>,
+    document.body,
+  )
+}
+
+const MenuLabel = ({ children }: { children: ReactNode }) => (
+  <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-text-dim">{children}</div>
+)
+const MenuItem = ({ children, onClick, danger }: { children: ReactNode; onClick: (e: React.MouseEvent) => void; danger?: boolean }) => (
+  <button
+    onClick={onClick}
+    className={cn(
+      'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] hover:bg-accent',
+      danger ? 'text-destructive hover:bg-destructive/10' : 'text-foreground',
+    )}
+  >
+    {children}
+  </button>
+)
+
+/** A ramp-colored priority pill (P0/P1/…); `interactive` adds hover affordance for menus. */
+function PrioPill({ label, rank, total, interactive }: { label: string; rank: number; total: number; interactive?: boolean }) {
+  const c = priorityColors(rank, total)
+  return (
+    <span
+      className={cn('inline-flex flex-none items-center rounded px-1.5 text-[10px] font-bold tracking-[0.3px]', interactive && 'leading-[16px]')}
+      style={{ background: c.chipBg, color: c.chipFg }}
+    >
+      {label}
+    </span>
+  )
+}
+
+/** Priority list — used by both the quick chip popover and the full ⋯ menu. */
+function PriorityList({ task, priorities, onSetPriority, close }: { task: Task; priorities: string[]; onSetPriority?: (id: string, p: Priority) => void; close: () => void }) {
+  return (
+    <>
+      <MenuLabel>优先级</MenuLabel>
+      {priorities.map((p, i) => (
+        <MenuItem
+          key={p}
+          onClick={(e) => {
+            e.stopPropagation()
+            onSetPriority?.(task.id, p)
+            close()
+          }}
+        >
+          <PrioPill label={p} rank={i} total={priorities.length} />
+          <span className="flex-1" />
+          {task.priority === p && <span className="h-1.5 w-1.5 flex-none rounded-full bg-brand" />}
+        </MenuItem>
+      ))}
+    </>
+  )
+}
+
+// ── the clickable priority chip on a card ────────────────────────────────────
+
+function PrioChip({ task, priorities, onSetPriority }: { task: Task; priorities: string[]; onSetPriority?: (id: string, p: Priority) => void }) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+  const { rank, total } = priorityRank(task.priority, priorities)
+  const c = priorityColors(rank, total)
+  return (
+    <button
+      ref={btnRef}
+      title="设置优先级"
+      onClick={(e) => {
+        e.stopPropagation()
+        setOpen((v) => !v)
+      }}
+      className="inline-flex h-[18px] flex-none items-center rounded px-1.5 text-[10px] font-bold tracking-[0.3px] transition-[filter] hover:brightness-105"
+      style={{ background: c.chipBg, color: c.chipFg }}
+    >
+      {task.priority}
+      {open && (
+        <AnchoredPopover anchor={btnRef} width={150} onClose={() => setOpen(false)}>
+          <PriorityList task={task} priorities={priorities} onSetPriority={onSetPriority} close={() => setOpen(false)} />
+        </AnchoredPopover>
+      )}
+    </button>
+  )
+}
+
+// ── the ⋯ overflow menu ──────────────────────────────────────────────────────
+
+function MoreMenu({ task, priorities, className, ...actions }: { task: Task; priorities: string[]; className: string } & MenuActions) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+  return (
+    <button
+      ref={btnRef}
+      className={cn('relative flex-none', className)}
+      onClick={(e) => {
+        e.stopPropagation()
+        setOpen((v) => !v)
+      }}
+    >
+      <MoreHorizontal size={13} />
+      {open && (
+        <TaskMenu task={task} priorities={priorities} anchor={btnRef} onClose={() => setOpen(false)} {...actions} />
+      )}
+    </button>
+  )
+}
+
+/** Full task menu: 状态 / 优先级 / 重命名 / 删除. */
+function TaskMenu({
+  task,
+  priorities,
+  anchor,
+  onClose,
+  onSetStatus,
+  onSetPriority,
+  onRename,
+  onDelete,
+}: {
+  task: Task
+  priorities: string[]
+  anchor: RefObject<HTMLButtonElement | null>
+  onClose: () => void
+} & MenuActions) {
   const pick = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation()
     fn()
     onClose()
   }
-
-  const Label = ({ children }: { children: React.ReactNode }) => (
-    <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-text-dim">{children}</div>
-  )
-  const Item = ({ children, onClick, danger }: { children: React.ReactNode; onClick: (e: React.MouseEvent) => void; danger?: boolean }) => (
-    <button
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] hover:bg-accent',
-        danger ? 'text-destructive hover:bg-destructive/10' : 'text-foreground',
-      )}
-    >
-      {children}
-    </button>
-  )
-
-  return createPortal(
-    <div
-      ref={ref}
-      onClick={(e) => e.stopPropagation()}
-      style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, visibility: pos ? 'visible' : 'hidden' }}
-      className="fixed z-50 w-44 rounded-md border border-border bg-popover p-1 shadow-lg"
-    >
-      <Label>状态 — 移动到列</Label>
+  return (
+    <AnchoredPopover anchor={anchor} width={176} onClose={onClose}>
+      <MenuLabel>状态 — 移动到列</MenuLabel>
       {STATUS_ORDER.map((s) => {
         const Icon = STATUS_ICON[s]
         return (
-          <Item key={s} onClick={pick(() => onSetStatus?.(task.id, s))}>
+          <MenuItem key={s} onClick={pick(() => onSetStatus?.(task.id, s))}>
             <Icon size={13} className="flex-none text-muted-foreground" />
             <span className="flex-1">{s}</span>
             {task.status === s && <span className="h-1.5 w-1.5 flex-none rounded-full bg-brand" />}
-          </Item>
+          </MenuItem>
         )
       })}
       <div className="my-1 border-t border-border" />
-      <Label>优先级</Label>
-      {(['P0', 'P1', 'P2'] as Priority[]).map((p) => (
-        <Item key={p} onClick={pick(() => onSetPriority?.(task.id, p))}>
-          <span className={cn('flex-none rounded px-1 text-[10px] font-bold', PRIO_CHIP[p])}>{p}</span>
-          <span className="flex-1">{p === 'P0' ? '高' : p === 'P1' ? '中' : '低'}</span>
-          {task.priority === p && <span className="h-1.5 w-1.5 flex-none rounded-full bg-brand" />}
-        </Item>
-      ))}
+      <PriorityList task={task} priorities={priorities} onSetPriority={onSetPriority} close={onClose} />
       <div className="my-1 border-t border-border" />
-      <Item
+      <MenuItem
         onClick={pick(() => {
           const next = window.prompt('重命名任务', task.title)
           if (next && next.trim() && next.trim() !== task.title) onRename?.(task.id, next.trim())
         })}
       >
         <Pencil size={13} className="flex-none text-muted-foreground" /> 重命名
-      </Item>
-      <Item danger onClick={pick(() => onDelete?.(task.id))}>
+      </MenuItem>
+      <MenuItem danger onClick={pick(() => onDelete?.(task.id))}>
         <Trash2 size={13} className="flex-none" /> 删除
-      </Item>
-    </div>,
-    document.body,
+      </MenuItem>
+    </AnchoredPopover>
   )
 }
