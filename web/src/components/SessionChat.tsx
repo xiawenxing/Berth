@@ -8,24 +8,43 @@ import { api, type TranscriptTurn } from '@/lib/api'
  *  - user → right-aligned bubble
  *  - agent → left-aligned plain rich text (fenced ```code``` as a mono block w/ copy, inline `code` as a chip)
  *  - tool → collapsible one-line "执行过程 ▸" summary, collapsed by default
- * Fetches GET /api/sessions/:id/transcript on mount.
+ * Fetches GET /api/sessions/:id/transcript on mount; can poll while a hidden PTY turn is running.
  */
-export function SessionChat({ sessionId }: { sessionId: string }) {
+export function SessionChat({
+  sessionId,
+  refreshKey = 0,
+  poll = false,
+  optimisticUserText,
+}: {
+  sessionId: string
+  refreshKey?: number
+  poll?: boolean
+  optimisticUserText?: string | null
+}) {
   const [turns, setTurns] = useState<TranscriptTurn[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
     let alive = true
-    setTurns(null)
-    setErr(null)
+    const firstLoad = turns === null
+    if (firstLoad) setErr(null)
     api
       .transcript(sessionId)
       .then((r) => alive && setTurns(r.turns ?? []))
-      .catch((e) => alive && setErr(String(e?.message ?? e)))
+      .catch((e) => alive && firstLoad && setErr(String(e?.message ?? e)))
     return () => {
       alive = false
     }
-  }, [sessionId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, refreshKey])
+
+  useEffect(() => {
+    if (!poll) return
+    const timer = window.setInterval(() => {
+      api.transcript(sessionId).then((r) => setTurns(r.turns ?? [])).catch(() => {})
+    }, 1500)
+    return () => clearInterval(timer)
+  }, [sessionId, poll])
 
   if (err) {
     return (
@@ -39,13 +58,15 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
       </div>
     )
   }
-  if (turns.length === 0) {
+  const shownTurns = appendOptimisticUser(turns, optimisticUserText)
+
+  if (shownTurns.length === 0) {
     return <div className="px-5 py-6 text-[13px] text-muted-foreground">该会话暂无可显示的对话内容。</div>
   }
 
   return (
     <div className="flex flex-col gap-4 px-5 py-4 text-[13px]">
-      {turns.map((t, i) => {
+      {shownTurns.map((t, i) => {
         if (t.role === 'user') return <UserMsg key={i}>{t.text}</UserMsg>
         if (t.role === 'tool') return <ToolMsg key={i} text={t.text} />
         return (
@@ -56,6 +77,13 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
       })}
     </div>
   )
+}
+
+function appendOptimisticUser(turns: TranscriptTurn[], text?: string | null): TranscriptTurn[] {
+  const t = text?.trim()
+  if (!t) return turns
+  if (turns.some((x) => x.role === 'user' && x.text.trim() === t)) return turns
+  return [...turns, { role: 'user', text: t }]
 }
 
 function UserMsg({ children }: { children: React.ReactNode }) {

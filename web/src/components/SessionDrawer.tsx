@@ -7,30 +7,31 @@ import { CliBadge } from './workspace/TaskCard'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
 import { useLive } from '@/lib/live'
+import { submitSessionInput } from '@/lib/pty'
 import { SHIP_LABEL } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 /**
  * 60vw right-side session drawer (style 2 — no card). Slim header (no ■/×).
- * Body: a live session attaches to the server-side PTY so the drawer shows the same TUI stream the
- * CLI is producing. A stopped/moored session falls back to the parsed chat transcript + composer;
- * sending a message resumes it live with the message auto-submitted.
+ * Body: always keeps the chat transcript style for real sessions. Sending a message resumes/attaches
+ * to the server-side PTY in the background, then the transcript view refreshes as the CLI writes.
  */
 export function SessionDrawer() {
   const { drawer, closeDrawer, openDrawer } = useUI()
   const { sessions, resync } = useData()
   const live = useLive()
   const [optimisticLiveId, setOptimisticLiveId] = useState<string | null>(null)
-  // When the user sends a follow-up, switch the body from the chat transcript to a live resumed
-  // terminal that auto-submits this text. Reset whenever a different session opens.
-  const [resumeInput, setResumeInput] = useState<string | null>(null)
+  const [pendingInput, setPendingInput] = useState<string | null>(null)
+  const [chatRefreshKey, setChatRefreshKey] = useState(0)
   // A fresh launch's session jsonl is written when the CLI initializes/takes its first turn,
   // which lags the launch by a beat. `GET /api/sessions` serves a disk-scan cache, so re-scan a
   // few times after launch to let the new session surface in the list (and rebind links/attach).
   const resyncTimers = useRef<number[]>([])
+  const chatTimers = useRef<number[]>([])
   const optimisticTimer = useRef<number | null>(null)
   useEffect(() => () => {
     resyncTimers.current.forEach((t) => clearTimeout(t))
+    chatTimers.current.forEach((t) => clearTimeout(t))
     if (optimisticTimer.current !== null) clearTimeout(optimisticTimer.current)
   }, [])
   const resyncAfterLaunch = (sessionId: string) => {
@@ -42,9 +43,32 @@ export function SessionDrawer() {
     if (drawer) openDrawer({ ...drawer, sessionId, status: 'sail', launch: undefined })
   }
 
-  // A different session opened → drop any pending resume so we show its transcript first.
+  const scheduleChatRefresh = () => {
+    chatTimers.current.forEach((t) => clearTimeout(t))
+    setChatRefreshKey((n) => n + 1)
+    chatTimers.current = [900, 2200, 5000, 9000].map((ms) =>
+      window.setTimeout(() => setChatRefreshKey((n) => n + 1), ms),
+    )
+  }
+
+  const sendMessage = (text: string) => {
+    const sessionId = drawer?.sessionId
+    if (!sessionId) return
+    setPendingInput(text)
+    scheduleChatRefresh()
+    submitSessionInput(sessionId, text)
+      .then(() => {
+        scheduleChatRefresh()
+        void resync()
+      })
+      .catch(() => scheduleChatRefresh())
+  }
+
+  // A different session opened → drop any pending optimistic message.
   useEffect(() => {
-    setResumeInput(null)
+    setPendingInput(null)
+    chatTimers.current.forEach((t) => clearTimeout(t))
+    chatTimers.current = []
   }, [drawer?.sessionId])
 
   const currentSession = drawer?.sessionId ? sessions.find((s) => s.sessionId === drawer.sessionId) : undefined
@@ -65,21 +89,21 @@ export function SessionDrawer() {
             {drawer.task && <span className="text-[11px] text-muted-foreground">· 航线 {drawer.task}</span>}
           </div>
 
-          {/* body: live PTY first; otherwise parsed transcript + composer. */}
+          {/* body: real sessions stay in chat style; PTY interaction happens in the background. */}
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {drawer.sessionId ? (
-              resumeInput !== null || hasLivePty ? (
-                <div className="min-h-0 flex-1">
-                  <Terminal key={`resume-${drawer.sessionId}`} sessionId={drawer.sessionId} initialInput={resumeInput ?? undefined} />
+              <>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <SessionChat
+                    key={drawer.sessionId}
+                    sessionId={drawer.sessionId}
+                    refreshKey={chatRefreshKey}
+                    poll={hasLivePty || !!pendingInput}
+                    optimisticUserText={pendingInput}
+                  />
                 </div>
-              ) : (
-                <>
-                  <div className="min-h-0 flex-1 overflow-y-auto">
-                    <SessionChat key={drawer.sessionId} sessionId={drawer.sessionId} />
-                  </div>
-                  <SessionComposer onSend={setResumeInput} />
-                </>
-              )
+                <SessionComposer onSend={sendMessage} />
+              </>
             ) : drawer.launch ? (
               <Terminal key="launch" launch={drawer.launch} onLaunched={resyncAfterLaunch} />
             ) : null}

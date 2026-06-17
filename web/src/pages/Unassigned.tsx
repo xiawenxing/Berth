@@ -4,10 +4,10 @@ import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionComposer } from '@/components/SessionComposer'
-import { Terminal } from '@/components/Terminal'
 import { useData, relTime, shortCwd } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
+import { submitSessionInput } from '@/lib/pty'
 import { ImportDialog } from '@/components/ImportDialog'
 import { SHIP_LABEL, type ShipStatus } from '@/lib/types'
 import type { ApiSession, ApiProject, PreviewSession } from '@/lib/api'
@@ -57,9 +57,12 @@ export function Unassigned() {
       setPicking(false)
     }
   }
-  // When the user sends a follow-up, swap the right pane from the chat transcript to a live resumed
-  // terminal that auto-submits the message. Reset when a different session is selected.
-  const [resumeInput, setResumeInput] = useState<string | null>(null)
+  const [pendingInput, setPendingInput] = useState<string | null>(null)
+  const [chatRefreshKey, setChatRefreshKey] = useState(0)
+  const chatTimers = useRef<number[]>([])
+  useEffect(() => () => {
+    chatTimers.current.forEach((t) => clearTimeout(t))
+  }, [])
   // Optimistic pin state: there's no `pinned` field on the unassigned list, so
   // track locally which ids we've toggled on (POST /pin persists server-side).
   const [pinned, setPinned] = useState<Set<string>>(new Set())
@@ -104,9 +107,31 @@ export function Unassigned() {
     allUnassigned.find((s) => s.sessionId === selId) ?? allUnassigned[0] ?? null
   const selHasLivePty = !!sel && live.activity.has(sel.sessionId)
 
+  const scheduleChatRefresh = () => {
+    chatTimers.current.forEach((t) => clearTimeout(t))
+    setChatRefreshKey((n) => n + 1)
+    chatTimers.current = [900, 2200, 5000, 9000].map((ms) =>
+      window.setTimeout(() => setChatRefreshKey((n) => n + 1), ms),
+    )
+  }
+
+  const sendMessage = (text: string) => {
+    if (!sel) return
+    setPendingInput(text)
+    scheduleChatRefresh()
+    submitSessionInput(sel.sessionId, text)
+      .then(() => {
+        scheduleChatRefresh()
+        void resync()
+      })
+      .catch(() => scheduleChatRefresh())
+  }
+
   const select = (s: ApiSession) => {
     setSelId(s.sessionId)
-    setResumeInput(null) // a different session → show its transcript first
+    setPendingInput(null)
+    chatTimers.current.forEach((t) => clearTimeout(t))
+    chatTimers.current = []
     live.markSeen(s.sessionId)
   }
 
@@ -188,18 +213,16 @@ export function Unassigned() {
                 )
               })()}
             </div>
-            {resumeInput !== null || selHasLivePty ? (
-              <div className="min-h-0 flex-1">
-                <Terminal key={`resume-${sel.sessionId}`} sessionId={sel.sessionId} initialInput={resumeInput ?? undefined} />
-              </div>
-            ) : (
-              <>
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  <SessionChat key={sel.sessionId} sessionId={sel.sessionId} />
-                </div>
-                <SessionComposer onSend={setResumeInput} />
-              </>
-            )}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <SessionChat
+                key={sel.sessionId}
+                sessionId={sel.sessionId}
+                refreshKey={chatRefreshKey}
+                poll={selHasLivePty || !!pendingInput}
+                optimisticUserText={pendingInput}
+              />
+            </div>
+            <SessionComposer onSend={sendMessage} />
           </>
         ) : null}
       </div>

@@ -3,9 +3,9 @@ import { SendHorizontal } from 'lucide-react'
 
 /**
  * Bottom composer for a session's chat transcript: a textarea + 发送 button. Submitting calls
- * onSend(text) — the parent resumes the live session (a <Terminal> with initialInput) so the user
- * continues the conversation live. Enter sends, Shift+Enter inserts a newline. Token color classes
- * keep it readable in both light and dark themes.
+ * onSend(text) — the parent submits to the live session in the background and keeps this chat-style
+ * surface visible. Enter sends, Shift+Enter inserts a newline. Token color classes keep it readable
+ * in both light and dark themes.
  */
 export function SessionComposer({ onSend }: { onSend: (text: string) => void }) {
   const [text, setText] = useState('')
