@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Berth · 优先级配色 6 组对比</title>
+<style>
+:root{
+  --background:#f6f8fb; --foreground:#1f2733; --card:#ffffff; --card-foreground:#1f2733;
+  --popover:#ffffff; --muted:#eef1f6; --muted-foreground:#6b7689; --secondary:#eef1f6;
+  --accent:#e9edf3; --accent-foreground:#1f2733; --border:#dde3ec; --brand:#2f6fed;
+  --sidebar-accent:#e3e8f1; --success:#2a9d63; --text-dim:#97a1b0; --shadow:0 1px 2px rgba(20,30,60,.06);
+  --radius-sm:6px;
+}
+body.dark{
+  --background:#141b2e; --foreground:#b3bcd4; --card:#1f2940; --card-foreground:#c7cfe3;
+  --popover:#283450; --muted:#2c3852; --muted-foreground:#8089a3; --secondary:#2c3852;
+  --accent:#2c3852; --accent-foreground:#dbe1f0; --border:#3a4768; --brand:#56b6ff;
+  --sidebar-accent:#1f2940; --success:#7ed4a6; --text-dim:#6b7280; --shadow:0 1px 2px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--background);color:var(--foreground);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 24px 60px}
+h1{font-size:18px;margin:0 0 4px}
+.sub{color:var(--muted-foreground);font-size:12.5px;margin:0 0 16px;line-height:1.5}
+.sub b{color:var(--foreground)}
+.toggle{position:fixed;top:14px;right:18px;z-index:30;border:1px solid var(--border);background:var(--card);
+  color:var(--foreground);border-radius:6px;padding:6px 11px;font-size:12px;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.variant{border:1px solid var(--border);border-radius:10px;background:var(--card);overflow:hidden}
+.vhead{padding:10px 13px;border-bottom:1px solid var(--border)}
+.vname{font-size:13px;font-weight:700}
+.vdesc{font-size:11px;color:var(--muted-foreground);margin-top:3px;line-height:1.45}
+.col-body{padding:10px;display:flex;flex-direction:column;gap:7px}
+
+/* card chrome — thinner 2px bar (was 3–4px) */
+.kcard{position:relative;background:var(--sidebar-accent);border:1px solid var(--border);border-radius:var(--radius-sm);
+  box-shadow:var(--shadow);overflow:hidden}
+body.dark .kcard{background:var(--background)}
+.kcard.active-card{background:var(--sidebar-accent)}
+body.dark .kcard.active-card{background:var(--background)}
+.kcard:hover{border-color:var(--muted-foreground)}
+.kcard-bar{position:absolute;left:0;top:0;bottom:0;width:2px;border:none;padding:0;cursor:pointer;z-index:1}
+.kcard-head{display:flex;align-items:center;gap:6px;padding:7px 9px 7px 12px}
+.kcard.compact .kcard-head{padding:6px 9px 6px 12px}
+.kcard-title{font-size:13px;font-weight:600;color:var(--card-foreground);line-height:1.35;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dotlive{width:6px;height:6px;border-radius:50%;background:var(--success);flex:none}
+.kcard-go{display:inline-flex;align-items:center;gap:3px;height:18px;padding:0 6px;border:none;background:transparent;
+  border-radius:4px;color:var(--muted-foreground);font-size:10.5px;font-weight:600;flex:none;cursor:pointer}
+.kcard-go:hover{background:var(--secondary);color:var(--success)}
+.kcard-chev{color:var(--text-dim);flex:none}
+.kcard-foot{display:flex;align-items:center;gap:6px;padding:0 7px 6px 12px;margin-top:-1px}
+.foot-spacer{flex:1}
+.kcard-ddl{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:500;color:var(--text-dim);opacity:.6}
+.kcard-more{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;
+  border-radius:4px;color:var(--muted-foreground);flex:none;cursor:pointer;font-size:13px}
+.prio-chip{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:5px;border:none;
+  font-size:10px;font-weight:700;letter-spacing:.3px;cursor:pointer;flex:none}
+.prio-chip:hover{filter:brightness(1.06);outline:1px solid rgba(128,128,128,.35)}
+svg{display:block}
+
+/* per-palette colors */
+
+.pal-refined-semantic .kcard[data-prio=P0] .kcard-bar{background:#dc4338}
+.pal-refined-semantic .kcard[data-prio=P1] .kcard-bar{background:#b58a4a}
+.pal-refined-semantic .kcard[data-prio=P2] .kcard-bar{background:#aab2c0}
+.pal-refined-semantic .prio-chip[data-p=P0]{background:#fbe4e1;color:#b33324}
+.pal-refined-semantic .prio-chip[data-p=P1]{background:#f1ebdd;color:#79602e}
+.pal-refined-semantic .prio-chip[data-p=P2]{background:#edeff3;color:#5e6979}
+
+body.dark .pal-refined-semantic .kcard[data-prio=P0] .kcard-bar{background:#f0707f}
+body.dark .pal-refined-semantic .kcard[data-prio=P1] .kcard-bar{background:#a07f55}
+body.dark .pal-refined-semantic .kcard[data-prio=P2] .kcard-bar{background:#5b6478}
+body.dark .pal-refined-semantic .prio-chip[data-p=P0]{background:#5e2230cc;color:#f4848f}
+body.dark .pal-refined-semantic .prio-chip[data-p=P1]{background:#39342bb3;color:#cdb088}
+body.dark .pal-refined-semantic .prio-chip[data-p=P2]{background:#333c55cc;color:#9aa2bd}
+
+.pal-indigo-kin .kcard[data-prio=P0] .kcard-bar{background:#e8503e}
+.pal-indigo-kin .kcard[data-prio=P1] .kcard-bar{background:#808dad}
+.pal-indigo-kin .kcard[data-prio=P2] .kcard-bar{background:#9aa4b6}
+.pal-indigo-kin .prio-chip[data-p=P0]{background:#fdecea;color:#bd2f25}
+.pal-indigo-kin .prio-chip[data-p=P1]{background:#eef1f7;color:#4a5878}
+.pal-indigo-kin .prio-chip[data-p=P2]{background:#f0f2f6;color:#5b6678}
+
+body.dark .pal-indigo-kin .kcard[data-prio=P0] .kcard-bar{background:#ff7a66}
+body.dark .pal-indigo-kin .kcard[data-prio=P1] .kcard-bar{background:#6b769a}
+body.dark .pal-indigo-kin .kcard[data-prio=P2] .kcard-bar{background:#586079}
+body.dark .pal-indigo-kin .prio-chip[data-p=P0]{background:#ff8a7a26;color:#ff9d8f}
+body.dark .pal-indigo-kin .prio-chip[data-p=P1]{background:#8ea0d418;color:#9aa6c8}
+body.dark .pal-indigo-kin .prio-chip[data-p=P2]{background:#7e8aa614;color:#959db5}
+
+.pal-earth-warm .kcard[data-prio=P0] .kcard-bar{background:#c2502f}
+.pal-earth-warm .kcard[data-prio=P1] .kcard-bar{background:#c09a6a}
+.pal-earth-warm .kcard[data-prio=P2] .kcard-bar{background:#9c9387}
+.pal-earth-warm .prio-chip[data-p=P0]{background:#b23a23;color:#ffffff}
+.pal-earth-warm .prio-chip[data-p=P1]{background:#f7ead2;color:#7a5320}
+.pal-earth-warm .prio-chip[data-p=P2]{background:#ece8e2;color:#5c554c}
+
+body.dark .pal-earth-warm .kcard[data-prio=P0] .kcard-bar{background:#e8704a}
+body.dark .pal-earth-warm .kcard[data-prio=P1] .kcard-bar{background:#a8855e}
+body.dark .pal-earth-warm .kcard[data-prio=P2] .kcard-bar{background:#7a7066}
+body.dark .pal-earth-warm .prio-chip[data-p=P0]{background:#7a2f22;color:#ffd9cf}
+body.dark .pal-earth-warm .prio-chip[data-p=P1]{background:#4a3a26;color:#e8cba0}
+body.dark .pal-earth-warm .prio-chip[data-p=P2]{background:#33302b;color:#c2bcb2}
+
+.pal-flat-trafficlight .kcard[data-prio=P0] .kcard-bar{background:#d8453d}
+.pal-flat-trafficlight .kcard[data-prio=P1] .kcard-bar{background:#c79a5e}
+.pal-flat-trafficlight .kcard[data-prio=P2] .kcard-bar{background:#9aa3b5}
+.pal-flat-trafficlight .prio-chip[data-p=P0]{background:#fbe6e5;color:#b32e28}
+.pal-flat-trafficlight .prio-chip[data-p=P1]{background:#f3ebdd;color:#8a6418}
+.pal-flat-trafficlight .prio-chip[data-p=P2]{background:#eef1f6;color:#626d80}
+
+body.dark .pal-flat-trafficlight .kcard[data-prio=P0] .kcard-bar{background:#ef5d6a}
+body.dark .pal-flat-trafficlight .kcard[data-prio=P1] .kcard-bar{background:#9a8260}
+body.dark .pal-flat-trafficlight .kcard[data-prio=P2] .kcard-bar{background:#5d6680}
+body.dark .pal-flat-trafficlight .prio-chip[data-p=P0]{background:#3a2230;color:#f08c95}
+body.dark .pal-flat-trafficlight .prio-chip[data-p=P1]{background:#2e2a22;color:#c5a578}
+body.dark .pal-flat-trafficlight .prio-chip[data-p=P2]{background:#242b3e;color:#929ab2}
+
+.pal-single-hue .kcard[data-prio=P0] .kcard-bar{background:#d2691e}
+.pal-single-hue .kcard[data-prio=P1] .kcard-bar{background:#d9a566}
+.pal-single-hue .kcard[data-prio=P2] .kcard-bar{background:#cdbfa6}
+.pal-single-hue .prio-chip[data-p=P0]{background:#fbe2cf;color:#7a2e00}
+.pal-single-hue .prio-chip[data-p=P1]{background:#f4e9d8;color:#7e4f12}
+.pal-single-hue .prio-chip[data-p=P2]{background:#f1ece2;color:#6f6452}
+
+body.dark .pal-single-hue .kcard[data-prio=P0] .kcard-bar{background:#ed9a4e}
+body.dark .pal-single-hue .kcard[data-prio=P1] .kcard-bar{background:#7a6747}
+body.dark .pal-single-hue .kcard[data-prio=P2] .kcard-bar{background:#564f42}
+body.dark .pal-single-hue .prio-chip[data-p=P0]{background:#5a2d10;color:#ffd9b8}
+body.dark .pal-single-hue .prio-chip[data-p=P1]{background:#382c1c;color:#e6c79c}
+body.dark .pal-single-hue .prio-chip[data-p=P2]{background:#27241e;color:#aa9c84}
+
+.pal-cool-calm-p1 .kcard[data-prio=P0] .kcard-bar{background:#dc4338}
+.pal-cool-calm-p1 .kcard[data-prio=P1] .kcard-bar{background:#38a2ba80}
+.pal-cool-calm-p1 .kcard[data-prio=P2] .kcard-bar{background:#9aa6b840}
+.pal-cool-calm-p1 .prio-chip[data-p=P0]{background:#ffe5e2;color:#c4281d}
+.pal-cool-calm-p1 .prio-chip[data-p=P1]{background:#e2f4f8;color:#0c6f82}
+.pal-cool-calm-p1 .prio-chip[data-p=P2]{background:#eef1f6;color:#5a6678}
+
+body.dark .pal-cool-calm-p1 .kcard[data-prio=P0] .kcard-bar{background:#ff6b78}
+body.dark .pal-cool-calm-p1 .kcard[data-prio=P1] .kcard-bar{background:#3f9fb888}
+body.dark .pal-cool-calm-p1 .kcard[data-prio=P2] .kcard-bar{background:#8089a355}
+body.dark .pal-cool-calm-p1 .prio-chip[data-p=P0]{background:#3a1620;color:#ff8a96}
+body.dark .pal-cool-calm-p1 .prio-chip[data-p=P1]{background:#16323a;color:#62cbe0}
+body.dark .pal-cool-calm-p1 .prio-chip[data-p=P2]{background:#262e44;color:#9aa3bd}
+
+.legend{margin-top:22px;font-size:12px;color:var(--muted-foreground);line-height:1.6}
+.legend b{color:var(--foreground)}
+</style></head>
+<body>
+<button class="toggle" onclick="document.body.classList.toggle('dark')">日间 / 夜间</button>
+<div class="wrap">
+  <h1>优先级配色 · 6 组对比（2px 细条 + 可点击标签）</h1>
+  <p class="sub">每列是一个 P1-为主的看板（1 张进行中 + 4 张 P1 + 1 张罕见 P0 + 1 张 P2）——重点看：<b>整列 P1 是否平静</b>、<b>那张 P0 能不能跳出来</b>。色条已收细到 <b>2px</b>；每张卡的 <b>P0/P1/P2 标签可点击改优先级</b>。右上角切日/夜。</p>
+  <div class="grid">
+<section class="variant pal-refined-semantic">
+    <div class="vhead"><span class="vname">精炼语义</span>
+      <div class="vdesc">P1 用低饱和的暖驼色琥珀（而非醒目金黄）做 2px 细条与柔和暖灰琥珀 chip，单卡饱和度被刻意压低，整列 P1 只读作环境质感而非噪音；P0 保留满饱和红色警示、P2 退到近中性灰蓝，三者权重 P0≫P1>P2，确保 P1 多卡看板始终平静。</div></div>
+    <div class="col-body"><div class="kcard active-card" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="dotlive"></span><span class="kcard-title">一方知识库清洗流水线</span><button class="kcard-go">▷ 启动</button><svg class="kcard-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+    <div class="kcard-foot"><button class="prio-chip" data-p=P1>P1</button><span class="kcard-ddl">📅 截止</span><span class="foot-spacer"></span><button class="kcard-more">···</button></div>
+  </div>
+<div class="kcard compact" data-prio=P0>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">版本兼容治理（罕见 P0）</span><button class="prio-chip" data-p=P0>P0</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">海外开发者知识库 MCP 接入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">三方集成知识库清洗流水线</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">MCP 授权页支持手动输入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P2>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">学习：transport 鉴权差异</span><button class="prio-chip" data-p=P2>P2</button></div>
+    
+  </div></div>
+  </section>
+<section class="variant pal-indigo-kin">
+    <div class="vhead"><span class="vname">靛蓝同源</span>
+      <div class="vdesc">P1 用与午夜靛蓝同源的低饱和靛紫/蓝灰，色相贴近卡面且彩度低，整列 P1 自然退入背景成为环境纹理；只有暖珊瑚红的 P0 打破冷调跳出，P2 取更弱的中性石板灰，权重严格 P0≫P1>P2。</div></div>
+    <div class="col-body"><div class="kcard active-card" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="dotlive"></span><span class="kcard-title">一方知识库清洗流水线</span><button class="kcard-go">▷ 启动</button><svg class="kcard-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+    <div class="kcard-foot"><button class="prio-chip" data-p=P1>P1</button><span class="kcard-ddl">📅 截止</span><span class="foot-spacer"></span><button class="kcard-more">···</button></div>
+  </div>
+<div class="kcard compact" data-prio=P0>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">版本兼容治理（罕见 P0）</span><button class="prio-chip" data-p=P0>P0</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">海外开发者知识库 MCP 接入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">三方集成知识库清洗流水线</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">MCP 授权页支持手动输入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P2>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">学习：transport 鉴权差异</span><button class="prio-chip" data-p=P2>P2</button></div>
+    
+  </div></div>
+  </section>
+<section class="variant pal-earth-warm">
+    <div class="vhead"><span class="vname">大地暖色</span>
+      <div class="vdesc">P1 用低饱和赭石+半透明沙色 chip，整列堆叠时只是温润暖底而不是亮橙，故 P1 平静；P0 才用高饱和赤陶红跳出。</div></div>
+    <div class="col-body"><div class="kcard active-card" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="dotlive"></span><span class="kcard-title">一方知识库清洗流水线</span><button class="kcard-go">▷ 启动</button><svg class="kcard-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+    <div class="kcard-foot"><button class="prio-chip" data-p=P1>P1</button><span class="kcard-ddl">📅 截止</span><span class="foot-spacer"></span><button class="kcard-more">···</button></div>
+  </div>
+<div class="kcard compact" data-prio=P0>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">版本兼容治理（罕见 P0）</span><button class="prio-chip" data-p=P0>P0</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">海外开发者知识库 MCP 接入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">三方集成知识库清洗流水线</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">MCP 授权页支持手动输入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P2>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">学习：transport 鉴权差异</span><button class="prio-chip" data-p=P2>P2</button></div>
+    
+  </div></div>
+  </section>
+<section class="variant pal-flat-trafficlight">
+    <div class="vhead"><span class="vname">交通灯·去饱和</span>
+      <div class="vdesc">P1 用低纯度的哑光琥珀（非品牌橙），整列 P1 也只是淡淡暖灰调，不抢眼；唯有 P0 保留高纯度红，靠纯度而非亮度跳出，于是平静靠 P1 去饱和、警示靠 P0 独占纯度来共同保证。</div></div>
+    <div class="col-body"><div class="kcard active-card" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="dotlive"></span><span class="kcard-title">一方知识库清洗流水线</span><button class="kcard-go">▷ 启动</button><svg class="kcard-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+    <div class="kcard-foot"><button class="prio-chip" data-p=P1>P1</button><span class="kcard-ddl">📅 截止</span><span class="foot-spacer"></span><button class="kcard-more">···</button></div>
+  </div>
+<div class="kcard compact" data-prio=P0>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">版本兼容治理（罕见 P0）</span><button class="prio-chip" data-p=P0>P0</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">海外开发者知识库 MCP 接入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">三方集成知识库清洗流水线</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">MCP 授权页支持手动输入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P2>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">学习：transport 鉴权差异</span><button class="prio-chip" data-p=P2>P2</button></div>
+    
+  </div></div>
+  </section>
+<section class="variant pal-single-hue">
+    <div class="vhead"><span class="vname">单色强度</span>
+      <div class="vdesc">同一暖橙色相只用明度/饱和度分级：P1 取中低饱和的暖棕、bar 仅 2px 细线，整列 P1 像背景纹理而非彩色噪声；只有 P0 用浓饱和橙才跳出，P1 因此天生平静。</div></div>
+    <div class="col-body"><div class="kcard active-card" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="dotlive"></span><span class="kcard-title">一方知识库清洗流水线</span><button class="kcard-go">▷ 启动</button><svg class="kcard-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+    <div class="kcard-foot"><button class="prio-chip" data-p=P1>P1</button><span class="kcard-ddl">📅 截止</span><span class="foot-spacer"></span><button class="kcard-more">···</button></div>
+  </div>
+<div class="kcard compact" data-prio=P0>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">版本兼容治理（罕见 P0）</span><button class="prio-chip" data-p=P0>P0</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">海外开发者知识库 MCP 接入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">三方集成知识库清洗流水线</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">MCP 授权页支持手动输入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P2>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">学习：transport 鉴权差异</span><button class="prio-chip" data-p=P2>P2</button></div>
+    
+  </div></div>
+  </section>
+<section class="variant pal-cool-calm-p1">
+    <div class="vhead"><span class="vname">冷暖反差</span>
+      <div class="vdesc">P1 用低饱和冷青（bar 带透明、chip 仅淡青底），跟暖红 P0 形成冷暖反差，整列 P1 安静不喧闹；只有 P0 用满饱和暖红跳出告警。</div></div>
+    <div class="col-body"><div class="kcard active-card" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="dotlive"></span><span class="kcard-title">一方知识库清洗流水线</span><button class="kcard-go">▷ 启动</button><svg class="kcard-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+    <div class="kcard-foot"><button class="prio-chip" data-p=P1>P1</button><span class="kcard-ddl">📅 截止</span><span class="foot-spacer"></span><button class="kcard-more">···</button></div>
+  </div>
+<div class="kcard compact" data-prio=P0>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">版本兼容治理（罕见 P0）</span><button class="prio-chip" data-p=P0>P0</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">海外开发者知识库 MCP 接入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">三方集成知识库清洗流水线</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P1>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">MCP 授权页支持手动输入</span><button class="prio-chip" data-p=P1>P1</button></div>
+    
+  </div>
+<div class="kcard compact" data-prio=P2>
+    <button class="kcard-bar"></button>
+    <div class="kcard-head"><span class="kcard-title">学习：transport 鉴权差异</span><button class="prio-chip" data-p=P2>P2</button></div>
+    
+  </div></div>
+  </section>
+  </div>
+  <div class="legend">
+    全部 6 组都经过对比度（chip 文字 ≥AA）与「P0≫P1&gt;P2 权重」对抗校验。<br>
+    <b>我的排序</b>：① 靛蓝同源（最融体系，P1 冷靛自然退背景）② 单色强度（同色相靠浓淡，最协调）③ 精炼语义（最稳）。冷暖反差最大胆（P1 变冷青）。挑一组，或告诉我把某组再调。
+  </div>
+</div>
+</body></html>
