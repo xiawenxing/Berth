@@ -44,6 +44,10 @@ export function Terminal({
     term.loadAddon(fit)
     term.open(host)
     fit.fit()
+    // Focus so keyboard input (arrow keys, Ctrl-C, …) goes to the pty, not the page.
+    term.focus()
+    const refocus = () => term.focus()
+    host.addEventListener('mousedown', refocus)
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     const qs = new URLSearchParams({ cols: String(term.cols), rows: String(term.rows) })
@@ -82,6 +86,7 @@ export function Terminal({
 
     return () => {
       window.removeEventListener('resize', onResize)
+      host.removeEventListener('mousedown', refocus)
       disp.dispose()
       ws.close()
       term.dispose()
