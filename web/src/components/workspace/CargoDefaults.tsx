@@ -39,7 +39,15 @@ function RegRow({
   )
 }
 
-export function CargoDefaults({ dirs }: { dirs: CargoDir[] }) {
+export function CargoDefaults({
+  dirs,
+  projectName,
+  onOpenDoc,
+}: {
+  dirs: CargoDir[]
+  projectName?: string
+  onOpenDoc?: (target: { kind: 'project' | 'task'; key: string; path: string; title: string }) => void
+}) {
   const [state, setState] = useState(dirs)
   const toggle = (i: number) => setState((s) => s.map((d, j) => (j === i ? { ...d, on: !d.on } : d)))
 
@@ -54,8 +62,16 @@ export function CargoDefaults({ dirs }: { dirs: CargoDir[] }) {
       <div className="mt-3">
         <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">上下文文档</div>
         <div className="flex flex-col gap-1.5">
-          <RegRow icon={FileText} name="项目上下文 (Berth)" sub="projects/Berth/index.md" right={<Toggle on onChange={() => {}} />} />
-          <RegRow icon={FileText} name="任务上下文 · 进展 6 条" sub="tasks/pin-cwd-grouping/index.md" />
+          <button
+            className="text-left"
+            onClick={() =>
+              projectName &&
+              onOpenDoc?.({ kind: 'project', key: projectName, path: `projects/${projectName}/index.md`, title: `项目上下文 · ${projectName}` })
+            }
+          >
+            <RegRow icon={FileText} name={`项目上下文${projectName ? ` (${projectName})` : ''}`} sub={projectName ? `projects/${projectName}/index.md` : ''} right={<Toggle on onChange={() => {}} />} />
+          </button>
+          <div className="text-[11px] text-text-dim">点开上方可编辑，或写一句让港务助手整理进上下文</div>
         </div>
       </div>
 

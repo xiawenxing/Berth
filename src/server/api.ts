@@ -185,6 +185,25 @@ api.get('/projects', (_req, res) => {
   })
 })
 
+// Project 小结: summarize the project's context doc into a short progress blurb (港务助手).
+// Mirrors /todos/:id/progress-summary but over the project context doc (keyed by project name).
+api.post('/projects/:id/summary', async (req, res) => {
+  const store = getStore()
+  const project = listProjects(store).find(p => p.id === req.params.id)
+  if (!project) return res.status(404).json({ error: 'unknown project' })
+  const ds = getDocStore(store)
+  const locale = getLocale(store)
+  try {
+    const ensured = ensureContextDoc(ds, 'project', project.name, { title: project.name, projectName: project.name, locale })
+    const { content } = ds.readDoc(ensured.abs)
+    const summary = await generateProgressSummary(content, contextStrings(locale).summaryPrompt, resolveBerthAgent(store))
+    if (!summary) return res.status(502).json({ error: 'agent returned empty summary' })
+    res.json({ summary })
+  } catch (e: any) {
+    sendAgentError(res, e, locale)
+  }
+})
+
 api.post('/projects/archive', (req, res) => {
   const { projectId, name, on } = req.body ?? {}
   const store = getStore()

@@ -7,6 +7,7 @@ import { CargoDefaults } from '@/components/workspace/CargoDefaults'
 import { SAMPLE_CARGO } from '@/data/sample'
 import { useUI } from '@/lib/ui-store'
 import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
+import { ProjectSummaryDialog, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
 import { useData, relTime, shortCwd, normStatus, normPriority } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
@@ -24,6 +25,8 @@ export function ProjectWorkspace() {
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
   const { projects, tasks: apiTasks, sessions, reload } = useData()
   const live = useLive()
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [ctxDoc, setCtxDoc] = useState<ContextDocTarget | null>(null)
 
   const project = projects.find((p) => p.id === id)
   const projName = project?.name ?? id
@@ -156,7 +159,7 @@ export function ProjectWorkspace() {
               <Plus size={14} /> 新建任务
             </button>
             <HBtn icon={<Play size={13} />} onClick={() => launch('')}>起会话</HBtn>
-            <HBtn icon={<Sparkles size={13} />}>小结</HBtn>
+            <HBtn icon={<Sparkles size={13} />} onClick={() => setSummaryOpen(true)}>小结</HBtn>
             <button className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent">
               <MoreHorizontal size={15} />
             </button>
@@ -197,10 +200,12 @@ export function ProjectWorkspace() {
         </section>
 
         <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onOpen={openRow} onPin={onPin} />
-        <CargoDefaults dirs={SAMPLE_CARGO} />
+        <CargoDefaults dirs={SAMPLE_CARGO} projectName={projName} onOpenDoc={setCtxDoc} />
       </div>
 
       <NewTaskDialog open={newTask} onClose={() => setNewTask(false)} onCreate={createTask} />
+      <ProjectSummaryDialog open={summaryOpen} onClose={() => setSummaryOpen(false)} projectId={id} />
+      <ContextDocDrawer target={ctxDoc} onClose={() => setCtxDoc(null)} />
     </div>
   )
 }
