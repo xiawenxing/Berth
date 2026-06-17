@@ -24,7 +24,7 @@ let taskSeq = 100
 export function ProjectWorkspace() {
   const { id = '' } = useParams()
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
-  const { projects, tasks: apiTasks, sessions, reload } = useData()
+  const { projects, tasks: apiTasks, sessions, statuses, priorities, reload } = useData()
   const live = useLive()
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [ctxDoc, setCtxDoc] = useState<ContextDocTarget | null>(null)
@@ -160,11 +160,15 @@ export function ProjectWorkspace() {
   // (The server's createTask guard already classifies + titles; AI-summarize is that pipeline.)
   const createTask = (raw: string, opts: { aiSummarize: boolean; runNow: boolean }) => {
     const tid = `new-${++taskSeq}`
+    // Optimistic card uses the configured vocab (server settles to cfg defaults on reload):
+    // runNow → first doing-kind status (else the 2nd column), else the first column; lowest priority.
+    const todoStatus = statuses[0] ?? '待办'
+    const doingStatus = statuses.find((s) => statusKind(s) === 'doing') ?? statuses[1] ?? todoStatus
     const card: Task = {
       id: tid,
       title: raw,
-      status: opts.runNow ? '进行中' : '待办',
-      priority: 'P2',
+      status: opts.runNow ? doingStatus : todoStatus,
+      priority: priorities[priorities.length - 1] ?? 'P2',
       summary: opts.aiSummarize ? '港务助手正在总结进展摘要…' : undefined,
       links: [],
     }

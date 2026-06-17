@@ -72,6 +72,7 @@ export const api = {
   sessions: () => getJSON<ApiSession[]>('/api/sessions'),
   // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
   settings: () => getJSON<{ priorities?: string[]; statuses?: string[] }>('/api/settings'),
+  saveSettings: (patch: { priorities?: string[]; statuses?: string[] }) => send('POST', '/api/settings', patch),
   // Structured codex-style chat turns for a real session's drawer/right-pane.
   transcript: (sessionId: string) =>
     getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),
