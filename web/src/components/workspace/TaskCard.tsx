@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { Play, ChevronDown, Link2, MoreHorizontal, CalendarClock } from 'lucide-react'
+import { Play, ChevronDown, Link2, MoreHorizontal, CalendarClock, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Task, ShipStatus } from '@/lib/types'
+
+const REFINING = '港务助手正在总结进展摘要…'
 
 const SHIP_DOT: Record<ShipStatus, string> = {
   sail: 'bg-success', // 在航
@@ -97,8 +99,14 @@ export function TaskCard({
         >
           {task.title}
         </span>
+        {/* AI refine indicator (sparkle twinkle) */}
+        {task.summary === REFINING && (
+          <span className="inline-flex flex-none items-center gap-1 text-[10.5px] text-muted-foreground">
+            <Sparkles size={11} className="spk-twinkle" /> 总结中…
+          </span>
+        )}
         {/* ▷启动 — collapse-only */}
-        {!open && active && (
+        {!open && active && task.summary !== REFINING && (
           <button
             className="inline-flex h-[18px] flex-none items-center gap-0.5 rounded px-1.5 text-[10.5px] font-semibold text-muted-foreground hover:bg-secondary hover:text-success"
             onClick={(e) => {

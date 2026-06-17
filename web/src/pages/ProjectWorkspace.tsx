@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { Plus, Play, Sparkles, MoreHorizontal, Anchor } from 'lucide-react'
 import { Kanban } from '@/components/workspace/Kanban'
@@ -6,24 +6,50 @@ import { SessionModule } from '@/components/workspace/SessionModule'
 import { CargoDefaults } from '@/components/workspace/CargoDefaults'
 import { SAMPLE_TASKS, SAMPLE_PIN, SAMPLE_CWD_GROUPS, SAMPLE_CARGO } from '@/data/sample'
 import { useUI } from '@/lib/ui-store'
+import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
+import type { Task } from '@/lib/types'
 
 /**
  * Project workspace (the hub) — v7 layout: sticky header + 港湾概览,
  * then 任务(航线) kanban hero, 会话(船只) module, 默认装载 registry.
  * Data is canonical sample for now; /api wiring lands in a later phase.
  */
+let taskSeq = 100
+
 export function ProjectWorkspace() {
   const { id = 'Berth' } = useParams()
-  const { openLaunch, openDrawer } = useUI()
+  const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
+  const [tasks, setTasks] = useState<Task[]>(SAMPLE_TASKS)
 
-  const done = SAMPLE_TASKS.filter((t) => t.status === '已完成').length
-  const total = SAMPLE_TASKS.length
-  const inProgress = SAMPLE_TASKS.filter((t) => t.status === '进行中').length
+  const done = tasks.filter((t) => t.status === '已完成').length
+  const total = tasks.length
+  const inProgress = tasks.filter((t) => t.status === '进行中').length
   const pct = Math.round((done / total) * 100)
 
   const launch = (t: string) => openLaunch(t ? { dest: 'task', taskTitle: t } : { dest: 'free' })
   const openSession = (t: string) =>
     openDrawer({ title: t, cli: 'claude', cwd: '~/Code/berth', status: 'sail' })
+
+  // 即时创建：card appears NOW; if AI-summarize, refine title + summary in background.
+  const createTask = (raw: string, opts: { aiSummarize: boolean; runNow: boolean }) => {
+    const tid = `new-${++taskSeq}`
+    const card: Task = {
+      id: tid,
+      title: raw,
+      status: opts.runNow ? '进行中' : '待办',
+      priority: 'P2',
+      summary: opts.aiSummarize ? '港务助手正在总结进展摘要…' : undefined,
+      links: opts.runNow ? [{ cli: 'claude', title: raw, status: 'sail' }] : [],
+    }
+    setTasks((ts) => [card, ...ts])
+    if (opts.runNow) openSession(raw)
+    if (opts.aiSummarize) {
+      setTimeout(() => {
+        const { title, summary } = refineTitle(raw)
+        setTasks((ts) => ts.map((t) => (t.id === tid ? { ...t, title, summary } : t)))
+      }, 2000)
+    }
+  }
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -34,7 +60,10 @@ export function ProjectWorkspace() {
             <span className="font-mono text-[12px] text-muted-foreground">~/Code/berth</span>
           </div>
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground">
+            <button
+              onClick={() => setNewTask(true)}
+              className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground"
+            >
               <Plus size={14} /> 新建任务
             </button>
             <HBtn icon={<Play size={13} />} onClick={() => launch('')}>起会话</HBtn>
@@ -75,12 +104,14 @@ export function ProjectWorkspace() {
             <h2 className="text-[13px] font-semibold text-brand">任务</h2>
             <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[10.5px] font-medium text-brand">航线</span>
           </div>
-          <Kanban tasks={SAMPLE_TASKS} onLaunch={launch} onOpenSession={openSession} />
+          <Kanban tasks={tasks} onLaunch={launch} onOpenSession={openSession} />
         </section>
 
         <SessionModule pin={SAMPLE_PIN} groups={SAMPLE_CWD_GROUPS} onLaunch={() => launch('')} onOpen={openSession} />
         <CargoDefaults dirs={SAMPLE_CARGO} />
       </div>
+
+      <NewTaskDialog open={newTask} onClose={() => setNewTask(false)} onCreate={createTask} />
     </div>
   )
 }
