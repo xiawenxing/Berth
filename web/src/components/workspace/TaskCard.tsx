@@ -116,7 +116,9 @@ export function TaskCard({
       onDragEnd={() => setDragging(false)}
       onClick={onCardClick}
       className={cn(
-        'kanban-card group relative overflow-hidden rounded-sm border border-border shadow-sm active:cursor-grabbing hover:border-muted-foreground',
+        // shrink-0: in a scrolling flex-column the card must keep its natural height,
+        // else many cards compress to thin bars and clip the title (the done-column bug).
+        'kanban-card group relative shrink-0 overflow-hidden rounded-sm border border-border shadow-sm active:cursor-grabbing hover:border-muted-foreground',
         expandable || !active ? 'cursor-pointer' : 'cursor-grab',
         open && 'ring-1 ring-brand/40',
         dragging && 'opacity-45',
@@ -136,7 +138,9 @@ export function TaskCard({
         <span
           className={cn(
             'min-w-0 flex-1 text-[13px] font-semibold leading-[1.35] text-card-foreground',
-            active && isLive ? 'line-clamp-2' : 'line-clamp-1',
+            // 2 lines for active live cards; reliable single-line truncate everywhere else
+            // (line-clamp-1 collapses the title height in a flex row when there's no other content).
+            active && isLive ? 'line-clamp-2 [overflow-wrap:anywhere]' : 'truncate',
             done && 'font-medium text-muted-foreground',
             cancelled && 'font-medium text-text-dim line-through',
           )}
