@@ -142,4 +142,19 @@ describe('curatedSessionIds', () => {
     const curated = curatedSessionIds([], attach(['ghost', null]), [])
     expect(filterImportedSessions(sessions, ['/Users/me'], curated)).toEqual([])
   })
+
+  it('curates explicitly session-imported ids + bound-launch ids (the new surfacing signals)', () => {
+    const ids = curatedSessionIds([], attach(), [], ['imp1', 'imp2'], ['launch1'])
+    expect([...ids].sort()).toEqual(['imp1', 'imp2', 'launch1'])
+  })
+
+  it('session-grained: a session whose cwd matches a registered cargo path is NOT surfaced unless imported', () => {
+    // The breaking change: project_path is no longer an import root. A session in that cwd surfaces
+    // ONLY if it is in the session_import set (or otherwise curated).
+    const sessions = [mk('cargo-sess', '/Users/me/proj-a')]
+    const notImported = curatedSessionIds([], attach(), []) // nothing curated
+    expect(filterImportedSessions(sessions, [], notImported)).toEqual([]) // roots no longer include project_path
+    const imported = curatedSessionIds([], attach(), [], ['cargo-sess'])
+    expect(filterImportedSessions(sessions, [], imported).map(s => s.sessionId)).toEqual(['cargo-sess'])
+  })
 })

@@ -296,6 +296,7 @@ export function dataMethods(db: Database.Database) {
         db.prepare('UPDATE launch_intent SET project_id=NULL WHERE project_id=?').run(id)
         db.prepare('DELETE FROM archived_project WHERE project_id=?').run(id)
         db.prepare('DELETE FROM project_path WHERE project_id=?').run(id)
+        db.prepare('DELETE FROM app_setting WHERE key=?').run(`project_last_cwd:${id}`)
         db.prepare("DELETE FROM external_ref WHERE entity_kind='project' AND entity_id=?").run(id)
         db.prepare("DELETE FROM sync_conflict WHERE entity_kind='project' AND entity_id=?").run(id)
         db.prepare('DELETE FROM project WHERE id=?').run(id)

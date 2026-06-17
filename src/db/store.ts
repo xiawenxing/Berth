@@ -32,11 +32,15 @@ CREATE TABLE IF NOT EXISTS launch_intent (
 CREATE TABLE IF NOT EXISTS archived_project ( project_id TEXT PRIMARY KEY );
 CREATE TABLE IF NOT EXISTS project_path (
   project_id TEXT NOT NULL, cwd TEXT NOT NULL, is_home INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (project_id, cwd)
 );
--- Directories explicitly imported into the 无归属 (unattached) session bucket. The scanned-session
--- universe is sessions whose cwd is under one of these (∪ project paths ∪ launch_intent cwds).
+-- Directories explicitly imported into the 无归属 (unattached) session bucket (the OLD vanilla app's
+-- 导入目录, still supported). KEPT as a surfacing root; project_path / launch_intent cwds are NOT.
 CREATE TABLE IF NOT EXISTS session_import_dir ( cwd TEXT PRIMARY KEY );
+-- Session-grained import: a session is explicitly in Berth's visible set. The new canonical way to
+-- surface a session — registering a 货舱 cwd (project_path) no longer surfaces all its sessions.
+CREATE TABLE IF NOT EXISTS session_import ( session_id TEXT PRIMARY KEY );
 `
 
 function cols(db: Database.Database, table: string): Set<string> {
@@ -94,6 +98,10 @@ export function openStore(path: string) {
   db.exec(DATA_SCHEMA)
   migrateDataSchema(db)
   migrateProjectRefs(db)
+  // M1: per-path 「默认装载」 toggle. The project_path rebuild in migrateProjectRefs is self-terminating
+  // (it drops the legacy `name` col), so it can never re-drop this column on a later boot.
+  if (!cols(db, 'project_path').has('enabled'))
+    db.exec('ALTER TABLE project_path ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1')
   const upsert = db.prepare(`INSERT INTO logical_session
     (session_id,cli,cwd,title,updated_at,content_source_path,resume_cli,resume_id,deleted)
     VALUES (@session_id,@cli,@cwd,@title,@updated_at,@content_source_path,@resume_cli,@resume_id,@deleted)
@@ -148,19 +156,28 @@ export function openStore(path: string) {
     allArchivedSet(): Set<string> {
       return new Set((db.prepare('SELECT project_id FROM archived_project').all() as any[]).map(r => r.project_id))
     },
-    addProjectPath(projectId: string, cwd: string, isHome = false) {
+    addProjectPath(projectId: string, cwd: string, isHome = false, enabled = true) {
       // A new home demotes any prior home for this project.
       if (isHome) db.prepare('UPDATE project_path SET is_home=0 WHERE project_id=?').run(projectId)
-      db.prepare(`INSERT INTO project_path (project_id,cwd,is_home) VALUES (?,?,?)
-        ON CONFLICT(project_id,cwd) DO UPDATE SET is_home=MAX(is_home, excluded.is_home)`).run(projectId, cwd, isHome ? 1 : 0)
+      db.prepare(`INSERT INTO project_path (project_id,cwd,is_home,enabled) VALUES (?,?,?,?)
+        ON CONFLICT(project_id,cwd) DO UPDATE SET is_home=MAX(is_home, excluded.is_home), enabled=excluded.enabled`)
+        .run(projectId, cwd, isHome ? 1 : 0, enabled ? 1 : 0)
     },
-    /** Map of projectId → { home: cwd|null, paths: cwd[] } from explicitly-stored project paths. */
-    allProjectPaths(): Map<string, { home: string | null; paths: string[] }> {
-      const m = new Map<string, { home: string | null; paths: string[] }>()
-      for (const r of db.prepare('SELECT project_id, cwd, is_home FROM project_path').all() as any[]) {
-        if (!m.has(r.project_id)) m.set(r.project_id, { home: null, paths: [] })
+    setPathEnabled(projectId: string, cwd: string, enabled: boolean) {
+      db.prepare('UPDATE project_path SET enabled=? WHERE project_id=? AND cwd=?').run(enabled ? 1 : 0, projectId, cwd)
+    },
+    removeProjectPath(projectId: string, cwd: string) {
+      db.prepare('DELETE FROM project_path WHERE project_id=? AND cwd=?').run(projectId, cwd)
+    },
+    /** projectId → { home: cwd|null, paths: cwd[], meta: {cwd,enabled}[] }. `paths` stays a bare
+     *  string[] for back-compat (old public/app.js + the React ApiProject); `meta` carries the toggle. */
+    allProjectPaths(): Map<string, { home: string | null; paths: string[]; meta: { cwd: string; enabled: boolean }[] }> {
+      const m = new Map<string, { home: string | null; paths: string[]; meta: { cwd: string; enabled: boolean }[] }>()
+      for (const r of db.prepare('SELECT project_id, cwd, is_home, enabled FROM project_path').all() as any[]) {
+        if (!m.has(r.project_id)) m.set(r.project_id, { home: null, paths: [], meta: [] })
         const e = m.get(r.project_id)!
         e.paths.push(r.cwd)
+        e.meta.push({ cwd: r.cwd, enabled: !!r.enabled })
         if (r.is_home) e.home = r.cwd
       }
       return m
@@ -212,6 +229,21 @@ export function openStore(path: string) {
     },
     allSessionImportDirs(): string[] {
       return (db.prepare('SELECT cwd FROM session_import_dir ORDER BY cwd').all() as any[]).map(r => r.cwd)
+    },
+    // ── Session-grained import (the new canonical surfacing signal) ──
+    addSessionImport(sessionId: string) {
+      db.prepare('INSERT OR IGNORE INTO session_import (session_id) VALUES (?)').run(sessionId)
+    },
+    removeSessionImport(sessionId: string) {
+      db.prepare('DELETE FROM session_import WHERE session_id=?').run(sessionId)
+    },
+    allSessionImportSet(): Set<string> {
+      return new Set((db.prepare('SELECT session_id FROM session_import').all() as any[]).map(r => r.session_id))
+    },
+    /** Session ids of bound launch intents — Berth-launched sessions surface per-session via this
+     *  (replacing launch_intent.cwd as a directory-wide import root). */
+    allBoundLaunchSessionIds(): Set<string> {
+      return new Set((db.prepare('SELECT session_id FROM launch_intent WHERE bound=1 AND session_id IS NOT NULL').all() as any[]).map(r => r.session_id))
     },
     ...dataMethods(db),
   }

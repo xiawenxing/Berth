@@ -65,6 +65,34 @@ describe('project_path', () => {
     s.addProjectPath('P', '/x', false)
     expect(s.allProjectPaths().get('P')!.paths).toEqual(['/x'])
   })
+  it('tracks per-path enabled (default on), toggle, and remove', () => {
+    const s = openStore(':memory:')
+    s.addProjectPath('P', '/x')          // default enabled
+    s.addProjectPath('P', '/y', false, false) // registered, disabled
+    const meta = () => Object.fromEntries(s.allProjectPaths().get('P')!.meta.map(m => [m.cwd, m.enabled]))
+    expect(meta()).toEqual({ '/x': true, '/y': false })
+    s.setPathEnabled('P', '/x', false)
+    expect(meta()['/x']).toBe(false)
+    s.removeProjectPath('P', '/y')
+    expect(s.allProjectPaths().get('P')!.paths).toEqual(['/x'])
+  })
+})
+
+describe('session_import (session-grained surfacing)', () => {
+  it('CRUDs the explicit import set', () => {
+    const s = openStore(':memory:')
+    s.addSessionImport('a'); s.addSessionImport('b'); s.addSessionImport('a') // idempotent
+    expect([...s.allSessionImportSet()].sort()).toEqual(['a', 'b'])
+    s.removeSessionImport('a')
+    expect([...s.allSessionImportSet()]).toEqual(['b'])
+  })
+  it('exposes bound launch-intent session ids (per-session Berth-launch surfacing)', () => {
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'i1', cli: 'codex', cwd: '/x', projectId: null, todoKey: null, sessionId: null, createdAt: 1, bound: false })
+    s.addLaunchIntent({ id: 'i2', cli: 'claude', cwd: '/y', projectId: null, todoKey: null, sessionId: 'sess2', createdAt: 2, bound: true })
+    s.bindIntent('i1', 'sess1')
+    expect([...s.allBoundLaunchSessionIds()].sort()).toEqual(['sess1', 'sess2'])
+  })
 })
 
 describe('soft foreign keys (§2.2)', () => {
