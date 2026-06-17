@@ -10,6 +10,7 @@ export type TaskStatus = string
 export type ShipStatus = 'sail' | 'dock' | 'moored' // 在航 / 靠岸·待查收 / 已停泊
 
 export interface LinkedSession {
+  id: string // real session id — lets the card open the actual session (not a title stub)
   cli: string
   title: string
   status: ShipStatus

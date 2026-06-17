@@ -15,8 +15,8 @@ export const SAMPLE_TASKS: Task[] = [
     ddl: '今日',
     summary: '已确定砍掉活跃/已归档，改为 pin + 按 cwd 分组；正产出融合稿。',
     links: [
-      { cli: 'claude', title: 'Berth 2.0 交互重构讨论', status: 'sail' },
-      { cli: 'codex', title: '数据层解耦 review', status: 'dock' },
+      { id: 'ls1', cli: 'claude', title: 'Berth 2.0 交互重构讨论', status: 'sail' },
+      { id: 'ls2', cli: 'codex', title: '数据层解耦 review', status: 'dock' },
     ],
   },
   {
@@ -26,7 +26,7 @@ export const SAMPLE_TASKS: Task[] = [
     priority: 'P0',
     ddl: '今日',
     summary: '先把 无归属/导入/搜索 搬家再删 tab。',
-    links: [{ cli: 'claude', title: 'trust dialog 预置', status: 'moored' }],
+    links: [{ id: 'ls3', cli: 'claude', title: 'trust dialog 预置', status: 'moored' }],
   },
   {
     id: 't6',
@@ -34,7 +34,7 @@ export const SAMPLE_TASKS: Task[] = [
     status: '进行中',
     priority: 'P2',
     summary: '让长 cwd 分组可折叠。',
-    links: [{ cli: 'codex', title: 'writeQueue 单测', status: 'moored' }],
+    links: [{ id: 'ls4', cli: 'codex', title: 'writeQueue 单测', status: 'moored' }],
   },
   {
     id: 't7',

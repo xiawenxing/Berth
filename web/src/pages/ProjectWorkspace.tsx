@@ -12,7 +12,7 @@ import { useData, relTime, shortCwd, normPriority } from '@/lib/data'
 import { isDoneStatus, statusKind } from '@/lib/status'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
-import type { Task, SessionRow, CwdGroup, TaskStatus } from '@/lib/types'
+import type { Task, SessionRow, CwdGroup, TaskStatus, LinkedSession } from '@/lib/types'
 
 /**
  * Project workspace (the hub) — v7 layout: sticky header + 港湾概览,
@@ -50,6 +50,25 @@ export function ProjectWorkspace() {
   )
   const [tasks, setTasks] = useState<Task[]>(realTasks)
   useEffect(() => setTasks(realTasks), [realTasks])
+
+  // Resolve each task's linked session IDs (ApiTask.sessions) to real sessions for the card's
+  // expansion. Kept SEPARATE from the editable `tasks` state so live-status ticks refresh links
+  // without clobbering optimistic status/priority edits. Unresolved ids (deleted/unimported) skip.
+  const sessById = useMemo(() => new Map(sessions.map((s) => [s.sessionId, s])), [sessions])
+  const linksByTask = useMemo(() => {
+    const m = new Map<string, LinkedSession[]>()
+    for (const t of apiTasks) {
+      if (t.projectId !== id || !t.sessions?.length) continue
+      const ls: LinkedSession[] = []
+      for (const sid of t.sessions) {
+        const s = sessById.get(sid)
+        if (s) ls.push({ id: s.sessionId, cli: s.cli, title: s.title || '(未命名会话)', status: live.shipStatus(s.sessionId, s.updatedAt) })
+      }
+      if (ls.length) m.set(t.id, ls)
+    }
+    return m
+  }, [apiTasks, id, sessById, live.rev])
+  const boardTasks = useMemo(() => tasks.map((t) => ({ ...t, links: linksByTask.get(t.id) ?? [] })), [tasks, linksByTask])
 
   // Real sessions for this project → Pin section + by-cwd groups.
   const projSessions = useMemo(() => sessions.filter((s) => s.projectId === id), [sessions, id])
@@ -132,8 +151,15 @@ export function ProjectWorkspace() {
     live.markSeen(s.id)
     openDrawer({ title: s.title, cli: s.cli, cwd: s.cwd, status: s.status === 'idle' ? 'moored' : s.status, sessionId: s.id })
   }
-  // From a task mini-row (title only) → chat preview.
+  // From a task mini-row (title only, for a not-yet-created session) → chat preview stub.
   const openSession = (t: string) => openDrawer({ title: t, cli: 'claude', cwd: '~/Code/berth', status: 'sail' })
+  // From a task's expanded linked-session row → open the REAL session by id (markSeen + live pty).
+  const openLinkedSession = (l: LinkedSession) => {
+    const s = sessById.get(l.id)
+    if (!s) return openDrawer({ title: l.title, cli: l.cli, cwd: '', status: l.status })
+    live.markSeen(s.sessionId)
+    openDrawer({ title: s.title || l.title, cli: s.cli, cwd: shortCwd(s.cwd), status: live.shipStatus(s.sessionId, s.updatedAt), sessionId: s.sessionId })
+  }
 
   // Drag-to-status：optimistic move NOW, persist via PATCH /todos, then reload.
   const onMove = (taskId: string, status: TaskStatus) => {
@@ -257,9 +283,9 @@ export function ProjectWorkspace() {
             <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[10.5px] font-medium text-brand">航线</span>
           </div>
           <Kanban
-            tasks={tasks}
+            tasks={boardTasks}
             onLaunch={launch}
-            onOpenSession={openSession}
+            onOpenSession={openLinkedSession}
             onMove={onMove}
             onSetPriority={onSetPriority}
             onRename={onRename}

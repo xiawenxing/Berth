@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { resolveColumn, statusMeta } from '@/lib/status'
-import { type Priority, type Task, type TaskStatus } from '@/lib/types'
+import { type LinkedSession, type Priority, type Task, type TaskStatus } from '@/lib/types'
 import { TaskCard } from './TaskCard'
 
 const pickDefaultActive = (statuses: string[]) =>
@@ -19,7 +19,7 @@ export function Kanban({
 }: {
   tasks: Task[]
   onLaunch?: (t: string) => void
-  onOpenSession?: (t: string) => void
+  onOpenSession?: (link: LinkedSession) => void
   onMove?: (taskId: string, status: TaskStatus) => void
   onSetPriority?: (taskId: string, priority: Priority) => void
   onRename?: (taskId: string, title: string) => void

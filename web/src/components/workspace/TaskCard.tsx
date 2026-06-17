@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { priorityColors, priorityRank } from '@/lib/priority'
 import { isCancelledStatus, isDoneStatus, statusMeta } from '@/lib/status'
-import { type Priority, type Task, type ShipStatus, type TaskStatus } from '@/lib/types'
+import { type LinkedSession, type Priority, type Task, type ShipStatus, type TaskStatus } from '@/lib/types'
 
 const REFINING = '港务助手正在总结进展摘要…'
 
@@ -66,7 +66,7 @@ export function TaskCard({
   task: Task
   active: boolean
   onLaunch?: (taskTitle: string) => void
-  onOpenSession?: (title: string) => void
+  onOpenSession?: (link: LinkedSession) => void
   onActivate?: () => void
 } & MenuActions) {
   const { priorities, statuses } = useData()
@@ -207,7 +207,7 @@ export function TaskCard({
                   key={i}
                   onClick={(e) => {
                     e.stopPropagation()
-                    onOpenSession?.(l.title)
+                    onOpenSession?.(l)
                   }}
                   className="flex items-center gap-2 rounded border border-border bg-card px-2 py-1 text-left hover:border-muted-foreground"
                 >
