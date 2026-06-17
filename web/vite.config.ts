@@ -8,6 +8,9 @@ import path from 'node:path'
 // /status) is reachable without touching the server. Prod: `vite build` -> web/dist,
 // which the Node server will serve once the SPA reaches parity.
 export default defineConfig({
+  // Served by the Node server under /app (and Vite dev at /app/). Assets get the
+  // /app/ prefix so they resolve under the mount.
+  base: '/app/',
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
   server: {

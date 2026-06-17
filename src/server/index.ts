@@ -7,11 +7,15 @@ import { refresh, getCache, initData } from './store-singleton'
 import { createPtyWss } from './pty-ws'
 import { createStatusWss } from './status-ws'
 import { killAllPtys } from './pty-registry'
-import { resolvePublicDir } from './public-dir'
+import { resolvePublicDir, resolveWebDistDir } from './public-dir'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 // Resolved by walking up to a public/index.html, so it works both in dev (tsx, src/server) and when
 // compiled (dist/server) with public/ shipped at the package root. See public-dir.ts.
-const PUBLIC = resolvePublicDir(dirname(fileURLToPath(import.meta.url)))
+const HERE = dirname(fileURLToPath(import.meta.url))
+const PUBLIC = resolvePublicDir(HERE)
+const WEB_DIST = resolveWebDistDir(HERE)   // Berth 2.0 React SPA (web/dist), served at /app when built
 
 /**
  * One upgrade listener routes WebSocket upgrades by path to the matching (noServer) WebSocketServer.
@@ -35,6 +39,12 @@ export function createApp() {
   const app = express()
   app.use(express.json({ limit: '30mb' }))   // pasted images (base64) can be a few MB
   app.use('/api', api)
+  // Berth 2.0 React SPA at /app (when built). HashRouter, so static serving + an
+  // index.html fallback for the bare /app path is all that's needed.
+  if (WEB_DIST) {
+    app.use('/app', express.static(WEB_DIST))
+    app.get('/app', (_req, res) => res.sendFile(join(WEB_DIST, 'index.html')))
+  }
   app.use(express.static(PUBLIC))
   return app
 }
