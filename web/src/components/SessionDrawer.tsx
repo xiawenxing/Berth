@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Send, Square } from 'lucide-react'
 import { Drawer } from './ui/Overlay'
 import { SessionChat } from './SessionChat'
+import { Terminal } from './Terminal'
 import { CliBadge } from './workspace/TaskCard'
 import { useUI } from '@/lib/ui-store'
 import { SHIP_LABEL } from '@/lib/types'
@@ -34,36 +35,46 @@ export function SessionDrawer() {
             {drawer.task && <span className="text-[11px] text-muted-foreground">· 航线 {drawer.task}</span>}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <SessionChat firstUser={drawer.task ? `开始处理任务：${drawer.task}` : undefined} />
+          {/* body: real live terminal for a real session (/pty); chat preview otherwise */}
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {drawer.sessionId ? (
+              <Terminal key={drawer.sessionId} sessionId={drawer.sessionId} />
+            ) : (
+              <div className="h-full overflow-y-auto">
+                <SessionChat firstUser={drawer.task ? `开始处理任务：${drawer.task}` : undefined} />
+              </div>
+            )}
           </div>
 
-          <div className="border-t border-border p-3">
-            <div className="flex items-end gap-2 rounded-md border border-border bg-card p-2">
-              <textarea
-                value={msg}
-                onChange={(e) => setMsg(e.target.value)}
-                placeholder="输入消息发送给 agent…"
-                rows={2}
-                className="min-h-0 flex-1 resize-none bg-transparent text-[13px] text-foreground outline-none placeholder:text-text-dim"
-              />
-              {running ? (
-                <button
-                  onClick={() => setRunning(false)}
-                  className="flex flex-none items-center gap-1 rounded-md bg-destructive px-3 py-1.5 text-[12px] font-semibold text-brand-foreground"
-                >
-                  <Square size={12} /> 终止
-                </button>
-              ) : (
-                <button
-                  onClick={() => setMsg('')}
-                  className="flex flex-none items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-[12px] font-semibold text-brand-foreground"
-                >
-                  <Send size={12} /> 发送
-                </button>
-              )}
+          {/* Composer only for the chat preview — a real terminal takes input via xterm directly. */}
+          {!drawer.sessionId && (
+            <div className="border-t border-border p-3">
+              <div className="flex items-end gap-2 rounded-md border border-border bg-card p-2">
+                <textarea
+                  value={msg}
+                  onChange={(e) => setMsg(e.target.value)}
+                  placeholder="输入消息发送给 agent…"
+                  rows={2}
+                  className="min-h-0 flex-1 resize-none bg-transparent text-[13px] text-foreground outline-none placeholder:text-text-dim"
+                />
+                {running ? (
+                  <button
+                    onClick={() => setRunning(false)}
+                    className="flex flex-none items-center gap-1 rounded-md bg-destructive px-3 py-1.5 text-[12px] font-semibold text-brand-foreground"
+                  >
+                    <Square size={12} /> 终止
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setMsg('')}
+                    className="flex flex-none items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-[12px] font-semibold text-brand-foreground"
+                  >
+                    <Send size={12} /> 发送
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </Drawer>

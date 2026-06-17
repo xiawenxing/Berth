@@ -9,6 +9,7 @@ export interface DrawerSession {
   cwd: string
   status: 'sail' | 'dock' | 'moored'
   task?: string
+  sessionId?: string // real session → attach the live /pty terminal; absent → chat preview
 }
 
 export interface LaunchCtx {

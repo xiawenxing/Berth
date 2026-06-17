@@ -71,8 +71,11 @@ export function ProjectWorkspace() {
   const pct = Math.round((done / total) * 100)
 
   const launch = (t: string) => openLaunch(t ? { dest: 'task', taskTitle: t } : { dest: 'free' })
-  const openSession = (t: string) =>
-    openDrawer({ title: t, cli: 'claude', cwd: '~/Code/berth', status: 'sail' })
+  // Open a real session → attach its live /pty terminal in the drawer.
+  const openRow = (s: SessionRow) =>
+    openDrawer({ title: s.title, cli: s.cli, cwd: s.cwd, status: s.status === 'idle' ? 'moored' : s.status, sessionId: s.id })
+  // From a task mini-row (title only) → chat preview.
+  const openSession = (t: string) => openDrawer({ title: t, cli: 'claude', cwd: '~/Code/berth', status: 'sail' })
 
   // 即时创建：card appears NOW; if AI-summarize, refine title + summary in background.
   const createTask = (raw: string, opts: { aiSummarize: boolean; runNow: boolean }) => {
@@ -151,7 +154,7 @@ export function ProjectWorkspace() {
           <Kanban tasks={tasks} onLaunch={launch} onOpenSession={openSession} />
         </section>
 
-        <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onOpen={openSession} />
+        <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onOpen={openRow} />
         <CargoDefaults dirs={SAMPLE_CARGO} />
       </div>
 

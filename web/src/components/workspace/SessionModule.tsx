@@ -10,10 +10,10 @@ function Glyph({ status }: { status: SessionRow['status'] }) {
   return <span className="h-1.5 w-1.5 flex-none" /> // moored/idle — empty gutter, keeps alignment
 }
 
-function Row({ s, showCwd, onOpen }: { s: SessionRow; showCwd?: boolean; onOpen?: (t: string) => void }) {
+function Row({ s, showCwd, onOpen }: { s: SessionRow; showCwd?: boolean; onOpen?: (s: SessionRow) => void }) {
   return (
     <button
-      onClick={() => onOpen?.(s.title)}
+      onClick={() => onOpen?.(s)}
       className="group flex h-[34px] w-full items-center gap-2 rounded px-2 text-left hover:bg-sidebar-accent"
     >
       <Glyph status={s.status} />
@@ -30,7 +30,7 @@ function Row({ s, showCwd, onOpen }: { s: SessionRow; showCwd?: boolean; onOpen?
   )
 }
 
-function CwdSection({ group, onOpen }: { group: CwdGroup; onOpen?: (t: string) => void }) {
+function CwdSection({ group, onOpen }: { group: CwdGroup; onOpen?: (s: SessionRow) => void }) {
   const [collapsed, setCollapsed] = useState(false)
   const [more, setMore] = useState(false)
   const LIMIT = 4
@@ -76,7 +76,7 @@ export function SessionModule({
   pin: SessionRow[]
   groups: CwdGroup[]
   onLaunch?: () => void
-  onOpen?: (t: string) => void
+  onOpen?: (s: SessionRow) => void
 }) {
   return (
     <section className="rounded-lg border border-border bg-card p-4">
