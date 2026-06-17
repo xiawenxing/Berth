@@ -186,6 +186,7 @@ api.get('/projects', (_req, res) => {
       paths: pathMap.get(p.id)?.paths ?? [],          // bare string[] — back-compat (old app + ApiProject)
       pathsMeta: pathMap.get(p.id)?.meta ?? [],        // {cwd,enabled}[] — drives the 货舱 toggle UI
       workspaceCwd: join(berthHome(), 'workspaces', p.id), // Berth-assigned default cwd (masked in UI)
+      lastCwd: store.getSetting(`project_last_cwd:${p.id}`), // sticky 主 cwd for the launch auto-pick
     })),
   })
 })

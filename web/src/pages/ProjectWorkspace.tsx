@@ -4,14 +4,14 @@ import { Plus, Play, Sparkles, MoreHorizontal, Anchor } from 'lucide-react'
 import { Kanban } from '@/components/workspace/Kanban'
 import { SessionModule } from '@/components/workspace/SessionModule'
 import { CargoDefaults } from '@/components/workspace/CargoDefaults'
-import { SAMPLE_CARGO } from '@/data/sample'
+import { ImportDialog } from '@/components/ImportDialog'
 import { useUI } from '@/lib/ui-store'
 import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
 import { ProjectSummaryDialog, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
 import { useData, relTime, shortCwd, normPriority } from '@/lib/data'
 import { isDoneStatus, statusKind } from '@/lib/status'
 import { useLive } from '@/lib/live'
-import { api } from '@/lib/api'
+import { api, type PreviewSession } from '@/lib/api'
 import type { Task, SessionRow, CwdGroup, TaskStatus, LinkedSession } from '@/lib/types'
 
 /**
@@ -33,6 +33,12 @@ export function ProjectWorkspace() {
     if (syncing) return
     setSyncing(true)
     resync().finally(() => setSyncing(false))
+  }
+  // Per-cwd-group import: preview the dir's on-disk sessions, then the dialog imports the picked ones.
+  const [importDlg, setImportDlg] = useState<{ path: string; sessions: PreviewSession[] } | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
+  const importFromGroup = (rawCwd: string) => {
+    api.previewDir(rawCwd).then(({ sessions }) => setImportDlg({ path: rawCwd, sessions })).catch(() => {})
   }
 
   const project = projects.find((p) => p.id === id)
@@ -94,22 +100,30 @@ export function ProjectWorkspace() {
   )
   const groups: CwdGroup[] = useMemo(() => {
     const NO_CWD = '(无目录)'
+    const ws = project?.workspaceCwd // the Berth-assigned default dir — masked, no path shown
     const map = new Map<string, SessionRow[]>()
     for (const s of projSessions.filter((x) => !x.pinned)) {
       const key = s.cwd || NO_CWD // RAW cwd as the stable key (display form is shortened below)
       ;(map.get(key) ?? map.set(key, []).get(key)!).push(toRow(s, false))
     }
-    // The 主上下文 is the project's home cwd when it actually has sessions, else the busiest cwd.
-    // Sort: main first, then by session count desc. The rest are worktree·第 N 上下文.
-    const home = project?.homeCwd || project?.paths?.[0]
-    const mainCwd = home && map.has(home) ? home : [...map.entries()].sort((a, b) => b[1].length - a[1].length)[0]?.[0]
+    // 主上下文 = sticky last cwd, else a registered enabled path, else the busiest cwd (excluding the
+    // masked workspace group, which is always pinned to the top and never the 主 label).
+    const enabled = (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd)
+    const candidate = (project?.lastCwd && map.has(project.lastCwd) && project.lastCwd) || enabled.find((c) => map.has(c))
+    const nonWs = [...map.entries()].filter(([cwd]) => cwd !== ws)
+    const mainCwd = candidate || nonWs.sort((a, b) => b[1].length - a[1].length)[0]?.[0]
     const sorted = [...map.entries()].sort((a, b) => {
+      if (a[0] === ws) return -1 // workspace group first
+      if (b[0] === ws) return 1
       if (a[0] === mainCwd) return -1
       if (b[0] === mainCwd) return 1
       return b[1].length - a[1].length
     })
     let worktreeN = 1
     return sorted.map(([cwd, rows]) => {
+      if (cwd === ws) {
+        return { key: cwd, cwd: '项目默认目录', tag: 'Berth 工作区', shortTag: 'Berth 工作区', sessions: rows, kind: 'workspace' as const }
+      }
       const isMain = cwd === mainCwd
       const n = isMain ? 0 : ++worktreeN // worktrees count from 2 (主 is the 1st context)
       return {
@@ -118,6 +132,8 @@ export function ProjectWorkspace() {
         tag: isMain ? '主上下文' : `worktree · 第 ${n} 上下文`,
         shortTag: isMain ? '主上下文' : `worktree·${n}`,
         sessions: rows,
+        kind: 'cwd' as const,
+        rawCwd: cwd === NO_CWD ? undefined : cwd,
       }
     })
   }, [projSessions, project, live.rev])
@@ -138,24 +154,15 @@ export function ProjectWorkspace() {
   const todayDone = todayTasks.filter((t) => isDoneStatus(t.status)).length
   const lastActivity = projSessions.length ? relTime(Math.max(...projSessions.map((s) => s.updatedAt))) : '—'
 
-  // Resolve a real absolute cwd for a fresh launch: project home / a registered path /
-  // the most common cwd among this project's sessions.
-  const resolveCwd = (): string => {
-    if (project?.homeCwd) return project.homeCwd
-    if (project?.paths?.length) return project.paths[0]
-    const counts = new Map<string, number>()
-    for (const s of projSessions) if (s.cwd) counts.set(s.cwd, (counts.get(s.cwd) ?? 0) + 1)
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
-  }
   // taskId === '' → free launch (header / session-module button); otherwise resolve the task by id
   // (NOT by title — titles aren't unique and get refined) to carry its real todoKey + project.
+  // The spawn cwd is decided in LaunchDialog (enabled 货舱 → sticky/pick → workspace fallback).
   const launch = (taskId: string) => {
-    const cwd = resolveCwd()
     const task = taskId ? apiTasks.find((x) => x.id === taskId) : undefined
     openLaunch(
       task
-        ? { dest: 'task', taskTitle: task.title, projectId: task.projectId ?? id, cwd, todoKey: task.id }
-        : { dest: 'free', projectId: id, cwd },
+        ? { dest: 'task', taskTitle: task.title, projectId: task.projectId ?? id, todoKey: task.id }
+        : { dest: 'free', projectId: id },
     )
   }
   // Open a real session → attach its live /pty terminal in the drawer; mark it seen.
@@ -305,13 +312,32 @@ export function ProjectWorkspace() {
           />
         </section>
 
-        <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onResync={doResync} syncing={syncing} onOpen={openRow} onPin={onPin} />
-        <CargoDefaults dirs={SAMPLE_CARGO} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={reload} />
+        <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onResync={doResync} syncing={syncing} onOpen={openRow} onPin={onPin} onImport={importFromGroup} />
+        <CargoDefaults paths={project?.pathsMeta ?? []} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} />
       </div>
 
       <NewTaskDialog open={newTask} onClose={() => setNewTask(false)} onCreate={createTask} />
       <ProjectSummaryDialog open={summaryOpen} onClose={() => setSummaryOpen(false)} projectId={id} />
       <ContextDocDrawer target={ctxDoc} onClose={() => setCtxDoc(null)} />
+      {importDlg && (
+        <ImportDialog
+          path={importDlg.path}
+          sessions={importDlg.sessions}
+          mode="import"
+          busy={importBusy}
+          onCancel={() => setImportDlg(null)}
+          onConfirm={async (ids) => {
+            setImportBusy(true)
+            try {
+              await api.importSessions(ids, id)
+              setImportDlg(null)
+              doResync()
+            } finally {
+              setImportBusy(false)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -1,11 +1,19 @@
 // Thin typed client over the Berth Node REST API (proxied by Vite in dev, same-origin under /app).
 
+export interface ApiPathMeta {
+  cwd: string
+  enabled: boolean
+}
+
 export interface ApiProject {
   id: string
   name: string
   archived?: boolean
   homeCwd?: string | null
   paths?: string[]
+  pathsMeta?: ApiPathMeta[] // {cwd,enabled}[] — drives the 货舱 toggle UI
+  workspaceCwd?: string // Berth-assigned default cwd (~/.berth/workspaces/<id>); masked in UI
+  lastCwd?: string | null // sticky 主 cwd for the launch auto-pick
 }
 
 export interface ApiTask {
@@ -98,6 +106,16 @@ export const api = {
   // Register a dir as an import root (surfaces its sessions to the store) + refresh.
   importDir: (cwd: string) => send('POST', '/api/session-dirs', { cwd }) as Promise<{ ok: boolean; count: number }>,
   createProject: (name: string, cwd?: string) => send('POST', '/api/projects/create', { name, cwd }),
+  // 货舱 registry mutations (real project_path data).
+  addPath: (projectId: string, cwd: string, opts?: { isHome?: boolean; enabled?: boolean }) =>
+    send('POST', '/api/projects/add-path', { projectId, cwd, ...opts }),
+  togglePath: (projectId: string, cwd: string, enabled: boolean) =>
+    send('POST', '/api/projects/path/toggle', { projectId, cwd, enabled }),
+  removePath: (projectId: string, cwd: string) =>
+    send('DELETE', '/api/projects/path', { projectId, cwd }),
+  // Session-grained import: mark sessions as in Berth's visible set (+ attach when projectId given).
+  importSessions: (ids: string[], projectId?: string) =>
+    send('POST', '/api/session-import', { ids, projectId }),
   contextUpdate: (kind: 'task' | 'project', key: string, userInput: string) =>
     send('POST', '/api/context/update', { kind, key, userInput }),
   projectSummary: (id: string) => send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summary?: string; error?: string }>,

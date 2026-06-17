@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw } from 'lucide-react'
+import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SHIP_LABEL, type SessionRow, type CwdGroup, type ShipStatus } from '@/lib/types'
 import { CliBadge } from './TaskCard'
@@ -94,6 +94,7 @@ function Section({
   limit,
   onOpen,
   onPin,
+  onImport,
 }: {
   icon: ReactNode
   label: string
@@ -106,6 +107,7 @@ function Section({
   limit?: number
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
+  onImport?: () => void // 导入该目录下磁盘上其他会话 (cwd groups only; absent on the workspace group)
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const [more, setMore] = useState(false)
@@ -128,6 +130,20 @@ function Section({
         <span className="font-normal text-text-dim">{count}</span>
         <span className="flex-1" />
         {tag && <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-medium tracking-wide text-text-dim">{tag}</span>}
+        {onImport && (
+          <span
+            role="button"
+            tabIndex={-1}
+            title="导入该目录下磁盘上的其他会话"
+            onClick={(e) => {
+              e.stopPropagation()
+              onImport()
+            }}
+            className="flex-none rounded p-1 text-text-dim hover:bg-secondary hover:text-brand"
+          >
+            <FolderInput size={13} />
+          </span>
+        )}
       </button>
       {!collapsed && (
         <div>
@@ -157,6 +173,7 @@ export function SessionModule({
   syncing,
   onOpen,
   onPin,
+  onImport,
 }: {
   pin: SessionRow[]
   groups: CwdGroup[]
@@ -165,6 +182,7 @@ export function SessionModule({
   syncing?: boolean
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
+  onImport?: (rawCwd: string) => void // 导入某 cwd 组目录下磁盘上的其他会话
 }) {
   const empty = pin.length === 0 && groups.length === 0
   return (
@@ -209,21 +227,31 @@ export function SessionModule({
                 onPin={onPin}
               />
             )}
-            {groups.map((g) => (
-              <Section
-                key={g.key}
-                icon={<Anchor size={12} className="flex-none text-brand/60" />}
-                label={g.cwd}
-                labelSuffix={g.shortTag}
-                labelMono
-                count={g.sessions.length}
-                tag={g.tag}
-                rows={g.sessions}
-                limit={4}
-                onOpen={onOpen}
-                onPin={onPin}
-              />
-            ))}
+            {groups.map((g) => {
+              const isWorkspace = g.kind === 'workspace'
+              return (
+                <Section
+                  key={g.key}
+                  icon={
+                    isWorkspace ? (
+                      <Box size={12} className="flex-none text-purple" />
+                    ) : (
+                      <Anchor size={12} className="flex-none text-brand/60" />
+                    )
+                  }
+                  label={g.cwd}
+                  labelSuffix={isWorkspace ? undefined : g.shortTag}
+                  labelMono={!isWorkspace}
+                  count={g.sessions.length}
+                  tag={g.tag}
+                  rows={g.sessions}
+                  limit={4}
+                  onOpen={onOpen}
+                  onPin={onPin}
+                  onImport={!isWorkspace && g.rawCwd && onImport ? () => onImport(g.rawCwd!) : undefined}
+                />
+              )
+            })}
           </>
         )}
       </div>

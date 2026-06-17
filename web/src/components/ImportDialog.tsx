@@ -1,0 +1,153 @@
+import { useMemo, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { relTime } from '@/lib/data'
+import { CliBadge } from '@/components/workspace/TaskCard'
+import { Dialog } from '@/components/ui/Overlay'
+import type { PreviewSession } from '@/lib/api'
+
+const PAGE = 8 // recent N visible; "Show more" reveals +PAGE each click
+
+/**
+ * Pick-which-sessions-to-import dialog. Shared by three entry points:
+ *  - 'register' (货舱「添加目录」): registering the dir is the primary action, import is optional —
+ *    confirm with 0 selected still registers ("仅登记目录"); with N → "登记并导入 (N)".
+ *  - 'import' (a cwd group's import icon, or 无归属导入): pure import, disabled at 0.
+ *
+ * Sessions arrive pre-sorted (updatedAt desc) and uncapped; we paginate client-side (8 + Show more).
+ * Default selection is EMPTY (the list can be huge — never auto-select). 全选 covers the FULL set,
+ * including not-yet-rendered rows. The dialog is pure UI: it hands the selected ids back; the caller
+ * runs the actual addPath / importSessions calls so each entry composes its own semantics.
+ */
+export function ImportDialog({
+  path,
+  sessions,
+  mode,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  path: string
+  sessions: PreviewSession[]
+  mode: 'register' | 'import'
+  busy: boolean
+  onCancel: () => void
+  onConfirm: (ids: string[]) => void
+}) {
+  const [checked, setChecked] = useState<Set<string>>(() => new Set()) // default: none
+  const [shown, setShown] = useState(PAGE)
+  const allIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions])
+  const allOn = sessions.length > 0 && checked.size === sessions.length
+  const visible = sessions.slice(0, shown)
+  const hidden = sessions.length - visible.length
+
+  const toggleOne = (id: string) =>
+    setChecked((s) => {
+      const next = new Set(s)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  const toggleAll = () => setChecked(allOn ? new Set() : new Set(allIds)) // 全选 over the FULL set
+
+  const n = checked.size
+  const confirmLabel =
+    mode === 'register'
+      ? busy
+        ? '处理中…'
+        : n === 0
+          ? '仅登记目录'
+          : `登记并导入 (${n})`
+      : busy
+        ? '导入中…'
+        : `导入选中 (${n})`
+  const confirmDisabled = busy || (mode === 'import' && n === 0)
+
+  return (
+    <Dialog open onClose={busy ? () => {} : onCancel} width={520}>
+      <div className="flex flex-col">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-[13px] font-semibold text-foreground">
+            {mode === 'register' ? '登记目录到项目货舱' : '导入会话'}
+          </div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-text-dim">{path}</div>
+          {mode === 'register' && (
+            <div className="mt-1.5 rounded-md border border-brand/25 bg-brand/5 px-2 py-1 text-[11px] text-muted-foreground">
+              添加目录会把它登记为项目货舱。下面是<b>可选</b>导入已有会话——默认不导入，直接「仅登记目录」即可。
+            </div>
+          )}
+        </div>
+
+        {sessions.length === 0 ? (
+          <div className="px-4 py-6 text-[12px] text-muted-foreground">
+            {mode === 'register' ? '该目录下没有会话，仅登记为货舱目录。' : '该目录下没有可导入的会话。'}
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between px-4 pt-2.5">
+              <span className="text-[11px] text-text-dim">
+                在该目录下找到 {sessions.length} 个会话 · 已选 <b className="text-brand">{n}</b>
+              </span>
+              <button className="text-[11px] text-brand hover:underline" onClick={toggleAll}>
+                {allOn ? '全不选' : '全选（含未展开）'}
+              </button>
+            </div>
+            <div className="max-h-[44vh] overflow-y-auto px-4 py-2">
+              <div className="flex flex-col gap-1">
+                {visible.map((s) => {
+                  const on = checked.has(s.sessionId)
+                  return (
+                    <button
+                      key={s.sessionId}
+                      onClick={() => toggleOne(s.sessionId)}
+                      className={cn(
+                        'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left transition-colors',
+                        on ? 'border-brand/50 bg-brand/5' : 'border-transparent hover:bg-muted/40',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'flex h-[15px] w-[15px] flex-none items-center justify-center rounded border text-[10px]',
+                          on ? 'border-brand bg-brand text-brand-foreground' : 'border-border text-transparent',
+                        )}
+                      >
+                        ✓
+                      </span>
+                      <CliBadge cli={s.cli} />
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">{s.title || '(未命名)'}</span>
+                      <span className="flex-none text-[10.5px] text-text-dim">{relTime(s.updatedAt)}</span>
+                    </button>
+                  )
+                })}
+                {hidden > 0 && (
+                  <button
+                    onClick={() => setShown((v) => v + PAGE)}
+                    className="mt-1 flex items-center gap-1 px-1 py-1 text-left text-[11px] font-medium text-text-dim hover:text-brand"
+                  >
+                    <ChevronDown size={12} /> Show more（再展开 {Math.min(PAGE, hidden)} / 共 {sessions.length}）
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            取消
+          </button>
+          <button
+            className="rounded-md bg-brand px-3 py-1.5 text-[12px] font-medium text-brand-foreground hover:bg-brand/90 disabled:opacity-50"
+            onClick={() => onConfirm([...checked])}
+            disabled={confirmDisabled}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}

@@ -8,8 +8,9 @@ import { Terminal } from '@/components/Terminal'
 import { useData, relTime, shortCwd } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
+import { ImportDialog } from '@/components/ImportDialog'
 import { SHIP_LABEL, type ShipStatus } from '@/lib/types'
-import type { ApiSession, ApiProject } from '@/lib/api'
+import type { ApiSession, ApiProject, PreviewSession } from '@/lib/api'
 
 function Glyph({ status }: { status: ShipStatus }) {
   if (status === 'sail') return <span className="h-1.5 w-1.5 flex-none rounded-full bg-success" />
@@ -37,6 +38,24 @@ export function Unassigned() {
     if (syncing) return
     setSyncing(true)
     resync().finally(() => setSyncing(false))
+  }
+  // 导入目录: pick a dir → preview its on-disk sessions → import the picked ones (project-less).
+  const [importDlg, setImportDlg] = useState<{ path: string; sessions: PreviewSession[] } | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const onImportDir = async () => {
+    if (picking) return
+    setPicking(true)
+    try {
+      const picked = await api.pickFolder()
+      if (!picked?.path) return
+      const { sessions } = await api.previewDir(picked.path)
+      setImportDlg({ path: picked.path, sessions })
+    } catch {
+      // folder pick / preview failures are non-fatal
+    } finally {
+      setPicking(false)
+    }
   }
   // When the user sends a follow-up, swap the right pane from the chat transcript to a live resumed
   // terminal that auto-submits the message. Reset when a different session is selected.
@@ -112,7 +131,12 @@ export function Unassigned() {
           >
             <RefreshCw size={14} className={cn(syncing && 'animate-spin')} />
           </button>
-          <button className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent" title="导入目录">
+          <button
+            onClick={onImportDir}
+            disabled={picking}
+            className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
+            title="导入目录"
+          >
             <FolderInput size={14} />
           </button>
         </div>
@@ -178,6 +202,26 @@ export function Unassigned() {
           </>
         ) : null}
       </div>
+
+      {importDlg && (
+        <ImportDialog
+          path={importDlg.path}
+          sessions={importDlg.sessions}
+          mode="import"
+          busy={importBusy}
+          onCancel={() => setImportDlg(null)}
+          onConfirm={async (ids) => {
+            setImportBusy(true)
+            try {
+              await api.importSessions(ids) // project-less import → surfaces under 无归属
+              setImportDlg(null)
+              doResync()
+            } finally {
+              setImportBusy(false)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

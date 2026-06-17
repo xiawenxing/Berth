@@ -1,47 +1,57 @@
-import { useEffect, useState } from 'react'
-import { Anchor, ChevronDown, Package, Play, Plus } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Anchor, Box, Folder, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { useUI } from '@/lib/ui-store'
-import { SAMPLE_CARGO } from '@/data/sample'
+import { useData, shortCwd } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
 /**
- * 装载台 / 起航 — unified launch. Destination (任务 | 自由提问) + ONE merged 货舱
- * block (summary line = header, 调整装载 expands the editor inside the same block).
- * 开箱即走: collapsed by default. 起航 → opens the session drawer.
+ * 装载台 / 起航 — destination (任务 | 自由提问) + the spawn-cwd resolver:
+ *  - 0 enabled 货舱  → 项目默认目录 (Berth workspace; cwd sent empty, server resolves + mkdirs)
+ *  - 1 enabled 货舱  → that dir (static)
+ *  - ≥2 enabled 货舱 → radio list, auto-lit = sticky lastCwd else first enabled; user can switch
+ * 起航 → opens the session drawer with a fresh /pty launch.
  */
 export function LaunchDialog() {
   const { launch, closeLaunch, openDrawer } = useUI()
-  const [adjust, setAdjust] = useState(false)
+  const { projects } = useData()
   const [dest, setDest] = useState<'task' | 'free'>('task')
   const [freeText, setFreeText] = useState('')
+  const [pickedCwd, setPickedCwd] = useState<string | null>(null)
+
+  const project = projects.find((p) => p.id === launch?.projectId)
+  const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
+  const autoPick = useMemo(
+    () => (project?.lastCwd && enabledPaths.includes(project.lastCwd) ? project.lastCwd : enabledPaths[0]),
+    [project, enabledPaths],
+  )
+  const selectedCwd = pickedCwd ?? autoPick // undefined when 0 enabled → workspace fallback
 
   useEffect(() => {
     if (launch) {
-      setAdjust(false)
-      // No task title → there's nothing to launch a task against; default to 自由提问.
       setDest(launch.taskTitle ? launch.dest : 'free')
       setFreeText('')
+      setPickedCwd(null)
     }
   }, [launch])
 
   if (!launch) return null
   const taskTitle = launch.taskTitle
-  const cwd = launch.cwd || ''
-  const noCwd = !cwd
   const title = dest === 'task' && taskTitle ? taskTitle : freeText || '新会话'
+  // We can always sail when there's a project (server falls back to its workspace dir). Only a
+  // project-less launch with no resolvable cwd is blocked.
+  const canSail = !!launch.projectId || enabledPaths.length > 0
 
   const sail = () => {
-    if (noCwd) return
+    if (!canSail) return
+    const cwd = enabledPaths.length === 0 ? '' : selectedCwd || '' // '' → server workspace fallback
     closeLaunch()
     openDrawer({
       title,
       cli: 'claude',
-      cwd,
+      cwd: cwd ? shortCwd(cwd) : '项目默认目录',
       status: 'sail',
       task: dest === 'task' ? taskTitle : undefined,
-      // Fresh launch: spawn a real agent via /pty?new=1. For a free question the typed
-      // text is the first prompt; a task launch lets the server inject its directive.
       launch: {
         cli: 'claude',
         cwd,
@@ -82,58 +92,55 @@ export function LaunchDialog() {
           )}
         </div>
 
-        {/* 货舱 — one merged block: summary header + 调整装载 expands editor inside */}
-        <div className={cn('rounded-md border border-border', adjust && 'bg-background/30')}>
-          <button
-            onClick={() => setAdjust((v) => !v)}
-            className={cn('flex w-full items-center gap-2 px-3 py-2.5 text-left', adjust && 'border-b border-border')}
-          >
-            <Package size={14} className="text-brand" />
-            <span className="text-[13px] text-foreground">
-              货舱：项目上下文 · 任务上下文 · 代码上下文 <span className="font-mono text-[12px] text-muted-foreground">{cwd || '（未登记目录）'}</span> · claude
-            </span>
-            <span className="ml-auto flex items-center gap-1 text-[12px] text-muted-foreground">
-              {adjust ? '收起装载' : '调整装载'}
-              <ChevronDown size={13} className={cn('transition-transform', adjust && 'rotate-180')} />
-            </span>
-          </button>
-
-          {adjust && (
-            <div className="flex flex-col gap-2.5 p-3">
-              <Check defaultChecked>项目上下文 (Berth)</Check>
-              {dest === 'task' && <Check defaultChecked>任务上下文 · 进展 6 条</Check>}
-              <div>
-                <div className="mb-1 text-[11px] text-muted-foreground">代码上下文（默认装载已登记的目录 · 额外目录走 --add-dir）</div>
-                <div className="flex flex-col gap-1.5">
-                  {SAMPLE_CARGO.filter((d) => d.on).map((d) => (
-                    <Check key={d.path} defaultChecked>
-                      <span className="font-mono">{d.path}</span>
-                    </Check>
-                  ))}
-                  <button className="flex items-center gap-1 text-[12px] text-brand hover:underline">
-                    <Plus size={12} /> 额外目录…
+        {/* 启动目录 */}
+        <div>
+          <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">启动目录</div>
+          {enabledPaths.length === 0 ? (
+            <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-[12.5px]">
+              <Box size={14} className="text-purple" />
+              <span className="text-foreground">项目默认目录</span>
+              <span className="ml-auto text-[10.5px] text-text-dim">自动 · 未登记货舱</span>
+            </div>
+          ) : enabledPaths.length === 1 ? (
+            <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-[12.5px]">
+              <Folder size={14} className="text-brand" />
+              <span className="font-mono text-foreground">{shortCwd(enabledPaths[0])}</span>
+              <span className="ml-auto text-[10.5px] text-text-dim">自动 · 唯一装载</span>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-md border border-border">
+              {enabledPaths.map((cwd) => {
+                const on = selectedCwd === cwd
+                return (
+                  <button
+                    key={cwd}
+                    onClick={() => setPickedCwd(cwd)}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 border-t border-border/55 px-2.5 py-2 text-left first:border-t-0',
+                      on ? 'bg-brand/10' : 'hover:bg-accent',
+                    )}
+                  >
+                    <span className={cn('flex h-3.5 w-3.5 items-center justify-center rounded-full border', on ? 'border-brand' : 'border-border')}>
+                      {on && <span className="h-2 w-2 rounded-full bg-brand" />}
+                    </span>
+                    <span className="font-mono text-[12px] text-foreground">{shortCwd(cwd)}</span>
+                    {on && <span className="ml-auto text-[10px] text-brand">{pickedCwd ? '已选' : '自动选中'}</span>}
                   </button>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 text-[12px]">
-                <span className="text-muted-foreground">CLI</span>
-                <Select options={['claude', 'codex', 'coco']} />
-                <span className="text-muted-foreground">模型</span>
-                <Select options={['默认']} />
-              </div>
+                )
+              })}
             </div>
           )}
         </div>
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-        {noCwd && <span className="mr-auto text-[11px] text-warning">该项目暂无可用目录，请先在「默认装载」里登记一个 cwd</span>}
+        {!canSail && <span className="mr-auto text-[11px] text-warning">无项目上下文，请从某个项目里起航</span>}
         <button onClick={closeLaunch} className="rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
           取消
         </button>
         <button
           onClick={sail}
-          disabled={noCwd}
+          disabled={!canSail}
           className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground disabled:opacity-50"
         >
           <Play size={13} /> 起航
@@ -151,27 +158,5 @@ function Radio({ checked, onClick, children }: { checked: boolean; onClick: () =
       </span>
       {children}
     </button>
-  )
-}
-
-function Check({ children, defaultChecked }: { children: React.ReactNode; defaultChecked?: boolean }) {
-  const [on, setOn] = useState(!!defaultChecked)
-  return (
-    <button onClick={() => setOn((v) => !v)} className="flex items-center gap-2 text-[13px] text-foreground">
-      <span className={cn('flex h-4 w-4 items-center justify-center rounded border', on ? 'border-brand bg-brand' : 'border-border')}>
-        {on && <span className="text-[10px] text-brand-foreground">✓</span>}
-      </span>
-      {children}
-    </button>
-  )
-}
-
-function Select({ options }: { options: string[] }) {
-  return (
-    <select className="rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground outline-none">
-      {options.map((o) => (
-        <option key={o}>{o}</option>
-      ))}
-    </select>
   )
 }
