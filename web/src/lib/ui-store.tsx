@@ -25,7 +25,6 @@ export interface LaunchCtx {
   dest: 'task' | 'free'
   taskTitle?: string
   projectId?: string
-  cwd?: string // resolved project cwd for the fresh launch
   todoKey?: string
 }
 

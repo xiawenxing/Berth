@@ -30,19 +30,11 @@ export function Now() {
     return m
   }, [sessions])
 
-  // Resolve a launch cwd for an arbitrary task's project (Now is cross-project, so there's no single
-  // workspace cwd): project home / a registered path / the most common cwd among its sessions.
-  const resolveCwd = (projectId?: string | null): string => {
-    const proj = projectId ? projects.find((p) => p.id === projectId) : undefined
-    if (proj?.homeCwd) return proj.homeCwd
-    if (proj?.paths?.length) return proj.paths[0]
-    const counts = new Map<string, number>()
-    for (const s of sessions) if (s.projectId === projectId && s.cwd) counts.set(s.cwd, (counts.get(s.cwd) ?? 0) + 1)
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
-  }
-  // Launch a session bound to this task by its real id (todoKey) + project — never by title.
+  // Launch a session bound to this task by its real id (todoKey) + project — never by title. The
+  // spawn cwd is resolved in LaunchDialog from the project's enabled 货舱 (falling back to that
+  // project's Berth workspace dir, server-side), so Now only needs to carry the projectId.
   const launchTask = (t: ApiTask) =>
-    openLaunch({ dest: 'task', taskTitle: t.title, projectId: t.projectId ?? undefined, cwd: resolveCwd(t.projectId), todoKey: t.id })
+    openLaunch({ dest: 'task', taskTitle: t.title, projectId: t.projectId ?? undefined, todoKey: t.id })
 
   // 今日交付: tasks whose ddl is today's local date, across all projects.
   const today = todayISO()

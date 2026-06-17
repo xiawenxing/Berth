@@ -47,13 +47,6 @@ export interface CwdGroup {
   rawCwd?: string // the real absolute cwd, for the import-icon's previewDir (absent on workspace group)
 }
 
-export interface CargoDir {
-  path: string
-  label: string
-  kind: 'repo' | 'worktree' | 'scratch'
-  on: boolean
-}
-
 export const SHIP_LABEL: Record<ShipStatus, string> = {
   sail: '在航',
   dock: '靠岸·待查收',

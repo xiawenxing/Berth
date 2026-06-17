@@ -318,7 +318,8 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     // Only attach to a REAL project. A project-less launch must not write a null-project attach:
     // that marker has no consumer (the frontend never reads attachState) but used to curate the
     // session, force-keeping it under a phantom "(NO CWD)" group during the CLI's init window. The
-    // session surfaces normally via its launch-intent cwd (an import root) once that cwd is known.
+    // session surfaces via allBoundLaunchSessionIds() → curated (addLaunchIntent here writes the
+    // bound row for claude/coco; codex surfaces once reconcile binds it) — NOT via its cwd anymore.
     if (plan.bindNow.projectId) store.setAttach(plan.bindNow.sessionId, plan.bindNow.projectId, 'confirmed')
   }
 

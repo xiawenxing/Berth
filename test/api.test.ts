@@ -13,6 +13,9 @@ const mockAddEdge = vi.fn((..._a: any[]) => {})
 const mockSetAttach = vi.fn((..._a: any[]) => {})
 const mockSetTitleOverride = vi.fn((..._a: any[]) => {})
 const mockAddProjectPath = vi.fn((..._a: any[]) => {})
+const mockSetPathEnabled = vi.fn((..._a: any[]) => {})
+const mockRemoveProjectPath = vi.fn((..._a: any[]) => {})
+const mockAddSessionImport = vi.fn((..._a: any[]) => {})
 const mockUpdateTaskFields = vi.fn((..._a: any[]) => {})
 const mockSetTaskDdl = vi.fn((..._a: any[]) => {})
 const mockTaskDdls = new Map<string, string>()
@@ -31,6 +34,11 @@ const mockGetStore = vi.fn((..._a: any[]) => ({
   setArchived: vi.fn(),
   allProjectPaths: () => new Map(),
   addProjectPath: mockAddProjectPath,
+  setPathEnabled: mockSetPathEnabled,
+  removeProjectPath: mockRemoveProjectPath,
+  addSessionImport: mockAddSessionImport,
+  allSessionImportSet: () => new Set<string>(),
+  allBoundLaunchSessionIds: () => new Set<string>(),
   updateTaskFields: mockUpdateTaskFields,
   setTaskDdl: mockSetTaskDdl,
   allTaskDdls: () => mockTaskDdls,
@@ -188,6 +196,70 @@ describe('session-dirs API', () => {
       body: JSON.stringify({ cwd: '   ' }),
     })
     expect(r.status).toBe(400)
+  })
+})
+
+describe('货舱 path + session-import API', () => {
+  beforeEach(() => {
+    mockSetPathEnabled.mockClear(); mockRemoveProjectPath.mockClear()
+    mockAddSessionImport.mockClear(); mockSetAttach.mockClear(); mockAddProjectPath.mockClear()
+  })
+  const J = { 'Content-Type': 'application/json' }
+
+  it('toggles a path enabled flag', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/projects/path/toggle`, {
+      method: 'POST', headers: J, body: JSON.stringify({ projectId: 'P', cwd: '/x', enabled: false }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockSetPathEnabled).toHaveBeenCalledWith('P', '/x', false)
+  })
+
+  it('rejects a toggle without a boolean enabled', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/projects/path/toggle`, {
+      method: 'POST', headers: J, body: JSON.stringify({ projectId: 'P', cwd: '/x' }),
+    })
+    expect(r.status).toBe(400)
+  })
+
+  it('removes a registered path (collision-free POST, not shadowed by DELETE /projects/:id)', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/projects/path/remove`, {
+      method: 'POST', headers: J, body: JSON.stringify({ projectId: 'P', cwd: '/x' }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockRemoveProjectPath).toHaveBeenCalledWith('P', '/x')
+  })
+
+  it('add-path defaults enabled to true, honors explicit false', async () => {
+    const port = await listen()
+    const base = `http://localhost:${port}/api/projects/add-path`
+    await fetch(base, { method: 'POST', headers: J, body: JSON.stringify({ projectId: 'P', cwd: '/a' }) })
+    expect(mockAddProjectPath).toHaveBeenCalledWith('P', '/a', false, true)
+    await fetch(base, { method: 'POST', headers: J, body: JSON.stringify({ projectId: 'P', cwd: '/b', enabled: false }) })
+    expect(mockAddProjectPath).toHaveBeenCalledWith('P', '/b', false, false)
+  })
+
+  it('imports sessions into a project (addSessionImport + attach)', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/session-import`, {
+      method: 'POST', headers: J, body: JSON.stringify({ ids: ['s1', 's2'], projectId: 'P' }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockAddSessionImport).toHaveBeenCalledWith('s1')
+    expect(mockAddSessionImport).toHaveBeenCalledWith('s2')
+    expect(mockSetAttach).toHaveBeenCalledWith('s1', 'P', 'confirmed')
+  })
+
+  it('project-less import marks session_import but does NOT attach', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/session-import`, {
+      method: 'POST', headers: J, body: JSON.stringify({ ids: ['s9'] }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockAddSessionImport).toHaveBeenCalledWith('s9')
+    expect(mockSetAttach).not.toHaveBeenCalled()
   })
 })
 

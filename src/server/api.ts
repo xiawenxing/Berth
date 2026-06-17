@@ -329,8 +329,9 @@ api.post('/projects/path/toggle', (req, res) => {
   res.json({ ok: true })
 })
 
-// Remove a registered 货舱 path (does not touch any already-imported sessions).
-api.delete('/projects/path', (req, res) => {
+// Remove a registered 货舱 path (does not touch any already-imported sessions). POST (not DELETE)
+// with a two-segment path so it can't be shadowed by `DELETE /projects/:id` (:id="path").
+api.post('/projects/path/remove', (req, res) => {
   const { projectId, name, cwd } = req.body ?? {}
   const store = getStore()
   const id = typeof projectId === 'string' ? projectId : (typeof name === 'string' ? store.resolveProjectId(name) : null)

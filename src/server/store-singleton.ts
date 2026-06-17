@@ -43,7 +43,9 @@ export async function initData(): Promise<void> {
   migrateSessionDirsOnce(store)
   // M3: seed session_import from the OLD visible set so nothing vanishes when project_path /
   // launch_intent stop being import roots. Needs a real disk scan (LogicalSession[]), not the cache.
-  migrateSessionImportOnce(store, collectLogicalSessions(storeRoots()))
+  // Guard the scan at the call site so we don't pay a full 3-store disk scan on every boot post-migration.
+  if (!store.getSetting('session-import-migrated'))
+    migrateSessionImportOnce(store, collectLogicalSessions(storeRoots()))
 }
 
 /**
@@ -95,7 +97,12 @@ export function refresh(): LogicalSession[] {
   const all = collectLogicalSessions(storeRoots())
   cache = filterImportedSessions(all, importRoots(), curatedSessionIds())
   store.upsertSessions(cache)
-  reconcileLaunchIntents(store, cache)
+  // Reconcile over the UNFILTERED scan, not `cache`: a fresh codex launch is bound=0 / unattached /
+  // not yet session-imported, and its cwd is no longer an import root — so it's absent from `cache`.
+  // Passing `cache` would mean reconcile never finds it → never binds → never surfaces (deadlock).
+  // reconcile constrains candidates by intent cwd/cli/time internally, so the wider input is safe;
+  // once bound it enters allBoundLaunchSessionIds → curated → surfaces on the next refresh.
+  reconcileLaunchIntents(store, all)
   // Auto-pull sources configured for it (default is manual → no-op). Fire-and-forget; never blocks.
   for (const s of store.allDataSources()) {
     if (s.enabled && s.pullMode === 'auto') {

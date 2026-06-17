@@ -112,7 +112,7 @@ export const api = {
   togglePath: (projectId: string, cwd: string, enabled: boolean) =>
     send('POST', '/api/projects/path/toggle', { projectId, cwd, enabled }),
   removePath: (projectId: string, cwd: string) =>
-    send('DELETE', '/api/projects/path', { projectId, cwd }),
+    send('POST', '/api/projects/path/remove', { projectId, cwd }),
   // Session-grained import: mark sessions as in Berth's visible set (+ attach when projectId given).
   importSessions: (ids: string[], projectId?: string) =>
     send('POST', '/api/session-import', { ids, projectId }),

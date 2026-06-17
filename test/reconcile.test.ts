@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openStore } from '../src/db/store'
 import { reconcileLaunchIntents } from '../src/server/reconcile'
+import { filterImportedSessions, curatedSessionIds } from '../src/sessions'
 import type { LogicalSession } from '../src/types'
 
 /** Build a minimal LogicalSession for testing. */
@@ -24,6 +25,29 @@ describe('reconcileLaunchIntents', () => {
     expect(s.pendingIntents()).toEqual([])
     expect(s.todoKeyForSession('new')).toBe('rec_A')
     expect(s.getAttach('new')).toMatchObject({ projectId: 'P', state: 'confirmed' })
+  })
+
+  // Regression: refresh() must feed reconcile the UNFILTERED scan, not the import-filtered cache. A
+  // fresh codex launch is bound=0 / unattached / not session-imported, and its cwd is no longer an
+  // import root → it's filtered OUT of the cache. If reconcile got the filtered set it could never
+  // find the session → never bind → never surface (a permanent deadlock).
+  it('reconciles a fresh codex session that the import filter would exclude (must get the full scan)', () => {
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'i1', cli: 'codex', cwd: '/unrooted', projectId: 'P', todoKey: null, sessionId: null, createdAt: 1000, bound: false })
+    const all = [makeSession('fresh', '/unrooted', 1100)]
+    s.upsertSessions(all)
+    // refresh()'s real ordering: filter to import roots (none here) ∪ curated (none) → empty cache.
+    const cache = filterImportedSessions(all, [] /* importRoots: no session_import_dir */, curatedSessionIds(s.allPinnedSet(), s.allAttachMap(), s.edgesByTodo().values(), s.allSessionImportSet(), s.allBoundLaunchSessionIds()))
+    expect(cache.map(x => x.sessionId)).toEqual([]) // the fresh session is NOT in the cache
+
+    // Passing the filtered cache would NOT bind (documents the bug):
+    reconcileLaunchIntents(s, cache)
+    expect(s.pendingIntents().map(i => i.id)).toEqual(['i1'])
+
+    // Passing the full scan binds it; next refresh's curated set then includes it via bound-launch.
+    reconcileLaunchIntents(s, all)
+    expect(s.pendingIntents()).toEqual([])
+    expect(s.allBoundLaunchSessionIds().has('fresh')).toBe(true)
   })
 
   it('does not bind across cwd or to an already-bound session', () => {
