@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
 import { useData } from '@/lib/data'
 import { api } from '@/lib/api'
+import { toggleMode } from '@/lib/theme'
 
 interface ProjRow {
   id: string
@@ -14,19 +15,9 @@ interface ProjRow {
 
 function ThemeToggle() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
-  const toggle = () => {
-    const next = !dark
-    setDark(next)
-    document.documentElement.classList.toggle('dark', next)
-    document.documentElement.classList.toggle('light', !next)
-    try {
-      localStorage.setItem('berth-theme', next ? 'dark' : 'light')
-    } catch {
-      /* ignore */
-    }
-  }
+  const toggle = () => setDark(toggleMode().mode === 'dark')
   return (
-    <button onClick={toggle} className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground" title="切换主题">
+    <button onClick={toggle} className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground" title="切换日间/夜间">
       {dark ? <Sun size={15} /> : <Moon size={15} />}
     </button>
   )

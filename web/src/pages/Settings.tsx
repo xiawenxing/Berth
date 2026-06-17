@@ -1,17 +1,14 @@
 import { useState } from 'react'
 import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, FolderInput } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-const SCHEMES = [
-  { name: '午夜靛蓝', bg: '#141b2e', card: '#1f2940', brand: '#56b6ff' },
-  { name: '深空·高分层', bg: '#1b1e24', card: '#2a2f3a', brand: '#61afef' },
-  { name: '石墨暖灰', bg: '#1f1e1d', card: '#2c2a28', brand: '#e0a458' },
-  { name: 'OLED 近黑', bg: '#0d0f12', card: '#15181d', brand: '#67b3f0' },
-]
+import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
 
 export function Settings() {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
-  const [scheme, setScheme] = useState('午夜靛蓝')
+  const [scheme, setScheme] = useState<string>(() => getScheme().id)
+  const pick = (s: Scheme) => {
+    applyScheme(s)
+    setScheme(s.id)
+  }
   const [proactive, setProactive] = useState(true)
   const [autoTitle, setAutoTitle] = useState(true)
   const [dirs, setDirs] = useState(['~/Code/berth', '~/Code', '~/.config'])
@@ -24,25 +21,18 @@ export function Settings() {
       </header>
 
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5">
-        <Card icon={<Palette size={14} />} title="外观" hint="主题与配色方案">
-          <Row label="主题">
-            <Segmented value={theme} onChange={(v) => setTheme(v as 'dark' | 'light')} options={[['dark', '暗色'], ['light', '亮色']]} />
-          </Row>
-          <Row label="配色方案">
+        <Card icon={<Palette size={14} />} title="外观" hint="选择日间 / 夜间配色方案（即时生效）">
+          <Row label="日间">
             <div className="flex flex-wrap gap-2">
-              {SCHEMES.map((s) => (
-                <button
-                  key={s.name}
-                  onClick={() => setScheme(s.name)}
-                  className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]', scheme === s.name ? 'border-brand text-foreground' : 'border-border text-muted-foreground')}
-                >
-                  <span className="flex">
-                    <span className="h-3.5 w-3.5 rounded-l" style={{ background: s.bg }} />
-                    <span className="h-3.5 w-3.5" style={{ background: s.card }} />
-                    <span className="h-3.5 w-3.5 rounded-r" style={{ background: s.brand }} />
-                  </span>
-                  {s.name}
-                </button>
+              {LIGHT_SCHEMES.map((s) => (
+                <SchemeSwatch key={s.id} s={s} active={scheme === s.id} onPick={() => pick(s)} />
+              ))}
+            </div>
+          </Row>
+          <Row label="夜间">
+            <div className="flex flex-wrap gap-2">
+              {DARK_SCHEMES.map((s) => (
+                <SchemeSwatch key={s.id} s={s} active={scheme === s.id} onPick={() => pick(s)} />
               ))}
             </div>
           </Row>
@@ -116,6 +106,30 @@ export function Settings() {
         </Card>
       </div>
     </div>
+  )
+}
+
+function SchemeSwatch({ s, active, onPick }: { s: Scheme; active: boolean; onPick: () => void }) {
+  const bg = s.vars['--color-background']
+  const card = s.vars['--color-card']
+  const brand = s.vars['--color-brand']
+  const border = s.vars['--color-border']
+  return (
+    <button
+      onClick={onPick}
+      className={cn(
+        'flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]',
+        active ? 'border-brand text-foreground ring-1 ring-brand/40' : 'border-border text-muted-foreground hover:text-foreground',
+      )}
+    >
+      <span className="flex overflow-hidden rounded" style={{ outline: `1px solid ${border}` }}>
+        <span className="h-3.5 w-3.5" style={{ background: bg }} />
+        <span className="h-3.5 w-3.5" style={{ background: card }} />
+        <span className="h-3.5 w-3.5" style={{ background: brand }} />
+      </span>
+      {s.name}
+      {active && <span className="text-brand">✓</span>}
+    </button>
   )
 }
 
