@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css'
 export interface LaunchSpec {
   cli: string
   cwd: string
+  launchToken?: string
   projectId?: string | null
   todoKey?: string | null
   prompt?: string
@@ -58,6 +59,7 @@ export function Terminal({
       qs.set('new', '1')
       qs.set('cli', launch.cli)
       qs.set('cwd', launch.cwd)
+      if (launch.launchToken) qs.set('launchToken', launch.launchToken)
       if (launch.projectId) qs.set('projectId', launch.projectId)
       if (launch.todoKey) qs.set('todoKey', launch.todoKey)
       if (launch.prompt) qs.set('prompt', launch.prompt)
@@ -113,7 +115,7 @@ export function Terminal({
       term.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, initialInput, launch?.cli, launch?.cwd, launch?.prompt, launch?.projectId, launch?.todoKey])
+  }, [sessionId, initialInput, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey])
 
   return <div ref={hostRef} className="h-full w-full" />
 }

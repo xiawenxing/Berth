@@ -24,6 +24,44 @@ import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
 
 type Store = ReturnType<typeof getStore>
 const INJECT_DIR = join(berthHome(), 'inject')
+const FRESH_LAUNCH_DEDUPE_TTL_MS = 60_000
+
+interface FreshLaunchResult {
+  launchKey: string
+  bound: boolean
+  cli: AgentCli
+  cwd: string
+}
+
+const freshLaunchDedupe = new Map<string, Promise<FreshLaunchResult>>()
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+function rememberFreshLaunch(token: string, promise: Promise<FreshLaunchResult>) {
+  freshLaunchDedupe.set(token, promise)
+  promise
+    .then(() => {
+      const t = setTimeout(() => {
+        if (freshLaunchDedupe.get(token) === promise) freshLaunchDedupe.delete(token)
+      }, FRESH_LAUNCH_DEDUPE_TTL_MS)
+      t.unref?.()
+    })
+    .catch(() => {
+      if (freshLaunchDedupe.get(token) === promise) freshLaunchDedupe.delete(token)
+    })
+}
+
+function sendLaunchFrame(ws: WebSocket, r: FreshLaunchResult) {
+  try { ws.send(JSON.stringify({ __berth: 'launched', sessionId: r.launchKey, bound: r.bound, cli: r.cli, cwd: r.cwd })) } catch {}
+}
 
 export interface FreshLaunchParams {
   cli: AgentCli
@@ -231,6 +269,7 @@ export function createPtyWss(): WebSocketServer {
 /** Fresh-launch branch: mint id, build manifest, record intent/edge/attach, spawn, and bridge. */
 async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) {
   const cli = url.searchParams.get('cli') as AgentCli | null
+  const launchToken = url.searchParams.get('launchToken') || null
   const todoKey = url.searchParams.get('todoKey') || null
   const projectId = url.searchParams.get('projectId') || null
   const explicitPrompt = url.searchParams.get('prompt') || undefined
@@ -255,6 +294,32 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   if (!agentEntry?.enabled) {
     try { ws.send(`\r\n[berth] agent "${cli}" is disabled\r\n`) } catch {} ; ws.close(); return
   }
+
+  if (launchToken) {
+    const existing = freshLaunchDedupe.get(launchToken)
+    if (existing) {
+      try {
+        const result = await existing
+        sendLaunchFrame(ws, result)
+        if (!attachViewer(result.launchKey, ws)) {
+          try { ws.send('\r\n[berth] launch exists but live pty is gone\r\n') } catch {}
+          ws.close()
+        }
+      } catch (e: any) {
+        try { ws.send(`\r\n[berth] launch failed: ${e?.message ?? e}\r\n`) } catch {}
+        ws.close()
+      }
+      return
+    }
+  }
+
+  let launchDeferred: ReturnType<typeof deferred<FreshLaunchResult>> | null = null
+  if (launchToken) {
+    launchDeferred = deferred<FreshLaunchResult>()
+    rememberFreshLaunch(launchToken, launchDeferred.promise)
+  }
+
+  try {
   const locale = getLocale(store)
   // Tasks are read from the canonical internal store (instant; no external latency).
   const docsRoot = getDocsRoot(store)
@@ -370,6 +435,12 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // this frame, and sending it earlier races the registry and can attach the UI to stale transcript
   // state instead of the just-launched process.
   const launchKey = plan.sessionId ?? plan.intent.id
-  try { ws.send(JSON.stringify({ __berth: 'launched', sessionId: launchKey, bound: !!plan.sessionId, cli, cwd })) } catch {}
+  const launchResult = { launchKey, bound: !!plan.sessionId, cli, cwd }
+  launchDeferred?.resolve(launchResult)
+  sendLaunchFrame(ws, launchResult)
   attachViewer(plan.sessionId ?? plan.intent.id, ws)
+  } catch (e) {
+    launchDeferred?.reject(e)
+    throw e
+  }
 }

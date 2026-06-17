@@ -55,6 +55,9 @@ export function LaunchDialog() {
       launch: {
         cli: 'claude',
         cwd,
+        // Stable across the fresh Terminal's dev StrictMode effect replay; the server uses it to
+        // attach duplicate /pty?new=1 requests to the first live PTY instead of spawning twice.
+        launchToken: crypto.randomUUID(),
         projectId: launch.projectId,
         todoKey: launch.todoKey,
         prompt: dest === 'free' ? freeText || undefined : undefined,

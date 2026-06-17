@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 export interface LaunchSpec {
   cli: string
   cwd: string
+  launchToken?: string
   projectId?: string | null
   todoKey?: string | null
   prompt?: string
