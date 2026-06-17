@@ -24,10 +24,16 @@ let taskSeq = 100
 export function ProjectWorkspace() {
   const { id = '' } = useParams()
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
-  const { projects, tasks: apiTasks, sessions, statuses, priorities, reload } = useData()
+  const { projects, tasks: apiTasks, sessions, statuses, priorities, reload, resync } = useData()
   const live = useLive()
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [ctxDoc, setCtxDoc] = useState<ContextDocTarget | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const doResync = () => {
+    if (syncing) return
+    setSyncing(true)
+    resync().finally(() => setSyncing(false))
+  }
 
   const project = projects.find((p) => p.id === id)
   const projName = project?.name ?? id
@@ -293,7 +299,7 @@ export function ProjectWorkspace() {
           />
         </section>
 
-        <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onOpen={openRow} onPin={onPin} />
+        <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onResync={doResync} syncing={syncing} onOpen={openRow} onPin={onPin} />
         <CargoDefaults dirs={SAMPLE_CARGO} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={reload} />
       </div>
 

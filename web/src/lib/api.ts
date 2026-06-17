@@ -70,6 +70,10 @@ export const api = {
   projects: () => getJSON<{ projects: ApiProject[] }>('/api/projects'),
   todos: () => getJSON<{ todos: ApiTask[] }>('/api/todos'),
   sessions: () => getJSON<ApiSession[]>('/api/sessions'),
+  // Re-scan the CLI session stores on disk into the server cache. `GET /api/sessions` only
+  // returns that cache, so without this a session created after server start (launched from a
+  // task, or started by hand in an imported dir) never surfaces. Returns the new session count.
+  refresh: () => send('POST', '/api/refresh') as Promise<{ ok: boolean; count: number }>,
   // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
   settings: () => getJSON<{ priorities?: string[]; statuses?: string[] }>('/api/settings'),
   saveSettings: (patch: { priorities?: string[]; statuses?: string[] }) => send('POST', '/api/settings', patch),

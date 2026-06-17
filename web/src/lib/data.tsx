@@ -16,7 +16,11 @@ interface DataState {
   statuses: string[] // ordered vocabulary, from Settings (drives the kanban columns + status menu)
   loading: boolean
   error: string | null
+  /** Re-read the server cache (cheap; does NOT re-scan disk). */
   reload: () => void
+  /** Re-scan the CLI session stores on disk (POST /api/refresh) then re-read. Use after a fresh
+   *  launch or to pick up sessions started by hand — `reload()` alone can't surface a new session. */
+  resync: () => Promise<void>
 }
 
 const Ctx = createContext<DataState | null>(null)
@@ -54,7 +58,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [nonce])
 
   const value = useMemo<DataState>(
-    () => ({ projects, tasks, sessions, priorities, statuses, loading, error, reload: () => setNonce((n) => n + 1) }),
+    () => ({
+      projects,
+      tasks,
+      sessions,
+      priorities,
+      statuses,
+      loading,
+      error,
+      reload: () => setNonce((n) => n + 1),
+      resync: async () => {
+        // Best-effort disk re-scan; even if it fails, refetch so the cache view is current.
+        await api.refresh().catch(() => {})
+        setNonce((n) => n + 1)
+      },
+    }),
     [projects, tasks, sessions, priorities, statuses, loading, error],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

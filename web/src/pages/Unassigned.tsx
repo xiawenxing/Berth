@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon } from 'lucide-react'
+import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { SessionChat } from '@/components/SessionChat'
@@ -28,10 +28,16 @@ function match(s: ApiSession, q: string) {
 }
 
 export function Unassigned() {
-  const { sessions, projects, reload } = useData()
+  const { sessions, projects, reload, resync } = useData()
   const live = useLive()
   const [selId, setSelId] = useState<string | null>(null)
   const [q, setQ] = useState('')
+  const [syncing, setSyncing] = useState(false)
+  const doResync = () => {
+    if (syncing) return
+    setSyncing(true)
+    resync().finally(() => setSyncing(false))
+  }
   // When the user sends a follow-up, swap the right pane from the chat transcript to a live resumed
   // terminal that auto-submits the message. Reset when a different session is selected.
   const [resumeInput, setResumeInput] = useState<string | null>(null)
@@ -98,6 +104,14 @@ export function Unassigned() {
               className="flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-text-dim"
             />
           </div>
+          <button
+            onClick={doResync}
+            disabled={syncing}
+            className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
+            title="同步会话（重新扫描磁盘）"
+          >
+            <RefreshCw size={14} className={cn(syncing && 'animate-spin')} />
+          </button>
           <button className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent" title="导入目录">
             <FolderInput size={14} />
           </button>

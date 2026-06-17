@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Drawer } from './ui/Overlay'
 import { SessionChat } from './SessionChat'
 import { SessionComposer } from './SessionComposer'
 import { Terminal } from './Terminal'
 import { CliBadge } from './workspace/TaskCard'
 import { useUI } from '@/lib/ui-store'
+import { useData } from '@/lib/data'
 import { SHIP_LABEL } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -16,10 +17,20 @@ import { cn } from '@/lib/utils'
  */
 export function SessionDrawer() {
   const { drawer, closeDrawer } = useUI()
+  const { resync } = useData()
   const [running, setRunning] = useState(false)
   // When the user sends a follow-up, switch the body from the chat transcript to a live resumed
   // terminal that auto-submits this text. Reset whenever a different session opens.
   const [resumeInput, setResumeInput] = useState<string | null>(null)
+  // A fresh launch's session jsonl is written when the CLI initializes/takes its first turn,
+  // which lags the launch by a beat. `GET /api/sessions` serves a disk-scan cache, so re-scan a
+  // few times after launch to let the new session surface in the list (and rebind links/attach).
+  const resyncTimers = useRef<number[]>([])
+  useEffect(() => () => resyncTimers.current.forEach((t) => clearTimeout(t)), [])
+  const resyncAfterLaunch = () => {
+    resyncTimers.current.forEach((t) => clearTimeout(t))
+    resyncTimers.current = [800, 2500, 6000].map((ms) => window.setTimeout(() => void resync(), ms))
+  }
 
   // Reflect 在航 state in the header pill each time a different session opens.
   useEffect(() => {
@@ -61,7 +72,7 @@ export function SessionDrawer() {
                 </>
               )
             ) : drawer.launch ? (
-              <Terminal key="launch" launch={drawer.launch} />
+              <Terminal key="launch" launch={drawer.launch} onLaunched={resyncAfterLaunch} />
             ) : null}
           </div>
         </>

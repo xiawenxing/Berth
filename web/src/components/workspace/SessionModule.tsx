@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Pin, ChevronDown, Anchor, Terminal, Play, Link2 } from 'lucide-react'
+import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SHIP_LABEL, type SessionRow, type CwdGroup, type ShipStatus } from '@/lib/types'
 import { CliBadge } from './TaskCard'
@@ -153,12 +153,16 @@ export function SessionModule({
   pin,
   groups,
   onLaunch,
+  onResync,
+  syncing,
   onOpen,
   onPin,
 }: {
   pin: SessionRow[]
   groups: CwdGroup[]
   onLaunch?: () => void
+  onResync?: () => void
+  syncing?: boolean
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
 }) {
@@ -171,6 +175,16 @@ export function SessionModule({
         <h2 className="text-[13px] font-semibold text-muted-foreground">会话</h2>
         <span className="rounded-[10px] bg-muted px-2 py-px text-[11px] font-medium tracking-wide text-muted-foreground">船只</span>
         <span className="flex-1" />
+        {onResync && (
+          <button
+            onClick={onResync}
+            disabled={syncing}
+            title="同步会话（重新扫描磁盘）"
+            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] text-muted-foreground hover:bg-accent disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={cn(syncing && 'animate-spin')} /> 同步
+          </button>
+        )}
         <button
           onClick={onLaunch}
           className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] text-muted-foreground hover:bg-accent hover:text-success"
