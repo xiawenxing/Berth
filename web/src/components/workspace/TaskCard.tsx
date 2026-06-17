@@ -91,7 +91,8 @@ export function TaskCard({
   const [menuOpen, setMenuOpen] = useState(false)
   const done = task.status === '已完成'
   const cancelled = task.status === '已取消'
-  const expandable = active && !done && !cancelled
+  const isLive = !done && !cancelled
+  const expandable = active && isLive
   const linkN = task.links?.length ?? 0
   const runningOrUnread = task.links?.find((l) => l.status === 'sail' || l.status === 'dock')
   const [dragging, setDragging] = useState(false)
@@ -115,52 +116,57 @@ export function TaskCard({
       onDragEnd={() => setDragging(false)}
       onClick={onCardClick}
       className={cn(
-        'group relative overflow-hidden rounded-md border border-border bg-card pl-3 pr-2.5 py-1.5 active:cursor-grabbing',
+        'kanban-card group relative overflow-hidden rounded-sm border border-border shadow-sm active:cursor-grabbing hover:border-muted-foreground',
         expandable || !active ? 'cursor-pointer' : 'cursor-grab',
         open && 'ring-1 ring-brand/40',
-        dragging && 'opacity-50',
+        dragging && 'opacity-45',
       )}
     >
       {/* 4px priority left-bar */}
       <button
-        className={cn('absolute left-0 top-0 h-full w-1', PRIO_BAR[task.priority])}
+        className={cn('absolute left-0 top-0 bottom-0 w-1', PRIO_BAR[task.priority])}
         title={`优先级 ${task.priority}`}
         onClick={(e) => e.stopPropagation()}
       />
 
-      <div className="flex items-center gap-1.5">
-        {runningOrUnread && <ShipGlyph status={runningOrUnread.status} />}
+      {/* head (title row) — padding lives here, not on the card, for tight density */}
+      <div className={cn('flex items-center gap-1.5 pr-2.5 pl-[13px]', active ? 'py-[7px]' : 'py-[6px]')}>
+        {/* status glyph only in the active column for live cards */}
+        {active && isLive && runningOrUnread && <ShipGlyph status={runningOrUnread.status} />}
         <span
           className={cn(
-            'min-w-0 flex-1 truncate text-[13px] font-semibold text-card-foreground',
+            'min-w-0 flex-1 text-[13px] font-semibold leading-[1.35] text-card-foreground',
+            active && isLive ? 'line-clamp-2' : 'line-clamp-1',
             done && 'font-medium text-muted-foreground',
             cancelled && 'font-medium text-text-dim line-through',
           )}
         >
           {task.title}
         </span>
-        {/* AI refine indicator (sparkle twinkle) */}
+        {/* AI refine indicator */}
         {task.summary === REFINING && (
           <span className="inline-flex flex-none items-center gap-1 text-[10.5px] text-muted-foreground">
             <Sparkles size={11} className="spk-twinkle" /> 总结中…
           </span>
         )}
-        {/* ▷ 启动 — icon-only, colored, collapse-only */}
-        {!open && active && task.summary !== REFINING && (
+        {/* ▷启动 — icon-only, colored, collapse-only, live cards */}
+        {!open && active && isLive && task.summary !== REFINING && (
           <button
             title="为此任务起会话"
-            className="inline-flex h-[20px] w-[20px] flex-none items-center justify-center rounded text-success hover:bg-secondary hover:text-brand"
+            className="inline-flex h-[18px] w-[18px] flex-none items-center justify-center rounded text-success hover:bg-secondary hover:text-brand"
             onClick={(e) => {
               e.stopPropagation()
               onLaunch?.(task.title)
             }}
           >
-            <Play size={14} className="fill-current" />
+            <Play size={13} className="fill-current" />
           </button>
         )}
-        {expandable && <ChevronDown size={14} className={cn('flex-none text-text-dim transition-transform', open && 'rotate-180')} />}
-        {/* done/cancelled cards keep a compact hover ⋯ instead of a footer (#1) */}
-        {active && (done || cancelled) && (
+        {active && expandable && (
+          <ChevronDown size={14} className={cn('flex-none text-text-dim transition-transform', open && 'rotate-180')} />
+        )}
+        {/* done/cancelled cards: hover ⋯ in the head (no footer) */}
+        {(done || cancelled) && (
           <div className="relative flex-none">
             <button
               className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
@@ -178,19 +184,23 @@ export function TaskCard({
         )}
       </div>
 
-      {/* footer — only for live tasks (done/cancelled cards stay single-line compact, #1) */}
-      {active && !done && !cancelled && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          {linkN > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground">
+      {/* footer — live cards only. Active: full (link · glyph · ddl · ⋯). Inactive: compact (set-ddl + ⋯). */}
+      {isLive && (
+        <div className={cn('flex items-center gap-1.5 pr-2 pl-[13px] pb-[6px]', active ? '-mt-0.5' : '-mt-1')}>
+          {active && linkN > 0 && (
+            <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-px text-[10.5px] text-muted-foreground">
               <Link2 size={11} /> {linkN}
             </span>
           )}
-          <DdlChip ddl={task.ddl} />
+          {/* show ddl: active shows even unset hint; inactive only when set */}
+          {(active || task.ddl) && <DdlChip ddl={task.ddl} />}
           <span className="flex-1" />
           <div className="relative">
             <button
-              className="rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+              className={cn(
+                'rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground',
+                !active && 'opacity-0 transition-opacity group-hover:opacity-100',
+              )}
               onClick={(e) => {
                 e.stopPropagation()
                 setMenuOpen((v) => !v)
@@ -212,9 +222,9 @@ export function TaskCard({
         </div>
       )}
 
-      {/* expanded: summary + linked sessions */}
+      {/* expanded: summary + linked sessions — full-bleed block with a top border (design .kcard-exp) */}
       {open && (
-        <div className="mt-2 rounded-md bg-brand/[0.04] p-2">
+        <div className="border-t border-border bg-brand/[0.04] px-[13px] py-2.5">
           {task.summary && <p className="text-[12px] leading-relaxed text-muted-foreground">{task.summary}</p>}
           {linkN > 0 ? (
             <div className="mt-2 flex flex-col gap-1">

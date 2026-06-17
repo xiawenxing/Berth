@@ -82,6 +82,11 @@ html.light {
   ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
 }
 
+/* Kanban card surface — recessed against the column (bg-card) for clear separation,
+   matching the design: darker than the column in dark mode, a light gray in light mode. */
+.kanban-card { background: var(--color-background); }
+html.light .kanban-card { background: var(--color-sidebar-accent); }
+
 /* AI loading: sparkle twinkle (used for 总结中 / 生成中 / 整理中 …) */
 @keyframes spk-twinkle {
   0%, 100% { opacity: 0.35; transform: scale(0.86) rotate(-8deg); }
