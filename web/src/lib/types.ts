@@ -4,10 +4,10 @@
 // Priority is whatever the user configured in Settings (ordered list, high→low). Kept loose so
 // custom vocabularies flow through; color/order come from the list's rank (see lib/priority.ts).
 export type Priority = string
-export type TaskStatus = '待办' | '进行中' | '待评估' | '已完成' | '已取消'
+// Status, like Priority, is a user-configurable vocabulary (ordered list from Settings). Kept
+// loose; the kanban columns + dot/icon come from that list (see lib/status.ts, lib/data.tsx).
+export type TaskStatus = string
 export type ShipStatus = 'sail' | 'dock' | 'moored' // 在航 / 靠岸·待查收 / 已停泊
-
-export const STATUS_ORDER: TaskStatus[] = ['待办', '进行中', '待评估', '已完成', '已取消']
 
 export interface LinkedSession {
   cli: string

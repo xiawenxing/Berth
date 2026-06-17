@@ -8,7 +8,8 @@ import { SAMPLE_CARGO } from '@/data/sample'
 import { useUI } from '@/lib/ui-store'
 import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
 import { ProjectSummaryDialog, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
-import { useData, relTime, shortCwd, normStatus, normPriority } from '@/lib/data'
+import { useData, relTime, shortCwd, normPriority } from '@/lib/data'
+import { isDoneStatus, statusKind } from '@/lib/status'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
 import type { Task, SessionRow, CwdGroup, TaskStatus } from '@/lib/types'
@@ -39,7 +40,7 @@ export function ProjectWorkspace() {
         .map((t) => ({
           id: t.id,
           title: t.title,
-          status: normStatus(t.status),
+          status: t.status, // raw configured status; Kanban resolves it to a column
           priority: normPriority(t.priority),
           summary: t.progress ?? undefined,
           ddl: t.ddl ?? undefined,
@@ -77,9 +78,9 @@ export function ProjectWorkspace() {
       .map(([cwd, rows]) => ({ cwd: shortCwd(cwd), tag: '上下文', sessions: rows }))
   }, [projSessions, live.activity])
 
-  const done = tasks.filter((t) => t.status === '已完成').length
+  const done = tasks.filter((t) => isDoneStatus(t.status)).length
   const total = tasks.length || 1
-  const inProgress = tasks.filter((t) => t.status === '进行中').length
+  const inProgress = tasks.filter((t) => statusKind(t.status) === 'doing').length
   const pct = Math.round((done / total) * 100)
 
   // 港湾概览 + 最近活动, derived from real sessions/tasks.
@@ -90,7 +91,7 @@ export function ProjectWorkspace() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })()
   const todayTasks = apiTasks.filter((t) => t.projectId === id && t.ddl === todayISO)
-  const todayDone = todayTasks.filter((t) => normStatus(t.status) === '已完成').length
+  const todayDone = todayTasks.filter((t) => isDoneStatus(t.status)).length
   const lastActivity = projSessions.length ? relTime(Math.max(...projSessions.map((s) => s.updatedAt))) : '—'
 
   // Resolve a real absolute cwd for a fresh launch: project home / a registered path /

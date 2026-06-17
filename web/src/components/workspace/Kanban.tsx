@@ -1,15 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { STATUS_ORDER, type Priority, type Task, type TaskStatus } from '@/lib/types'
+import { useData } from '@/lib/data'
+import { resolveColumn, statusMeta } from '@/lib/status'
+import { type Priority, type Task, type TaskStatus } from '@/lib/types'
 import { TaskCard } from './TaskCard'
 
-const COL_DOT: Record<TaskStatus, string> = {
-  待办: 'bg-muted-foreground',
-  进行中: 'bg-priority',
-  待评估: 'bg-purple',
-  已完成: 'bg-success',
-  已取消: 'bg-muted-foreground',
-}
+const pickDefaultActive = (statuses: string[]) =>
+  statuses.includes('进行中') ? '进行中' : statuses[Math.min(1, statuses.length - 1)] ?? statuses[0] ?? ''
 
 export function Kanban({
   tasks,
@@ -28,19 +25,26 @@ export function Kanban({
   onRename?: (taskId: string, title: string) => void
   onDelete?: (taskId: string) => void
 }) {
-  const [active, setActive] = useState<TaskStatus>('进行中') // default active column
-  const [dropOver, setDropOver] = useState<TaskStatus | null>(null)
+  const { statuses } = useData()
+  const [active, setActive] = useState<string>(() => pickDefaultActive(statuses))
+  const [dropOver, setDropOver] = useState<string | null>(null)
+
+  // Keep the active column valid if the configured vocabulary loads/changes.
+  useEffect(() => {
+    if (!statuses.includes(active)) setActive(pickDefaultActive(statuses))
+  }, [statuses, active])
 
   return (
     <div className="flex h-[700px] max-h-[700px] w-full items-stretch gap-3">
-      {STATUS_ORDER.map((status) => {
-        const items = tasks.filter((t) => t.status === status)
+      {statuses.map((status) => {
+        const items = tasks.filter((t) => resolveColumn(t.status, statuses) === status)
         const isActive = status === active
         const isDropOver = dropOver === status
+        const meta = statusMeta(status)
         return (
           <div
             key={status}
-            // Click anywhere in an inactive column (header, body, empty area) to activate+widen it (#2).
+            // Click anywhere in an inactive column (header, body, empty area) to activate+widen it.
             onClick={() => !isActive && setActive(status)}
             onDragOver={(e) => {
               e.preventDefault()
@@ -58,8 +62,7 @@ export function Kanban({
               if (id) onMove?.(id, status)
             }}
             className={cn(
-              // overflow-hidden clips the header's square top corners to the column's rounded-md
-              // (otherwise the header bg pokes past the rounded border — the "corners not continuous" bug).
+              // overflow-hidden clips the header's square top corners to the column's rounded-md.
               'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card transition-[flex-grow] duration-300',
               isActive ? 'flex-[2.2] border-brand/45' : 'flex-1',
               isDropOver && 'border-brand ring-2 ring-brand/60',
@@ -72,7 +75,7 @@ export function Kanban({
                 isActive && 'text-accent-foreground',
               )}
             >
-              <span className={cn('h-1.5 w-1.5 flex-none rounded-full', COL_DOT[status])} />
+              <span className={cn('h-1.5 w-1.5 flex-none rounded-full', meta.dot)} />
               <span className="truncate">{status}</span>
               <span className="ml-auto flex-none rounded-full bg-muted px-1.5 text-[11px] font-medium text-text-dim">
                 {items.length}

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, type ApiProject, type ApiSession, type ApiTask } from './api'
+import { DEFAULT_STATUSES } from './status'
 
 // One fetch of the whole dataset, shared across pages via context. Refetchable.
 // Live running/unread status (from the /status WS + local lastSeen) is a follow-up;
@@ -12,6 +13,7 @@ interface DataState {
   tasks: ApiTask[]
   sessions: ApiSession[]
   priorities: string[] // ordered high→low, from Settings (drives the priority color ramp + menu)
+  statuses: string[] // ordered vocabulary, from Settings (drives the kanban columns + status menu)
   loading: boolean
   error: string | null
   reload: () => void
@@ -24,6 +26,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<ApiTask[]>([])
   const [sessions, setSessions] = useState<ApiSession[]>([])
   const [priorities, setPriorities] = useState<string[]>(DEFAULT_PRIORITIES)
+  const [statuses, setStatuses] = useState<string[]>(DEFAULT_STATUSES)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
@@ -38,7 +41,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setProjects(p.projects ?? [])
         setTasks(t.todos ?? [])
         setSessions((s ?? []).filter((x) => !x.deleted))
-        setPriorities((cfg as { priorities?: string[] }).priorities?.length ? (cfg as { priorities: string[] }).priorities : DEFAULT_PRIORITIES)
+        const c = cfg as { priorities?: string[]; statuses?: string[] }
+        setPriorities(c.priorities?.length ? c.priorities : DEFAULT_PRIORITIES)
+        setStatuses(c.statuses?.length ? c.statuses : DEFAULT_STATUSES)
         setError(null)
       })
       .catch((e) => alive && setError(String(e)))
@@ -49,8 +54,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [nonce])
 
   const value = useMemo<DataState>(
-    () => ({ projects, tasks, sessions, priorities, loading, error, reload: () => setNonce((n) => n + 1) }),
-    [projects, tasks, sessions, priorities, loading, error],
+    () => ({ projects, tasks, sessions, priorities, statuses, loading, error, reload: () => setNonce((n) => n + 1) }),
+    [projects, tasks, sessions, priorities, statuses, loading, error],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
@@ -77,14 +82,6 @@ export function shortCwd(cwd?: string | null): string {
   if (!cwd) return ''
   const home = '/Users/'
   return cwd.startsWith(home) ? '~/' + cwd.split('/').slice(3).join('/') : cwd
-}
-
-const KNOWN_STATUS = new Set(['待办', '进行中', '待评估', '已完成', '已取消'])
-/** Map any backend status onto the v7 board columns (unknown → 进行中 bucket-ish: 待评估). */
-export function normStatus(s: string): '待办' | '进行中' | '待评估' | '已完成' | '已取消' {
-  if (KNOWN_STATUS.has(s)) return s as any
-  if (s === '阻塞' || s === '合并中' || s === '验证中') return '进行中'
-  return '待办'
 }
 
 /** Pass the configured priority through as-is (ranked/colored by its position in the Settings

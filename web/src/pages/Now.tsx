@@ -3,8 +3,9 @@ import { Pin, Play, ChevronDown, CalendarClock, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { useUI } from '@/lib/ui-store'
-import { useData, normStatus, shortCwd } from '@/lib/data'
+import { useData, shortCwd } from '@/lib/data'
 import { priorityColors, priorityRank } from '@/lib/priority'
+import { isDoneStatus } from '@/lib/status'
 import { useLive } from '@/lib/live'
 import type { ShipStatus } from '@/lib/types'
 import type { ApiSession, ApiTask } from '@/lib/api'
@@ -32,7 +33,7 @@ export function Now() {
   // 今日交付: tasks whose ddl is today's local date, across all projects.
   const today = todayISO()
   const todayTasks = useMemo(() => tasks.filter((t) => t.ddl === today), [tasks, today])
-  const doneN = todayTasks.filter((t) => normStatus(t.status) === '已完成').length
+  const doneN = todayTasks.filter((t) => isDoneStatus(t.status)).length
 
   // Ship sections: real sessions across all projects, project-tagged.
   const pinShips = useMemo(() => sessions.filter((s) => s.pinned), [sessions])
@@ -159,7 +160,7 @@ function TaskRow({
   const live = useLive()
   const { priorities } = useData()
   const { rank, total } = priorityRank(t.priority, priorities)
-  const delivered = normStatus(t.status) === '已完成'
+  const delivered = isDoneStatus(t.status)
   const linked = (t.sessions ?? []).map((id) => resolve(id)).filter((s): s is ApiSession => !!s)
 
   return (

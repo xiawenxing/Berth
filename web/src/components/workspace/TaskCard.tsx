@@ -1,23 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  Play,
-  ChevronDown,
-  Link2,
-  MoreHorizontal,
-  CalendarClock,
-  Sparkles,
-  Folder,
-  Search,
-  ListChecks,
-  X,
-  Pencil,
-  Trash2,
-} from 'lucide-react'
+import { Play, ChevronDown, Link2, MoreHorizontal, CalendarClock, Sparkles, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { priorityColors, priorityRank } from '@/lib/priority'
-import { STATUS_ORDER, type Priority, type Task, type ShipStatus, type TaskStatus } from '@/lib/types'
+import { isCancelledStatus, isDoneStatus, statusMeta } from '@/lib/status'
+import { type Priority, type Task, type ShipStatus, type TaskStatus } from '@/lib/types'
 
 const REFINING = '港务助手正在总结进展摘要…'
 
@@ -81,10 +69,10 @@ export function TaskCard({
   onOpenSession?: (title: string) => void
   onActivate?: () => void
 } & MenuActions) {
-  const { priorities } = useData()
+  const { priorities, statuses } = useData()
   const [open, setOpen] = useState(false)
-  const done = task.status === '已完成'
-  const cancelled = task.status === '已取消'
+  const done = isDoneStatus(task.status)
+  const cancelled = isCancelledStatus(task.status)
   const isLive = !done && !cancelled
   const expandable = active && isLive
   const linkN = task.links?.length ?? 0
@@ -174,6 +162,7 @@ export function TaskCard({
           <MoreMenu
             task={task}
             priorities={priorities}
+            statuses={statuses}
             className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
             onSetStatus={onSetStatus}
             onSetPriority={onSetPriority}
@@ -197,6 +186,7 @@ export function TaskCard({
           <MoreMenu
             task={task}
             priorities={priorities}
+            statuses={statuses}
             className="rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
             onSetStatus={onSetStatus}
             onSetPriority={onSetPriority}
@@ -248,14 +238,6 @@ export function CliBadge({ cli }: { cli: string }) {
   const tone =
     cli === 'claude' ? 'bg-brand/15 text-brand' : cli === 'codex' ? 'bg-success/15 text-success' : 'bg-purple/15 text-purple'
   return <span className={cn('flex-none rounded px-1.5 py-0.5 text-[10.5px] font-medium', tone)}>{cli}</span>
-}
-
-const STATUS_ICON: Record<TaskStatus, typeof Folder> = {
-  待办: Folder,
-  进行中: Play,
-  待评估: Search,
-  已完成: ListChecks,
-  已取消: X,
 }
 
 // ── shared popover primitive ────────────────────────────────────────────────
@@ -407,7 +389,7 @@ function PrioChip({ task, priorities, onSetPriority }: { task: Task; priorities:
 
 // ── the ⋯ overflow menu ──────────────────────────────────────────────────────
 
-function MoreMenu({ task, priorities, className, ...actions }: { task: Task; priorities: string[]; className: string } & MenuActions) {
+function MoreMenu({ task, priorities, statuses, className, ...actions }: { task: Task; priorities: string[]; statuses: string[]; className: string } & MenuActions) {
   const btnRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   return (
@@ -421,7 +403,7 @@ function MoreMenu({ task, priorities, className, ...actions }: { task: Task; pri
     >
       <MoreHorizontal size={13} />
       {open && (
-        <TaskMenu task={task} priorities={priorities} anchor={btnRef} onClose={() => setOpen(false)} {...actions} />
+        <TaskMenu task={task} priorities={priorities} statuses={statuses} anchor={btnRef} onClose={() => setOpen(false)} {...actions} />
       )}
     </button>
   )
@@ -431,6 +413,7 @@ function MoreMenu({ task, priorities, className, ...actions }: { task: Task; pri
 function TaskMenu({
   task,
   priorities,
+  statuses,
   anchor,
   onClose,
   onSetStatus,
@@ -440,6 +423,7 @@ function TaskMenu({
 }: {
   task: Task
   priorities: string[]
+  statuses: string[]
   anchor: RefObject<HTMLButtonElement | null>
   onClose: () => void
 } & MenuActions) {
@@ -451,8 +435,8 @@ function TaskMenu({
   return (
     <AnchoredPopover anchor={anchor} width={176} onClose={onClose}>
       <MenuLabel>状态 — 移动到列</MenuLabel>
-      {STATUS_ORDER.map((s) => {
-        const Icon = STATUS_ICON[s]
+      {statuses.map((s) => {
+        const Icon = statusMeta(s).icon
         return (
           <MenuItem key={s} onClick={pick(() => onSetStatus?.(task.id, s))}>
             <Icon size={13} className="flex-none text-muted-foreground" />
