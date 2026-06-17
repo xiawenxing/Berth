@@ -8,17 +8,18 @@ import { api, type TranscriptTurn } from '@/lib/api'
  *  - user → right-aligned bubble
  *  - agent → left-aligned plain rich text (fenced ```code``` as a mono block w/ copy, inline `code` as a chip)
  *  - tool → collapsible one-line "执行过程 ▸" summary, collapsed by default
- * Fetches GET /api/sessions/:id/transcript on mount; can poll while a hidden PTY turn is running.
+ * Fetches GET /api/sessions/:id/transcript on mount; can subscribe to session events while a hidden
+ * PTY turn is running so the chat view updates as the transcript file changes.
  */
 export function SessionChat({
   sessionId,
   refreshKey = 0,
-  poll = false,
+  stream = false,
   optimisticUserText,
 }: {
   sessionId: string
   refreshKey?: number
-  poll?: boolean
+  stream?: boolean
   optimisticUserText?: string | null
 }) {
   const [turns, setTurns] = useState<TranscriptTurn[] | null>(null)
@@ -39,12 +40,19 @@ export function SessionChat({
   }, [sessionId, refreshKey])
 
   useEffect(() => {
-    if (!poll) return
-    const timer = window.setInterval(() => {
-      api.transcript(sessionId).then((r) => setTurns(r.turns ?? [])).catch(() => {})
-    }, 1500)
-    return () => clearInterval(timer)
-  }, [sessionId, poll])
+    if (!stream) return
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${proto}://${location.host}/session-events?sessionId=${encodeURIComponent(sessionId)}`)
+    ws.onmessage = (e) => {
+      let msg: any
+      try { msg = JSON.parse(e.data) } catch { return }
+      if (msg.t === 'turns' && Array.isArray(msg.turns)) {
+        setTurns(msg.turns)
+        setErr(null)
+      }
+    }
+    return () => ws.close()
+  }, [sessionId, stream])
 
   if (err) {
     return (

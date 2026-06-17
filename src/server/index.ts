@@ -6,6 +6,7 @@ import { api } from './api'
 import { refresh, getCache, initData } from './store-singleton'
 import { createPtyWss } from './pty-ws'
 import { createStatusWss } from './status-ws'
+import { createSessionEventsWss } from './session-events-ws'
 import { killAllPtys } from './pty-registry'
 import { resolvePublicDir, resolveWebDistDir } from './public-dir'
 import { existsSync } from 'node:fs'
@@ -26,6 +27,7 @@ export function attachWebSockets(server: Server) {
   const routes: Record<string, ReturnType<typeof createPtyWss>> = {
     '/pty': createPtyWss(),
     '/status': createStatusWss(),
+    '/session-events': createSessionEventsWss(),
   }
   server.on('upgrade', (req, socket, head) => {
     const pathname = (req.url ?? '').split('?')[0]

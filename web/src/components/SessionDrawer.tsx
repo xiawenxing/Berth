@@ -27,11 +27,9 @@ export function SessionDrawer() {
   // which lags the launch by a beat. `GET /api/sessions` serves a disk-scan cache, so re-scan a
   // few times after launch to let the new session surface in the list (and rebind links/attach).
   const resyncTimers = useRef<number[]>([])
-  const chatTimers = useRef<number[]>([])
   const optimisticTimer = useRef<number | null>(null)
   useEffect(() => () => {
     resyncTimers.current.forEach((t) => clearTimeout(t))
-    chatTimers.current.forEach((t) => clearTimeout(t))
     if (optimisticTimer.current !== null) clearTimeout(optimisticTimer.current)
   }, [])
   const resyncAfterLaunch = (sessionId: string) => {
@@ -43,32 +41,21 @@ export function SessionDrawer() {
     if (drawer) openDrawer({ ...drawer, sessionId, status: 'sail', launch: undefined })
   }
 
-  const scheduleChatRefresh = () => {
-    chatTimers.current.forEach((t) => clearTimeout(t))
-    setChatRefreshKey((n) => n + 1)
-    chatTimers.current = [900, 2200, 5000, 9000].map((ms) =>
-      window.setTimeout(() => setChatRefreshKey((n) => n + 1), ms),
-    )
-  }
-
   const sendMessage = (text: string) => {
     const sessionId = drawer?.sessionId
     if (!sessionId) return
     setPendingInput(text)
-    scheduleChatRefresh()
+    setChatRefreshKey((n) => n + 1)
     submitSessionInput(sessionId, text)
       .then(() => {
-        scheduleChatRefresh()
         void resync()
       })
-      .catch(() => scheduleChatRefresh())
+      .catch(() => setChatRefreshKey((n) => n + 1))
   }
 
   // A different session opened → drop any pending optimistic message.
   useEffect(() => {
     setPendingInput(null)
-    chatTimers.current.forEach((t) => clearTimeout(t))
-    chatTimers.current = []
   }, [drawer?.sessionId])
 
   const currentSession = drawer?.sessionId ? sessions.find((s) => s.sessionId === drawer.sessionId) : undefined
@@ -98,7 +85,7 @@ export function SessionDrawer() {
                     key={drawer.sessionId}
                     sessionId={drawer.sessionId}
                     refreshKey={chatRefreshKey}
-                    poll={hasLivePty || !!pendingInput}
+                    stream={hasLivePty || !!pendingInput}
                     optimisticUserText={pendingInput}
                   />
                 </div>

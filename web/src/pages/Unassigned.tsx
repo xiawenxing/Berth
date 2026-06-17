@@ -59,10 +59,6 @@ export function Unassigned() {
   }
   const [pendingInput, setPendingInput] = useState<string | null>(null)
   const [chatRefreshKey, setChatRefreshKey] = useState(0)
-  const chatTimers = useRef<number[]>([])
-  useEffect(() => () => {
-    chatTimers.current.forEach((t) => clearTimeout(t))
-  }, [])
   // Optimistic pin state: there's no `pinned` field on the unassigned list, so
   // track locally which ids we've toggled on (POST /pin persists server-side).
   const [pinned, setPinned] = useState<Set<string>>(new Set())
@@ -107,31 +103,20 @@ export function Unassigned() {
     allUnassigned.find((s) => s.sessionId === selId) ?? allUnassigned[0] ?? null
   const selHasLivePty = !!sel && live.activity.has(sel.sessionId)
 
-  const scheduleChatRefresh = () => {
-    chatTimers.current.forEach((t) => clearTimeout(t))
-    setChatRefreshKey((n) => n + 1)
-    chatTimers.current = [900, 2200, 5000, 9000].map((ms) =>
-      window.setTimeout(() => setChatRefreshKey((n) => n + 1), ms),
-    )
-  }
-
   const sendMessage = (text: string) => {
     if (!sel) return
     setPendingInput(text)
-    scheduleChatRefresh()
+    setChatRefreshKey((n) => n + 1)
     submitSessionInput(sel.sessionId, text)
       .then(() => {
-        scheduleChatRefresh()
         void resync()
       })
-      .catch(() => scheduleChatRefresh())
+      .catch(() => setChatRefreshKey((n) => n + 1))
   }
 
   const select = (s: ApiSession) => {
     setSelId(s.sessionId)
     setPendingInput(null)
-    chatTimers.current.forEach((t) => clearTimeout(t))
-    chatTimers.current = []
     live.markSeen(s.sessionId)
   }
 
@@ -218,7 +203,7 @@ export function Unassigned() {
                 key={sel.sessionId}
                 sessionId={sel.sessionId}
                 refreshKey={chatRefreshKey}
-                poll={selHasLivePty || !!pendingInput}
+                stream={selHasLivePty || !!pendingInput}
                 optimisticUserText={pendingInput}
               />
             </div>
