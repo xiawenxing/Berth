@@ -147,10 +147,16 @@ export function ProjectWorkspace() {
     for (const s of projSessions) if (s.cwd) counts.set(s.cwd, (counts.get(s.cwd) ?? 0) + 1)
     return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
   }
-  const launch = (t: string) => {
+  // taskId === '' → free launch (header / session-module button); otherwise resolve the task by id
+  // (NOT by title — titles aren't unique and get refined) to carry its real todoKey + project.
+  const launch = (taskId: string) => {
     const cwd = resolveCwd()
-    const todoKey = t ? apiTasks.find((x) => x.projectId === id && x.title === t)?.id : undefined
-    openLaunch(t ? { dest: 'task', taskTitle: t, projectId: id, cwd, todoKey } : { dest: 'free', projectId: id, cwd })
+    const task = taskId ? apiTasks.find((x) => x.id === taskId) : undefined
+    openLaunch(
+      task
+        ? { dest: 'task', taskTitle: task.title, projectId: task.projectId ?? id, cwd, todoKey: task.id }
+        : { dest: 'free', projectId: id, cwd },
+    )
   }
   // Open a real session → attach its live /pty terminal in the drawer; mark it seen.
   const openRow = (s: SessionRow) => {

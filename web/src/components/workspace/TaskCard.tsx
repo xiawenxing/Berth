@@ -65,7 +65,7 @@ export function TaskCard({
 }: {
   task: Task
   active: boolean
-  onLaunch?: (taskTitle: string) => void
+  onLaunch?: (taskId: string) => void
   onOpenSession?: (link: LinkedSession) => void
   onActivate?: () => void
 } & MenuActions) {
@@ -152,7 +152,7 @@ export function TaskCard({
             className="inline-flex h-[18px] flex-none items-center gap-[3px] rounded px-1.5 text-[10.5px] font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-success"
             onClick={(e) => {
               e.stopPropagation()
-              onLaunch?.(task.title)
+              onLaunch?.(task.id)
             }}
           >
             <Play size={11} /> 启动
@@ -233,7 +233,7 @@ export function TaskCard({
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                onLaunch?.(task.title)
+                onLaunch?.(task.id)
               }}
               className="mt-2 flex items-center gap-1 rounded border border-dashed border-brand/50 px-2 py-1 text-[12px] text-brand hover:border-brand hover:bg-brand/[0.06]"
             >

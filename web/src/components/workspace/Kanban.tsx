@@ -18,7 +18,7 @@ export function Kanban({
   onDelete,
 }: {
   tasks: Task[]
-  onLaunch?: (t: string) => void
+  onLaunch?: (taskId: string) => void
   onOpenSession?: (link: LinkedSession) => void
   onMove?: (taskId: string, status: TaskStatus) => void
   onSetPriority?: (taskId: string, priority: Priority) => void
