@@ -16,6 +16,7 @@ const mockAddProjectPath = vi.fn((..._a: any[]) => {})
 const mockSetPathEnabled = vi.fn((..._a: any[]) => {})
 const mockRemoveProjectPath = vi.fn((..._a: any[]) => {})
 const mockAddSessionImport = vi.fn((..._a: any[]) => {})
+const mockRemoveSessionImport = vi.fn((..._a: any[]) => {})
 const mockUpdateTaskFields = vi.fn((..._a: any[]) => {})
 const mockSetTaskDdl = vi.fn((..._a: any[]) => {})
 const mockTaskDdls = new Map<string, string>()
@@ -37,6 +38,7 @@ const mockGetStore = vi.fn((..._a: any[]) => ({
   setPathEnabled: mockSetPathEnabled,
   removeProjectPath: mockRemoveProjectPath,
   addSessionImport: mockAddSessionImport,
+  removeSessionImport: mockRemoveSessionImport,
   allSessionImportSet: () => new Set<string>(),
   allBoundLaunchSessionIds: () => new Set<string>(),
   updateTaskFields: mockUpdateTaskFields,
@@ -260,6 +262,50 @@ describe('货舱 path + session-import API', () => {
     expect(r.status).toBe(200)
     expect(mockAddSessionImport).toHaveBeenCalledWith('s9')
     expect(mockSetAttach).not.toHaveBeenCalled()
+  })
+})
+
+describe('session removal API (detach / un-import)', () => {
+  beforeEach(() => {
+    mockSetAttach.mockClear(); mockRemoveSessionImport.mockClear()
+  })
+  const J = { 'Content-Type': 'application/json' }
+
+  it('detaches sessions from their project (attach → null)', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/sessions/detach`, {
+      method: 'POST', headers: J, body: JSON.stringify({ ids: ['s1', 's2'] }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockSetAttach).toHaveBeenCalledWith('s1', null, 'confirmed')
+    expect(mockSetAttach).toHaveBeenCalledWith('s2', null, 'confirmed')
+    expect(mockRemoveSessionImport).not.toHaveBeenCalled()
+  })
+
+  it('rejects detach with no ids', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/sessions/detach`, {
+      method: 'POST', headers: J, body: JSON.stringify({ ids: [] }),
+    })
+    expect(r.status).toBe(400)
+  })
+
+  it('un-imports sessions (removeSessionImport + detach)', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/session-import/remove`, {
+      method: 'POST', headers: J, body: JSON.stringify({ ids: ['s1'] }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockRemoveSessionImport).toHaveBeenCalledWith('s1')
+    expect(mockSetAttach).toHaveBeenCalledWith('s1', null, 'confirmed')
+  })
+
+  it('rejects un-import with no ids', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/session-import/remove`, {
+      method: 'POST', headers: J, body: JSON.stringify({}),
+    })
+    expect(r.status).toBe(400)
   })
 })
 

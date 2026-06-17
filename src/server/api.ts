@@ -356,6 +356,26 @@ api.post('/session-import', (req, res) => {
   res.json({ ok: true, count: getCache().length })
 })
 
+// 移出项目（保留导入信号）：批量 detach。会话脱离项目、回到「无归属」（若仍在 session_import）。
+api.post('/sessions/detach', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
+  if (!ids.length) return res.status(400).json({ error: 'ids:string[] required' })
+  const store = getStore()
+  for (const id of ids) store.setAttach(id, null, 'confirmed')
+  refresh()
+  res.json({ ok: true, count: getCache().length })
+})
+
+// 取消导入：撤销会话粒度导入信号并 detach。除非 cwd 仍匹配某导入目录根或被 pin/edge，否则从列表消失。
+api.post('/session-import/remove', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
+  if (!ids.length) return res.status(400).json({ error: 'ids:string[] required' })
+  const store = getStore()
+  for (const id of ids) { store.removeSessionImport(id); store.setAttach(id, null, 'confirmed') }
+  refresh()
+  res.json({ ok: true, count: getCache().length })
+})
+
 // ── Markdown context docs (read/write, restricted to the configurable docs root) ──
 api.get('/doc', (req, res) => {
   const ds = getDocStore(getStore())
