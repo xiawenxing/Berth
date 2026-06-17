@@ -65,10 +65,11 @@ export function Terminal({
         try {
           const ctl = JSON.parse(data)
           if (ctl.__berth === 'launched' && ctl.sessionId) onLaunched?.(ctl.sessionId)
+          return // a well-formed control frame is not terminal output
         } catch {
-          /* ignore malformed control frame */
+          // not actually a control frame (e.g. pty output that happens to start
+          // with that text, or a split chunk) — fall through and render it.
         }
-        return
       }
       term.write(data)
     }
@@ -86,7 +87,7 @@ export function Terminal({
       term.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, launch?.cli, launch?.cwd, launch?.prompt])
+  }, [sessionId, launch?.cli, launch?.cwd, launch?.prompt, launch?.projectId, launch?.todoKey])
 
   return <div ref={hostRef} className="h-full w-full" />
 }

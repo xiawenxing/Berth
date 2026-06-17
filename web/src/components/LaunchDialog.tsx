@@ -19,17 +19,20 @@ export function LaunchDialog() {
   useEffect(() => {
     if (launch) {
       setAdjust(false)
-      setDest(launch.dest)
+      // No task title → there's nothing to launch a task against; default to 自由提问.
+      setDest(launch.taskTitle ? launch.dest : 'free')
       setFreeText('')
     }
   }, [launch])
 
   if (!launch) return null
   const taskTitle = launch.taskTitle
-  const cwd = launch.cwd || '~'
+  const cwd = launch.cwd || ''
+  const noCwd = !cwd
   const title = dest === 'task' && taskTitle ? taskTitle : freeText || '新会话'
 
   const sail = () => {
+    if (noCwd) return
     closeLaunch()
     openDrawer({
       title,
@@ -87,7 +90,7 @@ export function LaunchDialog() {
           >
             <Package size={14} className="text-brand" />
             <span className="text-[13px] text-foreground">
-              货舱：项目上下文 · 任务上下文 · 代码上下文 <span className="font-mono text-[12px] text-muted-foreground">{cwd}</span> · claude
+              货舱：项目上下文 · 任务上下文 · 代码上下文 <span className="font-mono text-[12px] text-muted-foreground">{cwd || '（未登记目录）'}</span> · claude
             </span>
             <span className="ml-auto flex items-center gap-1 text-[12px] text-muted-foreground">
               {adjust ? '收起装载' : '调整装载'}
@@ -123,11 +126,16 @@ export function LaunchDialog() {
         </div>
       </div>
 
-      <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
+      <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+        {noCwd && <span className="mr-auto text-[11px] text-warning">该项目暂无可用目录，请先在「默认装载」里登记一个 cwd</span>}
         <button onClick={closeLaunch} className="rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
           取消
         </button>
-        <button onClick={sail} className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground">
+        <button
+          onClick={sail}
+          disabled={noCwd}
+          className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground disabled:opacity-50"
+        >
           <Play size={13} /> 起航
         </button>
       </div>

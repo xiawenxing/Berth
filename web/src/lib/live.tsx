@@ -36,6 +36,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     let ws: WebSocket | null = null
     let stop = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
     const connect = () => {
       ws = new WebSocket(`${proto}://${location.host}/status`)
       ws.onmessage = (e) => {
@@ -68,12 +69,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         }
       }
       ws.onclose = () => {
-        if (!stop) setTimeout(connect, 1500) // reconnect
+        if (!stop) retryTimer = setTimeout(connect, 1500) // reconnect
       }
     }
     connect()
     return () => {
       stop = true
+      if (retryTimer) clearTimeout(retryTimer)
       ws?.close()
     }
   }, [])

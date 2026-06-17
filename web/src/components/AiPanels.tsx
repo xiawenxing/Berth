@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Sparkles, Copy, Save } from 'lucide-react'
 import { Dialog, Drawer } from './ui/Overlay'
 import { api } from '@/lib/api'
@@ -8,15 +8,23 @@ export function ProjectSummaryDialog({ open, onClose, projectId }: { open: boole
   const [loading, setLoading] = useState(false)
   const [summary, setSummary] = useState('')
   const [err, setErr] = useState('')
+  const reqRef = useRef(0)
 
   const gen = () => {
+    const req = ++reqRef.current // ignore stale responses if reopened/regenerated
     setLoading(true)
     setErr('')
     api
       .projectSummary(projectId)
-      .then((r) => setSummary(r.summary || ''))
-      .catch((e) => setErr(String(e)))
-      .finally(() => setLoading(false))
+      .then((r) => {
+        if (reqRef.current === req) setSummary(r.summary || '')
+      })
+      .catch((e) => {
+        if (reqRef.current === req) setErr(String(e))
+      })
+      .finally(() => {
+        if (reqRef.current === req) setLoading(false)
+      })
   }
   useEffect(() => {
     if (open) gen()
