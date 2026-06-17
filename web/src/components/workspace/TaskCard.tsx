@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { createPortal } from 'react-dom'
+import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Play, ChevronDown, Link2, MoreHorizontal, CalendarClock, Sparkles, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/menu'
 import { useData } from '@/lib/data'
 import { priorityColors, priorityRank } from '@/lib/priority'
 import { isCancelledStatus, isDoneStatus, statusMeta } from '@/lib/status'
@@ -260,89 +260,6 @@ export function CliBadge({ cli }: { cli: string }) {
     cli === 'claude' ? 'bg-brand/15 text-brand' : cli === 'codex' ? 'bg-success/15 text-success' : 'bg-purple/15 text-purple'
   return <span className={cn('flex-none rounded px-1.5 py-0.5 text-[10.5px] font-medium', tone)}>{cli}</span>
 }
-
-// ── shared popover primitive ────────────────────────────────────────────────
-
-/** A popover portaled to <body> and fixed-positioned under `anchor`, so it escapes the card's
- *  overflow-hidden and the column body's overflow-y-auto. Closes on outside-click (anchor
- *  included, so the trigger toggles cleanly) and Esc; flips above when near the viewport bottom. */
-function AnchoredPopover({
-  anchor,
-  onClose,
-  width,
-  children,
-}: {
-  anchor: RefObject<HTMLElement | null>
-  onClose: () => void
-  width: number
-  children: ReactNode
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
-
-  useLayoutEffect(() => {
-    const place = () => {
-      const a = anchor.current?.getBoundingClientRect()
-      if (!a) return
-      const H = ref.current?.offsetHeight ?? 280
-      const left = Math.max(8, Math.min(a.right - width, window.innerWidth - width - 8))
-      const below = a.bottom + 4
-      const top = below + H > window.innerHeight - 8 ? Math.max(8, a.top - H - 4) : below
-      setPos({ top, left })
-    }
-    place()
-    window.addEventListener('resize', place)
-    window.addEventListener('scroll', place, true)
-    return () => {
-      window.removeEventListener('resize', place)
-      window.removeEventListener('scroll', place, true)
-    }
-  }, [anchor, width])
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (ref.current?.contains(t) || anchor.current?.contains(t)) return
-      onClose()
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [onClose, anchor])
-
-  return createPortal(
-    <div
-      ref={ref}
-      onClick={(e) => e.stopPropagation()}
-      style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width, visibility: pos ? 'visible' : 'hidden' }}
-      className="fixed z-50 rounded-md border border-border bg-popover p-1 shadow-lg"
-    >
-      {children}
-    </div>,
-    document.body,
-  )
-}
-
-const MenuLabel = ({ children }: { children: ReactNode }) => (
-  <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-text-dim">{children}</div>
-)
-const MenuItem = ({ children, onClick, danger }: { children: ReactNode; onClick: (e: React.MouseEvent) => void; danger?: boolean }) => (
-  <button
-    onClick={onClick}
-    className={cn(
-      'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] hover:bg-accent',
-      danger ? 'text-destructive hover:bg-destructive/10' : 'text-foreground',
-    )}
-  >
-    {children}
-  </button>
-)
 
 /** A ramp-colored priority pill (P0/P1/…); `interactive` adds hover affordance for menus. */
 function PrioPill({ label, rank, total, interactive }: { label: string; rank: number; total: number; interactive?: boolean }) {
