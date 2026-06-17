@@ -41,8 +41,30 @@ async function getJSON<T>(url: string): Promise<T> {
   return (await res.json()) as T
 }
 
+async function send(method: string, url: string, body?: unknown): Promise<any> {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new Error(`${method} ${url} → ${res.status}`)
+  return res.json().catch(() => ({}))
+}
+
 export const api = {
   projects: () => getJSON<{ projects: ApiProject[] }>('/api/projects'),
   todos: () => getJSON<{ todos: ApiTask[] }>('/api/todos'),
   sessions: () => getJSON<ApiSession[]>('/api/sessions'),
+
+  // ── mutations (wired to existing server endpoints) ──
+  createTask: (text: string, projectId?: string) => send('POST', '/api/todos', { text, projectId }),
+  patchTask: (id: string, patch: { status?: string; priority?: string; ddl?: string | null; title?: string }) =>
+    send('PATCH', `/api/todos/${id}`, patch),
+  deleteTask: (id: string) => send('DELETE', `/api/todos/${id}`),
+  taskSummary: (id: string) => send('POST', `/api/todos/${id}/progress-summary`, {}),
+  pin: (sessionId: string, on: boolean) => send('POST', '/api/pin', { sessionId, on }),
+  createProject: (name: string, cwd?: string) => send('POST', '/api/projects/create', { name, cwd }),
+  contextUpdate: (kind: 'task' | 'project', key: string, userInput: string) =>
+    send('POST', '/api/context/update', { kind, key, userInput }),
+  sessionTitle: (id: string) => send('POST', `/api/sessions/${id}/title`, {}),
 }

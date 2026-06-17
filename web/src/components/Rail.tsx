@@ -4,6 +4,7 @@ import { Anchor, Inbox, Folder, Settings as SettingsIcon, Plus, Ban } from 'luci
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
 import { useData } from '@/lib/data'
+import { api } from '@/lib/api'
 
 interface ProjRow {
   id: string
@@ -29,7 +30,7 @@ function NavItem({ to, icon: Icon, label }: { to: string; icon: typeof Inbox; la
 }
 
 export function Rail() {
-  const { projects: apiProjects, tasks, sessions } = useData()
+  const { projects: apiProjects, tasks, sessions, reload } = useData()
   const [extra, setExtra] = useState<ProjRow[]>([])
   const [newProj, setNewProj] = useState(false)
 
@@ -47,7 +48,11 @@ export function Rail() {
 
   const unassignedN = useMemo(() => sessions.filter((s) => !s.projectId).length, [sessions])
 
-  const addProject = (name: string) => setExtra((p) => [...p, { id: name, name, meta: '0 任务 · 0 会话' }])
+  // Optimistic row + persist via POST /projects/create, then reload real data.
+  const addProject = (name: string) => {
+    setExtra((p) => [...p, { id: name, name, meta: '0 任务 · 0 会话' }])
+    api.createProject(name).then(() => { setExtra([]); reload() }).catch(() => {})
+  }
 
   return (
     <aside className="flex w-[260px] flex-none flex-col border-r border-border bg-sidebar">

@@ -8,6 +8,7 @@ import { SAMPLE_CARGO } from '@/data/sample'
 import { useUI } from '@/lib/ui-store'
 import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
 import { useData, relTime, shortCwd, normStatus, normPriority } from '@/lib/data'
+import { api } from '@/lib/api'
 import type { Task, SessionRow, CwdGroup } from '@/lib/types'
 
 /**
@@ -20,7 +21,7 @@ let taskSeq = 100
 export function ProjectWorkspace() {
   const { id = '' } = useParams()
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
-  const { projects, tasks: apiTasks, sessions } = useData()
+  const { projects, tasks: apiTasks, sessions, reload } = useData()
 
   const project = projects.find((p) => p.id === id)
   const projName = project?.name ?? id
@@ -77,7 +78,8 @@ export function ProjectWorkspace() {
   // From a task mini-row (title only) → chat preview.
   const openSession = (t: string) => openDrawer({ title: t, cli: 'claude', cwd: '~/Code/berth', status: 'sail' })
 
-  // 即时创建：card appears NOW; if AI-summarize, refine title + summary in background.
+  // 即时创建：optimistic card NOW, persist via POST /todos, then reload real data.
+  // (The server's createTask guard already classifies + titles; AI-summarize is that pipeline.)
   const createTask = (raw: string, opts: { aiSummarize: boolean; runNow: boolean }) => {
     const tid = `new-${++taskSeq}`
     const card: Task = {
@@ -86,16 +88,18 @@ export function ProjectWorkspace() {
       status: opts.runNow ? '进行中' : '待办',
       priority: 'P2',
       summary: opts.aiSummarize ? '港务助手正在总结进展摘要…' : undefined,
-      links: opts.runNow ? [{ cli: 'claude', title: raw, status: 'sail' }] : [],
+      links: [],
     }
     setTasks((ts) => [card, ...ts])
     if (opts.runNow) openSession(raw)
-    if (opts.aiSummarize) {
-      setTimeout(() => {
+    api
+      .createTask(raw, id)
+      .then(() => reload())
+      .catch(() => {
+        // keep the optimistic card but settle its title locally if the POST failed
         const { title, summary } = refineTitle(raw)
         setTasks((ts) => ts.map((t) => (t.id === tid ? { ...t, title, summary } : t)))
-      }, 2000)
-    }
+      })
   }
 
   return (
