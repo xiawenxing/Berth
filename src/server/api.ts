@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { snapshotActivity } from './pty-registry'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
+import { parseTranscriptTurns } from './transcript-turns'
 import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd } from '../paths'
 
@@ -695,5 +696,19 @@ api.post('/sessions/:id/consolidate', async (req, res) => {
   } catch (e: any) {
     try { refresh() } catch {}
     sendAgentError(res, e, locale)
+  }
+})
+
+// Structured conversation for the session drawer's codex-style chat view (walkthrough #4).
+// Best-effort parse of the session jsonl into { turns: [{role:'user'|'agent'|'tool', text, collapsed?}] };
+// falls back to a single cleaned agent turn for an unrecognized shape so it never crashes.
+api.get('/sessions/:id/transcript', (req, res) => {
+  const s = getCache().find(x => x.sessionId === req.params.id)
+  if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
+  try {
+    const turns = parseTranscriptTurns(s.cli, s.contentSourcePath)
+    res.json({ turns })
+  } catch {
+    res.json({ turns: [] })
   }
 })
