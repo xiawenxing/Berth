@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Play,
   ChevronDown,
@@ -88,7 +89,6 @@ export function TaskCard({
   onDelete?: (taskId: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
   const done = task.status === '已完成'
   const cancelled = task.status === '已取消'
   const isLive = !done && !cancelled
@@ -153,17 +153,17 @@ export function TaskCard({
             <Sparkles size={11} className="spk-twinkle" /> 总结中…
           </span>
         )}
-        {/* ▷启动 — icon-only, colored, collapse-only, live cards */}
+        {/* ▷启动 — v7 .kcard-go: quiet muted marker (icon + 启动), success only on hover; collapse-only, live cards */}
         {!open && active && isLive && task.summary !== REFINING && (
           <button
             title="为此任务起会话"
-            className="inline-flex h-[18px] w-[18px] flex-none items-center justify-center rounded text-success hover:bg-secondary hover:text-brand"
+            className="inline-flex h-[18px] flex-none items-center gap-[3px] rounded px-1.5 text-[10.5px] font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-success"
             onClick={(e) => {
               e.stopPropagation()
               onLaunch?.(task.title)
             }}
           >
-            <Play size={13} className="fill-current" />
+            <Play size={11} /> 启动
           </button>
         )}
         {active && expandable && (
@@ -171,20 +171,14 @@ export function TaskCard({
         )}
         {/* done/cancelled cards: hover ⋯ in the head (no footer) */}
         {(done || cancelled) && (
-          <div className="relative flex-none">
-            <button
-              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation()
-                setMenuOpen((v) => !v)
-              }}
-            >
-              <MoreHorizontal size={13} />
-            </button>
-            {menuOpen && (
-              <TaskMenu task={task} onClose={() => setMenuOpen(false)} onSetStatus={onSetStatus} onSetPriority={onSetPriority} onRename={onRename} onDelete={onDelete} />
-            )}
-          </div>
+          <MoreMenu
+            task={task}
+            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+            onSetStatus={onSetStatus}
+            onSetPriority={onSetPriority}
+            onRename={onRename}
+            onDelete={onDelete}
+          />
         )}
       </div>
 
@@ -199,30 +193,17 @@ export function TaskCard({
           {/* show ddl: active shows even unset hint; inactive only when set */}
           {(active || task.ddl) && <DdlChip ddl={task.ddl} />}
           <span className="flex-1" />
-          <div className="relative">
-            <button
-              className={cn(
-                'rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground',
-                !active && 'opacity-0 transition-opacity group-hover:opacity-100',
-              )}
-              onClick={(e) => {
-                e.stopPropagation()
-                setMenuOpen((v) => !v)
-              }}
-            >
-              <MoreHorizontal size={13} />
-            </button>
-            {menuOpen && (
-              <TaskMenu
-                task={task}
-                onClose={() => setMenuOpen(false)}
-                onSetStatus={onSetStatus}
-                onSetPriority={onSetPriority}
-                onRename={onRename}
-                onDelete={onDelete}
-              />
+          <MoreMenu
+            task={task}
+            className={cn(
+              'rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground',
+              !active && 'opacity-0 transition-opacity group-hover:opacity-100',
             )}
-          </div>
+            onSetStatus={onSetStatus}
+            onSetPriority={onSetPriority}
+            onRename={onRename}
+            onDelete={onDelete}
+          />
         </div>
       )}
 
@@ -284,9 +265,36 @@ const PRIO_CHIP: Record<Priority, string> = {
   P2: 'bg-muted text-muted-foreground',
 }
 
-/** Anchored ⋯ popover: 状态 / 优先级 / 重命名 / 删除. Click-outside + Esc close. */
+type MenuActions = {
+  onSetStatus?: (taskId: string, status: TaskStatus) => void
+  onSetPriority?: (taskId: string, priority: Priority) => void
+  onRename?: (taskId: string, title: string) => void
+  onDelete?: (taskId: string) => void
+}
+
+/** ⋯ trigger + its popover. The popover is portaled to <body> with fixed positioning so it
+ *  escapes the card's `overflow-hidden` and the column body's `overflow-y-auto` (which otherwise
+ *  clip an in-card absolute menu to nothing — the "menu doesn't open" bug). */
+function MoreMenu({ task, className, ...actions }: { task: Task; className: string } & MenuActions) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setOpen((v) => !v)
+  }
+  return (
+    <button ref={btnRef} className={cn('relative flex-none', className)} onClick={toggle}>
+      <MoreHorizontal size={13} />
+      {open && <TaskMenu task={task} anchor={btnRef} onClose={() => setOpen(false)} {...actions} />}
+    </button>
+  )
+}
+
+/** Fixed-position popover anchored under a trigger button, portaled to <body>. 状态 / 优先级 /
+ *  重命名 / 删除. Click-outside (button included) + Esc close; flips above when near the viewport bottom. */
 function TaskMenu({
   task,
+  anchor,
   onClose,
   onSetStatus,
   onSetPriority,
@@ -294,16 +302,38 @@ function TaskMenu({
   onDelete,
 }: {
   task: Task
+  anchor: React.RefObject<HTMLButtonElement | null>
   onClose: () => void
-  onSetStatus?: (taskId: string, status: TaskStatus) => void
-  onSetPriority?: (taskId: string, priority: Priority) => void
-  onRename?: (taskId: string, title: string) => void
-  onDelete?: (taskId: string) => void
-}) {
+} & MenuActions) {
   const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  // Position under the trigger (right-aligned), flipping above if it would overflow the viewport.
+  useLayoutEffect(() => {
+    const place = () => {
+      const a = anchor.current?.getBoundingClientRect()
+      if (!a) return
+      const W = 176 // w-44
+      const H = ref.current?.offsetHeight ?? 300
+      const left = Math.max(8, Math.min(a.right - W, window.innerWidth - W - 8))
+      const below = a.bottom + 4
+      const top = below + H > window.innerHeight - 8 ? Math.max(8, a.top - H - 4) : below
+      setPos({ top, left })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [anchor])
+
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      const t = e.target as Node
+      if (ref.current?.contains(t) || anchor.current?.contains(t)) return
+      onClose()
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -314,7 +344,7 @@ function TaskMenu({
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [onClose])
+  }, [onClose, anchor])
 
   const pick = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -337,11 +367,12 @@ function TaskMenu({
     </button>
   )
 
-  return (
+  return createPortal(
     <div
       ref={ref}
       onClick={(e) => e.stopPropagation()}
-      className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-border bg-popover p-1 shadow-lg"
+      style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, visibility: pos ? 'visible' : 'hidden' }}
+      className="fixed z-50 w-44 rounded-md border border-border bg-popover p-1 shadow-lg"
     >
       <Label>状态 — 移动到列</Label>
       {STATUS_ORDER.map((s) => {
@@ -375,6 +406,7 @@ function TaskMenu({
       <Item danger onClick={pick(() => onDelete?.(task.id))}>
         <Trash2 size={13} className="flex-none" /> 删除
       </Item>
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -58,7 +58,9 @@ export function Kanban({
               if (id) onMove?.(id, status)
             }}
             className={cn(
-              'flex min-h-0 min-w-0 flex-col rounded-md border border-border bg-card transition-[flex-grow] duration-300',
+              // overflow-hidden clips the header's square top corners to the column's rounded-md
+              // (otherwise the header bg pokes past the rounded border — the "corners not continuous" bug).
+              'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card transition-[flex-grow] duration-300',
               isActive ? 'flex-[2.2] border-brand/45' : 'flex-1',
               isDropOver && 'border-brand ring-2 ring-brand/60',
             )}
