@@ -59,8 +59,10 @@ export const SAMPLE_PIN: SessionRow[] = [
 
 export const SAMPLE_CWD_GROUPS: CwdGroup[] = [
   {
+    key: '~/Code/berth',
     cwd: '~/Code/berth',
     tag: '主上下文',
+    shortTag: '主上下文',
     sessions: [
       { id: 's1', cli: 'claude', title: '修复 pty 重连丢失滚动', cwd: '~/Code/berth', time: '2小时前', status: 'moored' },
       { id: 's2', cli: 'codex', title: 'reconcile.ts 绑定调试', cwd: '~/Code/berth', time: '3小时前', status: 'moored' },
@@ -70,8 +72,10 @@ export const SAMPLE_CWD_GROUPS: CwdGroup[] = [
     ],
   },
   {
+    key: '~/Code/berth-i18n',
     cwd: '~/Code/berth-i18n',
-    tag: 'worktree · 第2上下文',
+    tag: 'worktree · 第 2 上下文',
+    shortTag: 'worktree·2',
     sessions: [
       { id: 's6', cli: 'coco', title: 'i18n 文案抽取', cwd: '~/Code/berth-i18n', time: '昨天', status: 'moored' },
       { id: 's7', cli: 'codex', title: 'writeQueue 单测', cwd: '~/Code/berth-i18n', time: '3天前', status: 'moored', linkedTask: true },

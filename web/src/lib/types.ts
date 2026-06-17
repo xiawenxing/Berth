@@ -37,8 +37,10 @@ export interface SessionRow {
 }
 
 export interface CwdGroup {
-  cwd: string
-  tag: string // 主上下文 / worktree · 第2上下文
+  key: string // stable React key — the RAW cwd (cwd is the shortened display form, can collide)
+  cwd: string // display form (shortCwd)
+  tag: string // full tag for the right-side pill: 主上下文 / worktree · 第 2 上下文
+  shortTag: string // compact inline label suffix: 主上下文 / worktree·2
   sessions: SessionRow[]
 }
 

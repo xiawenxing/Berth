@@ -1,15 +1,23 @@
-import { useState } from 'react'
-import { Pin, ChevronDown, ChevronRight, Play, Link2 } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { Pin, ChevronDown, Anchor, Terminal, Play, Link2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { SessionRow, CwdGroup } from '@/lib/types'
+import { SHIP_LABEL, type SessionRow, type CwdGroup, type ShipStatus } from '@/lib/types'
 import { CliBadge } from './TaskCard'
 
-function Glyph({ status }: { status: SessionRow['status'] }) {
-  if (status === 'sail') return <span className="h-1.5 w-1.5 flex-none rounded-full bg-success" />
-  if (status === 'dock') return <span className="h-1.5 w-1.5 flex-none rounded-full bg-transparent ring-1 ring-brand" />
-  return <span className="h-1.5 w-1.5 flex-none" /> // moored/idle — empty gutter, keeps alignment
+const SHIP_TONE: Record<ShipStatus, string> = {
+  sail: 'bg-success/15 text-success',
+  dock: 'bg-brand/15 text-brand',
+  moored: 'bg-muted-foreground/15 text-muted-foreground', // faint tint, not the solid muted surface
 }
 
+function Glyph({ status }: { status: SessionRow['status'] }) {
+  if (status === 'sail') return <span className="h-2 w-2 flex-none animate-pulse rounded-full bg-success" title="在航" />
+  if (status === 'dock') return <span className="h-2 w-2 flex-none rounded-full border-2 border-brand" title="靠岸·待查收" />
+  return <span className="h-2 w-2 flex-none" /> // moored/idle — empty gutter keeps alignment
+}
+
+/** A session row — faithful to v7 .srow: glyph · cli · title · ship pill · linked · cwd(right) ·
+ *  time · hover actions(pin). Whole row opens the session; the pin toggle stops propagation. */
 function Row({
   s,
   showCwd,
@@ -21,79 +29,118 @@ function Row({
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
 }) {
+  const ship: ShipStatus = s.status === 'idle' ? 'moored' : s.status
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onOpen?.(s)}
-      className="group flex h-[34px] w-full items-center gap-2 rounded px-2 text-left hover:bg-sidebar-accent"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen?.(s)
+        }
+      }}
+      className="group relative flex h-[34px] cursor-pointer items-center gap-2.5 border-t border-border/55 px-3.5 outline-none first:border-t-border hover:bg-accent focus-visible:bg-accent focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-brand"
     >
-      <Glyph status={s.status} />
+      <span className="flex w-3.5 flex-none items-center justify-center">
+        <Glyph status={s.status} />
+      </span>
       <CliBadge cli={s.cli} />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{s.title}</span>
+      <span className="max-w-[280px] flex-none truncate text-[13px] font-medium text-foreground">{s.title}</span>
+      <span className={cn('inline-flex flex-none items-center rounded px-1.5 py-px text-[10.5px] font-semibold', SHIP_TONE[ship])}>
+        {SHIP_LABEL[ship]}
+      </span>
       {s.linkedTask && (
-        <span className="hidden items-center gap-0.5 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground group-hover:inline-flex">
+        <span className="inline-flex flex-none items-center gap-0.5 rounded bg-muted px-1.5 py-px text-[10px] text-text-dim">
           <Link2 size={10} /> 已关联任务
         </span>
       )}
-      {showCwd && <span className="flex-none font-mono text-[11px] text-text-dim">{s.cwd}</span>}
-      <span
-        role="button"
-        tabIndex={-1}
-        title={s.pinned ? '取消 Pin' : 'Pin'}
-        onClick={(e) => {
-          e.stopPropagation()
-          onPin?.(s.id, !s.pinned)
-        }}
-        className={cn(
-          'flex-none rounded p-0.5 hover:bg-secondary',
-          s.pinned
-            ? 'text-brand'
-            : 'text-text-dim opacity-0 hover:text-foreground group-hover:opacity-100',
-        )}
-      >
-        <Pin size={12} className={cn(s.pinned && 'fill-current')} />
+      {/* cwd: right-aligned, fills the gap (mirrors v7 .s-cwd flex:1 text-align:right) */}
+      <span className={cn('min-w-[30px] flex-1 truncate text-right font-mono text-[11px] text-text-dim', !showCwd && 'opacity-0')}>
+        {showCwd ? s.cwd : ''}
       </span>
-      <span className="flex-none text-[11px] text-text-dim">{s.time}</span>
-    </button>
+      <span className="flex-none whitespace-nowrap text-[11px] text-muted-foreground">{s.time}</span>
+      {/* hover actions (pin) — pinned stays lit even off-hover */}
+      <div className="flex flex-none items-center">
+        <button
+          title={s.pinned ? '取消 Pin' : 'Pin 此会话'}
+          onClick={(e) => {
+            e.stopPropagation()
+            onPin?.(s.id, !s.pinned)
+          }}
+          className={cn(
+            'flex h-[22px] w-[22px] items-center justify-center rounded transition-opacity hover:bg-secondary',
+            s.pinned ? 'text-priority opacity-100' : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100',
+          )}
+        >
+          <Pin size={12} className={cn(s.pinned && 'fill-current')} />
+        </button>
+      </div>
+    </div>
   )
 }
 
-function CwdSection({
-  group,
+/** A collapsible section (Pin or a cwd group) with a header and optional show-more. */
+function Section({
+  icon,
+  label,
+  labelSuffix,
+  labelMono,
+  count,
+  tag,
+  rows,
+  showCwd,
+  limit,
   onOpen,
   onPin,
 }: {
-  group: CwdGroup
+  icon: ReactNode
+  label: string
+  labelSuffix?: string
+  labelMono?: boolean
+  count: number
+  tag?: string
+  rows: SessionRow[]
+  showCwd?: boolean
+  limit?: number
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const [more, setMore] = useState(false)
-  const LIMIT = 4
-  const visible = more ? group.sessions : group.sessions.slice(0, LIMIT)
-  const hidden = group.sessions.length - LIMIT
+  const limited = limit != null && rows.length > limit
+  const visible = limited && !more ? rows.slice(0, limit) : rows
+  const hidden = rows.length - visible.length
 
   return (
-    <div>
+    <div className="border-t border-border first:border-t-0">
       <button
         onClick={() => setCollapsed((v) => !v)}
-        className="flex w-full items-center gap-1.5 px-1 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-[12px] font-semibold text-muted-foreground hover:bg-accent"
       >
-        {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-        <span className="font-mono">{group.cwd}</span>
-        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{group.tag}</span>
-        <span className="ml-auto">{group.sessions.length}</span>
+        <ChevronDown size={13} className={cn('flex-none text-text-dim transition-transform', collapsed && '-rotate-90')} />
+        {icon}
+        <span className={cn('inline-flex items-center gap-1.5 text-foreground', labelMono ? 'font-mono text-[11.5px]' : 'text-[12px]')}>
+          {label}
+          {labelSuffix && <span className="text-text-dim"> · {labelSuffix}</span>}
+        </span>
+        <span className="font-normal text-text-dim">{count}</span>
+        <span className="flex-1" />
+        {tag && <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-medium tracking-wide text-text-dim">{tag}</span>}
       </button>
       {!collapsed && (
-        <div className="flex flex-col">
+        <div>
           {visible.map((s) => (
-            <Row key={s.id} s={s} onOpen={onOpen} onPin={onPin} />
+            <Row key={s.id} s={s} showCwd={showCwd} onOpen={onOpen} onPin={onPin} />
           ))}
-          {hidden > 0 && (
+          {limited && (
             <button
               onClick={() => setMore((v) => !v)}
-              className="ml-[38px] py-1 text-left text-[11px] font-medium text-text-dim hover:text-brand"
+              className="ml-[38px] flex items-center gap-1 py-1.5 text-left text-[11px] font-medium text-text-dim hover:text-muted-foreground"
             >
-              {more ? '收起' : `展开更多 (${hidden})`}
+              <ChevronDown size={12} />
+              {more ? 'Show less' : `Show more (${hidden})`}
             </button>
           )}
         </div>
@@ -115,36 +162,56 @@ export function SessionModule({
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
 }) {
+  const empty = pin.length === 0 && groups.length === 0
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center gap-2">
-        <h2 className="text-[13px] font-semibold text-foreground">会话</h2>
-        <span className="rounded-full bg-purple/15 px-1.5 py-0.5 text-[10.5px] font-medium text-purple">船只</span>
+    <section className="mt-4">
+      {/* secondary "tool" module: dimmed title + neutral tag (contrasts the brand-colored 任务 hero) */}
+      <div className="mb-3 flex items-center gap-2">
+        <Terminal size={14} className="text-muted-foreground" />
+        <h2 className="text-[13px] font-semibold text-muted-foreground">会话</h2>
+        <span className="rounded-[10px] bg-muted px-2 py-px text-[11px] font-medium tracking-wide text-muted-foreground">船只</span>
+        <span className="flex-1" />
         <button
           onClick={onLaunch}
-          className="ml-auto flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[12px] text-foreground hover:bg-accent"
+          className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] text-muted-foreground hover:bg-accent hover:text-success"
         >
           <Play size={12} /> 起会话
         </button>
       </div>
 
-      {/* Pin section — only when there's at least one pinned session (keeps cwd visible) */}
-      {pin.length > 0 && (
-        <div className="mt-2">
-          <div className="flex items-center gap-1.5 px-1 py-1 text-[11px] text-muted-foreground">
-            <Pin size={12} /> Pin <span className="ml-auto">{pin.length}</span>
-          </div>
-          {pin.map((s) => (
-            <Row key={s.id} s={s} showCwd onOpen={onOpen} onPin={onPin} />
-          ))}
-        </div>
-      )}
-
-      {/* cwd groups */}
-      <div className="mt-1 flex flex-col gap-1">
-        {groups.map((g) => (
-          <CwdSection key={g.cwd} group={g} onOpen={onOpen} onPin={onPin} />
-        ))}
+      <div className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
+        {empty ? (
+          <div className="px-4 py-6 text-center text-[12px] text-text-dim">还没有会话 — 点「起会话」开一个</div>
+        ) : (
+          <>
+            {pin.length > 0 && (
+              <Section
+                icon={<Pin size={12} className="flex-none text-priority" />}
+                label="Pin"
+                count={pin.length}
+                rows={pin}
+                showCwd
+                onOpen={onOpen}
+                onPin={onPin}
+              />
+            )}
+            {groups.map((g) => (
+              <Section
+                key={g.key}
+                icon={<Anchor size={12} className="flex-none text-brand/60" />}
+                label={g.cwd}
+                labelSuffix={g.shortTag}
+                labelMono
+                count={g.sessions.length}
+                tag={g.tag}
+                rows={g.sessions}
+                limit={4}
+                onOpen={onOpen}
+                onPin={onPin}
+              />
+            ))}
+          </>
+        )}
       </div>
     </section>
   )

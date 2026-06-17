@@ -65,18 +65,37 @@ export function ProjectWorkspace() {
   })
   const pin: SessionRow[] = useMemo(
     () => projSessions.filter((s) => s.pinned).map((s) => toRow(s, true)),
-    [projSessions, live.activity],
+    [projSessions, live.rev],
   )
   const groups: CwdGroup[] = useMemo(() => {
+    const NO_CWD = '(无目录)'
     const map = new Map<string, SessionRow[]>()
     for (const s of projSessions.filter((x) => !x.pinned)) {
-      const key = s.cwd || '(no cwd)'
+      const key = s.cwd || NO_CWD // RAW cwd as the stable key (display form is shortened below)
       ;(map.get(key) ?? map.set(key, []).get(key)!).push(toRow(s, false))
     }
-    return [...map.entries()]
-      .sort((a, b) => b[1].length - a[1].length)
-      .map(([cwd, rows]) => ({ cwd: shortCwd(cwd), tag: '上下文', sessions: rows }))
-  }, [projSessions, live.activity])
+    // The 主上下文 is the project's home cwd when it actually has sessions, else the busiest cwd.
+    // Sort: main first, then by session count desc. The rest are worktree·第 N 上下文.
+    const home = project?.homeCwd || project?.paths?.[0]
+    const mainCwd = home && map.has(home) ? home : [...map.entries()].sort((a, b) => b[1].length - a[1].length)[0]?.[0]
+    const sorted = [...map.entries()].sort((a, b) => {
+      if (a[0] === mainCwd) return -1
+      if (b[0] === mainCwd) return 1
+      return b[1].length - a[1].length
+    })
+    let worktreeN = 1
+    return sorted.map(([cwd, rows]) => {
+      const isMain = cwd === mainCwd
+      const n = isMain ? 0 : ++worktreeN // worktrees count from 2 (主 is the 1st context)
+      return {
+        key: cwd,
+        cwd: cwd === NO_CWD ? NO_CWD : shortCwd(cwd),
+        tag: isMain ? '主上下文' : `worktree · 第 ${n} 上下文`,
+        shortTag: isMain ? '主上下文' : `worktree·${n}`,
+        sessions: rows,
+      }
+    })
+  }, [projSessions, project, live.rev])
 
   const done = tasks.filter((t) => isDoneStatus(t.status)).length
   const total = tasks.length || 1

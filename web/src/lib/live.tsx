@@ -11,6 +11,10 @@ interface LiveState {
   activity: Map<string, Activity>
   /** newest real-message time per settled session (for the unread/dock decision) */
   updatedAt: Map<string, number>
+  /** bumps whenever ANY ship-status input changes (activity / updatedAt / seen). Memoized
+   *  derivations of shipStatus must depend on this, not on `activity` — updatedAt & seen are
+   *  ref-backed and don't change `activity`'s reference, so they'd otherwise go stale. */
+  rev: number
   markSeen: (sessionId: string) => void
   shipStatus: (sessionId: string, fallbackUpdatedAt?: number) => ShipStatus
 }
@@ -30,7 +34,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [activity, setActivity] = useState<Map<string, Activity>>(new Map())
   const updatedAt = useRef(new Map<string, number>())
   const seen = useRef<Record<string, number>>(loadSeen())
-  const [, force] = useState(0)
+  const [rev, setRev] = useState(0)
+  const bump = () => setRev((n) => n + 1)
 
   useEffect(() => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -48,6 +53,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         }
         if (m.t === 'snap') {
           setActivity(new Map((m.sessions ?? []).map((s: any) => [s.sessionId, s.state])))
+          bump()
         } else if (m.t === 'act') {
           setActivity((prev) => {
             const next = new Map(prev)
@@ -56,6 +62,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             return next
           })
           if (m.updatedAt) updatedAt.current.set(m.sessionId, m.updatedAt)
+          bump()
         } else if (m.t === 'rekey') {
           setActivity((prev) => {
             const next = new Map(prev)
@@ -66,6 +73,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             }
             return next
           })
+          bump()
         }
       }
       ws.onclose = () => {
@@ -83,6 +91,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const value: LiveState = {
     activity,
     updatedAt: updatedAt.current,
+    rev,
     markSeen: (sessionId) => {
       seen.current[sessionId] = Math.floor(Date.now() / 1000)
       try {
@@ -90,7 +99,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       } catch {
         /* ignore quota */
       }
-      force((n) => n + 1)
+      bump()
     },
     shipStatus: (sessionId, fallbackUpdatedAt) => {
       const a = activity.get(sessionId)
