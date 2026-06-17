@@ -16,7 +16,7 @@
 
 - `src/server/api.ts` — 新增 `POST /sessions/detach`、`POST /session-import/remove` 两个路由（Modify）。
 - `test/api.test.ts` — mock store 加 `removeSessionImport`，新增两个端点的测试（Modify）。
-- `web/src/components/ui/menu.tsx` — 新建，导出 `AnchoredPopover` / `MenuLabel` / `MenuItem`（Create）。
+- `web/src/components/ui/Menu.tsx` — 新建，导出 `AnchoredPopover` / `MenuLabel` / `MenuItem`（Create）。
 - `web/src/components/workspace/TaskCard.tsx` — 删除这三个本地原语，改为 import（Modify）。
 - `web/src/lib/api.ts` — 加 `detachSessions` / `unimportSessions`（Modify）。
 - `web/src/components/workspace/SessionModule.tsx` — `Row`/`Section` 加 `⋯` 菜单与回调 props（Modify）。
@@ -145,12 +145,12 @@ git commit -m "feat(berth-2.0): API — detach / un-import sessions (project rem
 ## Task 2: 抽取共享 portal 菜单原语
 
 **Files:**
-- Create: `web/src/components/ui/menu.tsx`
+- Create: `web/src/components/ui/Menu.tsx`
 - Modify: `web/src/components/workspace/TaskCard.tsx`（删本地原语、改 import）
 
 - [ ] **Step 1: 新建共享菜单文件**
 
-创建 `web/src/components/ui/menu.tsx`，内容为从 `TaskCard.tsx:264-345` 原样搬出的三个原语（仅加 `export`）：
+创建 `web/src/components/ui/Menu.tsx`，内容为从 `TaskCard.tsx:264-345` 原样搬出的三个原语（仅加 `export`）：
 
 ```tsx
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
@@ -247,7 +247,7 @@ export const MenuItem = ({ children, onClick, danger }: { children: ReactNode; o
 2. 在文件顶部 import 区加：
 
 ```tsx
-import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/menu'
+import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/Menu'
 ```
 
 3. 清理因此变为未使用的 react / react-dom import：把第 1 行
@@ -269,7 +269,7 @@ Expected: 干净（无报错）
 - [ ] **Step 4: 提交**
 
 ```bash
-git add web/src/components/ui/menu.tsx web/src/components/workspace/TaskCard.tsx
+git add web/src/components/ui/Menu.tsx web/src/components/workspace/TaskCard.tsx
 git commit -m "refactor(berth-2.0): extract shared portal menu primitives out of TaskCard"
 ```
 
@@ -313,7 +313,7 @@ import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, Folder
 2. 新增：
 ```tsx
 import { useRef } from 'react'
-import { AnchoredPopover, MenuItem } from '@/components/ui/menu'
+import { AnchoredPopover, MenuItem } from '@/components/ui/Menu'
 ```
 （文件已 `import { useState, type ReactNode } from 'react'`，`useRef` 单独补一行即可；或合并到该行。）
 

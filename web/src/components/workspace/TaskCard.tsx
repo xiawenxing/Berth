@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Play, ChevronDown, Link2, MoreHorizontal, CalendarClock, Sparkles, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/menu'
+import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/Menu'
 import { useData } from '@/lib/data'
 import { priorityColors, priorityRank } from '@/lib/priority'
 import { isCancelledStatus, isDoneStatus, statusMeta } from '@/lib/status'

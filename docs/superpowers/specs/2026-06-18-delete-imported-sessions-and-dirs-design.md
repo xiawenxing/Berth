@@ -72,7 +72,7 @@ api.post('/session-import/remove', (req, res) => {
 
 ### 4.1 抽取共享菜单
 把 `TaskCard.tsx` 内私有的 `AnchoredPopover`、`MenuItem`、`MenuLabel`（portal 锚定下拉）抽到
-`web/src/components/ui/menu.tsx` 并导出；`TaskCard` 改为从该文件 import（纯搬移，零行为变化）。
+`web/src/components/ui/Menu.tsx` 并导出；`TaskCard` 改为从该文件 import（纯搬移，零行为变化）。
 `SessionModule` 复用同一套，样式与 spec 的「⋯ menu portal」一致。
 
 ### 4.2 `SessionModule.tsx`
