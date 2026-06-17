@@ -1,9 +1,18 @@
 <!doctype html>
-<html lang="zh-CN" class="dark">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Berth</title>
+    <!-- Default day (light) theme; honor a saved preference before first paint. -->
+    <script>
+      try {
+        var t = localStorage.getItem('berth-theme')
+        document.documentElement.classList.add(t === 'dark' ? 'dark' : 'light')
+      } catch (e) {
+        document.documentElement.classList.add('light')
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

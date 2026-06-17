@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Anchor, Inbox, Folder, Settings as SettingsIcon, Plus, Ban } from 'lucide-react'
+import { Anchor, Inbox, Folder, Settings as SettingsIcon, Plus, Ban, Sun, Moon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
 import { useData } from '@/lib/data'
@@ -10,6 +10,26 @@ interface ProjRow {
   id: string
   name: string
   meta: string
+}
+
+function ThemeToggle() {
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
+  const toggle = () => {
+    const next = !dark
+    setDark(next)
+    document.documentElement.classList.toggle('dark', next)
+    document.documentElement.classList.toggle('light', !next)
+    try {
+      localStorage.setItem('berth-theme', next ? 'dark' : 'light')
+    } catch {
+      /* ignore */
+    }
+  }
+  return (
+    <button onClick={toggle} className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground" title="切换主题">
+      {dark ? <Sun size={15} /> : <Moon size={15} />}
+    </button>
+  )
 }
 
 function NavItem({ to, icon: Icon, label }: { to: string; icon: typeof Inbox; label: string }) {
@@ -59,6 +79,7 @@ export function Rail() {
       <div className="flex items-center gap-2 px-3.5 py-3 text-[14px] font-bold">
         <Anchor size={18} className="text-brand" />
         Berth
+        <ThemeToggle />
       </div>
 
       <nav className="flex flex-col gap-0.5 px-2.5">
