@@ -102,6 +102,7 @@ export function Unassigned() {
   // First real unassigned session selected by default; fall back if selection vanished.
   const sel =
     allUnassigned.find((s) => s.sessionId === selId) ?? allUnassigned[0] ?? null
+  const selHasLivePty = !!sel && live.activity.has(sel.sessionId)
 
   const select = (s: ApiSession) => {
     setSelId(s.sessionId)
@@ -187,9 +188,9 @@ export function Unassigned() {
                 )
               })()}
             </div>
-            {resumeInput !== null ? (
+            {resumeInput !== null || selHasLivePty ? (
               <div className="min-h-0 flex-1">
-                <Terminal key={`resume-${sel.sessionId}`} sessionId={sel.sessionId} initialInput={resumeInput} />
+                <Terminal key={`resume-${sel.sessionId}`} sessionId={sel.sessionId} initialInput={resumeInput ?? undefined} />
               </div>
             ) : (
               <>

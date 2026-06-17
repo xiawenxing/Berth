@@ -323,13 +323,6 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     if (plan.bindNow.projectId) store.setAttach(plan.bindNow.sessionId, plan.bindNow.projectId, 'confirmed')
   }
 
-  // Tell the client which session id this fresh launch maps to, so it can associate its
-  // "创建中…" placeholder row with the real session as soon as that session surfaces in the list.
-  // claude/coco are bound now (deterministic id); codex sends its intent id with bound:false and the
-  // client falls back to matching by cwd+cli. Sent before attachViewer so it precedes any pty output.
-  const launchKey = plan.sessionId ?? plan.intent.id
-  try { ws.send(JSON.stringify({ __berth: 'launched', sessionId: launchKey, bound: !!plan.sessionId, cli, cwd })) } catch {}
-
   // An explicit ?prompt= wins; otherwise a task launch auto-fires its directive so the agent
   // starts working (and, by taking a real turn, writes a transcript and surfaces in the list).
   const initialPrompt = explicitPrompt ?? plan.initialPrompt ?? undefined
@@ -372,5 +365,11 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       try { rotateContextDocOnDisk(getDocStore(store), contextAbs!, { maxLines: ctxCfg.logMaxLines, keep: ctxCfg.logKeep, locale }) } catch {}
     } : undefined,
   })
+  // Tell the client which session id this fresh launch maps to, so it can bind the drawer to the
+  // live registry key. This MUST be after registerPty: 2.0 re-opens /pty?sessionId=… immediately on
+  // this frame, and sending it earlier races the registry and can attach the UI to stale transcript
+  // state instead of the just-launched process.
+  const launchKey = plan.sessionId ?? plan.intent.id
+  try { ws.send(JSON.stringify({ __berth: 'launched', sessionId: launchKey, bound: !!plan.sessionId, cli, cwd })) } catch {}
   attachViewer(plan.sessionId ?? plan.intent.id, ws)
 }

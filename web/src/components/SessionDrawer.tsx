@@ -6,19 +6,21 @@ import { Terminal } from './Terminal'
 import { CliBadge } from './workspace/TaskCard'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
+import { useLive } from '@/lib/live'
 import { SHIP_LABEL } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 /**
  * 60vw right-side session drawer (style 2 — no card). Slim header (no ■/×).
- * Body: a real session renders its conversation as a codex-style chat transcript with a bottom
- * composer; sending a message resumes the session live (a <Terminal> with the message auto-submitted)
- * so the user continues the conversation. A fresh launch renders the live terminal directly.
+ * Body: a live session attaches to the server-side PTY so the drawer shows the same TUI stream the
+ * CLI is producing. A stopped/moored session falls back to the parsed chat transcript + composer;
+ * sending a message resumes it live with the message auto-submitted.
  */
 export function SessionDrawer() {
-  const { drawer, closeDrawer } = useUI()
-  const { resync } = useData()
-  const [running, setRunning] = useState(false)
+  const { drawer, closeDrawer, openDrawer } = useUI()
+  const { sessions, resync } = useData()
+  const live = useLive()
+  const [optimisticLiveId, setOptimisticLiveId] = useState<string | null>(null)
   // When the user sends a follow-up, switch the body from the chat transcript to a live resumed
   // terminal that auto-submits this text. Reset whenever a different session opens.
   const [resumeInput, setResumeInput] = useState<string | null>(null)
@@ -26,21 +28,30 @@ export function SessionDrawer() {
   // which lags the launch by a beat. `GET /api/sessions` serves a disk-scan cache, so re-scan a
   // few times after launch to let the new session surface in the list (and rebind links/attach).
   const resyncTimers = useRef<number[]>([])
-  useEffect(() => () => resyncTimers.current.forEach((t) => clearTimeout(t)), [])
-  const resyncAfterLaunch = () => {
+  const optimisticTimer = useRef<number | null>(null)
+  useEffect(() => () => {
+    resyncTimers.current.forEach((t) => clearTimeout(t))
+    if (optimisticTimer.current !== null) clearTimeout(optimisticTimer.current)
+  }, [])
+  const resyncAfterLaunch = (sessionId: string) => {
     resyncTimers.current.forEach((t) => clearTimeout(t))
     resyncTimers.current = [800, 2500, 6000].map((ms) => window.setTimeout(() => void resync(), ms))
+    setOptimisticLiveId(sessionId)
+    if (optimisticTimer.current !== null) clearTimeout(optimisticTimer.current)
+    optimisticTimer.current = window.setTimeout(() => setOptimisticLiveId((id) => (id === sessionId ? null : id)), 8000)
+    if (drawer) openDrawer({ ...drawer, sessionId, status: 'sail', launch: undefined })
   }
-
-  // Reflect 在航 state in the header pill each time a different session opens.
-  useEffect(() => {
-    setRunning(drawer?.status === 'sail')
-  }, [drawer?.title, drawer?.status])
 
   // A different session opened → drop any pending resume so we show its transcript first.
   useEffect(() => {
     setResumeInput(null)
   }, [drawer?.sessionId])
+
+  const currentSession = drawer?.sessionId ? sessions.find((s) => s.sessionId === drawer.sessionId) : undefined
+  const currentStatus = drawer?.sessionId
+    ? live.shipStatus(drawer.sessionId, currentSession?.updatedAt)
+    : drawer?.status
+  const hasLivePty = !!drawer?.sessionId && (live.activity.has(drawer.sessionId) || optimisticLiveId === drawer.sessionId)
 
   return (
     <Drawer open={!!drawer} onClose={closeDrawer}>
@@ -50,18 +61,16 @@ export function SessionDrawer() {
             <CliBadge cli={drawer.cli} />
             <span className="truncate text-[13px] font-semibold text-foreground">{drawer.title}</span>
             <span className="font-mono text-[11px] text-text-dim">{drawer.cwd}</span>
-            <ShipPill status={running ? 'sail' : drawer.status} />
+            <ShipPill status={currentStatus ?? drawer.status} />
             {drawer.task && <span className="text-[11px] text-muted-foreground">· 航线 {drawer.task}</span>}
           </div>
 
-          {/* body: a REAL session renders its conversation as a codex-style chat transcript with a
-              bottom composer; sending resumes the session live (a <Terminal> that auto-submits the
-              message). A fresh LAUNCH (no sessionId yet) renders the live terminal directly. */}
+          {/* body: live PTY first; otherwise parsed transcript + composer. */}
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {drawer.sessionId ? (
-              resumeInput !== null ? (
+              resumeInput !== null || hasLivePty ? (
                 <div className="min-h-0 flex-1">
-                  <Terminal key={`resume-${drawer.sessionId}`} sessionId={drawer.sessionId} initialInput={resumeInput} />
+                  <Terminal key={`resume-${drawer.sessionId}`} sessionId={drawer.sessionId} initialInput={resumeInput ?? undefined} />
                 </div>
               ) : (
                 <>

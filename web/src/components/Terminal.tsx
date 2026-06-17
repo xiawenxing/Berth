@@ -68,10 +68,17 @@ export function Terminal({
     ws.binaryType = 'arraybuffer'
     // Resume + auto-submit: when resuming a session with an initial message, send it once the
     // pty socket is open, followed by a carriage return so the agent receives + runs it.
+    const sendInput = (d: string) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d }))
+    }
+    const sendResize = () => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'r', c: term.cols, r: term.rows }))
+    }
+
     if (sessionId && !launch && initialInput) {
       ws.addEventListener('open', () => {
-        ws.send(initialInput)
-        ws.send('\r')
+        sendInput(initialInput)
+        sendInput('\r')
       }, { once: true })
     }
     ws.onmessage = (e) => {
@@ -89,10 +96,13 @@ export function Terminal({
       term.write(data)
     }
     const disp = term.onData((d) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(d)
+      sendInput(d)
     })
 
-    const onResize = () => fit.fit()
+    const onResize = () => {
+      fit.fit()
+      sendResize()
+    }
     window.addEventListener('resize', onResize)
 
     return () => {
