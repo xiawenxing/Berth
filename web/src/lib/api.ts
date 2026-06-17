@@ -63,6 +63,8 @@ export const api = {
   deleteTask: (id: string) => send('DELETE', `/api/todos/${id}`),
   taskSummary: (id: string) => send('POST', `/api/todos/${id}/progress-summary`, {}),
   pin: (sessionId: string, on: boolean) => send('POST', '/api/pin', { sessionId, on }),
+  // Assign a session to a project (manual attach → state 'confirmed' server-side).
+  attach: (sessionId: string, projectId: string) => send('POST', '/api/attach', { sessionId, projectId }),
   createProject: (name: string, cwd?: string) => send('POST', '/api/projects/create', { name, cwd }),
   contextUpdate: (kind: 'task' | 'project', key: string, userInput: string) =>
     send('POST', '/api/context/update', { kind, key, userInput }),

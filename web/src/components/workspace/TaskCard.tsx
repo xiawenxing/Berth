@@ -1,7 +1,20 @@
-import { useState } from 'react'
-import { Play, ChevronDown, Link2, MoreHorizontal, CalendarClock, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  Play,
+  ChevronDown,
+  Link2,
+  MoreHorizontal,
+  CalendarClock,
+  Sparkles,
+  Folder,
+  Search,
+  ListChecks,
+  X,
+  Pencil,
+  Trash2,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Task, ShipStatus } from '@/lib/types'
+import { STATUS_ORDER, type Priority, type Task, type ShipStatus, type TaskStatus } from '@/lib/types'
 
 const REFINING = '港务助手正在总结进展摘要…'
 
@@ -58,19 +71,37 @@ export function TaskCard({
   active,
   onLaunch,
   onOpenSession,
+  onActivate,
+  onSetStatus,
+  onSetPriority,
+  onRename,
+  onDelete,
 }: {
   task: Task
   active: boolean
   onLaunch?: (taskTitle: string) => void
   onOpenSession?: (title: string) => void
+  onActivate?: () => void
+  onSetStatus?: (taskId: string, status: TaskStatus) => void
+  onSetPriority?: (taskId: string, priority: Priority) => void
+  onRename?: (taskId: string, title: string) => void
+  onDelete?: (taskId: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const done = task.status === '已完成'
   const cancelled = task.status === '已取消'
   const expandable = active && !done && !cancelled
   const linkN = task.links?.length ?? 0
   const runningOrUnread = task.links?.find((l) => l.status === 'sail' || l.status === 'dock')
   const [dragging, setDragging] = useState(false)
+
+  // Clicking the card body: in the active column toggle expand; in an inactive
+  // (narrow) column promote that column to active.
+  const onCardClick = () => {
+    if (expandable) setOpen((v) => !v)
+    else if (!active) onActivate?.()
+  }
 
   return (
     <div
@@ -82,8 +113,10 @@ export function TaskCard({
         e.dataTransfer.effectAllowed = 'move'
       }}
       onDragEnd={() => setDragging(false)}
+      onClick={onCardClick}
       className={cn(
-        'relative cursor-grab overflow-hidden rounded-md border border-border bg-card pl-3 pr-2.5 py-1.5 active:cursor-grabbing',
+        'relative overflow-hidden rounded-md border border-border bg-card pl-3 pr-2.5 py-1.5 active:cursor-grabbing',
+        expandable || !active ? 'cursor-pointer' : 'cursor-grab',
         open && 'ring-1 ring-brand/40',
         dragging && 'opacity-50',
       )}
@@ -92,12 +125,10 @@ export function TaskCard({
       <button
         className={cn('absolute left-0 top-0 h-full w-1', PRIO_BAR[task.priority])}
         title={`优先级 ${task.priority}`}
+        onClick={(e) => e.stopPropagation()}
       />
 
-      <div
-        className={cn('flex items-center gap-1.5', expandable && 'cursor-pointer')}
-        onClick={() => expandable && setOpen((v) => !v)}
-      >
+      <div className="flex items-center gap-1.5">
         {runningOrUnread && <ShipGlyph status={runningOrUnread.status} />}
         <span
           className={cn(
@@ -114,16 +145,17 @@ export function TaskCard({
             <Sparkles size={11} className="spk-twinkle" /> 总结中…
           </span>
         )}
-        {/* ▷启动 — collapse-only */}
+        {/* ▷ 启动 — icon-only, colored, collapse-only */}
         {!open && active && task.summary !== REFINING && (
           <button
-            className="inline-flex h-[18px] flex-none items-center gap-0.5 rounded px-1.5 text-[10.5px] font-semibold text-muted-foreground hover:bg-secondary hover:text-success"
+            title="为此任务起会话"
+            className="inline-flex h-[20px] w-[20px] flex-none items-center justify-center rounded text-success hover:bg-secondary hover:text-brand"
             onClick={(e) => {
               e.stopPropagation()
               onLaunch?.(task.title)
             }}
           >
-            <Play size={11} /> 启动
+            <Play size={14} className="fill-current" />
           </button>
         )}
         {expandable && <ChevronDown size={14} className={cn('flex-none text-text-dim transition-transform', open && 'rotate-180')} />}
@@ -139,9 +171,27 @@ export function TaskCard({
           )}
           <DdlChip ddl={task.ddl} />
           <span className="flex-1" />
-          <button className="rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground" onClick={(e) => e.stopPropagation()}>
-            <MoreHorizontal size={13} />
-          </button>
+          <div className="relative">
+            <button
+              className="rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation()
+                setMenuOpen((v) => !v)
+              }}
+            >
+              <MoreHorizontal size={13} />
+            </button>
+            {menuOpen && (
+              <TaskMenu
+                task={task}
+                onClose={() => setMenuOpen(false)}
+                onSetStatus={onSetStatus}
+                onSetPriority={onSetPriority}
+                onRename={onRename}
+                onDelete={onDelete}
+              />
+            )}
+          </div>
         </div>
       )}
 
@@ -154,7 +204,10 @@ export function TaskCard({
               {task.links!.map((l, i) => (
                 <button
                   key={i}
-                  onClick={() => onOpenSession?.(l.title)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onOpenSession?.(l.title)
+                  }}
                   className="flex items-center gap-2 rounded border border-border bg-card px-2 py-1 text-left hover:border-muted-foreground"
                 >
                   <ShipGlyph status={l.status} />
@@ -165,8 +218,11 @@ export function TaskCard({
             </div>
           ) : (
             <button
-              onClick={() => onLaunch?.(task.title)}
-              className="mt-2 flex items-center gap-1 rounded border border-dashed border-border px-2 py-1 text-[12px] text-muted-foreground hover:border-brand hover:text-brand"
+              onClick={(e) => {
+                e.stopPropagation()
+                onLaunch?.(task.title)
+              }}
+              className="mt-2 flex items-center gap-1 rounded border border-dashed border-brand/50 px-2 py-1 text-[12px] text-brand hover:border-brand hover:bg-brand/[0.06]"
             >
               <Play size={12} /> 起会话
             </button>
@@ -181,4 +237,113 @@ export function CliBadge({ cli }: { cli: string }) {
   const tone =
     cli === 'claude' ? 'bg-brand/15 text-brand' : cli === 'codex' ? 'bg-success/15 text-success' : 'bg-purple/15 text-purple'
   return <span className={cn('flex-none rounded px-1.5 py-0.5 text-[10.5px] font-medium', tone)}>{cli}</span>
+}
+
+const STATUS_ICON: Record<TaskStatus, typeof Folder> = {
+  待办: Folder,
+  进行中: Play,
+  待评估: Search,
+  已完成: ListChecks,
+  已取消: X,
+}
+
+const PRIO_CHIP: Record<Priority, string> = {
+  P0: 'bg-destructive/15 text-destructive',
+  P1: 'bg-priority/15 text-priority',
+  P2: 'bg-muted text-muted-foreground',
+}
+
+/** Anchored ⋯ popover: 状态 / 优先级 / 重命名 / 删除. Click-outside + Esc close. */
+function TaskMenu({
+  task,
+  onClose,
+  onSetStatus,
+  onSetPriority,
+  onRename,
+  onDelete,
+}: {
+  task: Task
+  onClose: () => void
+  onSetStatus?: (taskId: string, status: TaskStatus) => void
+  onSetPriority?: (taskId: string, priority: Priority) => void
+  onRename?: (taskId: string, title: string) => void
+  onDelete?: (taskId: string) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  const pick = (fn: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation()
+    fn()
+    onClose()
+  }
+
+  const Label = ({ children }: { children: React.ReactNode }) => (
+    <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-text-dim">{children}</div>
+  )
+  const Item = ({ children, onClick, danger }: { children: React.ReactNode; onClick: (e: React.MouseEvent) => void; danger?: boolean }) => (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] hover:bg-accent',
+        danger ? 'text-destructive hover:bg-destructive/10' : 'text-foreground',
+      )}
+    >
+      {children}
+    </button>
+  )
+
+  return (
+    <div
+      ref={ref}
+      onClick={(e) => e.stopPropagation()}
+      className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-border bg-popover p-1 shadow-lg"
+    >
+      <Label>状态 — 移动到列</Label>
+      {STATUS_ORDER.map((s) => {
+        const Icon = STATUS_ICON[s]
+        return (
+          <Item key={s} onClick={pick(() => onSetStatus?.(task.id, s))}>
+            <Icon size={13} className="flex-none text-muted-foreground" />
+            <span className="flex-1">{s}</span>
+            {task.status === s && <span className="h-1.5 w-1.5 flex-none rounded-full bg-brand" />}
+          </Item>
+        )
+      })}
+      <div className="my-1 border-t border-border" />
+      <Label>优先级</Label>
+      {(['P0', 'P1', 'P2'] as Priority[]).map((p) => (
+        <Item key={p} onClick={pick(() => onSetPriority?.(task.id, p))}>
+          <span className={cn('flex-none rounded px-1 text-[10px] font-bold', PRIO_CHIP[p])}>{p}</span>
+          <span className="flex-1">{p === 'P0' ? '高' : p === 'P1' ? '中' : '低'}</span>
+          {task.priority === p && <span className="h-1.5 w-1.5 flex-none rounded-full bg-brand" />}
+        </Item>
+      ))}
+      <div className="my-1 border-t border-border" />
+      <Item
+        onClick={pick(() => {
+          const next = window.prompt('重命名任务', task.title)
+          if (next && next.trim() && next.trim() !== task.title) onRename?.(task.id, next.trim())
+        })}
+      >
+        <Pencil size={13} className="flex-none text-muted-foreground" /> 重命名
+      </Item>
+      <Item danger onClick={pick(() => onDelete?.(task.id))}>
+        <Trash2 size={13} className="flex-none" /> 删除
+      </Item>
+    </div>
+  )
 }

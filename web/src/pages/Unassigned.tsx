@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
-import { Search, FolderInput, ChevronDown, ChevronRight } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { Terminal } from '@/components/Terminal'
 import { useData, relTime, shortCwd } from '@/lib/data'
 import { useLive } from '@/lib/live'
+import { api } from '@/lib/api'
 import { SHIP_LABEL, type ShipStatus } from '@/lib/types'
-import type { ApiSession } from '@/lib/api'
+import type { ApiSession, ApiProject } from '@/lib/api'
 
 function Glyph({ status }: { status: ShipStatus }) {
   if (status === 'sail') return <span className="h-1.5 w-1.5 flex-none rounded-full bg-success" />
@@ -25,10 +26,31 @@ function match(s: ApiSession, q: string) {
 }
 
 export function Unassigned() {
-  const { sessions } = useData()
+  const { sessions, projects, reload } = useData()
   const live = useLive()
   const [selId, setSelId] = useState<string | null>(null)
   const [q, setQ] = useState('')
+  // Optimistic pin state: there's no `pinned` field on the unassigned list, so
+  // track locally which ids we've toggled on (POST /pin persists server-side).
+  const [pinned, setPinned] = useState<Set<string>>(new Set())
+  const activeProjects = useMemo(() => projects.filter((p) => !p.archived), [projects])
+
+  const togglePin = (id: string) => {
+    setPinned((prev) => {
+      const next = new Set(prev)
+      const on = !next.has(id)
+      if (on) next.add(id)
+      else next.delete(id)
+      api.pin(id, on).catch(() => {})
+      return next
+    })
+  }
+  const attach = (sessionId: string, projectId: string) => {
+    api
+      .attach(sessionId, projectId)
+      .then(() => reload())
+      .catch(() => reload())
+  }
 
   // Unassigned = sessions with no projectId, grouped by raw cwd.
   const groups = useMemo(() => {
@@ -85,6 +107,10 @@ export function Unassigned() {
                 sessions={g.sessions.filter((s) => match(s, q))}
                 selId={sel?.sessionId}
                 onSelect={select}
+                pinned={pinned}
+                onTogglePin={togglePin}
+                projects={activeProjects}
+                onAttach={attach}
               />
             ))
           )}
@@ -95,7 +121,7 @@ export function Unassigned() {
       <div className="flex min-w-0 flex-1 flex-col bg-canvas">
         {sel ? (
           <>
-            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+            <div className="flex items-center gap-2 border-b border-border px-4 py-2">
               <CliBadge cli={sel.cli} />
               <span className="truncate text-[13px] font-semibold text-foreground">{sel.title || sel.sessionId}</span>
               <span className="font-mono text-[11px] text-text-dim">{shortCwd(sel.cwd)}</span>
@@ -104,7 +130,7 @@ export function Unassigned() {
                 return (
                   <span
                     className={cn(
-                      'rounded-full px-1.5 py-0.5 text-[10.5px]',
+                      'flex-none whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10.5px]',
                       st === 'sail'
                         ? 'bg-success/15 text-success'
                         : st === 'dock'
@@ -132,11 +158,19 @@ function CwdGroup({
   sessions,
   selId,
   onSelect,
+  pinned,
+  onTogglePin,
+  projects,
+  onAttach,
 }: {
   cwd: string
   sessions: ApiSession[]
   selId?: string
   onSelect: (s: ApiSession) => void
+  pinned: Set<string>
+  onTogglePin: (id: string) => void
+  projects: ApiProject[]
+  onAttach: (sessionId: string, projectId: string) => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const [more, setMore] = useState(false)
@@ -159,25 +193,16 @@ function CwdGroup({
       {!collapsed && (
         <div>
           {visible.map((s) => (
-            <button
+            <SessionListRow
               key={s.sessionId}
-              onClick={() => onSelect(s)}
-              className={cn(
-                'relative flex h-[46px] w-full items-center gap-2 px-3 text-left hover:bg-sidebar-accent',
-                selId === s.sessionId &&
-                  'bg-sidebar-accent before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-r before:bg-brand',
-              )}
-            >
-              <Glyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-foreground">{s.title || s.sessionId}</div>
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  <CliBadge cli={s.cli} />
-                  <span className="truncate font-mono text-[11px] text-text-dim">{shortCwd(s.cwd)}</span>
-                </div>
-              </div>
-              <span className="flex-none text-[11px] text-text-dim">{relTime(s.updatedAt)}</span>
-            </button>
+              s={s}
+              selected={selId === s.sessionId}
+              onSelect={onSelect}
+              isPinned={pinned.has(s.sessionId)}
+              onTogglePin={onTogglePin}
+              projects={projects}
+              onAttach={onAttach}
+            />
           ))}
           {hidden > 0 && (
             <button
@@ -189,6 +214,128 @@ function CwdGroup({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/** One unassigned-session row: select on click, hover-revealed pin + 归属到项目 actions. */
+function SessionListRow({
+  s,
+  selected,
+  onSelect,
+  isPinned,
+  onTogglePin,
+  projects,
+  onAttach,
+}: {
+  s: ApiSession
+  selected: boolean
+  onSelect: (s: ApiSession) => void
+  isPinned: boolean
+  onTogglePin: (id: string) => void
+  projects: ApiProject[]
+  onAttach: (sessionId: string, projectId: string) => void
+}) {
+  const live = useLive()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect(s)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect(s)
+        }
+      }}
+      className={cn(
+        'group relative flex h-[46px] w-full cursor-pointer items-center gap-2 px-3 text-left hover:bg-sidebar-accent',
+        selected &&
+          'bg-sidebar-accent before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-r before:bg-brand',
+      )}
+    >
+      <Glyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13px] font-medium text-foreground">{s.title || s.sessionId}</div>
+        {/* #7: rows are grouped by cwd already — drop the redundant path, keep just the CLI badge */}
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <CliBadge cli={s.cli} />
+        </div>
+      </div>
+
+      {/* hover-revealed actions: pin toggle + 归属到项目 ▾ */}
+      <div
+        ref={ref}
+        className="relative flex flex-none items-center gap-0.5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span
+          role="button"
+          tabIndex={-1}
+          title={isPinned ? '取消置顶' : '置顶'}
+          onClick={() => onTogglePin(s.sessionId)}
+          className={cn(
+            'flex-none rounded p-1 hover:bg-secondary',
+            isPinned
+              ? 'text-brand'
+              : 'text-text-dim opacity-0 hover:text-foreground group-hover:opacity-100',
+          )}
+        >
+          <Pin size={13} className={cn(isPinned && 'fill-current')} />
+        </span>
+        <button
+          title="归属到项目"
+          onClick={() => setMenuOpen((v) => !v)}
+          className={cn(
+            'flex-none rounded p-1 text-text-dim opacity-0 hover:bg-secondary hover:text-foreground group-hover:opacity-100',
+            menuOpen && 'opacity-100',
+          )}
+        >
+          <FolderInputIcon size={13} />
+        </button>
+        {menuOpen && (
+          <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-52 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
+            <div className="px-2 pb-0.5 pt-1 text-[10px] font-bold uppercase tracking-wide text-text-dim">归属到项目</div>
+            {projects.length === 0 ? (
+              <div className="px-2 py-1.5 text-[12px] text-muted-foreground">没有可用项目</div>
+            ) : (
+              projects.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onAttach(s.sessionId, p.id)
+                  }}
+                  className="flex w-full items-center gap-2 truncate rounded px-2 py-1 text-left text-[12px] text-foreground hover:bg-accent"
+                >
+                  {p.name}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      <span className="flex-none text-[11px] text-text-dim">{relTime(s.updatedAt)}</span>
     </div>
   )
 }

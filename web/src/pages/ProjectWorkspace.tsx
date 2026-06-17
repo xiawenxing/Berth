@@ -132,6 +132,29 @@ export function ProjectWorkspace() {
       .catch(() => reload())
   }
 
+  // ⋯ task-menu actions: optimistic local edit NOW, persist via PATCH/DELETE, then reload.
+  const onSetPriority = (taskId: string, priority: Task['priority']) => {
+    setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, priority } : t)))
+    api
+      .patchTask(taskId, { priority })
+      .then(() => reload())
+      .catch(() => reload())
+  }
+  const onRename = (taskId: string, title: string) => {
+    setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, title } : t)))
+    api
+      .patchTask(taskId, { title })
+      .then(() => reload())
+      .catch(() => reload())
+  }
+  const onDelete = (taskId: string) => {
+    setTasks((ts) => ts.filter((t) => t.id !== taskId))
+    api
+      .deleteTask(taskId)
+      .then(() => reload())
+      .catch(() => reload())
+  }
+
   // 即时创建：optimistic card NOW, persist via POST /todos, then reload real data.
   // (The server's createTask guard already classifies + titles; AI-summarize is that pipeline.)
   const createTask = (raw: string, opts: { aiSummarize: boolean; runNow: boolean }) => {
@@ -209,7 +232,15 @@ export function ProjectWorkspace() {
             <h2 className="text-[13px] font-semibold text-brand">任务</h2>
             <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[10.5px] font-medium text-brand">航线</span>
           </div>
-          <Kanban tasks={tasks} onLaunch={launch} onOpenSession={openSession} onMove={onMove} />
+          <Kanban
+            tasks={tasks}
+            onLaunch={launch}
+            onOpenSession={openSession}
+            onMove={onMove}
+            onSetPriority={onSetPriority}
+            onRename={onRename}
+            onDelete={onDelete}
+          />
         </section>
 
         <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onOpen={openRow} onPin={onPin} />

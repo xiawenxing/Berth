@@ -128,15 +128,17 @@ export function SessionModule({
         </button>
       </div>
 
-      {/* Pin section — keeps cwd visible (not grouped by cwd) */}
-      <div className="mt-2">
-        <div className="flex items-center gap-1.5 px-1 py-1 text-[11px] text-muted-foreground">
-          <Pin size={12} /> Pin <span className="ml-auto">{pin.length}</span>
+      {/* Pin section — only when there's at least one pinned session (keeps cwd visible) */}
+      {pin.length > 0 && (
+        <div className="mt-2">
+          <div className="flex items-center gap-1.5 px-1 py-1 text-[11px] text-muted-foreground">
+            <Pin size={12} /> Pin <span className="ml-auto">{pin.length}</span>
+          </div>
+          {pin.map((s) => (
+            <Row key={s.id} s={s} showCwd onOpen={onOpen} onPin={onPin} />
+          ))}
         </div>
-        {pin.map((s) => (
-          <Row key={s.id} s={s} showCwd onOpen={onOpen} onPin={onPin} />
-        ))}
-      </div>
+      )}
 
       {/* cwd groups */}
       <div className="mt-1 flex flex-col gap-1">
