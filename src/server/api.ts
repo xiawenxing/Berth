@@ -21,12 +21,12 @@ import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { titleInputFromTranscript } from '../agent/transcript'
 import type { Locale } from '../i18n'
 import { readFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { snapshotActivity } from './pty-registry'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { parseTranscriptTurns } from './transcript-turns'
 import { revertCommit } from '../data/doc-git'
-import { berthAgentCwd } from '../paths'
+import { berthAgentCwd, berthHome } from '../paths'
 
 function truncate(s: string | null, max: number): string | null {
   if (!s) return null
@@ -183,7 +183,9 @@ api.get('/projects', (_req, res) => {
       ...p,
       archived: archived.has(p.id),
       homeCwd: pathMap.get(p.id)?.home ?? null,
-      paths: pathMap.get(p.id)?.paths ?? [],
+      paths: pathMap.get(p.id)?.paths ?? [],          // bare string[] — back-compat (old app + ApiProject)
+      pathsMeta: pathMap.get(p.id)?.meta ?? [],        // {cwd,enabled}[] — drives the 货舱 toggle UI
+      workspaceCwd: join(berthHome(), 'workspaces', p.id), // Berth-assigned default cwd (masked in UI)
     })),
   })
 })
@@ -272,8 +274,8 @@ api.post('/session-dirs', (req, res) => {
 
 // Preview which CLI sessions a candidate import dir would surface, WITHOUT mutating state (no import,
 // no refresh). Scans the same CLI stores `refresh()` reads and returns sessions whose cwd EQUALS the
-// given cwd — the exact-match rule `filterImportedSessions` applies to import roots. Capped at 200.
-const PREVIEW_CAP = 200
+// given cwd — the exact-match rule `filterImportedSessions` applies to import roots. Returns the FULL
+// set (no cap): the import dialog paginates client-side (近期 8 + Show more) and 全选 must cover all.
 function normDirForMatch(p: string): string {
   const key = canonicalPathKey(p)
   return key.length > 1 ? key.replace(/\/+$/, '') : key
@@ -286,7 +288,6 @@ api.post('/session-dirs/preview', (req, res) => {
   const sessions = all
     .filter(s => s.cwd != null && normDirForMatch(s.cwd) === target)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, PREVIEW_CAP)
     .map(s => ({
       sessionId: s.sessionId,
       cli: s.cli,
@@ -305,15 +306,52 @@ api.delete('/session-dirs', (req, res) => {
   res.json({ ok: true, count: getCache().length })
 })
 
-// Add a cwd path to a project's path list (optionally make it the home cwd).
+// Register a cwd as a project 货舱 (optionally home, optionally disabled). `enabled` defaults true.
 api.post('/projects/add-path', (req, res) => {
-  const { projectId, name, cwd, isHome } = req.body ?? {}
+  const { projectId, name, cwd, isHome, enabled } = req.body ?? {}
   const store = getStore()
   const id = typeof projectId === 'string' ? projectId : (typeof name === 'string' ? store.resolveProjectId(name) : null)
   if (!id || typeof cwd !== 'string' || cwd.trim() === '')
     return res.status(400).json({ error: 'projectId:string, cwd:string required' })
-  store.addProjectPath(id, cwd.trim(), !!isHome)
+  store.addProjectPath(id, cwd.trim(), !!isHome, enabled === undefined ? true : !!enabled)
   res.json({ ok: true })
+})
+
+// Toggle a registered path's 默认装载 (enabled) flag.
+api.post('/projects/path/toggle', (req, res) => {
+  const { projectId, name, cwd, enabled } = req.body ?? {}
+  const store = getStore()
+  const id = typeof projectId === 'string' ? projectId : (typeof name === 'string' ? store.resolveProjectId(name) : null)
+  if (!id || typeof cwd !== 'string' || cwd.trim() === '' || typeof enabled !== 'boolean')
+    return res.status(400).json({ error: 'projectId:string, cwd:string, enabled:boolean required' })
+  store.setPathEnabled(id, cwd.trim(), enabled)
+  res.json({ ok: true })
+})
+
+// Remove a registered 货舱 path (does not touch any already-imported sessions).
+api.delete('/projects/path', (req, res) => {
+  const { projectId, name, cwd } = req.body ?? {}
+  const store = getStore()
+  const id = typeof projectId === 'string' ? projectId : (typeof name === 'string' ? store.resolveProjectId(name) : null)
+  if (!id || typeof cwd !== 'string' || cwd.trim() === '')
+    return res.status(400).json({ error: 'projectId:string, cwd:string required' })
+  store.removeProjectPath(id, cwd.trim())
+  res.json({ ok: true })
+})
+
+// Session-grained import: mark the given sessions as explicitly in Berth's visible set (and, with a
+// projectId, attach them to that project). Replaces the old dir-grained importDir for the React app —
+// registering a 货舱 cwd no longer surfaces all its sessions; only these ids surface.
+api.post('/session-import', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
+  const projectId = typeof req.body?.projectId === 'string' && req.body.projectId.trim() !== '' ? req.body.projectId.trim() : null
+  const store = getStore()
+  for (const id of ids) {
+    store.addSessionImport(id)
+    if (projectId) store.setAttach(id, projectId, 'confirmed')
+  }
+  refresh()
+  res.json({ ok: true, count: getCache().length })
 })
 
 // ── Markdown context docs (read/write, restricted to the configurable docs root) ──

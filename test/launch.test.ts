@@ -1,8 +1,35 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
+import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
-import { freshArgv, resumeArgv, ensureCodexBerthHookProfile } from '../src/pty/launch'
+import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd } from '../src/pty/launch'
+
+describe('ensureLaunchCwd', () => {
+  it('creates a Berth workspace cwd on demand (never falls back to homedir)', () => {
+    const home = mkdtempSync(join(tmpdir(), 'berth-home-'))
+    const prev = process.env.BERTH_HOME
+    process.env.BERTH_HOME = home
+    try {
+      const ws = join(home, 'workspaces', 'proj-xyz')
+      expect(existsSync(ws)).toBe(false)
+      expect(ensureLaunchCwd(ws)).toBe(ws)
+      expect(existsSync(ws)).toBe(true)
+    } finally {
+      prev === undefined ? delete process.env.BERTH_HOME : (process.env.BERTH_HOME = prev)
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+  it('falls back to homedir for a non-existent NON-workspace cwd, keeps an existing one', () => {
+    const real = mkdtempSync(join(tmpdir(), 'berth-cwd-'))
+    try {
+      expect(ensureLaunchCwd('/no/such/dir/xyz')).toBe(homedir())
+      expect(ensureLaunchCwd(real)).toBe(real)
+      expect(ensureLaunchCwd(null)).toBe(homedir())
+    } finally {
+      rmSync(real, { recursive: true, force: true })
+    }
+  })
+})
 
 // Fresh launches run in bypass-permissions mode (Berth-launched, unattended):
 //   claude --dangerously-skip-permissions · coco --yolo · codex --dangerously-bypass-approvals-and-sandbox

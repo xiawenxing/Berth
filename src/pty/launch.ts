@@ -5,10 +5,27 @@ import { join } from 'node:path'
 import { resolveAgentBinary, codexSupportsHookTrust } from './binaries'
 import { ensureClaudeTrust } from './trust'
 import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
+import { berthHome } from '../paths'
 import type { AgentCli, LogicalSession } from '../types'
 
 const CODEX_BERTH_PROFILE = 'berth-launch'
 const codexHome = () => process.env.CODEX_HOME || join(homedir(), '.codex')
+
+/**
+ * Resolve a spawn cwd safely. A Berth project workspace dir (~/.berth/workspaces/<id>) is created
+ * on demand — it legitimately may not exist yet. Any other path keeps the existsSync→homedir guard,
+ * so a stale/deleted cwd doesn't crash the spawn. Used by BOTH launchFresh and resumeSession so a
+ * workspace cwd is never silently swallowed into homedir() (the landmine in both paths). berthHome()
+ * is read per-call (not captured at import) so BERTH_HOME-isolated instances + tests resolve right.
+ */
+export function ensureLaunchCwd(cwd: string | null | undefined): string {
+  const workspacePrefix = join(berthHome(), 'workspaces')
+  if (cwd && (cwd === workspacePrefix || cwd.startsWith(workspacePrefix + '/'))) {
+    mkdirSync(cwd, { recursive: true })
+    return cwd
+  }
+  return cwd && existsSync(cwd) ? cwd : homedir()
+}
 
 export function resumeArgv(cli: AgentCli, id: string): string[] {
   switch (cli) {
@@ -27,7 +44,7 @@ export interface LaunchOpts { cols?: number; rows?: number }
 export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
   if (!s.resume) throw new Error(`session ${s.sessionId} has no resume target`)
   const { cli, id } = s.resume
-  const cwd = s.cwd && existsSync(s.cwd) ? s.cwd : homedir()
+  const cwd = ensureLaunchCwd(s.cwd)
   const bin = resolveAgentBinary(cli)
   if (cli === 'claude') ensureClaudeTrust(cwd)   // interactive PTY → trust dialog isn't auto-skipped
   return spawn(bin, resumeArgv(cli, id), {
@@ -103,7 +120,7 @@ statusMessage = "Loading Berth context"
 }
 
 export function launchFresh(cli: AgentCli, o: FreshOpts): IPty {
-  const cwd = existsSync(o.cwd) ? o.cwd : homedir()
+  const cwd = ensureLaunchCwd(o.cwd)
   const bin = resolveAgentBinary(cli)
   if (cli === 'claude') ensureClaudeTrust(cwd)   // interactive PTY → trust dialog isn't auto-skipped
   // codex's context hook rides `--dangerously-bypass-hook-trust`; on builds that lack the flag,

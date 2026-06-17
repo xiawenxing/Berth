@@ -231,7 +231,6 @@ export function createPtyWss(): WebSocketServer {
 /** Fresh-launch branch: mint id, build manifest, record intent/edge/attach, spawn, and bridge. */
 async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) {
   const cli = url.searchParams.get('cli') as AgentCli | null
-  const cwd = url.searchParams.get('cwd')
   const todoKey = url.searchParams.get('todoKey') || null
   const projectId = url.searchParams.get('projectId') || null
   const explicitPrompt = url.searchParams.get('prompt') || undefined
@@ -239,9 +238,15 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   if (cli !== 'claude' && cli !== 'codex' && cli !== 'coco') {
     try { ws.send(`\r\n[berth] unknown cli\r\n`) } catch {} ; ws.close(); return
   }
+  // cwd resolution: an explicit cwd wins; otherwise (no enabled 货舱) fall back to the project's
+  // Berth-assigned workspace dir (~/.berth/workspaces/<id>, created on demand by ensureLaunchCwd).
+  // Only a launch with neither cwd nor project has nowhere to go → reject.
+  let cwd = url.searchParams.get('cwd') || ''
+  if (!cwd && projectId) cwd = join(berthHome(), 'workspaces', projectId)
   if (!cwd) {
     try { ws.send(`\r\n[berth] missing cwd\r\n`) } catch {} ; ws.close(); return
   }
+  const isWorkspaceCwd = projectId != null && cwd === join(berthHome(), 'workspaces', projectId)
 
   const store = getStore()
   // The launching CLI must be a currently-enabled agent (Settings → Agents).
@@ -348,6 +353,12 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     cols,
     rows,
   })
+
+  // Remember this project's last real launch cwd (sticky 主 cwd for the launch dialog's auto-pick).
+  // Skip the workspace fallback — it's the catch-all, not a user choice.
+  if (projectId && !isWorkspaceCwd) {
+    try { store.setSetting(`project_last_cwd:${projectId}`, cwd) } catch {}
+  }
 
   // Register under the session key (claude/coco minted id; codex uses its intent id and is
   // rekeyed to the real id by reconcile). The pty now persists across viewer disconnects.
