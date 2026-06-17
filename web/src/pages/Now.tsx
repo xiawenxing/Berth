@@ -1,51 +1,60 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Pin, Play, ChevronDown, CalendarClock, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { useUI } from '@/lib/ui-store'
+import { useData, normPriority, normStatus, shortCwd } from '@/lib/data'
+import { useLive } from '@/lib/live'
 import type { ShipStatus } from '@/lib/types'
-
-interface NowTask {
-  proj: string
-  title: string
-  prio: 'P0' | 'P1' | 'P2'
-  delivered?: boolean
-  summary: string
-  links: { cli: string; title: string; status: ShipStatus }[]
-}
-interface NowShip {
-  proj: string
-  cli: string
-  title: string
-  status: ShipStatus
-}
-
-const TODAY: NowTask[] = [
-  { proj: 'Berth', title: '废弃全部会话页', prio: 'P0', summary: '先把 无归属/导入/搜索 搬家再删 tab。', links: [{ cli: 'claude', title: 'trust dialog 预置', status: 'moored' }] },
-  { proj: 'Berth', title: '会话列表改为 pin + cwd 分组', prio: 'P1', summary: '已确定砍掉活跃/已归档，改为 pin + 按 cwd 分组。', links: [{ cli: 'claude', title: 'Berth 2.0 交互重构讨论', status: 'sail' }, { cli: 'codex', title: '数据层解耦 review', status: 'dock' }] },
-  { proj: 'dotfiles', title: '同步 brew', prio: 'P2', summary: '把 Brewfile 与机器现状对齐。', links: [{ cli: 'coco', title: 'brew bundle', status: 'sail' }] },
-  { proj: 'Berth', title: 'codex hook trust', prio: 'P1', delivered: true, summary: '已完成并交付。', links: [] },
-]
-
-const PIN: NowShip[] = [
-  { proj: 'Berth', cli: 'claude', title: 'Berth 2.0 交互重构讨论', status: 'sail' },
-  { proj: 'Berth', cli: 'coco', title: 'i18n 文案抽取', status: 'moored' },
-]
-const UNREAD: NowShip[] = [
-  { proj: 'Berth', cli: 'codex', title: '数据层解耦 review', status: 'dock' },
-  { proj: 'dotfiles', cli: 'coco', title: 'zsh 插件整理', status: 'dock' },
-]
-const RUNNING: NowShip[] = [
-  { proj: 'dotfiles', cli: 'coco', title: 'brew bundle', status: 'sail' },
-  { proj: 'Zhang Shuai conversation', cli: 'claude', title: '会议纪要整理', status: 'sail' },
-]
+import type { ApiSession, ApiTask } from '@/lib/api'
 
 const PRIO_BAR = { P0: 'bg-destructive', P1: 'bg-priority', P2: 'bg-border/70' }
 
+/** Local YYYY-MM-DD for "today" — matches the backend ddl format. */
+function todayISO(): string {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
 export function Now() {
   const { openDrawer, openLaunch } = useUI()
-  const open = (s: { cli: string; title: string; status: ShipStatus }, proj: string) =>
-    openDrawer({ title: s.title, cli: s.cli, cwd: proj === 'dotfiles' ? '~/.config' : '~/Code/berth', status: s.status })
+  const { tasks, sessions } = useData()
+  const live = useLive()
+
+  const byId = useMemo(() => {
+    const m = new Map<string, ApiSession>()
+    for (const s of sessions) m.set(s.sessionId, s)
+    return m
+  }, [sessions])
+
+  // 今日交付: tasks whose ddl is today's local date, across all projects.
+  const today = todayISO()
+  const todayTasks = useMemo(() => tasks.filter((t) => t.ddl === today), [tasks, today])
+  const doneN = todayTasks.filter((t) => normStatus(t.status) === '已完成').length
+
+  // Ship sections: real sessions across all projects, project-tagged.
+  const pinShips = useMemo(() => sessions.filter((s) => s.pinned), [sessions])
+  const dockShips = useMemo(
+    () => sessions.filter((s) => live.shipStatus(s.sessionId, s.updatedAt) === 'dock'),
+    [sessions, live],
+  )
+  const sailShips = useMemo(
+    () => sessions.filter((s) => live.shipStatus(s.sessionId, s.updatedAt) === 'sail'),
+    [sessions, live],
+  )
+
+  const openSession = (s: ApiSession) => {
+    live.markSeen(s.sessionId)
+    openDrawer({
+      title: s.title || s.sessionId,
+      cli: s.cli,
+      cwd: shortCwd(s.cwd),
+      status: live.shipStatus(s.sessionId, s.updatedAt),
+      sessionId: s.sessionId,
+    })
+  }
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -57,18 +66,26 @@ export function Now() {
       <div className="flex w-full flex-col gap-5 px-6 py-5">
         {/* 今日交付 */}
         <section>
-          <SectionHead>今日交付 <span className="text-text-dim">1/4</span></SectionHead>
+          <SectionHead>
+            今日交付 <span className="text-text-dim">{doneN}/{todayTasks.length}</span>
+          </SectionHead>
           <div className="flex flex-col gap-1.5">
-            {TODAY.map((t, i) => (
-              <TaskRow key={i} t={t} onOpen={open} onLaunch={() => openLaunch({ dest: 'task', taskTitle: t.title })} />
+            {todayTasks.map((t) => (
+              <TaskRow
+                key={t.id}
+                t={t}
+                resolve={(id) => byId.get(id)}
+                onOpen={openSession}
+                onLaunch={() => openLaunch({ dest: 'task', taskTitle: t.title })}
+              />
             ))}
           </div>
         </section>
 
         {/* 船只 */}
-        <ShipSection icon={<Pin size={13} />} title="Pin" ships={PIN} onOpen={open} />
-        <ShipSection title="未读 · 靠岸·待查收" ships={UNREAD} onOpen={open} />
-        <ShipSection title="运行中 · 在航" ships={RUNNING} onOpen={open} />
+        <ShipSection icon={<Pin size={13} />} title="Pin" ships={pinShips} onOpen={openSession} />
+        <ShipSection title="未读 · 靠岸·待查收" ships={dockShips} onOpen={openSession} />
+        <ShipSection title="运行中 · 在航" ships={sailShips} onOpen={openSession} />
       </div>
     </div>
   )
@@ -78,7 +95,8 @@ function SectionHead({ children }: { children: React.ReactNode }) {
   return <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-foreground">{children}</div>
 }
 
-function ProjTag({ proj }: { proj: string }) {
+function ProjTag({ proj }: { proj?: string }) {
+  if (!proj) return null
   return <span className="flex-none rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{proj}</span>
 }
 
@@ -96,9 +114,10 @@ function ShipSection({
 }: {
   icon?: React.ReactNode
   title: string
-  ships: NowShip[]
-  onOpen: (s: NowShip, proj: string) => void
+  ships: ApiSession[]
+  onOpen: (s: ApiSession) => void
 }) {
+  const live = useLive()
   return (
     <section>
       <SectionHead>
@@ -106,16 +125,18 @@ function ShipSection({
         {title} <span className="text-text-dim">{ships.length}</span>
       </SectionHead>
       <div className="flex flex-col">
-        {ships.map((s, i) => (
+        {ships.map((s) => (
           <button
-            key={i}
-            onClick={() => onOpen(s, s.proj)}
+            key={s.sessionId}
+            onClick={() => onOpen(s)}
             className="flex h-[34px] items-center gap-2 rounded px-2 text-left hover:bg-sidebar-accent"
           >
-            <ShipGlyph status={s.status} />
-            <ProjTag proj={s.proj} />
+            <ShipGlyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
+            <ProjTag proj={s.project} />
             <CliBadge cli={s.cli} />
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{s.title}</span>
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+              {s.title || s.sessionId}
+            </span>
           </button>
         ))}
       </div>
@@ -125,21 +146,28 @@ function ShipSection({
 
 function TaskRow({
   t,
+  resolve,
   onOpen,
   onLaunch,
 }: {
-  t: NowTask
-  onOpen: (s: { cli: string; title: string; status: ShipStatus }, proj: string) => void
+  t: ApiTask
+  resolve: (sessionId: string) => ApiSession | undefined
+  onOpen: (s: ApiSession) => void
   onLaunch: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const live = useLive()
+  const prio = normPriority(t.priority)
+  const delivered = normStatus(t.status) === '已完成'
+  const linked = (t.sessions ?? []).map((id) => resolve(id)).filter((s): s is ApiSession => !!s)
+
   return (
     <div className="relative overflow-hidden rounded-md border border-border bg-card">
-      <span className={cn('absolute left-0 top-0 h-full w-1', PRIO_BAR[t.prio])} />
+      <span className={cn('absolute left-0 top-0 h-full w-1', PRIO_BAR[prio])} />
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left">
-        <ProjTag proj={t.proj} />
+        <ProjTag proj={t.project} />
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{t.title}</span>
-        {t.delivered ? (
+        {delivered ? (
           <span className="flex items-center gap-0.5 text-[10.5px] text-success"><Check size={11} /> 已交付</span>
         ) : (
           <span className="flex items-center gap-0.5 rounded bg-warning/15 px-1 py-0.5 text-[10.5px] text-warning"><CalendarClock size={11} /> 今日</span>
@@ -151,14 +179,14 @@ function TaskRow({
       </button>
       {open && (
         <div className="mx-2 mb-2 rounded-md bg-brand/[0.04] p-2">
-          <p className="text-[12px] text-muted-foreground">{t.summary}</p>
-          {t.links.length > 0 ? (
+          <p className="text-[12px] text-muted-foreground">{t.progress || '暂无进展摘要'}</p>
+          {linked.length > 0 ? (
             <div className="mt-2 flex flex-col gap-1">
-              {t.links.map((l, i) => (
-                <button key={i} onClick={() => onOpen(l, t.proj)} className="flex items-center gap-2 rounded border border-border bg-card px-2 py-1 text-left hover:border-muted-foreground">
-                  <ShipGlyph status={l.status} />
-                  <CliBadge cli={l.cli} />
-                  <span className="truncate text-[12px] text-foreground">{l.title}</span>
+              {linked.map((s) => (
+                <button key={s.sessionId} onClick={() => onOpen(s)} className="flex items-center gap-2 rounded border border-border bg-card px-2 py-1 text-left hover:border-muted-foreground">
+                  <ShipGlyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
+                  <CliBadge cli={s.cli} />
+                  <span className="truncate text-[12px] text-foreground">{s.title || s.sessionId}</span>
                 </button>
               ))}
             </div>

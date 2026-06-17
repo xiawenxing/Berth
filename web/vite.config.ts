@@ -21,5 +21,18 @@ export default defineConfig({
       '/status': { target: 'ws://127.0.0.1:7777', ws: true },
     },
   },
-  build: { outDir: 'dist', emptyOutDir: true },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // xterm is heavy and only needed when a terminal opens — split it out.
+          xterm: ['@xterm/xterm', '@xterm/addon-fit'],
+          react: ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
 })
