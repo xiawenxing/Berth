@@ -27,14 +27,14 @@ describe('parseTranscriptTurns - claude', () => {
       { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '改完了。' }] } },
     ))
     const turns = parseTranscriptTurns('claude', p)
-    expect(turns.map(t => t.role)).toEqual(['user', 'agent', 'tool', 'tool', 'agent'])
+    // The tool_use + tool_result run is coalesced into a single 'tool' turn ("执行过程").
+    expect(turns.map(t => t.role)).toEqual(['user', 'agent', 'tool', 'agent'])
     expect(turns[0].text).toBe('帮我重构会话列表')
     expect(turns[1].text).toBe('好的，我先看代码。')
     expect(turns[2].text).toContain('Bash')
+    expect(turns[2].text).toContain('foo at line 4')
     expect(turns[2].collapsed).toBe(true)
-    expect(turns[3].text).toContain('foo at line 4')
-    expect(turns[3].collapsed).toBe(true)
-    expect(turns[4].text).toBe('改完了。')
+    expect(turns[3].text).toBe('改完了。')
   })
 
   it('drops injected system/hook noise from user turns', () => {
@@ -45,6 +45,49 @@ describe('parseTranscriptTurns - claude', () => {
     const turns = parseTranscriptTurns('claude', p)
     expect(turns).toHaveLength(1)
     expect(turns[0]).toEqual({ role: 'user', text: '真实问题' })
+  })
+})
+
+describe('parseTranscriptTurns - tool coalescing', () => {
+  it('merges a run of adjacent tool turns into a single 执行过程 row', () => {
+    const p = tmpFile('s.jsonl', jl(
+      { type: 'user', message: { role: 'user', content: '改一下' } },
+      { type: 'assistant', message: { role: 'assistant', content: [
+        { type: 'tool_use', name: 'Bash', input: { command: 'rg a' } },
+        { type: 'tool_use', name: 'Read', input: { path: '/x' } },
+      ] } },
+      { type: 'user', message: { role: 'user', content: [
+        { type: 'tool_result', content: 'a at line 1' },
+        { type: 'tool_result', content: 'file body' },
+      ] } },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '完成。' }] } },
+    ))
+    const turns = parseTranscriptTurns('claude', p)
+    expect(turns.map(t => t.role)).toEqual(['user', 'tool', 'agent'])
+    // The single coalesced tool turn carries all four tool fragments.
+    expect(turns[1].text).toContain('Bash')
+    expect(turns[1].text).toContain('Read')
+    expect(turns[1].text).toContain('a at line 1')
+    expect(turns[1].text).toContain('file body')
+    expect(turns[1].collapsed).toBe(true)
+  })
+})
+
+describe('parseTranscriptTurns - head+tail read', () => {
+  it('keeps the opening user prompt even when the middle is past the byte cap', () => {
+    // Opening prompt, then a huge block of filler assistant lines, then a recent user turn.
+    const opening = { type: 'user', message: { role: 'user', content: 'OPENING_PROMPT_marker' } }
+    const filler = Array.from({ length: 4000 }, (_, i) => ({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'x'.repeat(200) + ` #${i}` }] },
+    }))
+    const recent = { type: 'user', message: { role: 'user', content: 'RECENT_PROMPT_marker' } }
+    const p = tmpFile('big.jsonl', jl(opening, ...filler, recent))
+    const turns = parseTranscriptTurns('claude', p)
+    const userTexts = turns.filter(t => t.role === 'user').map(t => t.text)
+    // Both the head (opening) and the tail (recent) user prompts survive.
+    expect(userTexts).toContain('OPENING_PROMPT_marker')
+    expect(userTexts).toContain('RECENT_PROMPT_marker')
   })
 })
 

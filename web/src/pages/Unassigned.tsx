@@ -3,6 +3,8 @@ import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as Fol
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { SessionChat } from '@/components/SessionChat'
+import { SessionComposer } from '@/components/SessionComposer'
+import { Terminal } from '@/components/Terminal'
 import { useData, relTime, shortCwd } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
@@ -30,6 +32,9 @@ export function Unassigned() {
   const live = useLive()
   const [selId, setSelId] = useState<string | null>(null)
   const [q, setQ] = useState('')
+  // When the user sends a follow-up, swap the right pane from the chat transcript to a live resumed
+  // terminal that auto-submits the message. Reset when a different session is selected.
+  const [resumeInput, setResumeInput] = useState<string | null>(null)
   // Optimistic pin state: there's no `pinned` field on the unassigned list, so
   // track locally which ids we've toggled on (POST /pin persists server-side).
   const [pinned, setPinned] = useState<Set<string>>(new Set())
@@ -75,6 +80,7 @@ export function Unassigned() {
 
   const select = (s: ApiSession) => {
     setSelId(s.sessionId)
+    setResumeInput(null) // a different session → show its transcript first
     live.markSeen(s.sessionId)
   }
 
@@ -143,9 +149,18 @@ export function Unassigned() {
                 )
               })()}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <SessionChat key={sel.sessionId} sessionId={sel.sessionId} />
-            </div>
+            {resumeInput !== null ? (
+              <div className="min-h-0 flex-1">
+                <Terminal key={`resume-${sel.sessionId}`} sessionId={sel.sessionId} initialInput={resumeInput} />
+              </div>
+            ) : (
+              <>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <SessionChat key={sel.sessionId} sessionId={sel.sessionId} />
+                </div>
+                <SessionComposer onSend={setResumeInput} />
+              </>
+            )}
           </>
         ) : null}
       </div>

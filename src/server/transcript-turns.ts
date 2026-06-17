@@ -10,27 +10,49 @@ import { stripNoise, isInjectedText, extractContentText } from '../agent/transcr
 export type TurnRole = 'user' | 'agent' | 'tool'
 export interface Turn { role: TurnRole; text: string; collapsed?: boolean }
 
-const MAX_BYTES = 200_000
+const HEAD_BYTES = 80_000  // keep the opening user prompt(s) from the START of the file
+const TAIL_BYTES = 160_000 // keep the most recent turns from the END of the file
+const MAX_BYTES = HEAD_BYTES + TAIL_BYTES // total cap ~240KB
 const MAX_TURNS = 200
+// Parse-time ceiling: large enough that both the head and tail reads are fully turned into turns
+// (the ~240KB byte cap already bounds the work); the final MAX_TURNS trim happens in trimTurns().
+const PARSE_TURN_CAP = 4_000
 const MAX_TURN_CHARS = 8_000
 const MAX_TOOL_CHARS = 4_000
 
-/** Read the LAST `maxBytes` of a file (the tail is the most recent conversation). */
-function readTail(path: string, maxBytes = MAX_BYTES): string {
+/** A marker line the line-splitter tolerates (it parses each line as JSON; non-JSON lines are skipped). */
+const HEAD_TAIL_MARKER = '\n__berth_head_tail_gap__\n'
+
+/**
+ * Read BOTH the head and the tail of a file so the opening user prompt(s) survive even in long
+ * sessions while the recent turns still appear. We read up to HEAD_BYTES from the START + TAIL_BYTES
+ * from the END, dropping the partial boundary line on the tail, and concatenate with a marker line
+ * the JSONL splitter ignores. Small files are read whole.
+ */
+function readHeadAndTail(path: string): string {
   const fd = openSync(path, 'r')
   try {
     const size = statSync(path).size
-    const start = size > maxBytes ? size - maxBytes : 0
-    const len = Math.min(size, maxBytes)
-    const buf = Buffer.alloc(len)
-    const n = readSync(fd, buf, 0, len, start)
-    let text = buf.toString('utf8', 0, n)
-    // If we sliced mid-file, drop the (likely partial) first line.
-    if (start > 0) {
-      const nl = text.indexOf('\n')
-      if (nl >= 0) text = text.slice(nl + 1)
+    if (size <= MAX_BYTES) {
+      const buf = Buffer.alloc(size)
+      const n = readSync(fd, buf, 0, size, 0)
+      return buf.toString('utf8', 0, n)
     }
-    return text
+    // Head: from the start. Keep whole lines (drop a trailing partial line so we don't feed a half JSON).
+    const headBuf = Buffer.alloc(HEAD_BYTES)
+    const hn = readSync(fd, headBuf, 0, HEAD_BYTES, 0)
+    let head = headBuf.toString('utf8', 0, hn)
+    const lastNl = head.lastIndexOf('\n')
+    if (lastNl >= 0) head = head.slice(0, lastNl)
+
+    // Tail: from the end. Drop the (likely partial) first line.
+    const tailBuf = Buffer.alloc(TAIL_BYTES)
+    const tn = readSync(fd, tailBuf, 0, TAIL_BYTES, size - TAIL_BYTES)
+    let tail = tailBuf.toString('utf8', 0, tn)
+    const firstNl = tail.indexOf('\n')
+    if (firstNl >= 0) tail = tail.slice(firstNl + 1)
+
+    return head + HEAD_TAIL_MARKER + tail
   } finally { closeSync(fd) }
 }
 
@@ -39,12 +61,47 @@ function clean(raw: string, max = MAX_TURN_CHARS): string {
   return stripped.slice(0, max)
 }
 
-/** Push a turn, coalescing consecutive same-role turns is intentionally NOT done — keep chronology. */
+/** Push a turn. Per-role coalescing of adjacent 'tool' turns happens later in coalesceToolTurns(). */
 function pushTurn(out: Turn[], role: TurnRole, text: string) {
   const t = text.trim()
   if (!t) return
-  if (out.length >= MAX_TURNS) return
+  if (out.length >= PARSE_TURN_CAP) return
   out.push(role === 'tool' ? { role, text: t.slice(0, MAX_TOOL_CHARS), collapsed: true } : { role, text: t })
+}
+
+/**
+ * Trim to MAX_TURNS while preserving the OPENING user prompt(s). When a long session yields more than
+ * MAX_TURNS turns we keep the leading run of user turns (the opening prompt) plus the most recent
+ * turns, so the chat shows both the original ask and the latest exchange rather than only the tail.
+ */
+function trimTurns(turns: Turn[]): Turn[] {
+  if (turns.length <= MAX_TURNS) return turns
+  // Leading run of user turns at the very top = the opening prompt(s).
+  let headCount = 0
+  while (headCount < turns.length && turns[headCount].role === 'user' && headCount < 4) headCount++
+  if (headCount === 0) return turns.slice(-MAX_TURNS)
+  const head = turns.slice(0, headCount)
+  const tail = turns.slice(-(MAX_TURNS - headCount))
+  return [...head, ...tail]
+}
+
+/**
+ * Merge a run of adjacent role==='tool' turns into a single 'tool' turn so a sequence of tool_use +
+ * tool_result rows renders as ONE "执行过程" collapsible instead of many noisy rows. Texts are joined
+ * with a blank line, capped at MAX_TOOL_CHARS. user/agent turns are kept separate and in order.
+ */
+function coalesceToolTurns(turns: Turn[]): Turn[] {
+  const out: Turn[] = []
+  for (const t of turns) {
+    const prev = out[out.length - 1]
+    if (t.role === 'tool' && prev && prev.role === 'tool') {
+      const joined = `${prev.text}\n\n${t.text}`.slice(0, MAX_TOOL_CHARS)
+      out[out.length - 1] = { ...prev, text: joined }
+    } else {
+      out.push(t)
+    }
+  }
+  return out
 }
 
 function summarizeToolInput(input: any): string {
@@ -209,7 +266,7 @@ export function parseTranscriptTurns(cli: AgentCli, contentSourcePath: string | 
   const path = resolveTranscriptPath(cli, contentSourcePath)
   if (!existsSync(path)) return []
   let text: string
-  try { text = readTail(path) } catch { return [] }
+  try { text = readHeadAndTail(path) } catch { return [] }
   if (!text.trim()) return []
   const lines = text.split('\n').filter(l => l.trim())
 
@@ -222,5 +279,6 @@ export function parseTranscriptTurns(cli: AgentCli, contentSourcePath: string | 
 
   // If a known-CLI parse yielded nothing usable, fall back to cleaned raw text.
   if (turns.length === 0) turns = fallbackTurns(text)
-  return turns.slice(-MAX_TURNS)
+  // Coalesce adjacent tool turns into one "执行过程" row, then cap (preserving the opening prompt).
+  return trimTurns(coalesceToolTurns(turns))
 }

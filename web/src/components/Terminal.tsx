@@ -22,10 +22,13 @@ export function Terminal({
   sessionId,
   launch,
   onLaunched,
+  initialInput,
 }: {
   sessionId?: string
   launch?: LaunchSpec
   onLaunched?: (sessionId: string) => void
+  /** When resuming (sessionId mode), text submitted to the agent once, after the ws opens. */
+  initialInput?: string
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
 
@@ -63,6 +66,14 @@ export function Terminal({
     }
     const ws = new WebSocket(`${proto}://${location.host}/pty?${qs.toString()}`)
     ws.binaryType = 'arraybuffer'
+    // Resume + auto-submit: when resuming a session with an initial message, send it once the
+    // pty socket is open, followed by a carriage return so the agent receives + runs it.
+    if (sessionId && !launch && initialInput) {
+      ws.addEventListener('open', () => {
+        ws.send(initialInput)
+        ws.send('\r')
+      }, { once: true })
+    }
     ws.onmessage = (e) => {
       const data = typeof e.data === 'string' ? e.data : new TextDecoder().decode(e.data as ArrayBuffer)
       if (data.startsWith('{"__berth"')) {
@@ -92,7 +103,7 @@ export function Terminal({
       term.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, launch?.cli, launch?.cwd, launch?.prompt, launch?.projectId, launch?.todoKey])
+  }, [sessionId, initialInput, launch?.cli, launch?.cwd, launch?.prompt, launch?.projectId, launch?.todoKey])
 
   return <div ref={hostRef} className="h-full w-full" />
 }
