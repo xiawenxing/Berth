@@ -59,6 +59,16 @@ export function SessionDrawer() {
               openDrawer({ ...drawer, title })
               reload()
             }}
+            onGenerate={
+              drawer.sessionId
+                ? async () => {
+                    const { title } = await api.sessionTitle(drawer.sessionId!)
+                    if (title) openDrawer({ ...drawer, title })
+                    reload()
+                    return title
+                  }
+                : undefined
+            }
           />
 
           {/* body: existing and newly-launched sessions share the native PTY transport/renderer. */}

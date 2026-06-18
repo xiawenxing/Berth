@@ -170,6 +170,11 @@ export function Unassigned() {
                 await api.renameSessionTitle(sel.sessionId, title)
                 reload()
               }}
+              onGenerate={async () => {
+                const { title } = await api.sessionTitle(sel.sessionId)
+                reload()
+                return title
+              }}
             />
             <div className="min-h-0 flex-1 overflow-hidden">
               <Terminal key={sel.sessionId} sessionId={sel.sessionId} />

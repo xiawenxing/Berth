@@ -145,7 +145,7 @@ export const api = {
   contextUpdate: (kind: 'task' | 'project', key: string, userInput: string) =>
     send('POST', '/api/context/update', { kind, key, userInput }),
   projectSummary: (id: string) => send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summary?: string; error?: string }>,
-  sessionTitle: (id: string) => send('POST', `/api/sessions/${id}/title`, {}),
+  sessionTitle: (id: string) => send('POST', `/api/sessions/${id}/title`, {}) as Promise<{ title: string }>,
   renameSessionTitle: (id: string, title: string) =>
     send('PATCH', `/api/sessions/${id}/title`, { title }) as Promise<{ title: string }>,
   // Context doc read/write (docstore-relative `path`/ref; POST guards on baseMtime).

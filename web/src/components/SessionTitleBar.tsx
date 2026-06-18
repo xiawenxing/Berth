@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Sparkles } from 'lucide-react'
 import { CliBadge } from './workspace/TaskCard'
 import { SHIP_LABEL, type ShipStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -11,13 +12,16 @@ interface SessionTitleBarProps {
   task?: string
   editable?: boolean
   onRename?: (title: string) => Promise<void> | void
+  // AI-generate a title from the session transcript. Returns the new title (persisted server-side).
+  onGenerate?: () => Promise<string>
 }
 
-export function SessionTitleBar({ cli, title, cwd, status, task, editable = false, onRename }: SessionTitleBarProps) {
+export function SessionTitleBar({ cli, title, cwd, status, task, editable = false, onRename, onGenerate }: SessionTitleBarProps) {
   const [localTitle, setLocalTitle] = useState(title)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(title)
   const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const skipBlurCommit = useRef(false)
@@ -50,6 +54,23 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
     window.setTimeout(() => {
       skipBlurCommit.current = false
     }, 0)
+  }
+
+  const generateTitle = async () => {
+    if (!onGenerate || generating || saving || editing) return
+    setGenerating(true)
+    setError(null)
+    try {
+      const next = (await onGenerate())?.trim()
+      if (next) {
+        setLocalTitle(next)
+        setDraft(next)
+      }
+    } catch {
+      setError('标题生成失败')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   const commitEditing = async () => {
@@ -121,6 +142,21 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
           {error ?? cwd}
         </div>
       </div>
+      {onGenerate && (
+        <button
+          type="button"
+          onClick={generateTitle}
+          disabled={generating || saving || editing}
+          title="智能生成标题"
+          aria-label="智能生成标题"
+          className={cn(
+            'flex-none rounded p-1 text-text-dim transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50',
+            generating && 'text-brand',
+          )}
+        >
+          <Sparkles className={cn('h-3.5 w-3.5', generating && 'animate-pulse')} />
+        </button>
+      )}
       <ShipPill status={status} />
       {task && <span className="flex-none whitespace-nowrap text-[11px] text-muted-foreground">· 航线 {task}</span>}
     </div>
