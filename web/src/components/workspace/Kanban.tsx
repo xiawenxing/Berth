@@ -71,7 +71,7 @@ export function Kanban({
             <button
               onClick={() => setActive(status)}
               className={cn(
-                'sticky top-0 z-10 flex items-center gap-1.5 border-b border-border bg-card px-2.5 py-2 text-[12px] font-semibold text-foreground hover:bg-accent',
+                'flex shrink-0 items-center gap-1.5 border-b border-border bg-card px-2.5 py-2 text-[12px] font-semibold text-foreground hover:bg-accent',
                 isActive && 'text-accent-foreground',
               )}
             >
