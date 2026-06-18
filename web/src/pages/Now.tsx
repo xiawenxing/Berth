@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Pin, Play, ChevronDown, CalendarClock, Check } from 'lucide-react'
+import { Pin, Play, ChevronDown, CalendarClock, Check, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { useUI } from '@/lib/ui-store'
 import { useData, shortCwd } from '@/lib/data'
+import { api } from '@/lib/api'
 import { priorityColors, priorityRank } from '@/lib/priority'
 import { isDoneStatus } from '@/lib/status'
 import { useLive } from '@/lib/live'
@@ -133,21 +134,65 @@ function ShipSection({
       </SectionHead>
       <div className="flex flex-col">
         {ships.map((s) => (
-          <button
-            key={s.sessionId}
-            onClick={() => onOpen(s)}
-            className="flex h-[34px] items-center gap-2 rounded px-2 text-left hover:bg-sidebar-accent"
-          >
-            <ShipGlyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
-            <ProjTag proj={s.project} />
-            <CliBadge cli={s.cli} />
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
-              {s.title || s.sessionId}
-            </span>
-          </button>
+          <ShipRow key={s.sessionId} s={s} onOpen={onOpen} />
         ))}
       </div>
     </section>
+  )
+}
+
+function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void }) {
+  const live = useLive()
+  const { reload } = useData()
+  const [generating, setGenerating] = useState(false)
+
+  const generateTitle = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (generating) return
+    setGenerating(true)
+    try {
+      await api.sessionTitle(s.sessionId)
+      reload()
+    } catch {
+      /* surfaced in the drawer; row stays quiet */
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(s)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen(s)
+        }
+      }}
+      className="group flex h-[34px] cursor-pointer items-center gap-2 rounded px-2 text-left hover:bg-sidebar-accent"
+    >
+      <ShipGlyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
+      <ProjTag proj={s.project} />
+      <CliBadge cli={s.cli} />
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+        {s.title || s.sessionId}
+      </span>
+      <button
+        type="button"
+        onClick={generateTitle}
+        disabled={generating}
+        title="智能生成标题"
+        aria-label="智能生成标题"
+        className={cn(
+          'flex-none rounded p-1 text-text-dim opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100 disabled:opacity-50',
+          generating && 'text-brand opacity-100',
+        )}
+      >
+        <Sparkles className={cn('h-3.5 w-3.5', generating && 'animate-pulse')} />
+      </button>
+    </div>
   )
 }
 
