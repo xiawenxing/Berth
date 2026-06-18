@@ -377,6 +377,7 @@ export function ProjectWorkspace() {
             onSetPriority={onSetPriority}
             onRename={onRename}
             onDelete={onDelete}
+            onCreateTask={() => setNewTask(true)}
           />
         </section>
 

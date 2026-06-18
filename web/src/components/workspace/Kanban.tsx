@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { resolveColumn, statusMeta } from '@/lib/status'
@@ -16,6 +17,7 @@ export function Kanban({
   onSetPriority,
   onRename,
   onDelete,
+  onCreateTask,
 }: {
   tasks: Task[]
   onLaunch?: (taskId: string) => void
@@ -24,6 +26,7 @@ export function Kanban({
   onSetPriority?: (taskId: string, priority: Priority) => void
   onRename?: (taskId: string, title: string) => void
   onDelete?: (taskId: string) => void
+  onCreateTask?: () => void
 }) {
   const { statuses } = useData()
   const [active, setActive] = useState<string>(() => pickDefaultActive(statuses))
@@ -34,8 +37,20 @@ export function Kanban({
     if (!statuses.includes(active)) setActive(pickDefaultActive(statuses))
   }, [statuses, active])
 
+  if (tasks.length === 0) {
+    return (
+      <button
+        type="button"
+        onClick={onCreateTask}
+        className="flex min-h-[58px] w-full items-center justify-center gap-2 rounded-md border border-dashed border-brand/50 bg-brand/[0.04] text-[13px] font-semibold text-brand transition-colors hover:border-brand hover:bg-brand/[0.08] hover:text-foreground"
+      >
+        <Plus size={15} /> 创建任务
+      </button>
+    )
+  }
+
   return (
-    <div className="flex h-[700px] max-h-[700px] w-full items-stretch gap-3">
+    <div className="flex max-h-[700px] w-full items-start gap-3 overflow-x-auto pb-1">
       {statuses.map((status) => {
         const items = tasks.filter((t) => resolveColumn(t.status, statuses) === status)
         const isActive = status === active
@@ -63,7 +78,7 @@ export function Kanban({
             }}
             className={cn(
               // overflow-hidden clips the header's square top corners to the column's rounded-md.
-              'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card transition-[flex-grow] duration-300',
+              'flex min-h-0 min-w-0 max-h-[700px] flex-col overflow-hidden rounded-md border border-border bg-card transition-[flex-grow] duration-300',
               isActive ? 'flex-[2.2] border-brand/45' : 'flex-1',
               isDropOver && 'border-brand ring-2 ring-brand/60',
             )}
@@ -81,7 +96,7 @@ export function Kanban({
                 {items.length}
               </span>
             </button>
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+            <div className="flex min-h-0 max-h-[660px] flex-col gap-2 overflow-y-auto p-2">
               {items.length === 0 ? (
                 <div className="py-1.5 text-center text-[11.5px] text-text-dim">—</div>
               ) : (
