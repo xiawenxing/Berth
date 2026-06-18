@@ -65,7 +65,7 @@ export function ProjectSummaryPopover({
   }, [projectId])
 
   return (
-    <AnchoredPopover anchor={anchor} width={560} onClose={onClose}>
+    <AnchoredPopover anchor={anchor} width={340} onClose={onClose}>
       <div className="flex items-center gap-2 px-3 py-2">
         <Sparkles size={14} className={loading ? 'spk-twinkle' : 'text-brand'} />
         <h3 className="text-[13px] font-semibold text-foreground">项目小结</h3>
