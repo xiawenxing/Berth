@@ -28,6 +28,12 @@ import { parseTranscriptTurns } from './transcript-turns'
 import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd, berthHome } from '../paths'
 
+function isFolderPickerCancelled(err: unknown, stderr = ''): boolean {
+  const e = err as { message?: unknown; stderr?: unknown }
+  const text = `${String(e?.message ?? '')}\n${String(e?.stderr ?? '')}\n${stderr}`
+  return /User canceled/i.test(text) || /\(-128\)/.test(text)
+}
+
 function truncate(s: string | null, max: number): string | null {
   if (!s) return null
   return s.length <= max ? s : s.slice(0, max) + '…'
@@ -155,9 +161,13 @@ api.post('/pick-folder', (req, res) => {
   const def = typeof req.body?.default === 'string' ? req.body.default : ''
   // `choose folder` returns an alias; `POSIX path of` yields the absolute path (trailing slash).
   const loc = def ? ` default location (POSIX file ${JSON.stringify(def)})` : ''
+  const cancelled = () => res.json({ cancelled: true })
   const tryScript = (script: string, onFail: () => void) => {
-    execFile('osascript', ['-e', script], { timeout: 300000 }, (err, stdout) => {
-      if (err) return onFail()
+    execFile('osascript', ['-e', script], { timeout: 300000 }, (err, stdout, stderr) => {
+      if (err) {
+        if (isFolderPickerCancelled(err, stderr?.toString?.() ?? '')) return cancelled()
+        return onFail()
+      }
       const p = stdout.toString().trim().replace(/\/+$/, '')
       if (!p) return onFail()
       res.json({ path: p })
@@ -168,7 +178,7 @@ api.post('/pick-folder', (req, res) => {
     `POSIX path of (choose folder with prompt "选择会话工作目录"${loc})`,
     () => tryScript(
       `POSIX path of (choose folder with prompt "选择会话工作目录")`,
-      () => res.json({ cancelled: true }),
+      cancelled,
     ),
   )
 })

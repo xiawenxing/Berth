@@ -4,6 +4,13 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+const mockExecFile = vi.hoisted(() => vi.fn())
+
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  execFile: (...a: any[]) => mockExecFile(...a),
+}))
+
 // ── Mock store-singleton so tests control getStore() + getCache() ─────────────
 // These must be declared before any imports that pull in api.ts
 const mockEdgesByTodo = vi.fn(() => new Map<string, string[]>())
@@ -156,6 +163,7 @@ function fakePty() {
 }
 
 beforeEach(() => {
+  mockExecFile.mockReset()
   mockEdgesByTodo.mockReturnValue(new Map<string, string[]>())
   mockTodoKeyForSession.mockReturnValue(null)
   mockGetCache.mockReturnValue([])
@@ -167,6 +175,45 @@ beforeEach(() => {
   mockRunContextUpdate.mockReset().mockResolvedValue({ ok: true, changed: [], added: [], removed: [], commit: null, rotated: false })
   mockReadTranscript.mockReset().mockReturnValue('transcript text')
   mockRevertCommit.mockReset().mockReturnValue({ ok: true })
+})
+
+describe('pick-folder API', () => {
+  it('treats AppleScript cancel as a cancellation without retrying', async () => {
+    mockExecFile.mockImplementationOnce((_bin: string, _args: string[], _opts: any, cb: Function) => {
+      const err = Object.assign(new Error('execution error: User canceled. (-128)'), { code: 1 })
+      cb(err, '', 'execution error: User canceled. (-128)')
+    })
+
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/pick-folder`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ default: '/missing/default' }),
+    })
+
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ cancelled: true })
+    expect(mockExecFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries without the default location when the default path is invalid', async () => {
+    mockExecFile
+      .mockImplementationOnce((_bin: string, _args: string[], _opts: any, cb: Function) => {
+        cb(new Error('Can’t get POSIX file "/missing/default".'), '', 'Can’t get POSIX file')
+      })
+      .mockImplementationOnce((_bin: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, '/Users/me/work/\n', '')
+      })
+
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/pick-folder`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ default: '/missing/default' }),
+    })
+
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ path: '/Users/me/work' })
+    expect(mockExecFile).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('session-dirs API', () => {
