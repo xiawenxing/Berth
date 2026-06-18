@@ -3584,7 +3584,7 @@ function renderWorkspace(name) {
   todoSection.innerHTML = `<div class="ws-section-title">${icon('list-checks')} 任务</div>`;
 
   if (projTodos.length === 0) {
-    todoSection.innerHTML += '<div class="ws-empty">（该项目暂无任务）</div>';
+    todoSection.appendChild(buildTodoEmptyCta(name));
   } else {
     todoSection.appendChild(buildTodoBoard(projTodos, name));
   }
@@ -3692,6 +3692,24 @@ function renderWorkspace(name) {
     sessSection.appendChild(sessList);
   }
   container.appendChild(sessSection);
+}
+
+function buildTodoEmptyCta(projectName) {
+  const wrap = document.createElement('div');
+  wrap.className = 'todo-empty-cta';
+  const btn = document.createElement('button');
+  btn.className = 'todo-empty-create-btn';
+  btn.type = 'button';
+  btn.innerHTML = `${icon('plus')} 创建任务`;
+  btn.addEventListener('click', () => {
+    const input = document.querySelector('#ws-create-todo .create-todo-input');
+    if (!input) return;
+    input.focus();
+    input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (!input.value && projectName) input.placeholder = `给「${projectName}」新建任务…`;
+  });
+  wrap.appendChild(btn);
+  return wrap;
 }
 
 function todoStatusClass(status) {
