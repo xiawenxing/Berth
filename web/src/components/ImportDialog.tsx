@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { relTime } from '@/lib/data'
+import { relTime } from '@/lib/format'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { Dialog } from '@/components/ui/Overlay'
 import type { PreviewSession } from '@/lib/api'

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { FileText, Folder, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api, type PreviewSession, type ApiPathMeta } from '@/lib/api'
-import { shortCwd } from '@/lib/data'
+import { shortCwd } from '@/lib/format'
 import { ImportDialog } from '@/components/ImportDialog'
 
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
