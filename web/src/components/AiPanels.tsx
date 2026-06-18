@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { Sparkles, Copy, Save, RefreshCw } from 'lucide-react'
+import { Sparkles, Copy, Save, RefreshCw, X, CheckCircle2, Circle } from 'lucide-react'
 import { Drawer } from './ui/Overlay'
 import { AnchoredPopover } from './ui/Menu'
-import { api } from '@/lib/api'
+import { api, type ProjectSummary } from '@/lib/api'
+
+const EMPTY_SUMMARY: ProjectSummary = { headline: '', progress: [], milestones: [] }
+const isEmptySummary = (s: ProjectSummary) => !s.headline && !s.progress.length && !s.milestones.length
 
 /** 项目小结 — popover anchored under the 小结 trigger. First open loads the persisted result
  *  (GET /projects/:id/summary) and only generates when none exists yet; the result is stored
@@ -17,7 +20,7 @@ export function ProjectSummaryPopover({
   onClose: () => void
 }) {
   const [loading, setLoading] = useState(true)
-  const [summary, setSummary] = useState('')
+  const [summary, setSummary] = useState<ProjectSummary>(EMPTY_SUMMARY)
   const [generatedAt, setGeneratedAt] = useState<number | undefined>(undefined)
   const [err, setErr] = useState('')
   const reqRef = useRef(0)
@@ -30,7 +33,7 @@ export function ProjectSummaryPopover({
       .projectSummary(projectId)
       .then((r) => {
         if (reqRef.current !== req) return
-        setSummary(r.summary || '')
+        setSummary(r.summary ?? EMPTY_SUMMARY)
         setGeneratedAt(r.generatedAt)
       })
       .catch((e) => {
@@ -64,43 +67,110 @@ export function ProjectSummaryPopover({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
+  const copy = () => {
+    const text = summaryToText(summary)
+    if (text) navigator.clipboard?.writeText(text)
+  }
+
   return (
     <AnchoredPopover anchor={anchor} width={340} onClose={onClose}>
-      <div className="flex items-center gap-2 px-3 py-2">
+      {/* header: title + copy / close (重新生成 lives in the footer, matching the v7 mockup) */}
+      <div className="flex items-center gap-2 px-3 py-2.5">
         <Sparkles size={14} className={loading ? 'spk-twinkle' : 'text-brand'} />
         <h3 className="text-[13px] font-semibold text-foreground">项目小结</h3>
-        {!loading && generatedAt && (
-          <span className="text-[11px] text-text-dim">{fmtGenerated(generatedAt)}</span>
-        )}
         <span className="flex-1" />
-        <button
-          onClick={gen}
-          disabled={loading}
-          className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-        >
-          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 重新生成
-        </button>
-        <button
-          onClick={() => summary && navigator.clipboard?.writeText(summary)}
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-          title="复制"
-        >
+        <button onClick={copy} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="复制">
           <Copy size={13} />
         </button>
+        <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="关闭">
+          <X size={14} />
+        </button>
       </div>
-      <div className="-mx-1 max-h-[50vh] overflow-y-auto border-t border-border px-4 py-2.5">
+
+      <div className="-mx-1 max-h-[55vh] overflow-y-auto border-t border-border px-4 py-3">
         {loading ? (
-          <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+          <p className="flex items-center gap-1.5 py-1 text-[12px] text-muted-foreground">
             <Sparkles size={12} className="spk-twinkle" /> 港务助手生成中…
           </p>
         ) : err ? (
           <p className="text-[12px] text-destructive">{err}</p>
+        ) : isEmptySummary(summary) ? (
+          <p className="text-[12px] text-muted-foreground">（项目上下文为空，暂无可总结内容）</p>
         ) : (
-          <pre className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{summary || '（项目上下文为空，暂无可总结内容）'}</pre>
+          <div className="flex flex-col gap-3.5">
+            {summary.headline && (
+              <Section label="一句话总结" dot="bg-warning">
+                <p className="text-[12.5px] leading-relaxed text-foreground">{summary.headline}</p>
+              </Section>
+            )}
+            {summary.progress.length > 0 && (
+              <Section label="进度要点" dot="bg-success">
+                <ul className="flex flex-col gap-1.5">
+                  {summary.progress.map((p, i) => (
+                    <li key={i} className="flex gap-2 text-[12px] leading-snug text-muted-foreground">
+                      <span className="mt-[6px] h-[5px] w-[5px] flex-none rounded-full bg-brand" />
+                      {p}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+            {summary.milestones.length > 0 && (
+              <Section label="重要里程碑" dot="bg-brand">
+                <ul className="flex flex-col gap-1.5">
+                  {summary.milestones.map((m, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[12px] leading-snug">
+                      {m.done ? (
+                        <CheckCircle2 size={13} className="mt-[1px] flex-none text-success" />
+                      ) : (
+                        <Circle size={13} className="mt-[1px] flex-none text-text-dim" />
+                      )}
+                      <span className={m.done ? 'text-muted-foreground line-through' : 'text-foreground'}>{m.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+          </div>
         )}
+      </div>
+
+      {/* footer: 重新生成 + 更新时间 (matches the v7 mockup) */}
+      <div className="-mx-1 flex items-center gap-2 border-t border-border bg-card px-3 py-2">
+        <button
+          onClick={gen}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11.5px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 重新生成
+        </button>
+        <span className="ml-auto text-[10.5px] text-text-dim">
+          {generatedAt ? fmtGenerated(generatedAt) : '基于任务与会话进展生成'}
+        </span>
       </div>
     </AnchoredPopover>
   )
+}
+
+function Section({ label, dot, children }: { label: string; dot: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide text-text-dim">
+        <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+        {label}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/** Flatten a structured summary into plain text for the 复制 button. */
+function summaryToText(s: ProjectSummary): string {
+  const parts: string[] = []
+  if (s.headline) parts.push(s.headline)
+  if (s.progress.length) parts.push('\n进度要点:\n' + s.progress.map((p) => `· ${p}`).join('\n'))
+  if (s.milestones.length) parts.push('\n重要里程碑:\n' + s.milestones.map((m) => `${m.done ? '[x]' : '[ ]'} ${m.text}`).join('\n'))
+  return parts.join('\n').trim()
 }
 
 /** "更新于 X" relative label for the cached summary timestamp (ms epoch). */

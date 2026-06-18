@@ -16,7 +16,7 @@ import { lastLogEntries } from '../data/context-log'
 import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
-import { generateTitle, generateProgressSummary } from '../agent/index'
+import { generateTitle, generateProgressSummary, generateStructuredProjectSummary, parseProjectSummary } from '../agent/index'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { titleInputFromTranscript } from '../agent/transcript'
 import type { Locale } from '../i18n'
@@ -203,16 +203,18 @@ api.get('/projects', (_req, res) => {
 
 // Project 小结: summarize the project's context doc into a short progress blurb (港务助手).
 // Return the last cached 项目小结 (if any) without regenerating — drives the popover's first open.
+// The summary is stored as a JSON ProjectSummary; legacy plain-text rows degrade to headline-only.
 api.get('/projects/:id/summary', (req, res) => {
   const store = getStore()
   const project = listProjects(store).find(p => p.id === req.params.id)
   if (!project) return res.status(404).json({ error: 'unknown project' })
   const cached = store.getProjectSummary(project.id)
-  res.json(cached ? { summary: cached.summary, generatedAt: cached.generatedAt } : { summary: null })
+  if (!cached) return res.json({ summary: null })
+  res.json({ summary: parseProjectSummary(cached.summary), generatedAt: cached.generatedAt })
 })
 
-// Mirrors /todos/:id/progress-summary but over the project context doc (keyed by project name).
-// Persists the result so reopening the popover (or reloading) shows it without regenerating.
+// Mirrors /todos/:id/progress-summary but over the project context doc, returning a STRUCTURED
+// summary (headline + progress + milestones). Persists the JSON so reopening shows it instantly.
 api.post('/projects/:id/summary', async (req, res) => {
   const store = getStore()
   const project = listProjects(store).find(p => p.id === req.params.id)
@@ -222,10 +224,11 @@ api.post('/projects/:id/summary', async (req, res) => {
   try {
     const ensured = ensureContextDoc(ds, 'project', project.name, { title: project.name, projectName: project.name, locale })
     const { content } = ds.readDoc(ensured.abs)
-    const summary = await generateProgressSummary(content, contextStrings(locale).summaryPrompt, resolveBerthAgent(store))
-    if (!summary) return res.status(502).json({ error: 'agent returned empty summary' })
+    const summary = await generateStructuredProjectSummary(content, contextStrings(locale).projectSummaryPrompt, resolveBerthAgent(store))
+    if (!summary.headline && !summary.progress.length && !summary.milestones.length)
+      return res.status(502).json({ error: 'agent returned empty summary' })
     const generatedAt = Date.now()
-    store.setProjectSummary(project.id, summary, generatedAt)
+    store.setProjectSummary(project.id, JSON.stringify(summary), generatedAt)
     res.json({ summary, generatedAt })
   } catch (e: any) {
     sendAgentError(res, e, locale)

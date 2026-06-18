@@ -50,6 +50,13 @@ export interface ApiSession {
   deleted?: boolean
 }
 
+// Structured 项目小结 (港务助手): a one-line headline + progress bullets + milestone todos.
+export interface ProjectSummary {
+  headline: string
+  progress: string[]
+  milestones: { text: string; done: boolean }[]
+}
+
 export type AgentCli = 'claude' | 'codex' | 'coco'
 
 export interface AgentEntry {
@@ -146,9 +153,9 @@ export const api = {
     send('POST', '/api/context/update', { kind, key, userInput }),
   // Read the last cached 项目小结 (null summary if never generated); does not regenerate.
   getProjectSummary: (id: string) =>
-    getJSON<{ summary: string | null; generatedAt?: number }>(`/api/projects/${id}/summary`),
+    getJSON<{ summary: ProjectSummary | null; generatedAt?: number }>(`/api/projects/${id}/summary`),
   projectSummary: (id: string) =>
-    send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summary?: string; generatedAt?: number; error?: string }>,
+    send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summary?: ProjectSummary; generatedAt?: number; error?: string }>,
   sessionTitle: (id: string) => send('POST', `/api/sessions/${id}/title`, {}) as Promise<{ title: string }>,
   renameSessionTitle: (id: string, title: string) =>
     send('PATCH', `/api/sessions/${id}/title`, { title }) as Promise<{ title: string }>,

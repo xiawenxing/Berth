@@ -1,10 +1,40 @@
 import { describe, it, expect } from 'vitest'
-import { runAgent, generateTitle } from '../src/agent/index'
+import { runAgent, generateTitle, parseProjectSummary } from '../src/agent/index'
 
 describe('agent module', () => {
   it('exports runAgent and generateTitle as functions', () => {
     expect(typeof runAgent).toBe('function')
     expect(typeof generateTitle).toBe('function')
+  })
+})
+
+describe('parseProjectSummary', () => {
+  it('parses a well-formed JSON object', () => {
+    const r = parseProjectSummary('{"headline":"在重构会话列表","progress":["a","b"],"milestones":[{"text":"m1","done":true},{"text":"m2","done":false}]}')
+    expect(r.headline).toBe('在重构会话列表')
+    expect(r.progress).toEqual(['a', 'b'])
+    expect(r.milestones).toEqual([{ text: 'm1', done: true }, { text: 'm2', done: false }])
+  })
+
+  it('extracts JSON wrapped in code fences and prose', () => {
+    const raw = 'Sure! Here is the summary:\n```json\n{"headline":"h","progress":["x"],"milestones":[]}\n```\nHope that helps.'
+    const r = parseProjectSummary(raw)
+    expect(r.headline).toBe('h')
+    expect(r.progress).toEqual(['x'])
+    expect(r.milestones).toEqual([])
+  })
+
+  it('coerces missing/invalid fields and drops empty entries', () => {
+    const r = parseProjectSummary('{"headline":"h","progress":["ok","  ",null],"milestones":[{"text":"keep"},{"done":true}]}')
+    expect(r.progress).toEqual(['ok'])
+    expect(r.milestones).toEqual([{ text: 'keep', done: false }])
+  })
+
+  it('falls back to a headline-only summary when not JSON', () => {
+    const r = parseProjectSummary('just a plain sentence with no json')
+    expect(r.headline).toBe('just a plain sentence with no json')
+    expect(r.progress).toEqual([])
+    expect(r.milestones).toEqual([])
   })
 })
 

@@ -141,3 +141,45 @@ export async function generateProgressSummary(docText: string, summaryPrompt: st
   out = out.split('\n').map(l => l.trim()).filter(Boolean).join(' ').replace(/^["'""\s]+|["'""\s]+$/g, '').slice(0, 500)
   return out
 }
+
+/** Structured 项目小结: a one-line headline + progress bullets + milestone todos. */
+export interface ProjectSummary {
+  headline: string
+  progress: string[]
+  milestones: { text: string; done: boolean }[]
+}
+
+/** Generate a structured project summary (JSON) from the project context doc. Falls back to a
+ *  headline-only summary if the agent doesn't return parseable JSON. */
+export async function generateStructuredProjectSummary(docText: string, summaryPrompt: string, agent?: BerthAgent): Promise<ProjectSummary> {
+  const prompt = summaryPrompt + '\n\n---\n' + docText.slice(0, 4000)
+  const cli = agent?.cli ?? 'claude'
+  const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
+  const raw = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 60000 }, { cli, timeoutMs: 75000 })
+  return parseProjectSummary(raw)
+}
+
+/** Extract the first {...} JSON block and coerce it into a ProjectSummary. Robust to code fences
+ *  and stray prose around the JSON; degrades to a headline-only summary on any parse failure. */
+export function parseProjectSummary(raw: string): ProjectSummary {
+  const empty: ProjectSummary = { headline: '', progress: [], milestones: [] }
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start >= 0 && end > start) {
+    try {
+      const o = JSON.parse(raw.slice(start, end + 1))
+      const progress = Array.isArray(o.progress)
+        ? o.progress.filter((x: any) => x != null).map((x: any) => String(x).trim()).filter(Boolean)
+        : []
+      const milestones = Array.isArray(o.milestones)
+        ? o.milestones
+            .map((m: any) => ({ text: String(m?.text ?? '').trim(), done: !!m?.done }))
+            .filter((m: { text: string }) => m.text)
+        : []
+      return { headline: String(o.headline ?? '').trim(), progress, milestones }
+    } catch { /* fall through to headline-only */ }
+  }
+  // Not JSON — treat the cleaned text as a plain headline so the popover still shows something.
+  const headline = raw.split('\n').map(l => l.trim()).filter(Boolean).join(' ').slice(0, 500)
+  return { ...empty, headline }
+}
