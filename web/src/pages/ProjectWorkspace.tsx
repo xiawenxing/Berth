@@ -8,7 +8,7 @@ import { ImportDialog } from '@/components/ImportDialog'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
 import { useUI } from '@/lib/ui-store'
 import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
-import { ProjectSummaryDialog, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
+import { ProjectSummaryPopover, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
 import { useData, relTime, shortCwd, normPriority } from '@/lib/data'
 import { isDoneStatus, statusKind } from '@/lib/status'
 import { useLive } from '@/lib/live'
@@ -31,6 +31,7 @@ export function ProjectWorkspace() {
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [ctxDoc, setCtxDoc] = useState<ContextDocTarget | null>(null)
   const moreBtnRef = useRef<HTMLButtonElement>(null)
+  const summaryBtnRef = useRef<HTMLButtonElement>(null)
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const doResync = () => {
@@ -290,7 +291,10 @@ export function ProjectWorkspace() {
               <Plus size={14} /> 新建任务
             </button>
             <HBtn icon={<Play size={13} />} onClick={() => launch('')}>起会话</HBtn>
-            <HBtn icon={<Sparkles size={13} />} onClick={() => setSummaryOpen(true)}>小结</HBtn>
+            <HBtn btnRef={summaryBtnRef} icon={<Sparkles size={13} />} onClick={() => setSummaryOpen((v) => !v)}>小结</HBtn>
+            {summaryOpen && (
+              <ProjectSummaryPopover anchor={summaryBtnRef} projectId={id} onClose={() => setSummaryOpen(false)} />
+            )}
             <button
               ref={moreBtnRef}
               onClick={() => setProjectMenuOpen((v) => !v)}
@@ -380,7 +384,6 @@ export function ProjectWorkspace() {
       </div>
 
       <NewTaskDialog open={newTask} onClose={() => setNewTask(false)} onCreate={createTask} />
-      <ProjectSummaryDialog open={summaryOpen} onClose={() => setSummaryOpen(false)} projectId={id} />
       <ContextDocDrawer target={ctxDoc} onClose={() => setCtxDoc(null)} />
       {importDlg && (
         <ImportDialog
@@ -405,9 +408,9 @@ export function ProjectWorkspace() {
   )
 }
 
-function HBtn({ icon, children, onClick }: { icon: ReactNode; children: ReactNode; onClick?: () => void }) {
+function HBtn({ icon, children, onClick, btnRef }: { icon: ReactNode; children: ReactNode; onClick?: () => void; btnRef?: React.Ref<HTMLButtonElement> }) {
   return (
-    <button onClick={onClick} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
+    <button ref={btnRef} onClick={onClick} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
       {icon}
       {children}
     </button>

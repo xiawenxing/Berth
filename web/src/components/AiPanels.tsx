@@ -1,12 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
-import { Sparkles, Copy, Save } from 'lucide-react'
-import { Dialog, Drawer } from './ui/Overlay'
+import { useEffect, useRef, useState, type RefObject } from 'react'
+import { Sparkles, Copy, Save, RefreshCw } from 'lucide-react'
+import { Drawer } from './ui/Overlay'
+import { AnchoredPopover } from './ui/Menu'
 import { api } from '@/lib/api'
 
-/** 项目小结 — calls POST /projects/:id/summary (港务助手), shows sparkle while generating. */
-export function ProjectSummaryDialog({ open, onClose, projectId }: { open: boolean; onClose: () => void; projectId: string }) {
+// Session-lived cache of the last generated 小结 per project, so re-opening the popover shows the
+// previous result instantly instead of regenerating. 重新生成 overwrites it on demand.
+const summaryCache = new Map<string, string>()
+
+/** 项目小结 — popover anchored under the 小结 trigger. First open generates in the background
+ *  (POST /projects/:id/summary, 港务助手); later opens reuse the cached result until 重新生成. */
+export function ProjectSummaryPopover({
+  anchor,
+  projectId,
+  onClose,
+}: {
+  anchor: RefObject<HTMLElement | null>
+  projectId: string
+  onClose: () => void
+}) {
   const [loading, setLoading] = useState(false)
-  const [summary, setSummary] = useState('')
+  const [summary, setSummary] = useState(() => summaryCache.get(projectId) ?? '')
   const [err, setErr] = useState('')
   const reqRef = useRef(0)
 
@@ -17,7 +31,10 @@ export function ProjectSummaryDialog({ open, onClose, projectId }: { open: boole
     api
       .projectSummary(projectId)
       .then((r) => {
-        if (reqRef.current === req) setSummary(r.summary || '')
+        if (reqRef.current !== req) return
+        const s = r.summary || ''
+        setSummary(s)
+        summaryCache.set(projectId, s)
       })
       .catch((e) => {
         if (reqRef.current === req) setErr(String(e))
@@ -26,18 +43,26 @@ export function ProjectSummaryDialog({ open, onClose, projectId }: { open: boole
         if (reqRef.current === req) setLoading(false)
       })
   }
+
+  // Only generate the first time for this project; cached results show immediately on reopen.
   useEffect(() => {
-    if (open) gen()
+    if (!summaryCache.has(projectId)) gen()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, projectId])
+  }, [projectId])
 
   return (
-    <Dialog open={open} onClose={onClose} width={560}>
-      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+    <AnchoredPopover anchor={anchor} width={560} onClose={onClose}>
+      <div className="flex items-center gap-2 px-3 py-2">
         <Sparkles size={14} className={loading ? 'spk-twinkle' : 'text-brand'} />
         <h3 className="text-[13px] font-semibold text-foreground">项目小结</h3>
         <span className="flex-1" />
-        <button onClick={gen} disabled={loading} className="text-[12px] text-muted-foreground hover:text-foreground">↻ 重新生成</button>
+        <button
+          onClick={gen}
+          disabled={loading}
+          className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 重新生成
+        </button>
         <button
           onClick={() => summary && navigator.clipboard?.writeText(summary)}
           className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -46,7 +71,7 @@ export function ProjectSummaryDialog({ open, onClose, projectId }: { open: boole
           <Copy size={13} />
         </button>
       </div>
-      <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
+      <div className="-mx-1 max-h-[50vh] overflow-y-auto border-t border-border px-4 py-2.5">
         {loading ? (
           <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
             <Sparkles size={12} className="spk-twinkle" /> 港务助手生成中…
@@ -57,7 +82,7 @@ export function ProjectSummaryDialog({ open, onClose, projectId }: { open: boole
           <pre className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{summary || '（项目上下文为空，暂无可总结内容）'}</pre>
         )}
       </div>
-    </Dialog>
+    </AnchoredPopover>
   )
 }
 
