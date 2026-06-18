@@ -4,12 +4,9 @@ import { Drawer } from './ui/Overlay'
 import { AnchoredPopover } from './ui/Menu'
 import { api } from '@/lib/api'
 
-// Session-lived cache of the last generated 小结 per project, so re-opening the popover shows the
-// previous result instantly instead of regenerating. 重新生成 overwrites it on demand.
-const summaryCache = new Map<string, string>()
-
-/** 项目小结 — popover anchored under the 小结 trigger. First open generates in the background
- *  (POST /projects/:id/summary, 港务助手); later opens reuse the cached result until 重新生成. */
+/** 项目小结 — popover anchored under the 小结 trigger. First open loads the persisted result
+ *  (GET /projects/:id/summary) and only generates when none exists yet; the result is stored
+ *  server-side so it survives reload. 重新生成 (POST) refreshes and overwrites on demand. */
 export function ProjectSummaryPopover({
   anchor,
   projectId,
@@ -19,8 +16,9 @@ export function ProjectSummaryPopover({
   projectId: string
   onClose: () => void
 }) {
-  const [loading, setLoading] = useState(false)
-  const [summary, setSummary] = useState(() => summaryCache.get(projectId) ?? '')
+  const [loading, setLoading] = useState(true)
+  const [summary, setSummary] = useState('')
+  const [generatedAt, setGeneratedAt] = useState<number | undefined>(undefined)
   const [err, setErr] = useState('')
   const reqRef = useRef(0)
 
@@ -32,9 +30,8 @@ export function ProjectSummaryPopover({
       .projectSummary(projectId)
       .then((r) => {
         if (reqRef.current !== req) return
-        const s = r.summary || ''
-        setSummary(s)
-        summaryCache.set(projectId, s)
+        setSummary(r.summary || '')
+        setGeneratedAt(r.generatedAt)
       })
       .catch((e) => {
         if (reqRef.current === req) setErr(String(e))
@@ -44,9 +41,26 @@ export function ProjectSummaryPopover({
       })
   }
 
-  // Only generate the first time for this project; cached results show immediately on reopen.
+  // First open: load the persisted summary; generate only if the project has none yet.
   useEffect(() => {
-    if (!summaryCache.has(projectId)) gen()
+    const req = ++reqRef.current
+    setLoading(true)
+    setErr('')
+    api
+      .getProjectSummary(projectId)
+      .then((r) => {
+        if (reqRef.current !== req) return
+        if (r.summary != null) {
+          setSummary(r.summary)
+          setGeneratedAt(r.generatedAt)
+          setLoading(false)
+        } else {
+          gen()
+        }
+      })
+      .catch(() => {
+        if (reqRef.current === req) gen()
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
@@ -55,6 +69,9 @@ export function ProjectSummaryPopover({
       <div className="flex items-center gap-2 px-3 py-2">
         <Sparkles size={14} className={loading ? 'spk-twinkle' : 'text-brand'} />
         <h3 className="text-[13px] font-semibold text-foreground">项目小结</h3>
+        {!loading && generatedAt && (
+          <span className="text-[11px] text-text-dim">{fmtGenerated(generatedAt)}</span>
+        )}
         <span className="flex-1" />
         <button
           onClick={gen}
@@ -84,6 +101,15 @@ export function ProjectSummaryPopover({
       </div>
     </AnchoredPopover>
   )
+}
+
+/** "更新于 X" relative label for the cached summary timestamp (ms epoch). */
+function fmtGenerated(ms: number): string {
+  const s = Math.floor((Date.now() - ms) / 1000)
+  if (s < 60) return '刚刚更新'
+  if (s < 3600) return `${Math.floor(s / 60)}分钟前更新`
+  if (s < 86400) return `${Math.floor(s / 3600)}小时前更新`
+  return `${Math.floor(s / 86400)}天前更新`
 }
 
 export interface ContextDocTarget {

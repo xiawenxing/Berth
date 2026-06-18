@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS attach (
 );
 CREATE TABLE IF NOT EXISTS pin ( session_id TEXT PRIMARY KEY REFERENCES logical_session(session_id) );
 CREATE TABLE IF NOT EXISTS title_override (session_id TEXT PRIMARY KEY, title TEXT NOT NULL);
+-- Cached 港务助手 项目小结, keyed by project id, so reopening the popover (or reloading) shows the
+-- last result without regenerating. Overwritten on 重新生成.
+CREATE TABLE IF NOT EXISTS project_summary (
+  project_id TEXT PRIMARY KEY, summary TEXT NOT NULL, generated_at INTEGER NOT NULL
+);
 -- populated in a later phase (copy-tracking / todo-edge); upsertSessions intentionally does not write these
 CREATE TABLE IF NOT EXISTS edge (
   todo_key TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY (todo_key, session_id)
@@ -148,6 +153,15 @@ export function openStore(path: string) {
       const m = new Map<string, string>()
       for (const r of db.prepare('SELECT session_id, title FROM title_override').all() as any[]) m.set(r.session_id, r.title)
       return m
+    },
+    setProjectSummary(projectId: string, summary: string, generatedAt: number) {
+      db.prepare(`INSERT INTO project_summary (project_id,summary,generated_at) VALUES (?,?,?)
+        ON CONFLICT(project_id) DO UPDATE SET summary=excluded.summary, generated_at=excluded.generated_at`)
+        .run(projectId, summary, generatedAt)
+    },
+    getProjectSummary(projectId: string): { summary: string; generatedAt: number } | null {
+      const r = db.prepare('SELECT summary, generated_at as generatedAt FROM project_summary WHERE project_id=?').get(projectId) as any
+      return r ?? null
     },
     setArchived(projectId: string, on: boolean) {
       if (on) db.prepare('INSERT OR IGNORE INTO archived_project (project_id) VALUES (?)').run(projectId)

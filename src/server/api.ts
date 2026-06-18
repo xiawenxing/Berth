@@ -202,7 +202,17 @@ api.get('/projects', (_req, res) => {
 })
 
 // Project 小结: summarize the project's context doc into a short progress blurb (港务助手).
+// Return the last cached 项目小结 (if any) without regenerating — drives the popover's first open.
+api.get('/projects/:id/summary', (req, res) => {
+  const store = getStore()
+  const project = listProjects(store).find(p => p.id === req.params.id)
+  if (!project) return res.status(404).json({ error: 'unknown project' })
+  const cached = store.getProjectSummary(project.id)
+  res.json(cached ? { summary: cached.summary, generatedAt: cached.generatedAt } : { summary: null })
+})
+
 // Mirrors /todos/:id/progress-summary but over the project context doc (keyed by project name).
+// Persists the result so reopening the popover (or reloading) shows it without regenerating.
 api.post('/projects/:id/summary', async (req, res) => {
   const store = getStore()
   const project = listProjects(store).find(p => p.id === req.params.id)
@@ -214,7 +224,9 @@ api.post('/projects/:id/summary', async (req, res) => {
     const { content } = ds.readDoc(ensured.abs)
     const summary = await generateProgressSummary(content, contextStrings(locale).summaryPrompt, resolveBerthAgent(store))
     if (!summary) return res.status(502).json({ error: 'agent returned empty summary' })
-    res.json({ summary })
+    const generatedAt = Date.now()
+    store.setProjectSummary(project.id, summary, generatedAt)
+    res.json({ summary, generatedAt })
   } catch (e: any) {
     sendAgentError(res, e, locale)
   }

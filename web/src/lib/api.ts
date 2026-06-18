@@ -144,7 +144,11 @@ export const api = {
     send('POST', '/api/session-import', { ids, projectId }),
   contextUpdate: (kind: 'task' | 'project', key: string, userInput: string) =>
     send('POST', '/api/context/update', { kind, key, userInput }),
-  projectSummary: (id: string) => send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summary?: string; error?: string }>,
+  // Read the last cached 项目小结 (null summary if never generated); does not regenerate.
+  getProjectSummary: (id: string) =>
+    getJSON<{ summary: string | null; generatedAt?: number }>(`/api/projects/${id}/summary`),
+  projectSummary: (id: string) =>
+    send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summary?: string; generatedAt?: number; error?: string }>,
   sessionTitle: (id: string) => send('POST', `/api/sessions/${id}/title`, {}) as Promise<{ title: string }>,
   renameSessionTitle: (id: string, title: string) =>
     send('PATCH', `/api/sessions/${id}/title`, { title }) as Promise<{ title: string }>,
