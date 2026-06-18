@@ -141,6 +141,8 @@ export const api = {
     send('POST', '/api/context/update', { kind, key, userInput }),
   projectSummary: (id: string) => send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summary?: string; error?: string }>,
   sessionTitle: (id: string) => send('POST', `/api/sessions/${id}/title`, {}),
+  renameSessionTitle: (id: string, title: string) =>
+    send('PATCH', `/api/sessions/${id}/title`, { title }) as Promise<{ title: string }>,
   // Context doc read/write (docstore-relative `path`/ref; POST guards on baseMtime).
   readDoc: (path: string) => getJSON<{ content: string; mtime?: number }>(`/api/doc?path=${encodeURIComponent(path)}`),
   saveDoc: (path: string, content: string, baseMtime?: number) => send('POST', '/api/doc', { path, content, baseMtime }),

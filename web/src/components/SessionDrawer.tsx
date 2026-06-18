@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Drawer } from './ui/Overlay'
 import { Terminal } from './Terminal'
-import { CliBadge } from './workspace/TaskCard'
+import { SessionTitleBar } from './SessionTitleBar'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
 import { useLive } from '@/lib/live'
-import { SHIP_LABEL } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { api } from '@/lib/api'
 
 /**
  * 60vw right-side session drawer (style 2 — no card). Slim header (no ■/×).
@@ -15,7 +14,7 @@ import { cn } from '@/lib/utils'
  */
 export function SessionDrawer() {
   const { drawer, closeDrawer, openDrawer } = useUI()
-  const { sessions, resync } = useData()
+  const { sessions, reload, resync } = useData()
   const live = useLive()
   const [optimisticLiveId, setOptimisticLiveId] = useState<string | null>(null)
   // A fresh launch's session jsonl is written when the CLI initializes/takes its first turn,
@@ -47,13 +46,20 @@ export function SessionDrawer() {
     <Drawer open={!!drawer} onClose={closeDrawer}>
       {drawer && (
         <>
-          <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-            <CliBadge cli={drawer.cli} />
-            <span className="truncate text-[13px] font-semibold text-foreground">{drawer.title}</span>
-            <span className="font-mono text-[11px] text-text-dim">{drawer.cwd}</span>
-            <ShipPill status={currentStatus ?? drawer.status} />
-            {drawer.task && <span className="text-[11px] text-muted-foreground">· 航线 {drawer.task}</span>}
-          </div>
+          <SessionTitleBar
+            cli={drawer.cli}
+            title={currentSession?.title || drawer.title}
+            cwd={drawer.cwd}
+            status={currentStatus ?? drawer.status}
+            task={drawer.task}
+            editable={!!drawer.sessionId}
+            onRename={async (title) => {
+              if (!drawer.sessionId) return
+              await api.renameSessionTitle(drawer.sessionId, title)
+              openDrawer({ ...drawer, title })
+              reload()
+            }}
+          />
 
           {/* body: existing and newly-launched sessions share the native PTY transport/renderer. */}
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -66,21 +72,5 @@ export function SessionDrawer() {
         </>
       )}
     </Drawer>
-  )
-}
-
-function ShipPill({ status }: { status: 'sail' | 'dock' | 'moored' }) {
-  return (
-    <span
-      className={cn(
-        'flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10.5px]',
-        status === 'sail' && 'bg-success/15 text-success',
-        status === 'dock' && 'bg-brand/15 text-brand',
-        status === 'moored' && 'bg-muted text-muted-foreground',
-      )}
-    >
-      {status === 'sail' && <span className="h-1.5 w-1.5 rounded-full bg-success" />}
-      {SHIP_LABEL[status]}
-    </span>
   )
 }

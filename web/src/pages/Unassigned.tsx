@@ -3,11 +3,12 @@ import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as Fol
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { Terminal } from '@/components/Terminal'
+import { SessionTitleBar } from '@/components/SessionTitleBar'
 import { useData, relTime, shortCwd } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
 import { ImportDialog } from '@/components/ImportDialog'
-import { SHIP_LABEL, type ShipStatus } from '@/lib/types'
+import { type ShipStatus } from '@/lib/types'
 import type { ApiSession, ApiProject, PreviewSession } from '@/lib/api'
 
 function Glyph({ status }: { status: ShipStatus }) {
@@ -159,28 +160,17 @@ export function Unassigned() {
       <div className="flex min-w-0 flex-1 flex-col bg-canvas">
         {sel ? (
           <>
-            <div className="flex items-center gap-2 border-b border-border px-4 py-2">
-              <CliBadge cli={sel.cli} />
-              <span className="truncate text-[13px] font-semibold text-foreground">{sel.title || sel.sessionId}</span>
-              <span className="font-mono text-[11px] text-text-dim">{shortCwd(sel.cwd)}</span>
-              {(() => {
-                const st = live.shipStatus(sel.sessionId, sel.updatedAt)
-                return (
-                  <span
-                    className={cn(
-                      'flex-none whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10.5px]',
-                      st === 'sail'
-                        ? 'bg-success/15 text-success'
-                        : st === 'dock'
-                          ? 'bg-brand/15 text-brand'
-                          : 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {SHIP_LABEL[st]}
-                  </span>
-                )
-              })()}
-            </div>
+            <SessionTitleBar
+              cli={sel.cli}
+              title={sel.title || sel.sessionId}
+              cwd={shortCwd(sel.cwd)}
+              status={live.shipStatus(sel.sessionId, sel.updatedAt)}
+              editable
+              onRename={async (title) => {
+                await api.renameSessionTitle(sel.sessionId, title)
+                reload()
+              }}
+            />
             <div className="min-h-0 flex-1 overflow-hidden">
               <Terminal key={sel.sessionId} sessionId={sel.sessionId} />
             </div>
