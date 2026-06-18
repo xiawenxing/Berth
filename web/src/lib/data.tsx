@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, type ApiProject, type ApiSession, type ApiTask } from './api'
+import { api, type AgentConfig, type ApiProject, type ApiSession, type ApiSettings, type ApiTask } from './api'
 import { DEFAULT_STATUSES } from './status'
 
 // One fetch of the whole dataset, shared across pages via context. Refetchable.
@@ -7,6 +7,16 @@ import { DEFAULT_STATUSES } from './status'
 // for now ship status defaults to 已停泊 and 'pinned' drives the Pin section.
 
 const DEFAULT_PRIORITIES = ['P0', 'P1', 'P2']
+const DEFAULT_AGENTS: AgentConfig = {
+  list: [
+    { cli: 'claude', enabled: true, model: null },
+    { cli: 'codex', enabled: true, model: null },
+    { cli: 'coco', enabled: true, model: null },
+  ],
+  berthAgentCli: 'claude',
+  berthAgentModel: 'claude-haiku-4-5',
+  headlessClis: ['claude', 'codex'],
+}
 
 interface DataState {
   projects: ApiProject[]
@@ -14,6 +24,7 @@ interface DataState {
   sessions: ApiSession[]
   priorities: string[] // ordered high→low, from Settings (drives the priority color ramp + menu)
   statuses: string[] // ordered vocabulary, from Settings (drives the kanban columns + status menu)
+  agents: AgentConfig // real launch/headless agent config from Settings
   loading: boolean
   error: string | null
   /** Re-read the server cache (cheap; does NOT re-scan disk). */
@@ -31,6 +42,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<ApiSession[]>([])
   const [priorities, setPriorities] = useState<string[]>(DEFAULT_PRIORITIES)
   const [statuses, setStatuses] = useState<string[]>(DEFAULT_STATUSES)
+  const [agents, setAgents] = useState<AgentConfig>(DEFAULT_AGENTS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
@@ -39,15 +51,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     let alive = true
     setLoading(true)
     // Settings is non-critical: fall back to the default vocabulary if it fails, don't break the page.
-    Promise.all([api.projects(), api.todos(), api.sessions(), api.settings().catch(() => ({}))])
+    Promise.all([api.projects(), api.todos(), api.sessions(), api.settings().catch((): ApiSettings => ({}))])
       .then(([p, t, s, cfg]) => {
         if (!alive) return
         setProjects(p.projects ?? [])
         setTasks(t.todos ?? [])
         setSessions((s ?? []).filter((x) => !x.deleted))
-        const c = cfg as { priorities?: string[]; statuses?: string[] }
+        const c = cfg
         setPriorities(c.priorities?.length ? c.priorities : DEFAULT_PRIORITIES)
         setStatuses(c.statuses?.length ? c.statuses : DEFAULT_STATUSES)
+        setAgents(c.agents ?? DEFAULT_AGENTS)
         setError(null)
       })
       .catch((e) => alive && setError(String(e)))
@@ -64,6 +77,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       sessions,
       priorities,
       statuses,
+      agents,
       loading,
       error,
       reload: () => setNonce((n) => n + 1),
@@ -73,7 +87,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setNonce((n) => n + 1)
       },
     }),
-    [projects, tasks, sessions, priorities, statuses, loading, error],
+    [projects, tasks, sessions, priorities, statuses, agents, loading, error],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

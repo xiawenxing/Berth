@@ -2,12 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
-import { SessionChat } from '@/components/SessionChat'
-import { SessionComposer } from '@/components/SessionComposer'
+import { Terminal } from '@/components/Terminal'
 import { useData, relTime, shortCwd } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
-import { submitSessionInput } from '@/lib/pty'
 import { ImportDialog } from '@/components/ImportDialog'
 import { SHIP_LABEL, type ShipStatus } from '@/lib/types'
 import type { ApiSession, ApiProject, PreviewSession } from '@/lib/api'
@@ -57,8 +55,6 @@ export function Unassigned() {
       setPicking(false)
     }
   }
-  const [pendingInput, setPendingInput] = useState<string | null>(null)
-  const [chatRefreshKey, setChatRefreshKey] = useState(0)
   // Optimistic pin state: there's no `pinned` field on the unassigned list, so
   // track locally which ids we've toggled on (POST /pin persists server-side).
   const [pinned, setPinned] = useState<Set<string>>(new Set())
@@ -101,22 +97,9 @@ export function Unassigned() {
   // First real unassigned session selected by default; fall back if selection vanished.
   const sel =
     allUnassigned.find((s) => s.sessionId === selId) ?? allUnassigned[0] ?? null
-  const selHasLivePty = !!sel && live.activity.has(sel.sessionId)
-
-  const sendMessage = (text: string) => {
-    if (!sel) return
-    setPendingInput(text)
-    setChatRefreshKey((n) => n + 1)
-    submitSessionInput(sel.sessionId, text)
-      .then(() => {
-        void resync()
-      })
-      .catch(() => setChatRefreshKey((n) => n + 1))
-  }
 
   const select = (s: ApiSession) => {
     setSelId(s.sessionId)
-    setPendingInput(null)
     live.markSeen(s.sessionId)
   }
 
@@ -198,16 +181,9 @@ export function Unassigned() {
                 )
               })()}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <SessionChat
-                key={sel.sessionId}
-                sessionId={sel.sessionId}
-                refreshKey={chatRefreshKey}
-                stream={selHasLivePty || !!pendingInput}
-                optimisticUserText={pendingInput}
-              />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <Terminal key={sel.sessionId} sessionId={sel.sessionId} />
             </div>
-            <SessionComposer onSend={sendMessage} />
           </>
         ) : null}
       </div>

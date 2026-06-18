@@ -6,9 +6,9 @@ import { api } from './api'
 import { refresh, getCache, initData } from './store-singleton'
 import { createPtyWss } from './pty-ws'
 import { createStatusWss } from './status-ws'
-import { createSessionEventsWss } from './session-events-ws'
 import { killAllPtys } from './pty-registry'
 import { resolvePublicDir, resolveWebDistDir } from './public-dir'
+import { warmAgentBinaryCaches } from '../pty/binaries'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -27,7 +27,6 @@ export function attachWebSockets(server: Server) {
   const routes: Record<string, ReturnType<typeof createPtyWss>> = {
     '/pty': createPtyWss(),
     '/status': createStatusWss(),
-    '/session-events': createSessionEventsWss(),
   }
   server.on('upgrade', (req, socket, head) => {
     const pathname = (req.url ?? '').split('?')[0]
@@ -72,6 +71,7 @@ export async function start(
 ) {
   await initData()   // one-time recordId→uuid migration before anything reads the data layer
   refresh()
+  warmAgentBinaryCaches()
   installShutdownCleanup()
   const server = createServer(createApp())
   attachWebSockets(server)   // /pty terminals + /status live-activity broadcast, one upgrade router

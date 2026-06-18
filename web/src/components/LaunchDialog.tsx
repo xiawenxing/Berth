@@ -4,6 +4,7 @@ import { Dialog } from './ui/Overlay'
 import { useUI } from '@/lib/ui-store'
 import { useData, shortCwd } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import type { AgentCli } from '@/lib/api'
 
 /**
  * 装载台 / 起航 — destination (任务 | 自由提问) + the spawn-cwd resolver:
@@ -14,12 +15,15 @@ import { cn } from '@/lib/utils'
  */
 export function LaunchDialog() {
   const { launch, closeLaunch, openDrawer } = useUI()
-  const { projects } = useData()
+  const { projects, agents } = useData()
   const [dest, setDest] = useState<'task' | 'free'>('task')
+  const [cli, setCli] = useState<AgentCli>('claude')
   const [freeText, setFreeText] = useState('')
   const [pickedCwd, setPickedCwd] = useState<string | null>(null)
 
   const project = projects.find((p) => p.id === launch?.projectId)
+  const enabledAgents = useMemo(() => agents.list.filter((a) => a.enabled), [agents.list])
+  const selectedAgent = enabledAgents.find((a) => a.cli === cli) ?? enabledAgents[0]
   const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
   const autoPick = useMemo(
     () => (project?.lastCwd && enabledPaths.includes(project.lastCwd) ? project.lastCwd : enabledPaths[0]),
@@ -30,30 +34,31 @@ export function LaunchDialog() {
   useEffect(() => {
     if (launch) {
       setDest(launch.taskTitle ? launch.dest : 'free')
+      setCli((prev) => (enabledAgents.some((a) => a.cli === prev) ? prev : enabledAgents[0]?.cli ?? 'claude'))
       setFreeText('')
       setPickedCwd(null)
     }
-  }, [launch])
+  }, [launch, enabledAgents])
 
   if (!launch) return null
   const taskTitle = launch.taskTitle
   const title = dest === 'task' && taskTitle ? taskTitle : freeText || '新会话'
   // We can always sail when there's a project (server falls back to its workspace dir). Only a
   // project-less launch with no resolvable cwd is blocked.
-  const canSail = !!launch.projectId || enabledPaths.length > 0
+  const canSail = (!!launch.projectId || enabledPaths.length > 0) && !!selectedAgent
 
   const sail = () => {
-    if (!canSail) return
+    if (!canSail || !selectedAgent) return
     const cwd = enabledPaths.length === 0 ? '' : selectedCwd || '' // '' → server workspace fallback
     closeLaunch()
     openDrawer({
       title,
-      cli: 'claude',
+      cli: selectedAgent.cli,
       cwd: cwd ? shortCwd(cwd) : '项目默认目录',
       status: 'sail',
       task: dest === 'task' ? taskTitle : undefined,
       launch: {
-        cli: 'claude',
+        cli: selectedAgent.cli,
         cwd,
         // Stable across the fresh Terminal's dev StrictMode effect replay; the server uses it to
         // attach duplicate /pty?new=1 requests to the first live PTY instead of spawning twice.
@@ -92,6 +97,37 @@ export function LaunchDialog() {
               placeholder="想让 agent 做什么…"
               className="mt-2 w-full resize-none rounded-md border border-border bg-card px-2.5 py-2 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
             />
+          )}
+        </div>
+
+        {/* Agent */}
+        <div>
+          <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">Agent</div>
+          {enabledAgents.length === 0 ? (
+            <div className="rounded-md border border-warning/50 bg-warning/10 px-2.5 py-2 text-[12px] text-warning">
+              设置页里没有启用任何启动 Agent
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {enabledAgents.map((a) => {
+                const on = selectedAgent?.cli === a.cli
+                return (
+                  <button
+                    key={a.cli}
+                    onClick={() => setCli(a.cli)}
+                    className={cn(
+                      'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[12px]',
+                      on ? 'border-brand bg-brand/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground',
+                    )}
+                  >
+                    <span className="font-semibold">{a.cli}</span>
+                    <span className="font-mono text-[10.5px] text-text-dim">
+                      {a.cli === 'coco' ? '无 --model' : a.model || 'CLI 默认模型'}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           )}
         </div>
 
@@ -137,7 +173,7 @@ export function LaunchDialog() {
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-        {!canSail && <span className="mr-auto text-[11px] text-warning">无项目上下文，请从某个项目里起航</span>}
+        {!canSail && <span className="mr-auto text-[11px] text-warning">{enabledAgents.length === 0 ? '请先在设置页启用启动 Agent' : '无项目上下文，请从某个项目里起航'}</span>}
         <button onClick={closeLaunch} className="rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
           取消
         </button>

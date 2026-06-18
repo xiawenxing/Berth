@@ -256,8 +256,10 @@ is the session-grained model that replaced the old directory-grained one (where 
    `[obsidian://...&file=projects%2Fx](http://obsidian://...)`. Extract the `file=` param from
    *anywhere* in the string (`resolveDocPath` does). Assuming it starts with `obsidian://` breaks it.
 2. **`coco --help` is slow + flaky** (4–15s; does a network/update check). `verifyCoco` caches success
-   and uses a 20s timeout. `binaries.test.ts` can still flake when coco is cold — re-run; it's not a
-   real regression. Every coco resume/launch pays this once per server run.
+   and uses a 20s timeout. Server start kicks off a background warm (`warmAgentBinaryCaches`) so the
+   first page-launched coco session usually does not pay this on the click-to-spawn path. If a user
+   launches coco before the warm finishes, that launch can still block on the identity check.
+   `binaries.test.ts` can still flake when coco is cold — re-run; it's not a real regression.
 3. **better-sqlite3 enforces foreign keys by default.** `openStore` sets `pragma foreign_keys = OFF`
    so attach/edge can reference a freshly-launched session id **before** the next refresh ingests it
    (soft FKs). Don't turn this back on.

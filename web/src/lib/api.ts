@@ -50,6 +50,27 @@ export interface ApiSession {
   deleted?: boolean
 }
 
+export type AgentCli = 'claude' | 'codex' | 'coco'
+
+export interface AgentEntry {
+  cli: AgentCli
+  enabled: boolean
+  model: string | null
+}
+
+export interface AgentConfig {
+  list: AgentEntry[]
+  berthAgentCli: AgentCli
+  berthAgentModel: string
+  headlessClis: AgentCli[]
+}
+
+export interface ApiSettings {
+  priorities?: string[]
+  statuses?: string[]
+  agents?: AgentConfig
+}
+
 export interface PreviewSession {
   sessionId: string
   cli: string
@@ -83,8 +104,8 @@ export const api = {
   // task, or started by hand in an imported dir) never surfaces. Returns the new session count.
   refresh: () => send('POST', '/api/refresh') as Promise<{ ok: boolean; count: number }>,
   // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
-  settings: () => getJSON<{ priorities?: string[]; statuses?: string[] }>('/api/settings'),
-  saveSettings: (patch: { priorities?: string[]; statuses?: string[] }) => send('POST', '/api/settings', patch),
+  settings: () => getJSON<ApiSettings>('/api/settings'),
+  saveSettings: (patch: { priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) => send('POST', '/api/settings', patch),
   // Structured codex-style chat turns for a real session's drawer/right-pane.
   transcript: (sessionId: string) =>
     getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),

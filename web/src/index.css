@@ -94,3 +94,26 @@ html.light .kanban-card { background: var(--color-sidebar-accent); }
 }
 .spk-twinkle { animation: spk-twinkle 1.1s ease-in-out infinite; color: var(--color-brand); }
 
+/* Native PTY renderer. xterm still owns terminal semantics; these rules only tune the shell chrome,
+   scrollbar and selection so the byte-stream view feels native to Berth 2.0. */
+.berth-terminal-shell {
+  background: var(--color-canvas);
+}
+.berth-xterm .xterm {
+  height: 100%;
+}
+.berth-xterm .xterm-viewport {
+  background-color: transparent !important;
+  scrollbar-color: var(--color-border) transparent;
+}
+.berth-xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+}
+.berth-xterm .xterm-screen,
+.berth-xterm .xterm-helpers,
+.berth-xterm .xterm-rows {
+  background: transparent !important;
+}
+.berth-xterm .xterm-selection div {
+  background-color: color-mix(in srgb, var(--color-brand) 24%, transparent) !important;
+}

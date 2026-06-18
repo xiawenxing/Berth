@@ -12,6 +12,37 @@ export interface LaunchSpec {
   prompt?: string
 }
 
+function cssToken(name: string, fallback: string) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value || fallback
+}
+
+function terminalTheme() {
+  return {
+    background: cssToken('--color-canvas', '#0d1220'),
+    foreground: cssToken('--color-foreground', '#d7deef'),
+    cursor: cssToken('--color-brand', '#56b6ff'),
+    cursorAccent: cssToken('--color-brand-foreground', '#0d1220'),
+    selectionBackground: 'rgba(86, 182, 255, 0.22)',
+    black: '#101526',
+    red: cssToken('--color-destructive', '#f0707f'),
+    green: cssToken('--color-success', '#7ed4a6'),
+    yellow: cssToken('--color-warning', '#f0c773'),
+    blue: cssToken('--color-brand', '#56b6ff'),
+    magenta: cssToken('--color-purple', '#b88cf0'),
+    cyan: '#68d7d4',
+    white: cssToken('--color-card-foreground', '#c7cfe3'),
+    brightBlack: cssToken('--color-muted-foreground', '#8089a3'),
+    brightRed: '#ff8a98',
+    brightGreen: '#9be7bf',
+    brightYellow: '#ffdc8a',
+    brightBlue: '#84c8ff',
+    brightMagenta: '#d0a7ff',
+    brightCyan: '#8df0ea',
+    brightWhite: '#f3f6ff',
+  }
+}
+
 /**
  * Live terminal over the persistent-PTY /pty WebSocket. Two modes:
  *  - resume/attach: pass `sessionId` → /pty?sessionId=… (replays scrollback, streams)
@@ -32,6 +63,7 @@ export function Terminal({
   initialInput?: string
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const shellRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const host = hostRef.current
@@ -39,10 +71,16 @@ export function Terminal({
 
     const term = new Xterm({
       fontFamily: 'var(--font-mono)',
-      fontSize: 12,
+      fontSize: 13,
+      lineHeight: 1.35,
+      letterSpacing: 0,
+      scrollback: 8000,
+      smoothScrollDuration: 80,
+      allowTransparency: true,
       cursorBlink: true,
+      cursorStyle: 'bar',
       convertEol: true,
-      theme: { background: '#0d1220', foreground: '#b3bcd4', cursor: '#56b6ff' },
+      theme: terminalTheme(),
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -76,6 +114,7 @@ export function Terminal({
     const sendResize = () => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'r', c: term.cols, r: term.rows }))
     }
+    ws.addEventListener('open', sendResize, { once: true })
 
     if (sessionId && !launch && initialInput) {
       ws.addEventListener('open', () => {
@@ -101,13 +140,29 @@ export function Terminal({
       sendInput(d)
     })
 
+    let resizeFrame: number | null = null
+    const fitAndResize = () => {
+      resizeFrame = null
+      try {
+        fit.fit()
+        sendResize()
+      } catch {
+        // xterm can briefly report zero-sized geometry while drawers animate.
+      }
+    }
     const onResize = () => {
-      fit.fit()
-      sendResize()
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
+      resizeFrame = requestAnimationFrame(fitAndResize)
     }
     window.addEventListener('resize', onResize)
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize)
+    resizeObserver?.observe(host)
+    if (shellRef.current) resizeObserver?.observe(shellRef.current)
+    onResize()
 
     return () => {
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
+      resizeObserver?.disconnect()
       window.removeEventListener('resize', onResize)
       host.removeEventListener('mousedown', refocus)
       disp.dispose()
@@ -117,5 +172,9 @@ export function Terminal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, initialInput, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey])
 
-  return <div ref={hostRef} className="h-full w-full" />
+  return (
+    <div ref={shellRef} className="berth-terminal-shell h-full w-full overflow-hidden bg-canvas p-2">
+      <div ref={hostRef} className="berth-xterm h-full w-full" />
+    </div>
+  )
 }

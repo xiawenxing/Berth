@@ -45,7 +45,7 @@ it('coco: resume uses the =id form so the id is never parsed as a positional pro
 
 it('claude/codex: resume takes the id space-separated', () => {
   expect(resumeArgv('claude', 'uuid-1')).toEqual(['--resume', 'uuid-1'])
-  expect(resumeArgv('codex', 'uuid-2')).toEqual(['resume', 'uuid-2'])
+  expect(resumeArgv('codex', 'uuid-2')).toEqual(['resume', '--no-alt-screen', 'uuid-2'])
 })
 
 it('claude: session-id + bypass + system-prompt-file + add-dir, no positional', () => {
@@ -60,7 +60,7 @@ it('coco: context-only launch stays idle; context is not submitted as a prompt',
 
 it('codex: context-only launch stays idle; context is not submitted as a prompt', () => {
   const a = freshArgv('codex', { cwd: '/c', injectFile: '/t/m.txt', addDirs: ['/vault'] })
-  expect(a).toEqual(['--profile', 'berth-launch', '--dangerously-bypass-hook-trust', '--dangerously-bypass-approvals-and-sandbox', '--add-dir', '/vault'])
+  expect(a).toEqual(['--profile', 'berth-launch', '--dangerously-bypass-hook-trust', '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', '--add-dir', '/vault'])
 })
 
 it('omits absent optional args cleanly (bypass still present)', () => {
@@ -74,7 +74,7 @@ it('claude: user prompt is appended as the positional arg, after `--`', () => {
 
 it('codex/coco: execution launches submit only the real first prompt; context is silent', () => {
   expect(freshArgv('codex', { cwd: '/c', injectFile: '/t/m.txt', initialPrompt: 'hello' }))
-    .toEqual(['--profile', 'berth-launch', '--dangerously-bypass-hook-trust', '--dangerously-bypass-approvals-and-sandbox', '--', 'hello'])
+    .toEqual(['--profile', 'berth-launch', '--dangerously-bypass-hook-trust', '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', '--', 'hello'])
   // coco's manifest now rides the session_start hook, not the prompt — the positional is just 'hello'.
   expect(freshArgv('coco', { cwd: '/c', sessionId: 'u', injectFile: '/t/m.txt', initialPrompt: 'hello' }))
     .toEqual(['--session-id', 'u', '--yolo', '--', 'hello'])
@@ -89,7 +89,7 @@ it('claude: model is passed as --model after the bypass flag', () => {
 
 it('codex: model is passed as --model', () => {
   const a = freshArgv('codex', { cwd: '/c', model: 'gpt-5' })
-  expect(a).toEqual(['--dangerously-bypass-approvals-and-sandbox', '--model', 'gpt-5'])
+  expect(a).toEqual(['--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', '--model', 'gpt-5'])
 })
 
 it('coco: model is never emitted (no --model flag)', () => {

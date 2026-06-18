@@ -7,7 +7,7 @@ import { berthHome } from '../paths'
 import { join } from 'node:path'
 import { getCache, getStore } from './store-singleton'
 import { resumeSession, launchFresh } from '../pty/launch'
-import { resolveAgentBinary, codexSupportsHookTrust } from '../pty/binaries'
+import { resolveAgentBinary, codexHookTrustSupportCached } from '../pty/binaries'
 import { hasLivePty, registerPty, attachViewer } from './pty-registry'
 import { buildManifest, type ManifestInput } from '../agent/manifest'
 import { listTasks, updateTask } from '../data/tasks'
@@ -392,13 +392,16 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // starts working (and, by taking a real turn, writes a transcript and surfaces in the list).
   const initialPrompt = explicitPrompt ?? plan.initialPrompt ?? undefined
 
-  // codex injects context via a SessionStart hook gated on `--dangerously-bypass-hook-trust`. Older
-  // codex builds lack that flag, so launchFresh silently drops injection rather than crash (see
-  // launch.ts). Tell the user once, in this session's stream, why context isn't loading + how to fix.
+  // codex injects context via a SessionStart hook gated on `--dangerously-bypass-hook-trust`. The
+  // support probe is warmed off the launch path; read only the cache here so a warning never blocks
+  // the user's click-to-spawn path.
   if (cli === 'codex' && injectFile) {
     try {
-      if (!codexSupportsHookTrust(resolveAgentBinary('codex')))
+      const support = codexHookTrustSupportCached(resolveAgentBinary('codex'))
+      if (support === false)
         ws.send(`\r\n[berth] codex is too old for context injection (no --dangerously-bypass-hook-trust); started without it. Upgrade codex to auto-load project/task context.\r\n`)
+      else if (support === undefined)
+        ws.send(`\r\n[berth] codex context probe is still warming; started immediately without auto-loaded project/task context. Future launches will use it once the probe completes.\r\n`)
     } catch {}
   }
 

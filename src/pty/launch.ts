@@ -2,7 +2,7 @@ import { spawn, type IPty } from 'node-pty'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { resolveAgentBinary, codexSupportsHookTrust } from './binaries'
+import { resolveAgentBinary, codexHookTrustSupportOrWarm } from './binaries'
 import { ensureClaudeTrust } from './trust'
 import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
 import { berthHome } from '../paths'
@@ -30,7 +30,7 @@ export function ensureLaunchCwd(cwd: string | null | undefined): string {
 export function resumeArgv(cli: AgentCli, id: string): string[] {
   switch (cli) {
     case 'claude': return ['--resume', id]
-    case 'codex':  return ['resume', id]
+    case 'codex':  return ['resume', '--no-alt-screen', id]
     // coco's `--resume string[="AUTO"]` is a Go pflag OPTIONAL-value flag: the id MUST be attached
     // with `=`. The space form `--resume <id>` binds --resume to its default ("AUTO" → auto-resume
     // most recent) and leaks <id> to coco's positional `[prompt]`, so coco submits the session id as
@@ -96,6 +96,7 @@ export function freshArgv(cli: AgentCli, o: FreshOpts): string[] {
       return [
         ...(o.injectFile ? ['--profile', CODEX_BERTH_PROFILE, '--dangerously-bypass-hook-trust'] : []),
         '--dangerously-bypass-approvals-and-sandbox',   // bypass approvals + sandbox
+        '--no-alt-screen',                              // inline TUI behaves better inside reattached web xterm
         ...(o.model ? ['--model', o.model] : []),
         ...dirs,
         ...(pos ? ['--', pos] : []),
@@ -124,10 +125,11 @@ export function launchFresh(cli: AgentCli, o: FreshOpts): IPty {
   const bin = resolveAgentBinary(cli)
   if (cli === 'claude') ensureClaudeTrust(cwd)   // interactive PTY → trust dialog isn't auto-skipped
   // codex's context hook rides `--dangerously-bypass-hook-trust`; on builds that lack the flag,
-  // passing it aborts the launch. Drop context injection for this launch rather than crash — the
-  // session still starts, just without the silent SessionStart context.
+  // passing it aborts the launch. The flag probe can be slow (`codex --help`), so launch uses only
+  // the warmed cache: if support is still unknown, start immediately without injection and keep the
+  // probe warming in the background for the next launch.
   let opts = o
-  if (cli === 'codex' && o.injectFile && !codexSupportsHookTrust(bin)) {
+  if (cli === 'codex' && o.injectFile && codexHookTrustSupportOrWarm(bin) !== true) {
     opts = { ...o, injectFile: undefined }
   }
   const env = { ...(process.env as any) }
