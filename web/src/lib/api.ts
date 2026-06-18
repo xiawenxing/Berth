@@ -127,6 +127,11 @@ export const api = {
   // Register a dir as an import root (surfaces its sessions to the store) + refresh.
   importDir: (cwd: string) => send('POST', '/api/session-dirs', { cwd }) as Promise<{ ok: boolean; count: number }>,
   createProject: (name: string, cwd?: string) => send('POST', '/api/projects/create', { name, cwd }),
+  patchProject: (id: string, patch: { name?: string; hue?: string | null }) =>
+    send('PATCH', `/api/projects/${encodeURIComponent(id)}`, patch),
+  archiveProject: (projectId: string, on: boolean) =>
+    send('POST', '/api/projects/archive', { projectId, on }),
+  deleteProject: (id: string) => send('DELETE', `/api/projects/${encodeURIComponent(id)}`),
   // 货舱 registry mutations (real project_path data).
   addPath: (projectId: string, cwd: string, opts?: { isHome?: boolean; enabled?: boolean }) =>
     send('POST', '/api/projects/add-path', { projectId, cwd, ...opts }),

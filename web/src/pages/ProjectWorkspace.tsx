@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useParams } from 'react-router-dom'
-import { Plus, Play, Sparkles, MoreHorizontal, Anchor } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { Plus, Play, Sparkles, MoreHorizontal, Anchor, Pencil, Archive, ArchiveRestore, Trash2 } from 'lucide-react'
 import { Kanban } from '@/components/workspace/Kanban'
 import { SessionModule } from '@/components/workspace/SessionModule'
 import { CargoDefaults } from '@/components/workspace/CargoDefaults'
 import { ImportDialog } from '@/components/ImportDialog'
+import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
 import { useUI } from '@/lib/ui-store'
 import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
 import { ProjectSummaryDialog, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
@@ -23,11 +24,14 @@ let taskSeq = 100
 
 export function ProjectWorkspace() {
   const { id = '' } = useParams()
+  const navigate = useNavigate()
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
   const { projects, tasks: apiTasks, sessions, statuses, priorities, reload, resync } = useData()
   const live = useLive()
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [ctxDoc, setCtxDoc] = useState<ContextDocTarget | null>(null)
+  const moreBtnRef = useRef<HTMLButtonElement>(null)
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const doResync = () => {
     if (syncing) return
@@ -248,6 +252,28 @@ export function ProjectWorkspace() {
       })
   }
 
+  const renameProject = () => {
+    if (!project) return
+    const next = window.prompt('重命名项目', project.name)?.trim()
+    if (!next || next === project.name) return
+    api.patchProject(project.id, { name: next }).then(() => reload()).catch(() => reload())
+  }
+  const archiveProject = () => {
+    if (!project) return
+    api.archiveProject(project.id, !project.archived).then(() => reload()).catch(() => reload())
+  }
+  const deleteProject = () => {
+    if (!project) return
+    if (!window.confirm(`确定删除项目「${project.name}」？项目下的任务会一起删除，此操作不可撤销。`)) return
+    api
+      .deleteProject(project.id)
+      .then(() => {
+        reload()
+        navigate('/now')
+      })
+      .catch(() => reload())
+  }
+
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <header className="sticky top-0 z-10 border-b border-border bg-background px-6 py-4">
@@ -265,9 +291,46 @@ export function ProjectWorkspace() {
             </button>
             <HBtn icon={<Play size={13} />} onClick={() => launch('')}>起会话</HBtn>
             <HBtn icon={<Sparkles size={13} />} onClick={() => setSummaryOpen(true)}>小结</HBtn>
-            <button className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent">
+            <button
+              ref={moreBtnRef}
+              onClick={() => setProjectMenuOpen((v) => !v)}
+              className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent"
+              title="项目操作"
+            >
               <MoreHorizontal size={15} />
             </button>
+            {projectMenuOpen && project && (
+              <AnchoredPopover anchor={moreBtnRef} width={176} onClose={() => setProjectMenuOpen(false)}>
+                <MenuLabel>项目</MenuLabel>
+                <MenuItem
+                  onClick={() => {
+                    setProjectMenuOpen(false)
+                    renameProject()
+                  }}
+                >
+                  <Pencil size={13} className="flex-none text-muted-foreground" /> 重命名
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    setProjectMenuOpen(false)
+                    archiveProject()
+                  }}
+                >
+                  {project.archived ? <ArchiveRestore size={13} className="flex-none text-muted-foreground" /> : <Archive size={13} className="flex-none text-muted-foreground" />}
+                  {project.archived ? '取消归档' : '归档项目'}
+                </MenuItem>
+                <div className="my-1 border-t border-border" />
+                <MenuItem
+                  danger
+                  onClick={() => {
+                    setProjectMenuOpen(false)
+                    deleteProject()
+                  }}
+                >
+                  <Trash2 size={13} className="flex-none" /> 删除项目
+                </MenuItem>
+              </AnchoredPopover>
+            )}
           </div>
         </div>
 
