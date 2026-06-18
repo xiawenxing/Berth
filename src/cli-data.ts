@@ -153,7 +153,7 @@ const TASK_HELP = `berth task — manage tasks (talks to a running \`berth start
   berth task status <id|title> <status>                   Set status
   berth task set <id|title> [--title T] [--status S] [--priority P]
   berth task log <id|title> "<text>"                      Append a dated entry to the task's progress log
-  berth task doc <id|title> [--print]                     Print the task's context-doc path (and body with --print)
+  berth task doc <id|title> [--print]                     Print the task's context-doc path + protocol(AGENTS.md) path (and body with --print)
   berth task rm <id|title>                                Delete a task
   berth task sync [--source ID]                           Push local edits + pull external changes
 
@@ -219,9 +219,10 @@ export async function runTaskCli(argv: string[]): Promise<void> {
       throw new Error("'berth task progress' 已废弃：进展现在追加到任务上下文文档的「进展日志」。\n请改用：  berth task log <id|title> \"<进展文本>\"")
     case 'doc': {
       const t = await resolveOne(base, pos.join(' '))
-      const { ref } = await post(base, '/api/context', { kind: 'task', key: t.id, title: t.title })
+      const { ref, protocolPath } = await post(base, '/api/context', { kind: 'task', key: t.id, title: t.title })
       const d = await json(base, `/api/doc?path=${encodeURIComponent(ref)}`)
       console.log(d.path)
+      if (protocolPath) console.log(`协议（维护规则/写入分工，按需 Read）: ${protocolPath}`)
       if (flags.print) { console.log(''); console.log(d.content) }
       return
     }

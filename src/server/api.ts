@@ -11,6 +11,7 @@ import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, setAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getLocale, normalizeLocale, LOCALES, contextStrings } from '../i18n'
 import { ensureContextDoc, appendContextLogOnDisk } from '../data/context-doc'
+import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
 import { getContextConfig, setContextConfig } from '../data/context-config'
 import { lastLogEntries } from '../data/context-log'
 import { syncSource, resolveConflict } from '../data/sync/engine'
@@ -470,7 +471,11 @@ api.post('/context', (req, res) => {
     if (kind === 'task' && ensured.created && task && !task.detailDoc) {
       store.updateTaskFields(key, { detailDoc: ensured.ref }, Date.now())
     }
-    res.json({ ref: ensured.ref, created: ensured.created })
+    // Seed + resolve the maintenance protocol (AGENTS.md) so callers (CLI/skill) can Read the single
+    // source of the write rules instead of duplicating them. Per-project override wins if present.
+    seedDefaultProtocol(ds, locale)
+    const protocolPath = resolveProtocol(ds, locale, projectName).protocolPath
+    res.json({ ref: ensured.ref, created: ensured.created, protocolPath })
   } catch (e: any) {
     res.status(500).json({ error: String(e?.message ?? e) })
   }
