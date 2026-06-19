@@ -61,6 +61,7 @@ export function ProjectWorkspace() {
           status: t.status, // raw configured status; Kanban resolves it to a column
           priority: normPriority(t.priority),
           summary: t.progress ?? undefined,
+          summarizing: t.summarizing,
           ddl: t.ddl ?? undefined,
           links: [],
         })),

@@ -27,6 +27,7 @@ export interface ApiTask {
   detailDoc?: string | null
   ddl?: string | null
   sessions?: string[]
+  summarizing?: boolean // server is regenerating this task's progress summary right now
 }
 
 export type TurnRole = 'user' | 'agent' | 'tool'

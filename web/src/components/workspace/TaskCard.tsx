@@ -81,7 +81,7 @@ export function TaskCard({
   // Done/cancelled cards stay expandable when they carry content (linked sessions / a summary) —
   // matching v7's `.kcard.done.expandable` — so delivered work can still be reviewed. Plain
   // done cards (no content) collapse to a single line. Expansion only in the active (wide) column.
-  const hasContent = linkN > 0 || !!task.summary
+  const hasContent = linkN > 0 || !!task.summary || !!task.summarizing
   const expandable = active && (isLive || hasContent)
   const runningOrUnread = task.links?.find((l) => l.status === 'sail' || l.status === 'dock')
   const [dragging, setDragging] = useState(false)
@@ -135,8 +135,8 @@ export function TaskCard({
         >
           {task.title}
         </span>
-        {/* AI refine indicator */}
-        {task.summary === REFINING && (
+        {/* AI summary indicator — manual refine placeholder OR an auto-regeneration on status change */}
+        {(task.summarizing || task.summary === REFINING) && (
           <span className="inline-flex flex-none items-center gap-1 text-[10.5px] text-muted-foreground">
             <Sparkles size={11} className="spk-twinkle" /> 总结中…
           </span>
@@ -206,7 +206,14 @@ export function TaskCard({
       {/* expanded: summary + linked sessions — full-bleed block with a top border (design .kcard-exp) */}
       {open && (
         <div className="border-t border-border bg-brand/[0.04] px-[13px] py-2.5">
-          {task.summary ? (
+          {task.summarizing ? (
+            <>
+              <ExpLabel>进展摘要</ExpLabel>
+              <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                <Sparkles size={12} className="spk-twinkle" /> 港务助手生成中…
+              </p>
+            </>
+          ) : task.summary ? (
             <>
               <ExpLabel>进展摘要</ExpLabel>
               <p className="text-[12px] leading-relaxed text-muted-foreground">{task.summary}</p>

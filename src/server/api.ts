@@ -6,6 +6,7 @@ import { collectLogicalSessions } from '../sessions'
 import { canonicalPathKey } from '../path-normalize'
 import { listProjects, createProject, updateProject, deleteProject } from '../data/projects'
 import { listTasks, createTask, updateTask, deleteTask } from '../data/tasks'
+import { runTaskSummary, isSummarizingTask } from '../data/task-summary'
 import { getDocStore, getDocsRoot } from '../data/docstore'
 import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, setAgentConfig, resolveBerthAgent } from '../data/agent-config'
@@ -563,6 +564,7 @@ api.get('/todos', (_req, res) => {
     detailDoc: t.detailDoc, progress: truncate(t.progress, 300),
     ddl: ddlMap.get(t.id) ?? null,
     sessions: edgesMap.get(t.id) ?? [],
+    summarizing: isSummarizingTask(t.id),   // drives the card's 摘要 loading icon
   }))
   res.json({ error: null, todos })
 })
@@ -633,21 +635,13 @@ api.post('/todos/:id/summary-detail', async (req, res) => {
   const store = getStore()
   const task = listTasks(store).find(t => t.id === req.params.id)
   if (!task) return res.status(404).json({ error: 'unknown task' })
-  const ds = getDocStore(store)
   const locale = getLocale(store)
   try {
-    const ensured = ensureContextDoc(ds, 'task', task.id, { title: task.title, projectName: task.project, locale })
-    if (ensured.created && !task.detailDoc) store.updateTaskFields(task.id, { detailDoc: ensured.ref }, Date.now())
-    const { content } = ds.readDoc(ensured.abs)
-    const summary = await generateStructuredSummary(content, contextStrings(locale).taskSummaryDetailPrompt, resolveBerthAgent(store))
-    if (!summary.headline && !summary.progress.length && !summary.milestones.length)
-      return res.status(502).json({ error: 'agent returned empty summary' })
-    const generatedAt = Date.now()
-    store.setTaskSummary(task.id, JSON.stringify(summary), generatedAt)
-    // Merged generation: the structured headline doubles as the card's one-line 进展摘要 (A field),
-    // so a single run feeds both the paragraph and the popover detail.
-    if (summary.headline) updateTask(store, task.id, { progress: summary.headline })
-    res.json({ summary, generatedAt })
+    // Shared generation: persists the JSON, writes the headline back to 进展摘要, and flips the
+    // in-flight flag so the card shows a loading icon (same path the status-change auto-trigger uses).
+    const r = await runTaskSummary(store, task.id)
+    if (!r) return res.status(404).json({ error: 'unknown task' })
+    res.json(r)
   } catch (e: any) {
     sendAgentError(res, e, locale)
   }

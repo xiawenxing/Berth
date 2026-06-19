@@ -70,6 +70,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [nonce])
 
+  // While any task's progress summary is regenerating server-side, poll todos so the card's loading
+  // icon clears (and the fresh summary shows) without a manual reload. Idle otherwise — no summary
+  // in flight, no polling.
+  const anySummarizing = tasks.some((t) => t.summarizing)
+  useEffect(() => {
+    if (!anySummarizing) return
+    const iv = setInterval(() => {
+      api.todos().then((t) => setTasks(t.todos ?? [])).catch(() => {})
+    }, 2000)
+    return () => clearInterval(iv)
+  }, [anySummarizing])
+
   const value = useMemo<DataState>(
     () => ({
       projects,

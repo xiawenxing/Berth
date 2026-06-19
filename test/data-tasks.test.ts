@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../src/agent/triage', () => ({ classifyProject: vi.fn() }))
+// Isolate updateTask from the status-change summary side effect (no agent spawns in this unit test).
+vi.mock('../src/data/task-summary', () => ({ triggerTaskSummary: vi.fn() }))
 
 import { openStore } from '../src/db/store'
 import { listTasks, createTask, updateTask, deleteTask } from '../src/data/tasks'
