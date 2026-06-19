@@ -123,7 +123,6 @@ export const api = {
   patchTask: (id: string, patch: { status?: string; priority?: string; ddl?: string | null; title?: string }) =>
     send('PATCH', `/api/todos/${id}`, patch),
   deleteTask: (id: string) => send('DELETE', `/api/todos/${id}`),
-  taskSummary: (id: string) => send('POST', `/api/todos/${id}/progress-summary`, {}),
   pin: (sessionId: string, on: boolean) => send('POST', '/api/pin', { sessionId, on }),
   // Assign a session to a project (manual attach → state 'confirmed' server-side).
   attach: (sessionId: string, projectId: string) => send('POST', '/api/attach', { sessionId, projectId }),

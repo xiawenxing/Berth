@@ -97,7 +97,6 @@ vi.mock('../src/data/projects', () => ({
 // ── Mock agent modules ────────────────────────────────────────────────────────
 vi.mock('../src/agent/index', () => ({
   generateTitle: vi.fn(async () => 'mocked title'),
-  generateProgressSummary: vi.fn(async () => 'mocked summary'),
 }))
 vi.mock('../src/agent/transcript', () => ({
   extractTitleContext: vi.fn(() => ''),

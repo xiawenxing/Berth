@@ -132,16 +132,6 @@ export async function generateTitle(transcriptHead: string, agent?: BerthAgent):
   return out
 }
 
-/** Summarize a task's context doc into a short progress snapshot (the DB `progress` field). */
-export async function generateProgressSummary(docText: string, summaryPrompt: string, agent?: BerthAgent): Promise<string> {
-  const prompt = summaryPrompt + '\n\n---\n' + docText.slice(0, 4000)
-  const cli = agent?.cli ?? 'claude'
-  const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
-  let out = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 45000 }, { cli, timeoutMs: 60000 })
-  out = out.split('\n').map(l => l.trim()).filter(Boolean).join(' ').replace(/^["'""\s]+|["'""\s]+$/g, '').slice(0, 500)
-  return out
-}
-
 /** Structured summary (shared by 项目小结 and the task 进展详情): a one-line headline + progress
  *  bullets + milestone/TODO items. */
 export interface StructuredSummary {

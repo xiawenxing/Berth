@@ -104,7 +104,6 @@ export interface ContextStrings {
   taskTemplate: (title: string, projectName: string) => string
   projectTemplate: (name: string) => string
   protocolDoc: string                                     // full default AGENTS.md body
-  summaryPrompt: string                                  // headless prompt: summarize the doc into a short A snapshot
   projectSummaryPrompt: string                           // headless prompt: structured 项目小结 (headline + progress + milestones) as JSON
   taskSummaryDetailPrompt: string                        // headless prompt: structured 任务进展详情 (headline + progress + TODO) as JSON
   // manifest "maintain" block labels
@@ -170,7 +169,6 @@ const CONTEXT: Record<Locale, ContextStrings> = {
       '| 每次推进的流水摘要 | `## 进展日志`（追加 `- YYYY-MM-DD: …`，skill 路径用 `berth task log`） |', '',
       '## 进展日志', '只追加，最新在底部。条目过多时 Berth 会机械滚动到 `progress-archive.md`，你无需手动归档。', '',
     ].join('\n') + '\n',
-    summaryPrompt: '以下是一个任务的上下文文档（含目标、计划、决策，及追加型进展日志）。只回复一段 2–3 句的简短进展摘要，用文档自身的语言，概括该任务当前进展到哪：已完成什么、进行中什么、关键决策/风险。忽略稳定的「目标/背景」段。不要 markdown、不要列表、不要引号。',
     projectSummaryPrompt: '以下是一个项目的上下文文档（含目标、计划、决策，及追加型进展日志）。请只输出一个 JSON 对象（不要 markdown 代码块、不要任何解释文字），结构如下：{"headline": string, "progress": string[], "milestones": [{"text": string, "done": boolean}]}。用文档自身的语言。headline 是一句话总结当前项目整体进展（已完成/进行中/关键风险）；progress 是 3–6 条进度要点，每条简短一句；milestones 是 3–6 个重要里程碑，done 表示是否已完成。忽略稳定的「目标/背景」段。',
     taskSummaryDetailPrompt: '以下是一个任务的上下文文档（含目标、计划、决策，及追加型进展日志）。请只输出一个 JSON 对象（不要 markdown 代码块、不要任何解释文字），结构如下：{"headline": string, "progress": string[], "milestones": [{"text": string, "done": boolean}]}。用文档自身的语言。headline 是一句话总结该任务当前进展（已完成/进行中/关键风险）；progress 是 3–6 条详细进展要点，每条简短一句；milestones 是该任务的关键 TODO（取自计划/TODO 段），done 表示是否已完成。忽略稳定的「目标/背景」段。',
     sectionMaintain: '## 维护本上下文',
@@ -245,7 +243,6 @@ const CONTEXT: Record<Locale, ContextStrings> = {
       '| per-step progress summary | `## Progress log` (append `- YYYY-MM-DD: …`; via the skill use `berth task log`) |', '',
       '## Progress log', 'Append-only, newest at the bottom. Berth mechanically rolls it into `progress-archive.md` when it grows; no manual archiving needed.', '',
     ].join('\n') + '\n',
-    summaryPrompt: "Below is a task's context document (goal, plan, decisions, and an append-only progress log). Reply with ONLY a 2-3 sentence progress summary, in the document's own language, of where the task currently stands: what's done, what's in progress, key decisions/risks. Ignore the stable goal/background sections. No markdown, no bullet lists, no quotes.",
     projectSummaryPrompt: "Below is a project's context document (goal, plan, decisions, and an append-only progress log). Output ONLY a JSON object (no markdown code fences, no prose), shaped exactly: {\"headline\": string, \"progress\": string[], \"milestones\": [{\"text\": string, \"done\": boolean}]}. Use the document's own language. headline is a one-sentence summary of overall progress (done / in-progress / key risk); progress is 3-6 short bullet points of recent progress; milestones is 3-6 key milestones with done indicating completion. Ignore the stable goal/background sections.",
     taskSummaryDetailPrompt: "Below is a task's context document (goal, plan, decisions, and an append-only progress log). Output ONLY a JSON object (no markdown code fences, no prose), shaped exactly: {\"headline\": string, \"progress\": string[], \"milestones\": [{\"text\": string, \"done\": boolean}]}. Use the document's own language. headline is a one-sentence summary of this task's progress (done / in-progress / key risk); progress is 3-6 short bullet points of detailed progress; milestones is the task's key TODOs (from the plan/TODO section) with done indicating completion. Ignore the stable goal/background sections.",
     sectionMaintain: '## Maintain this context',

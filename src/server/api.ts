@@ -17,7 +17,7 @@ import { lastLogEntries } from '../data/context-log'
 import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
-import { generateTitle, generateProgressSummary, generateStructuredSummary, parseStructuredSummary } from '../agent/index'
+import { generateTitle, generateStructuredSummary, parseStructuredSummary } from '../agent/index'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { titleInputFromTranscript } from '../agent/transcript'
 import type { Locale } from '../i18n'
@@ -615,26 +615,6 @@ api.patch('/todos/:id', (req, res) => {
     res.json({ ok: true })
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
-  }
-})
-
-// Summarize the task's context doc (B) into the short progress snapshot (A). Mirrors the title pipeline.
-api.post('/todos/:id/progress-summary', async (req, res) => {
-  const store = getStore()
-  const task = listTasks(store).find(t => t.id === req.params.id)
-  if (!task) return res.status(404).json({ error: 'unknown task' })
-  const ds = getDocStore(store)
-  const locale = getLocale(store)
-  try {
-    const ensured = ensureContextDoc(ds, 'task', task.id, { title: task.title, projectName: task.project, locale })
-    if (ensured.created && !task.detailDoc) store.updateTaskFields(task.id, { detailDoc: ensured.ref }, Date.now())
-    const { content } = ds.readDoc(ensured.abs)
-    const summary = await generateProgressSummary(content, contextStrings(locale).summaryPrompt, resolveBerthAgent(store))
-    if (!summary) return res.status(502).json({ error: 'agent returned empty summary' })
-    updateTask(store, task.id, { progress: summary })
-    res.json({ summary })
-  } catch (e: any) {
-    sendAgentError(res, e, locale)
   }
 })
 
