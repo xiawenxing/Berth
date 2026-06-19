@@ -17,7 +17,7 @@ import { lastLogEntries } from '../data/context-log'
 import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
-import { generateTitle, generateProgressSummary, generateStructuredProjectSummary, parseProjectSummary } from '../agent/index'
+import { generateTitle, generateProgressSummary, generateStructuredSummary, parseStructuredSummary } from '../agent/index'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { titleInputFromTranscript } from '../agent/transcript'
 import type { Locale } from '../i18n'
@@ -211,7 +211,7 @@ api.get('/projects/:id/summary', (req, res) => {
   if (!project) return res.status(404).json({ error: 'unknown project' })
   const cached = store.getProjectSummary(project.id)
   if (!cached) return res.json({ summary: null })
-  res.json({ summary: parseProjectSummary(cached.summary), generatedAt: cached.generatedAt })
+  res.json({ summary: parseStructuredSummary(cached.summary), generatedAt: cached.generatedAt })
 })
 
 // Mirrors /todos/:id/progress-summary but over the project context doc, returning a STRUCTURED
@@ -225,7 +225,7 @@ api.post('/projects/:id/summary', async (req, res) => {
   try {
     const ensured = ensureContextDoc(ds, 'project', project.name, { title: project.name, projectName: project.name, locale })
     const { content } = ds.readDoc(ensured.abs)
-    const summary = await generateStructuredProjectSummary(content, contextStrings(locale).projectSummaryPrompt, resolveBerthAgent(store))
+    const summary = await generateStructuredSummary(content, contextStrings(locale).projectSummaryPrompt, resolveBerthAgent(store))
     if (!summary.headline && !summary.progress.length && !summary.milestones.length)
       return res.status(502).json({ error: 'agent returned empty summary' })
     const generatedAt = Date.now()
@@ -633,6 +633,38 @@ api.post('/todos/:id/progress-summary', async (req, res) => {
     if (!summary) return res.status(502).json({ error: 'agent returned empty summary' })
     updateTask(store, task.id, { progress: summary })
     res.json({ summary })
+  } catch (e: any) {
+    sendAgentError(res, e, locale)
+  }
+})
+
+// Structured 任务进展详情 (headline + progress + TODO), behind the card's 更多 popover. GET returns
+// the persisted result (null if never generated); POST regenerates and overwrites the JSON cache.
+api.get('/todos/:id/summary-detail', (req, res) => {
+  const store = getStore()
+  const task = listTasks(store).find(t => t.id === req.params.id)
+  if (!task) return res.status(404).json({ error: 'unknown task' })
+  const cached = store.getTaskSummary(task.id)
+  if (!cached) return res.json({ summary: null })
+  res.json({ summary: parseStructuredSummary(cached.summary), generatedAt: cached.generatedAt })
+})
+
+api.post('/todos/:id/summary-detail', async (req, res) => {
+  const store = getStore()
+  const task = listTasks(store).find(t => t.id === req.params.id)
+  if (!task) return res.status(404).json({ error: 'unknown task' })
+  const ds = getDocStore(store)
+  const locale = getLocale(store)
+  try {
+    const ensured = ensureContextDoc(ds, 'task', task.id, { title: task.title, projectName: task.project, locale })
+    if (ensured.created && !task.detailDoc) store.updateTaskFields(task.id, { detailDoc: ensured.ref }, Date.now())
+    const { content } = ds.readDoc(ensured.abs)
+    const summary = await generateStructuredSummary(content, contextStrings(locale).taskSummaryDetailPrompt, resolveBerthAgent(store))
+    if (!summary.headline && !summary.progress.length && !summary.milestones.length)
+      return res.status(502).json({ error: 'agent returned empty summary' })
+    const generatedAt = Date.now()
+    store.setTaskSummary(task.id, JSON.stringify(summary), generatedAt)
+    res.json({ summary, generatedAt })
   } catch (e: any) {
     sendAgentError(res, e, locale)
   }

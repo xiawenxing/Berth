@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS title_override (session_id TEXT PRIMARY KEY, title TE
 CREATE TABLE IF NOT EXISTS project_summary (
   project_id TEXT PRIMARY KEY, summary TEXT NOT NULL, generated_at INTEGER NOT NULL
 );
+-- Cached structured 任务进展详情 (headline + progress + TODO milestones), keyed by task id.
+CREATE TABLE IF NOT EXISTS task_summary (
+  task_id TEXT PRIMARY KEY, summary TEXT NOT NULL, generated_at INTEGER NOT NULL
+);
 -- populated in a later phase (copy-tracking / todo-edge); upsertSessions intentionally does not write these
 CREATE TABLE IF NOT EXISTS edge (
   todo_key TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY (todo_key, session_id)
@@ -161,6 +165,15 @@ export function openStore(path: string) {
     },
     getProjectSummary(projectId: string): { summary: string; generatedAt: number } | null {
       const r = db.prepare('SELECT summary, generated_at as generatedAt FROM project_summary WHERE project_id=?').get(projectId) as any
+      return r ?? null
+    },
+    setTaskSummary(taskId: string, summary: string, generatedAt: number) {
+      db.prepare(`INSERT INTO task_summary (task_id,summary,generated_at) VALUES (?,?,?)
+        ON CONFLICT(task_id) DO UPDATE SET summary=excluded.summary, generated_at=excluded.generated_at`)
+        .run(taskId, summary, generatedAt)
+    },
+    getTaskSummary(taskId: string): { summary: string; generatedAt: number } | null {
+      const r = db.prepare('SELECT summary, generated_at as generatedAt FROM task_summary WHERE task_id=?').get(taskId) as any
       return r ?? null
     },
     setArchived(projectId: string, on: boolean) {

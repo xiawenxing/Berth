@@ -2,25 +2,71 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Sparkles, Copy, Save, RefreshCw, X, CheckCircle2, Circle } from 'lucide-react'
 import { Drawer } from './ui/Overlay'
 import { AnchoredPopover } from './ui/Menu'
-import { api, type ProjectSummary } from '@/lib/api'
+import { api, type StructuredSummary } from '@/lib/api'
 
-const EMPTY_SUMMARY: ProjectSummary = { headline: '', progress: [], milestones: [] }
-const isEmptySummary = (s: ProjectSummary) => !s.headline && !s.progress.length && !s.milestones.length
+const EMPTY_SUMMARY: StructuredSummary = { headline: '', progress: [], milestones: [] }
+const isEmptySummary = (s: StructuredSummary) => !s.headline && !s.progress.length && !s.milestones.length
 
-/** 项目小结 — popover anchored under the 小结 trigger. First open loads the persisted result
- *  (GET /projects/:id/summary) and only generates when none exists yet; the result is stored
- *  server-side so it survives reload. 重新生成 (POST) refreshes and overwrites on demand. */
-export function ProjectSummaryPopover({
+type SummaryResult = { summary?: StructuredSummary | null; generatedAt?: number }
+
+interface SummaryLabels {
+  headline: string
+  progress: string
+  milestones: string
+}
+const DEFAULT_LABELS: SummaryLabels = { headline: '一句话总结', progress: '进度要点', milestones: '重要里程碑' }
+
+/** 项目小结 — anchored popover over the project context doc. */
+export function ProjectSummaryPopover({ anchor, projectId, onClose }: { anchor: RefObject<HTMLElement | null>; projectId: string; onClose: () => void }) {
+  return (
+    <StructuredSummaryPopover
+      anchor={anchor}
+      title="项目小结"
+      onClose={onClose}
+      load={() => api.getProjectSummary(projectId)}
+      generate={() => api.projectSummary(projectId)}
+    />
+  )
+}
+
+/** 任务进展详情 — anchored popover behind the task card's 更多 button (headline hidden; the card
+ *  already shows the one-line summary, so the popover focuses on detailed progress + TODOs). */
+export function TaskSummaryPopover({ anchor, taskId, onClose }: { anchor: RefObject<HTMLElement | null>; taskId: string; onClose: () => void }) {
+  return (
+    <StructuredSummaryPopover
+      anchor={anchor}
+      title="进展详情"
+      onClose={onClose}
+      showHeadline={false}
+      labels={{ headline: '一句话总结', progress: '详细进展', milestones: 'TODO' }}
+      load={() => api.getTaskSummaryDetail(taskId)}
+      generate={() => api.taskSummaryDetail(taskId)}
+    />
+  )
+}
+
+/** Anchored popover that renders a StructuredSummary (headline + progress + milestone/TODO). First
+ *  open calls `load()` (the persisted cache) and only `generate()`s when none exists yet; the result
+ *  is stored server-side so it survives reload. 重新生成 (footer) refreshes on demand. */
+function StructuredSummaryPopover({
   anchor,
-  projectId,
+  title,
   onClose,
+  load,
+  generate,
+  showHeadline = true,
+  labels = DEFAULT_LABELS,
 }: {
   anchor: RefObject<HTMLElement | null>
-  projectId: string
+  title: string
   onClose: () => void
+  load: () => Promise<SummaryResult>
+  generate: () => Promise<SummaryResult>
+  showHeadline?: boolean
+  labels?: SummaryLabels
 }) {
   const [loading, setLoading] = useState(true)
-  const [summary, setSummary] = useState<ProjectSummary>(EMPTY_SUMMARY)
+  const [summary, setSummary] = useState<StructuredSummary>(EMPTY_SUMMARY)
   const [generatedAt, setGeneratedAt] = useState<number | undefined>(undefined)
   const [err, setErr] = useState('')
   const reqRef = useRef(0)
@@ -29,8 +75,7 @@ export function ProjectSummaryPopover({
     const req = ++reqRef.current // ignore stale responses if reopened/regenerated
     setLoading(true)
     setErr('')
-    api
-      .projectSummary(projectId)
+    generate()
       .then((r) => {
         if (reqRef.current !== req) return
         setSummary(r.summary ?? EMPTY_SUMMARY)
@@ -44,13 +89,12 @@ export function ProjectSummaryPopover({
       })
   }
 
-  // First open: load the persisted summary; generate only if the project has none yet.
+  // First open: load the persisted summary; generate only if there's none yet.
   useEffect(() => {
     const req = ++reqRef.current
     setLoading(true)
     setErr('')
-    api
-      .getProjectSummary(projectId)
+    load()
       .then((r) => {
         if (reqRef.current !== req) return
         if (r.summary != null) {
@@ -65,10 +109,10 @@ export function ProjectSummaryPopover({
         if (reqRef.current === req) gen()
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId])
+  }, [])
 
   const copy = () => {
-    const text = summaryToText(summary)
+    const text = summaryToText(summary, labels)
     if (text) navigator.clipboard?.writeText(text)
   }
 
@@ -77,7 +121,7 @@ export function ProjectSummaryPopover({
       {/* header: title + copy / close (重新生成 lives in the footer, matching the v7 mockup) */}
       <div className="flex items-center gap-2 px-3 py-2.5">
         <Sparkles size={14} className={loading ? 'spk-twinkle' : 'text-brand'} />
-        <h3 className="text-[13px] font-semibold text-foreground">项目小结</h3>
+        <h3 className="text-[13px] font-semibold text-foreground">{title}</h3>
         <span className="flex-1" />
         <button onClick={copy} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="复制">
           <Copy size={13} />
@@ -95,16 +139,16 @@ export function ProjectSummaryPopover({
         ) : err ? (
           <p className="text-[12px] text-destructive">{err}</p>
         ) : isEmptySummary(summary) ? (
-          <p className="text-[12px] text-muted-foreground">（项目上下文为空，暂无可总结内容）</p>
+          <p className="text-[12px] text-muted-foreground">（上下文为空，暂无可总结内容）</p>
         ) : (
           <div className="flex flex-col gap-3.5">
-            {summary.headline && (
-              <Section label="一句话总结" dot="bg-warning">
+            {showHeadline && summary.headline && (
+              <Section label={labels.headline} dot="bg-warning">
                 <p className="text-[12.5px] leading-relaxed text-foreground">{summary.headline}</p>
               </Section>
             )}
             {summary.progress.length > 0 && (
-              <Section label="进度要点" dot="bg-success">
+              <Section label={labels.progress} dot="bg-success">
                 <ul className="flex flex-col gap-1.5">
                   {summary.progress.map((p, i) => (
                     <li key={i} className="flex gap-2 text-[12px] leading-snug text-muted-foreground">
@@ -116,7 +160,7 @@ export function ProjectSummaryPopover({
               </Section>
             )}
             {summary.milestones.length > 0 && (
-              <Section label="重要里程碑" dot="bg-brand">
+              <Section label={labels.milestones} dot="bg-brand">
                 <ul className="flex flex-col gap-1.5">
                   {summary.milestones.map((m, i) => (
                     <li key={i} className="flex items-start gap-2 text-[12px] leading-snug">
@@ -165,11 +209,11 @@ function Section({ label, dot, children }: { label: string; dot: string; childre
 }
 
 /** Flatten a structured summary into plain text for the 复制 button. */
-function summaryToText(s: ProjectSummary): string {
+function summaryToText(s: StructuredSummary, labels: SummaryLabels): string {
   const parts: string[] = []
   if (s.headline) parts.push(s.headline)
-  if (s.progress.length) parts.push('\n进度要点:\n' + s.progress.map((p) => `· ${p}`).join('\n'))
-  if (s.milestones.length) parts.push('\n重要里程碑:\n' + s.milestones.map((m) => `${m.done ? '[x]' : '[ ]'} ${m.text}`).join('\n'))
+  if (s.progress.length) parts.push(`\n${labels.progress}:\n` + s.progress.map((p) => `· ${p}`).join('\n'))
+  if (s.milestones.length) parts.push(`\n${labels.milestones}:\n` + s.milestones.map((m) => `${m.done ? '[x]' : '[ ]'} ${m.text}`).join('\n'))
   return parts.join('\n').trim()
 }
 

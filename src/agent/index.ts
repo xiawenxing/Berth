@@ -142,27 +142,28 @@ export async function generateProgressSummary(docText: string, summaryPrompt: st
   return out
 }
 
-/** Structured 项目小结: a one-line headline + progress bullets + milestone todos. */
-export interface ProjectSummary {
+/** Structured summary (shared by 项目小结 and the task 进展详情): a one-line headline + progress
+ *  bullets + milestone/TODO items. */
+export interface StructuredSummary {
   headline: string
   progress: string[]
   milestones: { text: string; done: boolean }[]
 }
 
-/** Generate a structured project summary (JSON) from the project context doc. Falls back to a
- *  headline-only summary if the agent doesn't return parseable JSON. */
-export async function generateStructuredProjectSummary(docText: string, summaryPrompt: string, agent?: BerthAgent): Promise<ProjectSummary> {
+/** Generate a structured summary (JSON) from a context doc. Falls back to a headline-only summary
+ *  if the agent doesn't return parseable JSON. */
+export async function generateStructuredSummary(docText: string, summaryPrompt: string, agent?: BerthAgent): Promise<StructuredSummary> {
   const prompt = summaryPrompt + '\n\n---\n' + docText.slice(0, 4000)
   const cli = agent?.cli ?? 'claude'
   const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
   const raw = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 60000 }, { cli, timeoutMs: 75000 })
-  return parseProjectSummary(raw)
+  return parseStructuredSummary(raw)
 }
 
-/** Extract the first {...} JSON block and coerce it into a ProjectSummary. Robust to code fences
+/** Extract the first {...} JSON block and coerce it into a StructuredSummary. Robust to code fences
  *  and stray prose around the JSON; degrades to a headline-only summary on any parse failure. */
-export function parseProjectSummary(raw: string): ProjectSummary {
-  const empty: ProjectSummary = { headline: '', progress: [], milestones: [] }
+export function parseStructuredSummary(raw: string): StructuredSummary {
+  const empty: StructuredSummary = { headline: '', progress: [], milestones: [] }
   const start = raw.indexOf('{')
   const end = raw.lastIndexOf('}')
   if (start >= 0 && end > start) {

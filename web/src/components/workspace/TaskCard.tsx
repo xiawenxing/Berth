@@ -1,7 +1,8 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Play, ChevronDown, Link2, MoreHorizontal, CalendarClock, Sparkles, Pencil, Trash2 } from 'lucide-react'
+import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/Menu'
+import { TaskSummaryPopover } from '@/components/AiPanels'
 import { useData } from '@/lib/data'
 import { priorityColors, priorityRank } from '@/lib/priority'
 import { isCancelledStatus, isDoneStatus, statusMeta } from '@/lib/status'
@@ -71,6 +72,8 @@ export function TaskCard({
 } & MenuActions) {
   const { priorities, statuses } = useData()
   const [open, setOpen] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const moreBtnRef = useRef<HTMLButtonElement>(null)
   const done = isDoneStatus(task.status)
   const cancelled = isCancelledStatus(task.status)
   const isLive = !done && !cancelled
@@ -207,6 +210,19 @@ export function TaskCard({
             <>
               <ExpLabel>进展摘要</ExpLabel>
               <p className="text-[12px] leading-relaxed text-muted-foreground">{task.summary}</p>
+              <button
+                ref={moreBtnRef}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setDetailOpen((v) => !v)
+                }}
+                className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-medium text-brand hover:underline"
+              >
+                更多 <ChevronRight size={11} />
+              </button>
+              {detailOpen && (
+                <TaskSummaryPopover anchor={moreBtnRef} taskId={task.id} onClose={() => setDetailOpen(false)} />
+              )}
             </>
           )}
           {linkN > 0 ? (

@@ -50,8 +50,9 @@ export interface ApiSession {
   deleted?: boolean
 }
 
-// Structured 项目小结 (港务助手): a one-line headline + progress bullets + milestone todos.
-export interface ProjectSummary {
+// Structured summary (港务助手): a one-line headline + progress bullets + milestone/TODO items.
+// Shared by 项目小结 and the task 进展详情 popover.
+export interface StructuredSummary {
   headline: string
   progress: string[]
   milestones: { text: string; done: boolean }[]
@@ -153,9 +154,14 @@ export const api = {
     send('POST', '/api/context/update', { kind, key, userInput }),
   // Read the last cached 项目小结 (null summary if never generated); does not regenerate.
   getProjectSummary: (id: string) =>
-    getJSON<{ summary: ProjectSummary | null; generatedAt?: number }>(`/api/projects/${id}/summary`),
+    getJSON<{ summary: StructuredSummary | null; generatedAt?: number }>(`/api/projects/${id}/summary`),
   projectSummary: (id: string) =>
-    send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summary?: ProjectSummary; generatedAt?: number; error?: string }>,
+    send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summary?: StructuredSummary; generatedAt?: number; error?: string }>,
+  // Structured 任务进展详情 (behind the task card's 更多 popover): GET reads the cache, POST regenerates.
+  getTaskSummaryDetail: (id: string) =>
+    getJSON<{ summary: StructuredSummary | null; generatedAt?: number }>(`/api/todos/${id}/summary-detail`),
+  taskSummaryDetail: (id: string) =>
+    send('POST', `/api/todos/${id}/summary-detail`, {}) as Promise<{ summary?: StructuredSummary; generatedAt?: number; error?: string }>,
   sessionTitle: (id: string) => send('POST', `/api/sessions/${id}/title`, {}) as Promise<{ title: string }>,
   renameSessionTitle: (id: string, title: string) =>
     send('PATCH', `/api/sessions/${id}/title`, { title }) as Promise<{ title: string }>,
