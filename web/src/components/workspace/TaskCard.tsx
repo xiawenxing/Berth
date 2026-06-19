@@ -70,7 +70,7 @@ export function TaskCard({
   onOpenSession?: (link: LinkedSession) => void
   onActivate?: () => void
 } & MenuActions) {
-  const { priorities, statuses } = useData()
+  const { priorities, statuses, reload } = useData()
   const [open, setOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const moreBtnRef = useRef<HTMLButtonElement>(null)
@@ -206,7 +206,7 @@ export function TaskCard({
       {/* expanded: summary + linked sessions — full-bleed block with a top border (design .kcard-exp) */}
       {open && (
         <div className="border-t border-border bg-brand/[0.04] px-[13px] py-2.5">
-          {task.summary && (
+          {task.summary ? (
             <>
               <ExpLabel>进展摘要</ExpLabel>
               <p className="text-[12px] leading-relaxed text-muted-foreground">{task.summary}</p>
@@ -220,10 +220,22 @@ export function TaskCard({
               >
                 更多 <ChevronRight size={11} />
               </button>
-              {detailOpen && (
-                <TaskSummaryPopover anchor={moreBtnRef} taskId={task.id} onClose={() => setDetailOpen(false)} />
-              )}
             </>
+          ) : isLive ? (
+            // No 进展摘要 yet — let the user trigger the (merged) generation directly.
+            <button
+              ref={moreBtnRef}
+              onClick={(e) => {
+                e.stopPropagation()
+                setDetailOpen((v) => !v)
+              }}
+              className="inline-flex items-center gap-1 text-[11.5px] font-medium text-brand hover:underline"
+            >
+              <Sparkles size={12} /> 生成进展小结
+            </button>
+          ) : null}
+          {detailOpen && (
+            <TaskSummaryPopover anchor={moreBtnRef} taskId={task.id} onClose={() => setDetailOpen(false)} onGenerated={reload} />
           )}
           {linkN > 0 ? (
             <>

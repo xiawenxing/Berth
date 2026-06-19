@@ -30,8 +30,10 @@ export function ProjectSummaryPopover({ anchor, projectId, onClose }: { anchor: 
 }
 
 /** 任务进展详情 — anchored popover behind the task card's 更多 button (headline hidden; the card
- *  already shows the one-line summary, so the popover focuses on detailed progress + TODOs). */
-export function TaskSummaryPopover({ anchor, taskId, onClose }: { anchor: RefObject<HTMLElement | null>; taskId: string; onClose: () => void }) {
+ *  already shows the one-line summary, so the popover focuses on detailed progress + TODOs).
+ *  Generation is merged: the same run also writes the headline back to the task's 进展摘要 (A field),
+ *  so `onGenerated` lets the card refresh that paragraph. */
+export function TaskSummaryPopover({ anchor, taskId, onClose, onGenerated }: { anchor: RefObject<HTMLElement | null>; taskId: string; onClose: () => void; onGenerated?: () => void }) {
   return (
     <StructuredSummaryPopover
       anchor={anchor}
@@ -41,6 +43,7 @@ export function TaskSummaryPopover({ anchor, taskId, onClose }: { anchor: RefObj
       labels={{ headline: '一句话总结', progress: '详细进展', milestones: 'TODO' }}
       load={() => api.getTaskSummaryDetail(taskId)}
       generate={() => api.taskSummaryDetail(taskId)}
+      onGenerated={onGenerated}
     />
   )
 }
@@ -56,6 +59,7 @@ function StructuredSummaryPopover({
   generate,
   showHeadline = true,
   labels = DEFAULT_LABELS,
+  onGenerated,
 }: {
   anchor: RefObject<HTMLElement | null>
   title: string
@@ -64,6 +68,7 @@ function StructuredSummaryPopover({
   generate: () => Promise<SummaryResult>
   showHeadline?: boolean
   labels?: SummaryLabels
+  onGenerated?: () => void
 }) {
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<StructuredSummary>(EMPTY_SUMMARY)
@@ -80,6 +85,7 @@ function StructuredSummaryPopover({
         if (reqRef.current !== req) return
         setSummary(r.summary ?? EMPTY_SUMMARY)
         setGeneratedAt(r.generatedAt)
+        onGenerated?.()
       })
       .catch((e) => {
         if (reqRef.current === req) setErr(String(e))

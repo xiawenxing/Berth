@@ -664,6 +664,9 @@ api.post('/todos/:id/summary-detail', async (req, res) => {
       return res.status(502).json({ error: 'agent returned empty summary' })
     const generatedAt = Date.now()
     store.setTaskSummary(task.id, JSON.stringify(summary), generatedAt)
+    // Merged generation: the structured headline doubles as the card's one-line 进展摘要 (A field),
+    // so a single run feeds both the paragraph and the popover detail.
+    if (summary.headline) updateTask(store, task.id, { progress: summary.headline })
     res.json({ summary, generatedAt })
   } catch (e: any) {
     sendAgentError(res, e, locale)
