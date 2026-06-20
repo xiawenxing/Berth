@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
@@ -62,9 +62,9 @@ export function Kanban({
             // Berth 1.0 color-coded each column by its status accent (header title, dot and the
             // active column's top border). `--col-accent` carries that color to the children below.
             style={{
-              ['--col-accent' as string]: meta.accent,
+              '--col-accent': meta.accent,
               ...(isActive ? { borderTopWidth: '2px', borderTopColor: meta.accent } : null),
-            }}
+            } as CSSProperties}
             // Click anywhere in an inactive column (header, body, empty area) to activate+widen it.
             onClick={() => !isActive && setActive(status)}
             onDragOver={(e) => {
