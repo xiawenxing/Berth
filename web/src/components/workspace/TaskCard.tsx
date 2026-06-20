@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/Menu'
@@ -86,6 +86,34 @@ export function TaskCard({
   const runningOrUnread = task.links?.find((l) => l.status === 'sail' || l.status === 'dock')
   const [dragging, setDragging] = useState(false)
 
+  // Inline rename — Electron's renderer has no window.prompt(), so renaming is in-place:
+  // double-click the title, or ⋯ menu → 重命名 (which calls startRename). Mirrors
+  // SessionTitleBar's edit / commit / cancel + skip-blur dance.
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(task.title)
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  const skipBlur = useRef(false)
+  useEffect(() => {
+    if (editing) {
+      titleInputRef.current?.focus()
+      titleInputRef.current?.select()
+    }
+  }, [editing])
+  const startRename = () => {
+    if (!onRename) return
+    setDraft(task.title)
+    setEditing(true)
+  }
+  const finishRename = (commit: boolean) => {
+    if (commit) {
+      const next = draft.trim()
+      if (next && next !== task.title) onRename?.(task.id, next)
+    } else {
+      setDraft(task.title)
+    }
+    setEditing(false)
+  }
+
   const { rank, total } = priorityRank(task.priority, priorities)
   const pc = priorityColors(rank, total)
 
@@ -99,7 +127,7 @@ export function TaskCard({
   return (
     <div
       data-prio={task.priority}
-      draggable
+      draggable={!editing}
       onDragStart={(e) => {
         setDragging(true)
         e.dataTransfer.setData('text/plain', task.id)
@@ -123,18 +151,49 @@ export function TaskCard({
       <div className={cn('flex items-center gap-1.5 pr-2.5 pl-[13px]', active ? 'py-[7px]' : 'py-[6px]')}>
         {/* status glyph only in the active column for live cards */}
         {active && isLive && runningOrUnread && <ShipGlyph status={runningOrUnread.status} />}
-        <span
-          className={cn(
-            'min-w-0 flex-1 text-[13px] font-semibold leading-[1.35] text-card-foreground',
-            // 2 lines for active live cards; reliable single-line truncate everywhere else
-            // (line-clamp-1 collapses the title height in a flex row when there's no other content).
-            active && isLive ? 'line-clamp-2 [overflow-wrap:anywhere]' : 'truncate',
-            done && 'font-medium text-muted-foreground',
-            cancelled && 'font-medium text-text-dim line-through',
-          )}
-        >
-          {task.title}
-        </span>
+        {editing ? (
+          <input
+            ref={titleInputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onBlur={() => {
+              if (!skipBlur.current) finishRename(true)
+              skipBlur.current = false
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                skipBlur.current = true
+                finishRename(true)
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                skipBlur.current = true
+                finishRename(false)
+              }
+            }}
+            className="min-w-0 flex-1 rounded border border-input bg-background px-1 py-px text-[13px] font-semibold leading-[1.35] text-foreground outline-none focus:border-ring"
+          />
+        ) : (
+          <span
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              startRename()
+            }}
+            title={onRename ? '双击重命名' : undefined}
+            className={cn(
+              'min-w-0 flex-1 text-[13px] font-semibold leading-[1.35] text-card-foreground',
+              // 2 lines for active live cards; reliable single-line truncate everywhere else
+              // (line-clamp-1 collapses the title height in a flex row when there's no other content).
+              active && isLive ? 'line-clamp-2 [overflow-wrap:anywhere]' : 'truncate',
+              done && 'font-medium text-muted-foreground',
+              cancelled && 'font-medium text-text-dim line-through',
+            )}
+          >
+            {task.title}
+          </span>
+        )}
         {/* AI summary indicator — manual refine placeholder OR an auto-regeneration on status change */}
         {(task.summarizing || task.summary === REFINING) && (
           <span className="inline-flex flex-none items-center gap-1 text-[10.5px] text-muted-foreground">
@@ -173,6 +232,7 @@ export function TaskCard({
             className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
             onSetStatus={onSetStatus}
             onSetPriority={onSetPriority}
+            onRequestRename={startRename}
             onRename={onRename}
             onDelete={onDelete}
           />
@@ -197,6 +257,7 @@ export function TaskCard({
             className="rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
             onSetStatus={onSetStatus}
             onSetPriority={onSetPriority}
+            onRequestRename={startRename}
             onRename={onRename}
             onDelete={onDelete}
           />
@@ -362,7 +423,7 @@ function PrioChip({ task, priorities, onSetPriority }: { task: Task; priorities:
 
 // ── the ⋯ overflow menu ──────────────────────────────────────────────────────
 
-function MoreMenu({ task, priorities, statuses, className, ...actions }: { task: Task; priorities: string[]; statuses: string[]; className: string } & MenuActions) {
+function MoreMenu({ task, priorities, statuses, className, onRequestRename, ...actions }: { task: Task; priorities: string[]; statuses: string[]; className: string; onRequestRename: () => void } & MenuActions) {
   const btnRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   return (
@@ -376,7 +437,7 @@ function MoreMenu({ task, priorities, statuses, className, ...actions }: { task:
     >
       <MoreHorizontal size={13} />
       {open && (
-        <TaskMenu task={task} priorities={priorities} statuses={statuses} anchor={btnRef} onClose={() => setOpen(false)} {...actions} />
+        <TaskMenu task={task} priorities={priorities} statuses={statuses} anchor={btnRef} onClose={() => setOpen(false)} onRequestRename={onRequestRename} {...actions} />
       )}
     </button>
   )
@@ -389,9 +450,9 @@ function TaskMenu({
   statuses,
   anchor,
   onClose,
+  onRequestRename,
   onSetStatus,
   onSetPriority,
-  onRename,
   onDelete,
 }: {
   task: Task
@@ -399,6 +460,7 @@ function TaskMenu({
   statuses: string[]
   anchor: RefObject<HTMLButtonElement | null>
   onClose: () => void
+  onRequestRename: () => void
 } & MenuActions) {
   const pick = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -421,12 +483,7 @@ function TaskMenu({
       <div className="my-1 border-t border-border" />
       <PriorityList task={task} priorities={priorities} onSetPriority={onSetPriority} close={onClose} />
       <div className="my-1 border-t border-border" />
-      <MenuItem
-        onClick={pick(() => {
-          const next = window.prompt('重命名任务', task.title)
-          if (next && next.trim() && next.trim() !== task.title) onRename?.(task.id, next.trim())
-        })}
-      >
+      <MenuItem onClick={pick(onRequestRename)}>
         <Pencil size={13} className="flex-none text-muted-foreground" /> 重命名
       </MenuItem>
       <MenuItem danger onClick={pick(() => onDelete?.(task.id))}>
