@@ -3,6 +3,7 @@ import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, 
 import { cn } from '@/lib/utils'
 import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
 import { useData } from '@/lib/data'
+import { useInlineEdit } from '@/lib/useInlineEdit'
 import { api } from '@/lib/api'
 import type { AgentCli, AgentEntry } from '@/lib/api'
 import { priorityColors } from '@/lib/priority'
@@ -286,10 +287,10 @@ function VocabEditor({
     onChange(next)
   }
   const remove = (i: number) => onChange(items.filter((_, k) => k !== i))
-  const add = () => {
-    const v = window.prompt(`新增${addLabel}`)?.trim()
+  // Inline add — Electron has no window.prompt(); the "+ 添加" button reveals an input.
+  const { editing: adding, start: startAdd, inputProps: addInput } = useInlineEdit('', (v) => {
     if (v && !items.includes(v)) onChange([...items, v])
-  }
+  })
   return (
     <div className="flex flex-1 flex-wrap items-center gap-1.5">
       {items.map((it, i) => (
@@ -300,7 +301,15 @@ function VocabEditor({
           <button onClick={() => remove(i)} className="ml-0.5 text-text-dim hover:text-destructive" title="删除"><X size={10} /></button>
         </span>
       ))}
-      <button onClick={add} className="rounded-md border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-brand hover:text-brand">+ 添加</button>
+      {adding ? (
+        <input
+          {...addInput}
+          placeholder={`新增${addLabel}`}
+          className="h-[22px] w-28 rounded-md border border-input bg-background px-1.5 text-[11px] text-foreground outline-none focus:border-ring"
+        />
+      ) : (
+        <button onClick={startAdd} className="rounded-md border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-brand hover:text-brand">+ 添加</button>
+      )}
       {orderHint && <span className="ml-1 text-[10.5px] text-text-dim">{orderHint}</span>}
     </div>
   )

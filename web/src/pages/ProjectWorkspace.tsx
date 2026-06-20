@@ -10,6 +10,7 @@ import { useUI } from '@/lib/ui-store'
 import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
 import { ProjectSummaryPopover, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
 import { useData } from '@/lib/data'
+import { useInlineEdit } from '@/lib/useInlineEdit'
 import { relTime, shortCwd, normPriority } from '@/lib/format'
 import { isDoneStatus, statusKind } from '@/lib/status'
 import { useLive } from '@/lib/live'
@@ -255,12 +256,13 @@ export function ProjectWorkspace() {
       })
   }
 
-  const renameProject = () => {
-    if (!project) return
-    const next = window.prompt('重命名项目', project.name)?.trim()
-    if (!next || next === project.name) return
-    api.patchProject(project.id, { name: next }).then(() => reload()).catch(() => reload())
-  }
+  // Inline project rename — double-click the title, or ⋯ menu → 重命名 (calls startRenameProject).
+  const { editing: renamingProject, start: startRenameProject, inputProps: projNameInput } = useInlineEdit(
+    project?.name ?? '',
+    (next) => {
+      if (project) api.patchProject(project.id, { name: next }).then(() => reload()).catch(() => reload())
+    },
+  )
   const archiveProject = () => {
     if (!project) return
     api.archiveProject(project.id, !project.archived).then(() => reload()).catch(() => reload())
@@ -282,7 +284,20 @@ export function ProjectWorkspace() {
       <header className="sticky top-0 z-10 border-b border-border bg-background px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-baseline gap-3">
-            <h1 className="text-[17px] font-bold text-foreground">{projName}</h1>
+            {renamingProject ? (
+              <input
+                {...projNameInput}
+                className="h-7 rounded border border-input bg-background px-1.5 text-[17px] font-bold text-foreground outline-none focus:border-ring"
+              />
+            ) : (
+              <h1
+                onDoubleClick={() => project && startRenameProject()}
+                title={project ? '双击重命名' : undefined}
+                className="text-[17px] font-bold text-foreground"
+              >
+                {projName}
+              </h1>
+            )}
             {project?.homeCwd && <span className="font-mono text-[12px] text-muted-foreground">{shortCwd(project.homeCwd)}</span>}
           </div>
           <div className="flex items-center gap-2">
@@ -311,7 +326,7 @@ export function ProjectWorkspace() {
                 <MenuItem
                   onClick={() => {
                     setProjectMenuOpen(false)
-                    renameProject()
+                    startRenameProject()
                   }}
                 >
                   <Pencil size={13} className="flex-none text-muted-foreground" /> 重命名

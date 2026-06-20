@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/Menu'
 import { TaskSummaryPopover } from '@/components/AiPanels'
 import { useData } from '@/lib/data'
+import { useInlineEdit } from '@/lib/useInlineEdit'
 import { priorityColors, priorityRank } from '@/lib/priority'
 import { isCancelledStatus, isDoneStatus, statusMeta } from '@/lib/status'
 import { type LinkedSession, type Priority, type Task, type ShipStatus, type TaskStatus } from '@/lib/types'
@@ -86,32 +87,11 @@ export function TaskCard({
   const runningOrUnread = task.links?.find((l) => l.status === 'sail' || l.status === 'dock')
   const [dragging, setDragging] = useState(false)
 
-  // Inline rename — Electron's renderer has no window.prompt(), so renaming is in-place:
-  // double-click the title, or ⋯ menu → 重命名 (which calls startRename). Mirrors
-  // SessionTitleBar's edit / commit / cancel + skip-blur dance.
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(task.title)
-  const titleInputRef = useRef<HTMLInputElement>(null)
-  const skipBlur = useRef(false)
-  useEffect(() => {
-    if (editing) {
-      titleInputRef.current?.focus()
-      titleInputRef.current?.select()
-    }
-  }, [editing])
+  // Inline rename — double-click the title, or ⋯ menu → 重命名 (calls startRename).
+  // Shared with project rename / settings-add via the useInlineEdit hook.
+  const { editing, start, inputProps } = useInlineEdit(task.title, (next) => onRename?.(task.id, next))
   const startRename = () => {
-    if (!onRename) return
-    setDraft(task.title)
-    setEditing(true)
-  }
-  const finishRename = (commit: boolean) => {
-    if (commit) {
-      const next = draft.trim()
-      if (next && next !== task.title) onRename?.(task.id, next)
-    } else {
-      setDraft(task.title)
-    }
-    setEditing(false)
+    if (onRename) start()
   }
 
   const { rank, total } = priorityRank(task.priority, priorities)
@@ -153,26 +133,9 @@ export function TaskCard({
         {active && isLive && runningOrUnread && <ShipGlyph status={runningOrUnread.status} />}
         {editing ? (
           <input
-            ref={titleInputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            {...inputProps}
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
-            onBlur={() => {
-              if (!skipBlur.current) finishRename(true)
-              skipBlur.current = false
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                skipBlur.current = true
-                finishRename(true)
-              } else if (e.key === 'Escape') {
-                e.preventDefault()
-                skipBlur.current = true
-                finishRename(false)
-              }
-            }}
             className="min-w-0 flex-1 rounded border border-input bg-background px-1 py-px text-[13px] font-semibold leading-[1.35] text-foreground outline-none focus:border-ring"
           />
         ) : (
