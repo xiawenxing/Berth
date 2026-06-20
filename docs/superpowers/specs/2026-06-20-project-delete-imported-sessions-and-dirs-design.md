@@ -12,7 +12,9 @@
 
 ## 2. 范围与非目标
 
-**范围**：项目工作区「会话」模块的会话行与 cwd 分组组头，新增删除能力。
+**范围**：
+- 项目工作区「会话」模块的会话行与 cwd 分组组头，新增删除能力（§3–§6）。
+- 装载目录（CargoDefaults / `project_path`）与会话列表目录（cwd 分组）的**联动与解耦**（§10）：移除其一时可选级联到另一方，并允许从会话列表导入非装载目录的会话。
 
 **非目标 / 明确不做**：
 - **不删除磁盘上的会话转录文件**。Berth 不拥有 `~/.claude` `~/.codex` `~/Library/Caches/coco` 下的 jsonl —— 所有现有「删除」（货舱移除、`DELETE /session-dirs`、`deleteTask` 软删）都不碰磁盘文件，本设计沿用此约定。
@@ -136,7 +138,7 @@ unimportSessions: (ids: string[]) =>
 
 ### 7.3 前端
 
-无现成组件测试基础设施（项目当前阶段）。手动验证：行级两动作、组级两动作（含确认）、workspace 组特例文案。
+无现成组件测试基础设施（项目当前阶段）。手动验证：行级两动作、组级两动作（含确认）、workspace 组特例文案；§10：移除装载目录的「一并移出会话」勾选、移除致目录空后的「一并移除装载目录」确认、会话列表「导入其他目录」及其「同时登记为装载目录」勾选。§10 全部复用既有端点，后端无新增，故不加后端用例。
 
 ## 8. 数据流
 
@@ -159,6 +161,52 @@ unimportSessions: (ids: string[]) =>
 | `web/src/components/workspace/TaskCard.tsx` | 改为从 `ui/menu` import（纯搬迁） |
 | `web/src/components/workspace/SessionModule.tsx` | `Row` + `Section` 加 `⋯` 菜单与回调 props |
 | `web/src/lib/api.ts` | +`detachSessions`、`unimportSessions` |
-| `web/src/pages/ProjectWorkspace.tsx` | 接线 handler + 组级确认 |
+| `web/src/pages/ProjectWorkspace.tsx` | 接线 handler + 组级确认 + §10 联动逻辑 + 会话列表「导入其他目录」入口 |
+| `web/src/components/workspace/CargoDefaults.tsx` | §10.1 移除装载目录改为带「一并移出会话」选项的对话 |
+| `web/src/components/ImportDialog.tsx` | §10.3 `onConfirm` 增第二参 `alsoRegister?`，可选 `registerOption` 渲染勾选项 |
 | `test/api.test.ts` | +`mockRemoveSessionImport`，+两端点用例 |
 ```
+
+## 10. 装载目录 ↔ 会话列表 联动与解耦
+
+**背景**：`project_path`（装载目录/货舱）与会话列表的 cwd 分组是**两张独立的表**——前者是登记，后者由「附着到本项目且 cwd 相同的会话」派生。今天看起来「统一」只因 UX：CargoDefaults「添加目录」同时登记 path + 导入会话。本节让这层独立性**可见可控**——保持默认联动，但允许四象限里三种可达状态：
+
+| | 是装载目录 | 非装载目录 |
+|---|---|---|
+| **有会话** | 默认（联动）| §10.3（只导会话）|
+| **无会话** | 已可达（加目录但不导会话）| —（不存在）|
+
+所有级联均**opt-in**，默认取更窄、更安全的动作。无新增后端端点——全部复用 §4 的两端点 + 既有 `removePath`/`addPath`/`pickFolder`/`previewDir`/`importSessions`。
+
+### 10.1 移除装载目录 → 可选「一并移出会话」（Ask 1）
+
+`CargoDefaults` 的 `remove(cwd)` 由「直接删」改为弹一个小对话：
+- 始终 `removePath(cwd)`（删登记）。
+- 勾选「同时把该目录下的 N 个会话移出项目（回到无归属）」时，对该 cwd 下、附着本项目的会话 id 调 **`detachSessions(ids)`**（**移出项目语义**，非取消导入——删登记不应把会话从 Berth 抹掉，只退回无归属重新归类）。
+- 不勾选时只删登记；该 cwd 分组**仍留在会话列表**，此时它成为「非装载目录但有会话」的解耦态。
+
+会话 id 来源：前端 `sessions`（useData）按 `projectId === id && normDir(cwd) === normDir(cargoCwd)` 过滤。N=0 时对话退化为一句确认。
+
+### 10.2 移除会话致目录空 → 可选「一并移除装载目录」（Ask 2）
+
+任一**会话侧**移除动作（行级/组级 取消导入 或 移出项目）执行后，若该 cwd 分组在本项目里**已无会话** 且 该 cwd ∈ `project.pathsMeta`（仍是登记的装载目录），则弹一句确认：「该目录已无会话，是否同时移除装载目录登记？」→ 用户确认则 `removePath(cwd)`。
+
+判定在前端 reload 后做（或乐观计算「移除的 id 覆盖了该组全部会话」）。workspace 默认目录组不在 `pathsMeta` 中，天然不触发。
+
+### 10.3 会话列表导入其他目录（Ask 3）
+
+`SessionModule` 头部（同步/起会话一行）加一个小字按钮「导入其他目录的会话…」：
+`pickFolder() → previewDir(picked) → ImportDialog(mode='import')`，确认后 `importSessions(ids, projectId)`。导入的会话经 `session_import` 成为 curated，**不**登记 `project_path`——即「非装载目录但有会话」的解耦态。这就是 CargoDefaults 添加流程**减去** `addPath`。
+
+**反向联动勾选项**：`ImportDialog` 增一个可选勾选项「同时登记为装载目录」（默认不勾，与 §10.1 对称）。实现：`onConfirm` 签名扩为 `(ids: string[], alsoRegister?: boolean)`，新增可选 prop `registerOption?: boolean`——传入时在底部渲染该勾选项并把状态作为第二参回传；既有三处调用方忽略第二参，无行为变化。勾选时调用方在 `importSessions` 后再 `addPath(cwd, { enabled: true })`。
+
+### 10.4 语义对照（两套删除 vs 两套级联）
+
+| 触发点 | 主动作 | 级联（opt-in）|
+|--------|--------|--------------|
+| 会话行/组 `⋯`「移出项目」 | `detachSessions` | §10.2 目录空→可选删装载目录 |
+| 会话行/组 `⋯`「取消导入」 | `unimportSessions` | §10.2 目录空→可选删装载目录 |
+| 装载目录「移除」 | `removePath` | §10.1 可选 `detachSessions`（回无归属）|
+| 会话列表「导入其他目录」 | `importSessions` | §10.3 可选 `addPath`（登记装载目录）|
+
+> 注意非对称是**有意**的：删装载目录的级联用 **detach**（退回无归属，不毁），而会话自身的「取消导入」才用 **unimport**（真正出列表）。两者对应不同的用户意图。
