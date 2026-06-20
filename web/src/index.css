@@ -84,10 +84,11 @@ html.light {
   ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
 }
 
-/* Kanban card surface — recessed against the column (bg-card) for clear separation,
-   matching the design: darker than the column in dark mode, a light gray in light mode. */
-.kanban-card { background: var(--color-background); }
-html.light .kanban-card { background: var(--color-sidebar-accent); }
+/* Kanban card surface — Berth 1.0 look: a RAISED card (secondary, lighter than the bg-card
+   column in dark mode), no shadow, transparent border. Hover lifts the surface a touch by
+   mixing in a little foreground (1.0's `color-mix(--bg3, --text)`). */
+.kanban-card { background: var(--color-secondary); }
+.kanban-card:hover { background: color-mix(in oklab, var(--color-secondary) 88%, var(--color-foreground) 12%); }
 
 /* AI loading: sparkle twinkle (used for 总结中 / 生成中 / 整理中 …) */
 @keyframes spk-twinkle {

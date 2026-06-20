@@ -94,9 +94,6 @@ export function TaskCard({
     if (onRename) start()
   }
 
-  const { rank, total } = priorityRank(task.priority, priorities)
-  const pc = priorityColors(rank, total)
-
   // Clicking the card body: in the active column toggle expand; in an inactive
   // (narrow) column promote that column to active.
   const onCardClick = () => {
@@ -118,15 +115,14 @@ export function TaskCard({
       className={cn(
         // shrink-0: in a scrolling flex-column the card must keep its natural height,
         // else many cards compress to thin bars and clip the title (the done-column bug).
-        'kanban-card group relative shrink-0 overflow-hidden rounded-sm border border-border shadow-sm active:cursor-grabbing hover:border-muted-foreground',
+        // Berth 1.0 card: raised .kanban-card surface, no shadow, transparent border that only
+        // becomes visible when the card is expanded.
+        'kanban-card group relative shrink-0 overflow-hidden rounded-md border active:cursor-grabbing',
+        open ? 'border-border' : 'border-transparent',
         expandable || !active ? 'cursor-pointer' : 'cursor-grab',
-        open && 'ring-1 ring-brand/40',
         dragging && 'opacity-45',
       )}
     >
-      {/* 2px priority left-bar — color comes from the ordered-priority ramp (lib/priority) */}
-      <span className="pointer-events-none absolute left-0 top-0 bottom-0 z-[1] w-[2px]" style={{ background: pc.bar }} />
-
       {/* head (title row) — padding lives here, not on the card, for tight density */}
       <div className={cn('flex items-center gap-1.5 pr-2.5 pl-[13px]', active ? 'py-[7px]' : 'py-[6px]')}>
         {/* status glyph only in the active column for live cards */}
