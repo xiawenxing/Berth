@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { Sparkles, Copy, Save, RefreshCw, X, CheckCircle2, Circle } from 'lucide-react'
+import { Sparkles, Copy, Save, RefreshCw, X, CheckCircle2, Circle, List, CheckSquare, type LucideIcon } from 'lucide-react'
 import { Drawer } from './ui/Overlay'
 import { AnchoredPopover } from './ui/Menu'
 import { api, type StructuredSummary } from '@/lib/api'
@@ -149,12 +149,12 @@ function StructuredSummaryPopover({
         ) : (
           <div className="flex flex-col gap-3.5">
             {showHeadline && summary.headline && (
-              <Section label={labels.headline} dot="bg-warning">
+              <Section label={labels.headline} icon={Sparkles} color="text-warning">
                 <p className="text-[12.5px] leading-relaxed text-foreground">{summary.headline}</p>
               </Section>
             )}
             {summary.progress.length > 0 && (
-              <Section label={labels.progress} dot="bg-success">
+              <Section label={labels.progress} icon={List} color="text-success">
                 <ul className="flex flex-col gap-1.5">
                   {summary.progress.map((p, i) => (
                     <li key={i} className="flex gap-2 text-[12px] leading-snug text-muted-foreground">
@@ -166,7 +166,7 @@ function StructuredSummaryPopover({
               </Section>
             )}
             {summary.milestones.length > 0 && (
-              <Section label={labels.milestones} dot="bg-brand">
+              <Section label={labels.milestones} icon={CheckSquare} color="text-brand">
                 <ul className="flex flex-col gap-1.5">
                   {summary.milestones.map((m, i) => (
                     <li key={i} className="flex items-start gap-2 text-[12px] leading-snug">
@@ -202,11 +202,13 @@ function StructuredSummaryPopover({
   )
 }
 
-function Section({ label, dot, children }: { label: string; dot: string; children: React.ReactNode }) {
+// Section label uses a semantic icon prefix (per the chosen design) rather than a colored dot, so the
+// label never reads as a content bullet. The icon carries the section's accent color; the text stays dim.
+function Section({ label, icon: Icon, color, children }: { label: string; icon: LucideIcon; color: string; children: React.ReactNode }) {
   return (
     <div>
       <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide text-text-dim">
-        <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+        <Icon size={13} className={`flex-none ${color}`} />
         {label}
       </div>
       {children}
