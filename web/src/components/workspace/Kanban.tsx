@@ -59,6 +59,12 @@ export function Kanban({
         return (
           <div
             key={status}
+            // Berth 1.0 color-coded each column by its status accent (header title, dot and the
+            // active column's top border). `--col-accent` carries that color to the children below.
+            style={{
+              ['--col-accent' as string]: meta.accent,
+              ...(isActive ? { borderTopWidth: '2px', borderTopColor: meta.accent } : null),
+            }}
             // Click anywhere in an inactive column (header, body, empty area) to activate+widen it.
             onClick={() => !isActive && setActive(status)}
             onDragOver={(e) => {
@@ -79,19 +85,16 @@ export function Kanban({
             className={cn(
               // overflow-hidden clips the header's square top corners to the column's rounded-md.
               'flex min-h-0 min-w-0 max-h-[700px] flex-col overflow-hidden rounded-md border border-border bg-card transition-[flex-grow] duration-300',
-              isActive ? 'flex-[2.2] border-brand/45' : 'flex-1',
+              isActive ? 'flex-[2.2]' : 'flex-1',
               isDropOver && 'border-brand ring-2 ring-brand/60',
             )}
           >
             <button
               onClick={() => setActive(status)}
-              className={cn(
-                'flex shrink-0 items-center gap-1.5 border-b border-border bg-card px-2.5 py-2 text-[12px] font-semibold text-foreground hover:bg-accent',
-                isActive && 'text-accent-foreground',
-              )}
+              className="flex shrink-0 items-center gap-1.5 border-b border-border bg-card px-2.5 py-2 text-[12px] font-semibold hover:bg-accent"
             >
-              <span className={cn('h-1.5 w-1.5 flex-none rounded-full', meta.dot)} />
-              <span className="truncate">{status}</span>
+              <span className="h-2 w-2 flex-none rounded-full" style={{ background: 'var(--col-accent)' }} />
+              <span className="truncate tracking-[0.3px]" style={{ color: 'var(--col-accent)' }}>{status}</span>
               <span className="ml-auto flex-none rounded-full bg-muted px-1.5 text-[11px] font-medium text-text-dim">
                 {items.length}
               </span>

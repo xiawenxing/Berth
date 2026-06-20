@@ -7,7 +7,8 @@ import { api, type StructuredSummary } from '@/lib/api'
 const EMPTY_SUMMARY: StructuredSummary = { headline: '', progress: [], milestones: [] }
 const isEmptySummary = (s: StructuredSummary) => !s.headline && !s.progress.length && !s.milestones.length
 
-type SummaryResult = { summary?: StructuredSummary | null; generatedAt?: number }
+type SummaryResult = { summary?: StructuredSummary | null; generatedAt?: number; summarizing?: boolean }
+type GenerateResult = { summarizing?: boolean; error?: string }
 
 interface SummaryLabels {
   headline: string
@@ -65,7 +66,7 @@ function StructuredSummaryPopover({
   title: string
   onClose: () => void
   load: () => Promise<SummaryResult>
-  generate: () => Promise<SummaryResult>
+  generate: () => Promise<GenerateResult>
   showHeadline?: boolean
   labels?: SummaryLabels
   onGenerated?: () => void
@@ -74,46 +75,59 @@ function StructuredSummaryPopover({
   const [summary, setSummary] = useState<StructuredSummary>(EMPTY_SUMMARY)
   const [generatedAt, setGeneratedAt] = useState<number | undefined>(undefined)
   const [err, setErr] = useState('')
-  const reqRef = useRef(0)
+  const aliveRef = useRef(true)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Footer 重新生成 bridges to the kick() defined inside the effect (which closes over load/generate).
+  const setGenRef = useRef<() => void>(() => {})
+  const gen = () => setGenRef.current()
 
-  const gen = () => {
-    const req = ++reqRef.current // ignore stale responses if reopened/regenerated
-    setLoading(true)
-    setErr('')
-    generate()
-      .then((r) => {
-        if (reqRef.current !== req) return
-        setSummary(r.summary ?? EMPTY_SUMMARY)
-        setGeneratedAt(r.generatedAt)
-        onGenerated?.()
-      })
-      .catch((e) => {
-        if (reqRef.current === req) setErr(String(e))
-      })
-      .finally(() => {
-        if (reqRef.current === req) setLoading(false)
-      })
-  }
-
-  // First open: load the persisted summary; generate only if there's none yet.
+  // Generation runs detached server-side; the popover just polls GET until `summarizing` clears, so
+  // closing + reopening always reflects the true state (and a run kicked earlier keeps going).
   useEffect(() => {
-    const req = ++reqRef.current
-    setLoading(true)
+    aliveRef.current = true
+    const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
+
+    const apply = (r: SummaryResult) => {
+      if (r.summary != null) { setSummary(r.summary); setGeneratedAt(r.generatedAt) }
+    }
+    // One poll step: settle (show result, stop, notify) once the server is no longer summarizing.
+    const tick = () => {
+      load().then((r) => {
+        if (!aliveRef.current) return
+        if (r.summarizing) { setLoading(true); return }
+        stopPoll()
+        apply(r)
+        setLoading(false)
+        onGenerated?.()
+      }).catch(() => {})
+    }
+    const startPoll = () => { stopPoll(); tick(); pollRef.current = setInterval(tick, 2000) }
+
+    const kick = () => {
+      setLoading(true)
+      setErr('')
+      generate()
+        .then((r) => {
+          if (!aliveRef.current) return
+          if (r.error) { setErr(String(r.error)); setLoading(false); return }
+          onGenerated?.()   // reload the card list so its 摘要 loading icon lights up via /todos
+          startPoll()
+        })
+        .catch((e) => { if (aliveRef.current) { setErr(String(e)); setLoading(false) } })
+    }
+    setGenRef.current = kick
+
     setErr('')
     load()
       .then((r) => {
-        if (reqRef.current !== req) return
-        if (r.summary != null) {
-          setSummary(r.summary)
-          setGeneratedAt(r.generatedAt)
-          setLoading(false)
-        } else {
-          gen()
-        }
+        if (!aliveRef.current) return
+        if (r.summarizing) { apply(r); setLoading(true); startPoll() }   // a run is already in flight
+        else if (r.summary != null) { apply(r); setLoading(false) }       // cached, idle
+        else kick()                                                       // nothing cached, none running
       })
-      .catch(() => {
-        if (reqRef.current === req) gen()
-      })
+      .catch(() => { if (aliveRef.current) kick() })
+
+    return () => { aliveRef.current = false; stopPoll() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

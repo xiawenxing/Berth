@@ -23,18 +23,22 @@ export function statusKind(status: string): StatusKind {
   return 'other'
 }
 
-const META: Record<StatusKind, { dot: string; icon: typeof Folder }> = {
-  todo: { dot: 'bg-muted-foreground', icon: Folder },
-  doing: { dot: 'bg-priority', icon: Play },
-  blocked: { dot: 'bg-destructive', icon: Ban },
-  review: { dot: 'bg-purple', icon: Search },
-  done: { dot: 'bg-success', icon: ListChecks },
-  cancelled: { dot: 'bg-muted-foreground', icon: X },
-  other: { dot: 'bg-brand', icon: Circle },
+// `accent` is the column's semantic color as a raw CSS value (a theme var, so it re-themes in
+// light/dark). Berth 1.0 color-coded each kanban column by this accent — the header title, the dot
+// and the active column's top border all share it. `dot` keeps the Tailwind bg class for the few
+// places that want a utility class.
+const META: Record<StatusKind, { dot: string; accent: string; icon: typeof Folder }> = {
+  todo: { dot: 'bg-muted-foreground', accent: 'var(--color-muted-foreground)', icon: Folder },
+  doing: { dot: 'bg-priority', accent: 'var(--color-priority)', icon: Play },
+  blocked: { dot: 'bg-destructive', accent: 'var(--color-destructive)', icon: Ban },
+  review: { dot: 'bg-info', accent: 'var(--color-info)', icon: Search },
+  done: { dot: 'bg-success', accent: 'var(--color-success)', icon: ListChecks },
+  cancelled: { dot: 'bg-text-dim', accent: 'var(--color-text-dim)', icon: X },
+  other: { dot: 'bg-brand', accent: 'var(--color-brand)', icon: Circle },
 }
 
-/** Dot color (Tailwind bg class) + menu icon for a status, by its detected kind. */
-export function statusMeta(status: string): { dot: string; icon: typeof Folder; kind: StatusKind } {
+/** Dot color (Tailwind bg class) + accent (CSS var) + menu icon for a status, by its detected kind. */
+export function statusMeta(status: string): { dot: string; accent: string; icon: typeof Folder; kind: StatusKind } {
   const kind = statusKind(status)
   return { ...META[kind], kind }
 }

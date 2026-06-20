@@ -26,6 +26,7 @@
   --color-warning: #f0c773;
   --color-priority: #e0a060;
   --color-purple: #b88cf0;
+  --color-info: #5ec5d6;
   --color-destructive: #f0707f;
   --color-text-dim: #6b7280;
 
@@ -63,6 +64,7 @@ html.light {
   --color-warning: #b9831b;
   --color-priority: #c2730a;
   --color-purple: #8b46c9;
+  --color-info: #0e9aae;
   --color-destructive: #dc4338;
   --color-text-dim: #97a1b0;
 }

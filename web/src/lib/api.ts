@@ -152,16 +152,18 @@ export const api = {
     send('POST', '/api/session-import', { ids, projectId }),
   contextUpdate: (kind: 'task' | 'project', key: string, userInput: string) =>
     send('POST', '/api/context/update', { kind, key, userInput }),
-  // Read the last cached 项目小结 (null summary if never generated); does not regenerate.
+  // Read the cached 项目小结 + whether a (re)generation is in flight (null summary if never generated).
   getProjectSummary: (id: string) =>
-    getJSON<{ summary: StructuredSummary | null; generatedAt?: number }>(`/api/projects/${id}/summary`),
+    getJSON<{ summary: StructuredSummary | null; generatedAt?: number; summarizing?: boolean }>(`/api/projects/${id}/summary`),
+  // Kick a (re)generation; returns immediately — generation runs detached server-side, poll the GET.
   projectSummary: (id: string) =>
-    send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summary?: StructuredSummary; generatedAt?: number; error?: string }>,
-  // Structured 任务进展详情 (behind the task card's 更多 popover): GET reads the cache, POST regenerates.
+    send('POST', `/api/projects/${id}/summary`, {}) as Promise<{ summarizing?: boolean; error?: string }>,
+  // Structured 任务进展详情 (behind the task card's 更多 popover): GET reads cache + summarizing flag,
+  // POST kicks a detached (re)generation (same as the status-change auto-trigger).
   getTaskSummaryDetail: (id: string) =>
-    getJSON<{ summary: StructuredSummary | null; generatedAt?: number }>(`/api/todos/${id}/summary-detail`),
+    getJSON<{ summary: StructuredSummary | null; generatedAt?: number; summarizing?: boolean }>(`/api/todos/${id}/summary-detail`),
   taskSummaryDetail: (id: string) =>
-    send('POST', `/api/todos/${id}/summary-detail`, {}) as Promise<{ summary?: StructuredSummary; generatedAt?: number; error?: string }>,
+    send('POST', `/api/todos/${id}/summary-detail`, {}) as Promise<{ summarizing?: boolean; error?: string }>,
   sessionTitle: (id: string) => send('POST', `/api/sessions/${id}/title`, {}) as Promise<{ title: string }>,
   renameSessionTitle: (id: string, title: string) =>
     send('PATCH', `/api/sessions/${id}/title`, { title }) as Promise<{ title: string }>,

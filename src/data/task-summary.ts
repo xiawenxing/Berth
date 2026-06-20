@@ -10,8 +10,8 @@ import { generateStructuredSummary, type StructuredSummary } from '../agent/inde
 
 type Store = ReturnType<typeof import('../db/store').openStore>
 
-// Task ids whose summary is being (re)generated right now. Surfaced via GET /api/todos so the UI can
-// show a loading icon at the task's 摘要 position; cleared in `runTaskSummary`'s finally.
+// Task ids whose summary is being (re)generated right now. Surfaced via GET /api/todos (and the
+// summary-detail GET) so the UI can show a loading icon at the task's 摘要 position.
 const inFlight = new Set<string>()
 export function isSummarizingTask(id: string): boolean { return inFlight.has(id) }
 
@@ -36,26 +36,18 @@ export async function generateTaskSummary(store: Store, taskId: string): Promise
   return { summary, generatedAt }
 }
 
-/** Generate while holding the in-flight flag (so the UI shows a loading icon). Awaited by the manual
- *  endpoint; the auto-trigger fires it in the background. */
-export async function runTaskSummary(store: Store, taskId: string): Promise<{ summary: StructuredSummary; generatedAt: number } | null> {
-  inFlight.add(taskId)
-  try {
-    return await generateTaskSummary(store, taskId)
-  } finally {
-    inFlight.delete(taskId)
-  }
-}
-
-/** Fire-and-forget regeneration for the status-change hook. The in-flight flag is set synchronously
- *  (so a reload right after the status change already shows the loading icon), but the actual
- *  generation is deferred to a microtask — the triggering updateTask() returns and commits its own
- *  updated_at first, untouched by the summary's later progress/detailDoc writes. Dedups per task;
- *  errors are swallowed so a failed agent run never breaks the status update that triggered it. */
-export function triggerTaskSummary(store: Store, taskId: string): void {
-  if (inFlight.has(taskId)) return
+/** Fire-and-forget (re)generation — used by both the status-change hook and the manual popover POST.
+ *  The in-flight flag is set synchronously (so a reload / GET right after already shows the loading
+ *  icon), but the actual generation is deferred to a microtask and detached from any request: the
+ *  triggering updateTask() returns and commits its own updated_at first, untouched by the summary's
+ *  later progress/detailDoc writes, and closing the popover never stops the run. Dedups per task;
+ *  errors are swallowed so a failed agent run never breaks the status update that triggered it.
+ *  Returns true if it started a run, false if one was already in flight. */
+export function triggerTaskSummary(store: Store, taskId: string): boolean {
+  if (inFlight.has(taskId)) return false
   inFlight.add(taskId)
   queueMicrotask(() => {
     void generateTaskSummary(store, taskId).catch(() => {}).finally(() => inFlight.delete(taskId))
   })
+  return true
 }

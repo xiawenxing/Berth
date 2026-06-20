@@ -6,7 +6,8 @@ import { collectLogicalSessions } from '../sessions'
 import { canonicalPathKey } from '../path-normalize'
 import { listProjects, createProject, updateProject, deleteProject } from '../data/projects'
 import { listTasks, createTask, updateTask, deleteTask } from '../data/tasks'
-import { runTaskSummary, isSummarizingTask } from '../data/task-summary'
+import { triggerTaskSummary, isSummarizingTask } from '../data/task-summary'
+import { triggerProjectSummary, isSummarizingProject } from '../data/project-summary'
 import { getDocStore, getDocsRoot } from '../data/docstore'
 import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, setAgentConfig, resolveBerthAgent } from '../data/agent-config'
@@ -18,7 +19,7 @@ import { lastLogEntries } from '../data/context-log'
 import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
-import { generateTitle, generateStructuredSummary, parseStructuredSummary } from '../agent/index'
+import { generateTitle, parseStructuredSummary } from '../agent/index'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { titleInputFromTranscript } from '../agent/transcript'
 import type { Locale } from '../i18n'
@@ -203,38 +204,27 @@ api.get('/projects', (_req, res) => {
   })
 })
 
-// Project 小结: summarize the project's context doc into a short progress blurb (港务助手).
-// Return the last cached 项目小结 (if any) without regenerating — drives the popover's first open.
-// The summary is stored as a JSON ProjectSummary; legacy plain-text rows degrade to headline-only.
+// Project 小结 (港务助手). GET returns the cached structured 项目小结 + whether a (re)generation is
+// in flight; the popover polls it. Summaries are stored as JSON; legacy plain-text rows degrade to
+// headline-only.
 api.get('/projects/:id/summary', (req, res) => {
   const store = getStore()
   const project = listProjects(store).find(p => p.id === req.params.id)
   if (!project) return res.status(404).json({ error: 'unknown project' })
   const cached = store.getProjectSummary(project.id)
-  if (!cached) return res.json({ summary: null })
-  res.json({ summary: parseStructuredSummary(cached.summary), generatedAt: cached.generatedAt })
+  const summarizing = isSummarizingProject(project.id)
+  if (!cached) return res.json({ summary: null, summarizing })
+  res.json({ summary: parseStructuredSummary(cached.summary), generatedAt: cached.generatedAt, summarizing })
 })
 
-// Mirrors /todos/:id/progress-summary but over the project context doc, returning a STRUCTURED
-// summary (headline + progress + milestones). Persists the JSON so reopening shows it instantly.
-api.post('/projects/:id/summary', async (req, res) => {
+// Kick a (re)generation and return immediately — generation runs detached server-side, so closing
+// the popover never stops it. The client polls GET (summarizing flag) for the result.
+api.post('/projects/:id/summary', (req, res) => {
   const store = getStore()
   const project = listProjects(store).find(p => p.id === req.params.id)
   if (!project) return res.status(404).json({ error: 'unknown project' })
-  const ds = getDocStore(store)
-  const locale = getLocale(store)
-  try {
-    const ensured = ensureContextDoc(ds, 'project', project.name, { title: project.name, projectName: project.name, locale })
-    const { content } = ds.readDoc(ensured.abs)
-    const summary = await generateStructuredSummary(content, contextStrings(locale).projectSummaryPrompt, resolveBerthAgent(store))
-    if (!summary.headline && !summary.progress.length && !summary.milestones.length)
-      return res.status(502).json({ error: 'agent returned empty summary' })
-    const generatedAt = Date.now()
-    store.setProjectSummary(project.id, JSON.stringify(summary), generatedAt)
-    res.json({ summary, generatedAt })
-  } catch (e: any) {
-    sendAgentError(res, e, locale)
-  }
+  triggerProjectSummary(store, project.id)
+  res.json({ summarizing: true })
 })
 
 api.post('/projects/archive', (req, res) => {
@@ -621,30 +611,26 @@ api.patch('/todos/:id', (req, res) => {
 })
 
 // Structured 任务进展详情 (headline + progress + TODO), behind the card's 更多 popover. GET returns
-// the persisted result (null if never generated); POST regenerates and overwrites the JSON cache.
+// the cached result + whether a (re)generation is in flight; the popover polls it.
 api.get('/todos/:id/summary-detail', (req, res) => {
   const store = getStore()
   const task = listTasks(store).find(t => t.id === req.params.id)
   if (!task) return res.status(404).json({ error: 'unknown task' })
   const cached = store.getTaskSummary(task.id)
-  if (!cached) return res.json({ summary: null })
-  res.json({ summary: parseStructuredSummary(cached.summary), generatedAt: cached.generatedAt })
+  const summarizing = isSummarizingTask(task.id)
+  if (!cached) return res.json({ summary: null, summarizing })
+  res.json({ summary: parseStructuredSummary(cached.summary), generatedAt: cached.generatedAt, summarizing })
 })
 
-api.post('/todos/:id/summary-detail', async (req, res) => {
+// Kick a (re)generation and return immediately — runs detached server-side (same path as the
+// status-change auto-trigger), so closing the popover never stops it. The client polls GET; the card's
+// 摘要 loading icon also lights up via /todos.summarizing. Generation writes the headline back to 进展摘要.
+api.post('/todos/:id/summary-detail', (req, res) => {
   const store = getStore()
   const task = listTasks(store).find(t => t.id === req.params.id)
   if (!task) return res.status(404).json({ error: 'unknown task' })
-  const locale = getLocale(store)
-  try {
-    // Shared generation: persists the JSON, writes the headline back to 进展摘要, and flips the
-    // in-flight flag so the card shows a loading icon (same path the status-change auto-trigger uses).
-    const r = await runTaskSummary(store, task.id)
-    if (!r) return res.status(404).json({ error: 'unknown task' })
-    res.json(r)
-  } catch (e: any) {
-    sendAgentError(res, e, locale)
-  }
+  triggerTaskSummary(store, task.id)
+  res.json({ summarizing: true })
 })
 
 // Delete a task (soft delete; the removal propagates to external sources on the next sync).
