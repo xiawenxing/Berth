@@ -4,13 +4,40 @@ import { Anchor, Inbox, Folder, Settings as SettingsIcon, Plus, Ban, Sun, Moon }
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
 import { useData } from '@/lib/data'
-import { api } from '@/lib/api'
+import { useLive } from '@/lib/live'
+import { api, type ApiSession } from '@/lib/api'
 import { toggleMode } from '@/lib/theme'
 
 interface ProjRow {
   id: string
   name: string
   meta: string
+}
+
+/** Aggregate live status for a bucket of sessions: 'sail' if any is running, else 'dock' if any is
+ *  unread (settled & newer than last-seen), else null. Mirrors the ShipGlyph priority (sail > dock). */
+function bucketShip(sessions: ApiSession[], live: ReturnType<typeof useLive>): 'sail' | 'dock' | null {
+  let dock = false
+  for (const s of sessions) {
+    const st = live.shipStatus(s.sessionId, s.updatedAt)
+    if (st === 'sail') return 'sail'
+    if (st === 'dock') dock = true
+  }
+  return dock ? 'dock' : null
+}
+
+/** The little nav-row status dot, same visual language as Now/Unassigned/TaskCard ShipGlyph. */
+function ShipDot({ kind }: { kind: 'sail' | 'dock' | null }) {
+  if (!kind) return null
+  return (
+    <span
+      title={kind === 'sail' ? '有会话在跑' : '有未读会话'}
+      className={cn(
+        'h-1.5 w-1.5 flex-none rounded-full',
+        kind === 'sail' ? 'bg-success' : 'bg-transparent ring-1 ring-brand',
+      )}
+    />
+  )
 }
 
 function ThemeToggle() {
@@ -42,8 +69,19 @@ function NavItem({ to, icon: Icon, label }: { to: string; icon: typeof Inbox; la
 
 export function Rail() {
   const { projects: apiProjects, tasks, sessions, reload } = useData()
+  const live = useLive()
   const [extra, setExtra] = useState<ProjRow[]>([])
   const [newProj, setNewProj] = useState(false)
+
+  // Sessions bucketed by project id, so each rail row can show its aggregate live status.
+  const byProject = useMemo(() => {
+    const m = new Map<string, ApiSession[]>()
+    for (const s of sessions) {
+      const k = s.projectId ?? '__none__'
+      ;(m.get(k) ?? m.set(k, []).get(k)!).push(s)
+    }
+    return m
+  }, [sessions])
 
   // Real projects (non-archived) + counts derived from tasks/sessions.
   const projects = useMemo<ProjRow[]>(() => {
@@ -57,7 +95,8 @@ export function Rail() {
     return [...real, ...extra]
   }, [apiProjects, tasks, sessions, extra])
 
-  const unassignedN = useMemo(() => sessions.filter((s) => !s.projectId).length, [sessions])
+  const unassignedSessions = byProject.get('__none__') ?? []
+  const unassignedN = unassignedSessions.length
 
   // Optimistic row + persist via POST /projects/create, then reload real data.
   const addProject = (name: string) => {
@@ -103,7 +142,10 @@ export function Rail() {
               )
             }
           >
-            <span className="block truncate text-[13px] font-medium text-accent-foreground">{p.name}</span>
+            <span className="flex items-center gap-1.5">
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-accent-foreground">{p.name}</span>
+              <ShipDot kind={bucketShip(byProject.get(p.id) ?? [], live)} />
+            </span>
             <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{p.meta}</span>
           </NavLink>
         ))}
@@ -117,7 +159,9 @@ export function Rail() {
             )
           }
         >
-          <Ban size={13} /> 无归属会话 <span className="ml-auto">{unassignedN}</span>
+          <Ban size={13} /> 无归属会话
+          <ShipDot kind={bucketShip(unassignedSessions, live)} />
+          <span className="ml-auto">{unassignedN}</span>
         </NavLink>
       </div>
 

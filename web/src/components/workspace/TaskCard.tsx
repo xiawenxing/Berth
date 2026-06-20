@@ -125,8 +125,9 @@ export function TaskCard({
     >
       {/* head (title row) — padding lives here, not on the card, for tight density */}
       <div className={cn('flex items-center gap-1.5 pr-2.5 pl-[13px]', active ? 'py-[7px]' : 'py-[6px]')}>
-        {/* status glyph only in the active column for live cards */}
-        {active && isLive && runningOrUnread && <ShipGlyph status={runningOrUnread.status} />}
+        {/* running/unread glyph for live cards — in BOTH active and inactive (narrow) columns, so a
+            task with a live or unread session is visible at a glance without expanding the column */}
+        {isLive && runningOrUnread && <ShipGlyph status={runningOrUnread.status} />}
         {editing ? (
           <input
             {...inputProps}
