@@ -2224,6 +2224,18 @@ function openProject(name) {
 }
 
 function renderCurrentView() {
+  // The workspace view isn't driven by currentMode, so when it's the open surface (e.g. a session
+  // was just launched from the project page) re-render it directly — otherwise a background
+  // /api/refresh updates allSessions but the project's 会话 list stays stale until a manual refresh.
+  const wsVisible = document.getElementById('workspace-view').style.display !== 'none';
+  if (wsVisible) {
+    const name = document.getElementById('workspace-title').dataset.projectId;
+    if (name) {
+      renderProjectSidebar(name);
+      renderWorkspace(name);
+      return;
+    }
+  }
   if (currentMode === 'now') renderNow();
   else if (currentMode === 'projects') renderProjects();
   else if (currentMode === 'sessions') renderSidebar();
