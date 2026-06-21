@@ -118,20 +118,14 @@ export function attachViewer(key: string, ws: WebSocket): boolean {
     else if (msg.t === 'img' && typeof msg.d === 'string') {
       // Image-paste bypass: the terminal stream only ever carries text, so a pasted image can never
       // reach the CLI via `t:'i'`. The client sends the base64 image here instead; we persist it and
-      // write its on-disk path into the pty — byte-for-byte identical to the user dragging the file
-      // into a macOS terminal, which is exactly the input claude/codex/coco image detection reads.
+      // bracket-paste its on-disk path into the pty, matching the signal Claude/Codex image
+      // detection expects from terminal image paste/drop integrations.
       const saved = currentDocStore().saveAttachment(msg.d, typeof msg.name === 'string' ? msg.name : 'paste')
       if (saved) {
-        const injected = saved.abs.replace(/ /g, '\\ ') + ' '   // escape spaces (drag-drop convention)
-        if (msg.display === 'placeholder') {
-          try {
-            ws.send(JSON.stringify({
-              __berth: 'image-paste',
-              injected,
-              placeholder: typeof msg.placeholder === 'string' && msg.placeholder ? msg.placeholder : '[图片] ',
-            }))
-          } catch {}
-        }
+        // Claude Code/Codex image detection expects a terminal paste, not ordinary typed text:
+        // the saved file path must arrive wrapped in bracketed-paste markers so the CLI can
+        // classify the image and render its own [Image]/[图片] attachment chip.
+        const injected = `\x1b[200~${saved.abs.replace(/ /g, '\\ ')}\x1b[201~`
         entry.pty.write(injected)
         activity.input(key, injected)
       }

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 
 // The img branch persists the pasted image via the DocStore, then writes its on-disk path into the
-// pty. Mock the DocStore so the test neither touches the real docs root nor depends on its layout.
+// pty as a bracketed paste. Mock the DocStore so the test neither touches the real docs root nor
+// depends on its layout.
 const saveAttachment = vi.fn((_dataUrl: string, _nameHint: string) => ({
   rel: 'assets/x.png',
   abs: '/Users/me/Documents/Obsidian Vault/assets/x.png',
@@ -40,7 +41,7 @@ function fakeWs() {
 }
 
 describe('pty-registry image paste', () => {
-  it('persists a pasted image and writes its space-escaped path into the pty', () => {
+  it('persists a pasted image and writes its space-escaped path as a bracketed paste into the pty', () => {
     const pty = fakePty()
     registerPty('img-1', pty)
     const ws = fakeWs()
@@ -49,26 +50,10 @@ describe('pty-registry image paste', () => {
     ws.emitMsg({ t: 'img', name: 'shot', d: 'data:image/png;base64,AAAA' })
 
     expect(saveAttachment).toHaveBeenCalledWith('data:image/png;base64,AAAA', 'shot')
-    // Spaces are backslash-escaped (macOS drag-drop convention) + a trailing space delimiter.
-    expect(pty.write).toHaveBeenCalledWith('/Users/me/Documents/Obsidian\\ Vault/assets/x.png ')
+    // Spaces are backslash-escaped, then wrapped in bracketed-paste markers so the CLI sees a paste
+    // event and can attach/render the image instead of treating the path as ordinary typed text.
+    expect(pty.write).toHaveBeenCalledWith('\x1b[200~/Users/me/Documents/Obsidian\\ Vault/assets/x.png\x1b[201~')
     killPty('img-1')
-  })
-
-  it('can send a placeholder control frame before writing the hidden image path', () => {
-    const pty = fakePty()
-    registerPty('img-placeholder', pty)
-    const ws = fakeWs()
-    attachViewer('img-placeholder', ws)
-
-    ws.emitMsg({ t: 'img', name: 'shot', d: 'data:image/png;base64,AAAA', display: 'placeholder', placeholder: '[图片] ' })
-
-    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({
-      __berth: 'image-paste',
-      injected: '/Users/me/Documents/Obsidian\\ Vault/assets/x.png ',
-      placeholder: '[图片] ',
-    }))
-    expect(pty.write).toHaveBeenCalledWith('/Users/me/Documents/Obsidian\\ Vault/assets/x.png ')
-    killPty('img-placeholder')
   })
 
   it('falls back to a default name hint when none is provided', () => {

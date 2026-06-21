@@ -73,14 +73,6 @@ async function readClipboardImageFiles(): Promise<File[]> {
   return files
 }
 
-function longestSuffixPrefix(text: string, prefixOf: string): number {
-  const max = Math.min(text.length, Math.max(0, prefixOf.length - 1))
-  for (let n = max; n > 0; n--) {
-    if (prefixOf.startsWith(text.slice(text.length - n))) return n
-  }
-  return 0
-}
-
 /**
  * Live terminal over the persistent-PTY /pty WebSocket. Two modes:
  *  - resume/attach: pass `sessionId` → /pty?sessionId=… (replays scrollback, streams)
@@ -144,43 +136,6 @@ export function Terminal({
     }
     const ws = new WebSocket(`${proto}://${location.host}/pty?${qs.toString()}`)
     ws.binaryType = 'arraybuffer'
-    const pendingEchoes: { injected: string; placeholder: string; localShown: boolean }[] = []
-    let terminalBuffer = ''
-
-    const flushTerminalBuffer = (force = false) => {
-      while (pendingEchoes.length) {
-        const pending = pendingEchoes[0]
-        const idx = terminalBuffer.indexOf(pending.injected)
-        if (idx < 0) break
-        const before = terminalBuffer.slice(0, idx)
-        if (before) term.write(before)
-        if (!pending.localShown) term.write(pending.placeholder)
-        terminalBuffer = terminalBuffer.slice(idx + pending.injected.length)
-        pendingEchoes.shift()
-      }
-
-      if (!terminalBuffer) return
-      const keep = force
-        ? 0
-        : pendingEchoes.reduce((max, pending) => Math.max(max, longestSuffixPrefix(terminalBuffer, pending.injected)), 0)
-      const flushLen = terminalBuffer.length - keep
-      if (flushLen <= 0) return
-      term.write(terminalBuffer.slice(0, flushLen))
-      terminalBuffer = terminalBuffer.slice(flushLen)
-    }
-
-    const writeTerminalData = (data: string) => {
-      if (!pendingEchoes.length) {
-        if (terminalBuffer) {
-          term.write(terminalBuffer)
-          terminalBuffer = ''
-        }
-        term.write(data)
-        return
-      }
-      terminalBuffer += data
-      flushTerminalBuffer()
-    }
 
     const pasteIsForThisTerminal = (e: Event) => {
       const shell = shellRef.current
@@ -205,8 +160,6 @@ export function Terminal({
           t: 'img',
           name: file.name || 'paste',
           d: reader.result,
-          display: 'placeholder',
-          placeholder: '[图片] ',
         }))
       }
       reader.readAsDataURL(file)
@@ -251,18 +204,13 @@ export function Terminal({
         try {
           const ctl = JSON.parse(data)
           if (ctl.__berth === 'launched' && ctl.sessionId) onLaunched?.(ctl.sessionId)
-          if (ctl.__berth === 'image-paste' && typeof ctl.injected === 'string') {
-            const placeholder = typeof ctl.placeholder === 'string' && ctl.placeholder ? ctl.placeholder : '[图片] '
-            pendingEchoes.push({ injected: ctl.injected, placeholder, localShown: true })
-            term.write(placeholder)
-          }
           return // a well-formed control frame is not terminal output
         } catch {
           // not actually a control frame (e.g. pty output that happens to start
           // with that text, or a split chunk) — fall through and render it.
         }
       }
-      writeTerminalData(data)
+      term.write(data)
     }
     const disp = term.onData((d) => {
       sendInput(d)
@@ -295,7 +243,6 @@ export function Terminal({
       host.removeEventListener('mousedown', refocus)
       document.removeEventListener('paste', onPaste, true)
       document.removeEventListener('keydown', onKeyDown, true)
-      flushTerminalBuffer(true)
       disp.dispose()
       ws.close()
       term.dispose()
