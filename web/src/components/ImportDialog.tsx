@@ -4,9 +4,8 @@ import { cn } from '@/lib/utils'
 import { relTime } from '@/lib/format'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { Dialog } from '@/components/ui/Overlay'
+import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
 import type { PreviewSession } from '@/lib/api'
-
-const PAGE = 8 // recent N visible; "Show more" reveals +PAGE each click
 
 /**
  * Pick-which-sessions-to-import dialog. Shared by three entry points:
@@ -35,7 +34,7 @@ export function ImportDialog({
   onConfirm: (ids: string[]) => void
 }) {
   const [checked, setChecked] = useState<Set<string>>(() => new Set()) // default: none
-  const [shown, setShown] = useState(PAGE)
+  const [shown, setShown] = useState(SESSION_SHOW_MORE_PAGE)
   const allIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions])
   const allOn = sessions.length > 0 && checked.size === sessions.length
   const visible = sessions.slice(0, shown)
@@ -120,10 +119,10 @@ export function ImportDialog({
                 })}
                 {hidden > 0 && (
                   <button
-                    onClick={() => setShown((v) => v + PAGE)}
+                    onClick={() => setShown((v) => v + SESSION_SHOW_MORE_PAGE)}
                     className="mt-1 flex items-center gap-1 px-1 py-1 text-left text-[11px] font-medium text-text-dim hover:text-brand"
                   >
-                    <ChevronDown size={12} /> Show more（再展开 {Math.min(PAGE, hidden)} / 共 {sessions.length}）
+                    <ChevronDown size={12} /> Show more（再展开 {Math.min(SESSION_SHOW_MORE_PAGE, hidden)} / 共 {sessions.length}）
                   </button>
                 )}
               </div>

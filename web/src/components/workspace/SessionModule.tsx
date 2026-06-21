@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
 import { SHIP_LABEL, type SessionRow, type CwdGroup, type ShipStatus } from '@/lib/types'
 import { CliBadge } from './TaskCard'
 
@@ -110,9 +111,9 @@ function Section({
   onImport?: () => void // 导入该目录下磁盘上其他会话 (every group with a rawCwd, incl. the workspace dir)
 }) {
   const [collapsed, setCollapsed] = useState(false)
-  const [more, setMore] = useState(false)
+  const [shown, setShown] = useState(limit ?? rows.length)
   const limited = limit != null && rows.length > limit
-  const visible = limited && !more ? rows.slice(0, limit) : rows
+  const visible = limited ? rows.slice(0, shown) : rows
   const hidden = rows.length - visible.length
 
   return (
@@ -152,11 +153,14 @@ function Section({
           ))}
           {limited && (
             <button
-              onClick={() => setMore((v) => !v)}
+              onClick={() => {
+                if (hidden > 0) setShown((v) => Math.min(v + SESSION_SHOW_MORE_PAGE, rows.length))
+                else setShown(limit)
+              }}
               className="ml-[38px] flex items-center gap-1 py-1.5 text-left text-[11px] font-medium text-text-dim hover:text-muted-foreground"
             >
               <ChevronDown size={12} />
-              {more ? 'Show less' : `Show more (${hidden})`}
+              {hidden > 0 ? `Show more (${hidden})` : 'Show less'}
             </button>
           )}
         </div>

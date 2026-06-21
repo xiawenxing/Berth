@@ -9,6 +9,7 @@ import { relTime, shortCwd } from '@/lib/format'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
 import { ImportDialog } from '@/components/ImportDialog'
+import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
 import { type ShipStatus } from '@/lib/types'
 import type { ApiSession, ApiProject, PreviewSession } from '@/lib/api'
 
@@ -227,12 +228,12 @@ function CwdGroup({
   onAttach: (sessionId: string, projectId: string) => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
-  const [more, setMore] = useState(false)
+  const LIMIT = 4
+  const [shown, setShown] = useState(LIMIT)
   const live = useLive()
   if (sessions.length === 0) return null
-  const LIMIT = 4
-  const visible = more ? sessions : sessions.slice(0, LIMIT)
-  const hidden = sessions.length - LIMIT
+  const visible = sessions.slice(0, shown)
+  const hidden = sessions.length - visible.length
   const label = shortCwd(cwd) || '(无 cwd)'
   return (
     <div>
@@ -258,12 +259,15 @@ function CwdGroup({
               onAttach={onAttach}
             />
           ))}
-          {hidden > 0 && (
+          {sessions.length > LIMIT && (
             <button
-              onClick={() => setMore((v) => !v)}
+              onClick={() => {
+                if (hidden > 0) setShown((v) => Math.min(v + SESSION_SHOW_MORE_PAGE, sessions.length))
+                else setShown(LIMIT)
+              }}
               className="px-3 py-1 pl-[34px] text-left text-[11px] font-medium text-text-dim hover:text-brand"
             >
-              {more ? '收起' : `展开更多 (${hidden})`}
+              {hidden > 0 ? `展开更多 (${hidden})` : '收起'}
             </button>
           )}
         </div>
