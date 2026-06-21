@@ -21,13 +21,21 @@ function readImageFile(file: File): Promise<PastedImage> {
 
 function clipboardImageFiles(e: React.ClipboardEvent): File[] {
   const files: File[] = []
+  const seen = new Set<string>()
+  const add = (file: File) => {
+    if (!file.type.startsWith('image/')) return
+    const key = `${file.name}:${file.type}:${file.size}:${file.lastModified}`
+    if (seen.has(key)) return
+    seen.add(key)
+    files.push(file)
+  }
   for (const item of Array.from(e.clipboardData.items ?? [])) {
     if (!item.type.startsWith('image/')) continue
     const file = item.getAsFile()
-    if (file) files.push(file)
+    if (file) add(file)
   }
   for (const file of Array.from(e.clipboardData.files ?? [])) {
-    if (file.type.startsWith('image/') && !files.includes(file)) files.push(file)
+    add(file)
   }
   return files
 }
