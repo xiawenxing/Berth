@@ -223,8 +223,10 @@ export function Terminal({
         try {
           const ctl = JSON.parse(data)
           if (ctl.__berth === 'launched' && ctl.sessionId) {
+            // Image-backed launches can't put the prompt in the URL; they must submit through this
+            // socket before onLaunched rebinds the drawer and unmounts the fresh-launch terminal.
+            sendLaunchImagesAndPrompt()
             onLaunched?.(ctl.sessionId)
-            window.setTimeout(sendLaunchImagesAndPrompt, 50)
           }
           return // a well-formed control frame is not terminal output
         } catch {
