@@ -48,7 +48,15 @@ export function usePastedImages() {
     if (!files.length) return
     e.preventDefault()
     void Promise.all(files.map(readImageFile))
-      .then((next) => setImages((prev) => [...prev, ...next]))
+      .then((next) => setImages((prev) => {
+        const seen = new Set(prev.map((image) => image.dataUrl))
+        const unique = next.filter((image) => {
+          if (seen.has(image.dataUrl)) return false
+          seen.add(image.dataUrl)
+          return true
+        })
+        return unique.length ? [...prev, ...unique] : prev
+      }))
       .catch(() => {})
   }, [])
 

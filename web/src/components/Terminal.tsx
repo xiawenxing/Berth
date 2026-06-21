@@ -161,25 +161,25 @@ export function Terminal({
     const sendResize = () => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'r', c: term.cols, r: term.rows }))
     }
-    const sendImage = (file: File) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        if (ws.readyState !== WebSocket.OPEN || typeof reader.result !== 'string') return
-        ws.send(JSON.stringify({
-          t: 'img',
-          name: file.name || 'paste',
-          d: reader.result,
-        }))
-      }
-      reader.readAsDataURL(file)
-    }
+    const sentImageDataUrls = new Set<string>()
     const sendImageData = (image: { name: string; dataUrl: string }) => {
-      if (ws.readyState !== WebSocket.OPEN) return
+      if (ws.readyState !== WebSocket.OPEN || !image.dataUrl) return false
+      if (sentImageDataUrls.has(image.dataUrl)) return false
+      sentImageDataUrls.add(image.dataUrl)
       ws.send(JSON.stringify({
         t: 'img',
         name: image.name || 'paste',
         d: image.dataUrl,
       }))
+      return true
+    }
+    const sendImage = (file: File) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (ws.readyState !== WebSocket.OPEN || typeof reader.result !== 'string') return
+        sendImageData({ name: file.name || 'paste', dataUrl: reader.result })
+      }
+      reader.readAsDataURL(file)
     }
     let launchImagesSent = false
     let launchedSessionId: string | null = null
