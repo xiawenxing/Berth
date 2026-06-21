@@ -75,6 +75,36 @@ function positionFloatingPanel(panel, anchor, opts = {}) {
   panel.style.left = left + 'px';
 }
 
+function readClipboardImages(e, onImage) {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  let handled = false;
+  for (const it of items) {
+    if (!it.type || !it.type.startsWith('image/')) continue;
+    const file = it.getAsFile();
+    if (!file) continue;
+    handled = true;
+    const reader = new FileReader();
+    reader.onload = () => onImage({ src: reader.result, name: file.name || 'paste' });
+    reader.readAsDataURL(file);
+  }
+  if (handled) e.preventDefault();
+  return handled;
+}
+
+function renderImageThumbs(thumbs, images) {
+  if (!thumbs) return;
+  thumbs.innerHTML = '';
+  thumbs.style.display = images.length ? 'flex' : 'none';
+  images.forEach((img, i) => {
+    const src = typeof img === 'string' ? img : img.src;
+    const wrap = document.createElement('div');
+    wrap.className = 'todo-thumb';
+    wrap.innerHTML = `<img src="${src}"><button class="todo-thumb-x" title="移除">${icon('x')}</button>`;
+    wrap.querySelector('.todo-thumb-x').addEventListener('click', () => { images.splice(i, 1); renderImageThumbs(thumbs, images); });
+    thumbs.appendChild(wrap);
+  });
+}
+
 function projectById(id) {
   if (!id) return null;
   return projects.find(p => p.id === id || p.name === id) || null;
@@ -729,32 +759,11 @@ function renderCreateTodoBar(host, presetProject) {
 
   const pendingImages = [];   // data URLs
   const renderThumbs = () => {
-    thumbs.innerHTML = '';
-    thumbs.style.display = pendingImages.length ? 'flex' : 'none';
-    pendingImages.forEach((src, i) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'todo-thumb';
-      wrap.innerHTML = `<img src="${src}"><button class="todo-thumb-x" title="移除">${icon('x')}</button>`;
-      wrap.querySelector('.todo-thumb-x').addEventListener('click', () => { pendingImages.splice(i, 1); renderThumbs(); });
-      thumbs.appendChild(wrap);
-    });
+    renderImageThumbs(thumbs, pendingImages);
   };
 
   input.addEventListener('paste', e => {
-    const items = (e.clipboardData && e.clipboardData.items) || [];
-    let handled = false;
-    for (const it of items) {
-      if (it.type && it.type.startsWith('image/')) {
-        const file = it.getAsFile();
-        if (file) {
-          handled = true;
-          const reader = new FileReader();
-          reader.onload = () => { pendingImages.push(reader.result); renderThumbs(); };
-          reader.readAsDataURL(file);
-        }
-      }
-    }
-    if (handled) e.preventDefault();
+    readClipboardImages(e, img => { pendingImages.push(img.src); renderThumbs(); });
   });
 
   const submit = () => {
@@ -1920,7 +1929,7 @@ function openLaunchPopover(anchorEl, ctx, cwdHint) {
  * which we don't know client-side, so we key the pool entry by a temp `new:<n>` id and
  * schedule loadAll() so the attributed session surfaces in the lists.
  */
-function launchFreshSession({ cli, cwd, todoKey, projectId, prompt }) {
+function launchFreshSession({ cli, cwd, todoKey, projectId, prompt, images }) {
   // Switch to sessions mode so the terminal pane is visible.
   if (currentMode !== 'sessions') setMode('sessions');
 
@@ -1984,8 +1993,25 @@ function launchFreshSession({ cli, cwd, todoKey, projectId, prompt }) {
 
   requestAnimationFrame(() => {
     try { fit.fit(); } catch (e) {}
-    connectFreshWs(entry, pseudoSession, { cli, cwd, todoKey, projectId, prompt, launchToken });
+    connectFreshWs(entry, pseudoSession, { cli, cwd, todoKey, projectId, prompt, images: images || [], launchToken });
   });
+}
+
+function sendFreshLaunchComposerInput(ws, opts) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const images = Array.isArray(opts.images) ? opts.images.filter(x => x && x.src) : [];
+  const prompt = (opts.prompt || '').trim();
+  if (!images.length) return;
+
+  for (const img of images) {
+    ws.send(JSON.stringify({ t: 'img', name: img.name || 'paste', d: img.src }));
+  }
+  if (prompt) {
+    const pasted = `\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~`;
+    ws.send(JSON.stringify({ t: 'i', d: pasted + '\r' }));
+  } else {
+    ws.send(JSON.stringify({ t: 'i', d: '\r' }));
+  }
 }
 
 /**
@@ -2009,7 +2035,8 @@ function connectFreshWs(entry, session, opts) {
   params.set('todoKey', opts.todoKey || '');
   params.set('projectId', opts.projectId || '');
   params.set('launchToken', opts.launchToken || '');
-  if (opts.prompt) params.set('prompt', opts.prompt);
+  const hasLaunchImages = Array.isArray(opts.images) && opts.images.length > 0;
+  if (opts.prompt && !hasLaunchImages) params.set('prompt', opts.prompt);
   params.set('cols', String(cols));
   params.set('rows', String(rows));
   const wsUrl = `ws://${location.host}/pty?${params.toString()}`;
@@ -2023,6 +2050,7 @@ function connectFreshWs(entry, session, opts) {
   }
 
   let refreshedOnData = false;
+  let sentComposerInput = false;
   // Re-scan on the SERVER (the new session's jsonl must be picked up) then reload the lists.
   const scheduleRefresh = delay => setTimeout(() => {
     fetch('/api/refresh', { method: 'POST' }).then(() => loadAll()).catch(() => {});
@@ -2045,7 +2073,14 @@ function connectFreshWs(entry, session, opts) {
     if (typeof e.data === 'string' && e.data.startsWith('{"__berth"')) {
       try {
         const ctl = JSON.parse(e.data);
-        if (ctl.__berth === 'launched') { onLaunchIdentified(tempId, ctl); return; }
+        if (ctl.__berth === 'launched') {
+          onLaunchIdentified(tempId, ctl);
+          if (!sentComposerInput) {
+            sentComposerInput = true;
+            setTimeout(() => sendFreshLaunchComposerInput(ws, opts), 50);
+          }
+          return;
+        }
       } catch (_) { /* not a control frame — fall through to terminal */ }
     }
     entry.term.write(e.data);
@@ -2811,7 +2846,8 @@ function renderNowComposer() {
     .map(p => `<option value="${escHtml(p.id)}">${escHtml(p.name)}</option>`).join('');
 
   host.innerHTML = `
-    <textarea class="composer-input" placeholder="描述你想让 agent 做什么 —— 然后选 agent / 目录 / 项目，点「起会话」…" spellcheck="false"></textarea>
+    <textarea class="composer-input" placeholder="描述你想让 agent 做什么，可粘贴图片 —— 然后选 agent / 目录 / 项目，点「起会话」…" spellcheck="false"></textarea>
+    <div class="composer-thumbs create-todo-thumbs" style="display:none"></div>
     <div class="composer-controls">
       <span class="composer-label">Agent</span>
       ${cliRadios('composer-cli')}
@@ -2826,8 +2862,15 @@ function renderNowComposer() {
   `;
 
   const input = host.querySelector('.composer-input');
+  const thumbs = host.querySelector('.composer-thumbs');
   const cwdSel = host.querySelector('.composer-cwd');
   const projSel = host.querySelector('.composer-proj');
+  const pendingImages = [];
+  const renderThumbs = () => renderImageThumbs(thumbs, pendingImages);
+
+  input.addEventListener('paste', e => {
+    readClipboardImages(e, img => { pendingImages.push(img); renderThumbs(); });
+  });
 
   // Rebuild the cwd dropdown scoped to the selected project (home + paths + history; or all if none).
   const rebuildCwds = () => {
@@ -2864,8 +2907,11 @@ function renderNowComposer() {
     if (!cwd) { cwdSel.focus(); return; }
     const projectId = projSel.value || null;
     const prompt = input.value.trim();
-    launchFreshSession({ cli, cwd, todoKey: null, projectId, prompt });
+    const images = pendingImages.slice();
+    launchFreshSession({ cli, cwd, todoKey: null, projectId, prompt, images });
     input.value = '';
+    pendingImages.length = 0;
+    renderThumbs();
   });
   // Cmd/Ctrl+Enter sends
   input.addEventListener('keydown', e => {
