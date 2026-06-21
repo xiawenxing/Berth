@@ -15,7 +15,7 @@ import type { ApiSession, ApiProject, PreviewSession } from '@/lib/api'
 
 function Glyph({ status }: { status: ShipStatus }) {
   if (status === 'sail') return <span className="h-1.5 w-1.5 flex-none rounded-full bg-success" />
-  if (status === 'dock') return <span className="h-1.5 w-1.5 flex-none rounded-full bg-transparent ring-1 ring-brand" />
+  if (status === 'dock') return <span className="h-1.5 w-1.5 flex-none rounded-full bg-destructive" title="有未读" />
   return <span className="h-1.5 w-1.5 flex-none" />
 }
 

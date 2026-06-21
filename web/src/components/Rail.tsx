@@ -34,7 +34,7 @@ function ShipDot({ kind }: { kind: 'sail' | 'dock' | null }) {
       title={kind === 'sail' ? '有会话在跑' : '有未读会话'}
       className={cn(
         'h-1.5 w-1.5 flex-none rounded-full',
-        kind === 'sail' ? 'bg-success' : 'bg-transparent ring-1 ring-brand',
+        kind === 'sail' ? 'bg-success' : 'bg-destructive',
       )}
     />
   )

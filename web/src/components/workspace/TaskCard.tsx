@@ -17,7 +17,7 @@ function ShipGlyph({ status }: { status: ShipStatus }) {
     <span
       className={cn(
         'h-1.5 w-1.5 flex-none rounded-full',
-        status === 'sail' ? 'bg-success' : 'bg-transparent ring-1 ring-brand',
+        status === 'sail' ? 'bg-success' : 'bg-destructive',
       )}
     />
   )
