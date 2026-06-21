@@ -348,7 +348,7 @@ function SessionListRow({
     >
       <Glyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium text-foreground">{s.title || s.sessionId}</div>
+        <div className="truncate text-[13px] font-medium text-foreground" title={s.title || s.sessionId}>{s.title || s.sessionId}</div>
         {/* #7: rows are grouped by cwd already — drop the redundant path, keep just the CLI badge */}
         <div className="mt-0.5 flex items-center gap-1.5">
           <CliBadge cli={s.cli} />

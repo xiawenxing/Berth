@@ -153,7 +153,7 @@ export function Rail() {
             }
           >
             <span className="flex items-center gap-1.5">
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-accent-foreground">{p.name}</span>
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-accent-foreground" title={p.name}>{p.name}</span>
               <ShipDot kind={bucketShip(byProject.get(p.id) ?? [], live)} />
             </span>
             <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{p.meta}</span>

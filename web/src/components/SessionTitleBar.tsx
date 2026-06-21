@@ -128,7 +128,7 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
         ) : (
           <button
             type="button"
-            title={editable ? '双击修改标题' : localTitle}
+            title={editable ? `${localTitle}（双击修改标题）` : localTitle}
             onDoubleClick={startEditing}
             className={cn(
               'block max-w-full truncate bg-transparent p-0 text-left text-[13px] font-semibold text-foreground',

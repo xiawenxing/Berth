@@ -141,7 +141,7 @@ export function TaskCard({
               e.stopPropagation()
               startRename()
             }}
-            title={onRename ? '双击重命名' : undefined}
+            title={onRename ? `${task.title}（双击重命名）` : task.title}
             className={cn(
               'min-w-0 flex-1 text-[13px] font-semibold leading-[1.35] text-card-foreground',
               // 2 lines for active live cards; reliable single-line truncate everywhere else
@@ -280,7 +280,7 @@ export function TaskCard({
                   >
                     <ShipGlyph status={l.status} />
                     <CliBadge cli={l.cli} />
-                    <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{l.title}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-foreground" title={l.title}>{l.title}</span>
                   </button>
                 ))}
               </div>

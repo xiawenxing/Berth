@@ -112,7 +112,7 @@ export function ImportDialog({
                         ✓
                       </span>
                       <CliBadge cli={s.cli} />
-                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">{s.title || '(未命名)'}</span>
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground" title={s.title || '(未命名)'}>{s.title || '(未命名)'}</span>
                       <span className="flex-none text-[10.5px] text-text-dim">{relTime(s.updatedAt)}</span>
                     </button>
                   )
