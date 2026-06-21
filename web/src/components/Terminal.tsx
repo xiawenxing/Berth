@@ -174,14 +174,25 @@ export function Terminal({
       }))
     }
     let launchImagesSent = false
-    const sendLaunchImagesAndPrompt = () => {
+    let launchedSessionId: string | null = null
+    let recentOutput = ''
+    const sendLaunchImagesAndPrompt = (): boolean => {
       const images = launch?.images?.filter((image) => image.dataUrl) ?? []
-      if (!launch || launchImagesSent || !images.length) return
+      if (!launch || launchImagesSent || !images.length) return false
       launchImagesSent = true
       for (const image of images) sendImageData(image)
       const prompt = launch.prompt?.trim()
       if (prompt) sendInput(`\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~\r`)
       else sendInput('\r')
+      if (launchedSessionId) onLaunched?.(launchedSessionId)
+      return true
+    }
+    const maybeSendLaunchImagesAndPrompt = () => {
+      if (!launch?.images?.length || !launchedSessionId) return
+      // Wait until the CLI has enabled bracketed paste mode. Sending image paths before this point
+      // makes Codex/Claude echo the escape markers as literal text during startup.
+      if (!recentOutput.includes('\x1b[?2004h')) return
+      sendLaunchImagesAndPrompt()
     }
     let imagePasteHandledAt = 0
     const onPaste = (e: ClipboardEvent) => {
@@ -223,10 +234,11 @@ export function Terminal({
         try {
           const ctl = JSON.parse(data)
           if (ctl.__berth === 'launched' && ctl.sessionId) {
-            // Image-backed launches can't put the prompt in the URL; they must submit through this
-            // socket before onLaunched rebinds the drawer and unmounts the fresh-launch terminal.
-            sendLaunchImagesAndPrompt()
-            onLaunched?.(ctl.sessionId)
+            launchedSessionId = ctl.sessionId
+            // Image-backed launches can't put the prompt in the URL. Keep this fresh-launch socket
+            // mounted until the CLI announces bracketed-paste readiness and the payload is submitted.
+            if (!launch?.images?.length) onLaunched?.(ctl.sessionId)
+            else maybeSendLaunchImagesAndPrompt()
           }
           return // a well-formed control frame is not terminal output
         } catch {
@@ -234,6 +246,8 @@ export function Terminal({
           // with that text, or a split chunk) — fall through and render it.
         }
       }
+      recentOutput = (recentOutput + data).slice(-4096)
+      maybeSendLaunchImagesAndPrompt()
       term.write(data)
     }
     const disp = term.onData((d) => {
