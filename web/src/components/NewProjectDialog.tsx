@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
+import { PastedImageStrip, pastedImageDataUrls, usePastedImages } from './ImagePaste'
 
 /**
  * 新建项目 — name + description + ☑ AI 根据描述生成项目上下文. No repo path
@@ -14,11 +15,12 @@ export function NewProjectDialog({
 }: {
   open: boolean
   onClose: () => void
-  onCreate: (name: string, desc: string, aiContext: boolean) => void
+  onCreate: (name: string, desc: string, aiContext: boolean, images: string[]) => void
 }) {
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const [ai, setAi] = useState(true)
+  const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
   const ref = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -26,13 +28,14 @@ export function NewProjectDialog({
       setName('')
       setDesc('')
       setAi(true)
+      clearImages()
       setTimeout(() => ref.current?.focus(), 0)
     }
-  }, [open])
+  }, [open, clearImages])
 
   const create = () => {
     if (!name.trim()) return
-    onCreate(name.trim(), desc.trim(), ai)
+    onCreate(name.trim(), desc.trim(), ai, pastedImageDataUrls(images))
     onClose()
   }
 
@@ -59,10 +62,12 @@ export function NewProjectDialog({
           <textarea
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
+            onPaste={onPasteImages}
             rows={3}
-            placeholder="简单描述这个项目是做什么的…"
+            placeholder="简单描述这个项目是做什么的…（可粘贴图片）"
             className="w-full resize-y rounded-md border border-border bg-card px-3 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
           />
+          <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />
         </div>
         <button onClick={() => setAi((v) => !v)} className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
           <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${ai ? 'border-brand bg-brand' : 'border-border'}`}>

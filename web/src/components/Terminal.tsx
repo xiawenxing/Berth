@@ -10,6 +10,7 @@ export interface LaunchSpec {
   projectId?: string | null
   todoKey?: string | null
   prompt?: string
+  images?: { name: string; dataUrl: string }[]
 }
 
 function cssToken(name: string, fallback: string) {
@@ -130,7 +131,7 @@ export function Terminal({
       if (launch.launchToken) qs.set('launchToken', launch.launchToken)
       if (launch.projectId) qs.set('projectId', launch.projectId)
       if (launch.todoKey) qs.set('todoKey', launch.todoKey)
-      if (launch.prompt) qs.set('prompt', launch.prompt)
+      if (launch.prompt && !launch.images?.length) qs.set('prompt', launch.prompt)
     } else if (sessionId) {
       qs.set('sessionId', sessionId)
     }
@@ -163,6 +164,24 @@ export function Terminal({
         }))
       }
       reader.readAsDataURL(file)
+    }
+    const sendImageData = (image: { name: string; dataUrl: string }) => {
+      if (ws.readyState !== WebSocket.OPEN) return
+      ws.send(JSON.stringify({
+        t: 'img',
+        name: image.name || 'paste',
+        d: image.dataUrl,
+      }))
+    }
+    let launchImagesSent = false
+    const sendLaunchImagesAndPrompt = () => {
+      const images = launch?.images?.filter((image) => image.dataUrl) ?? []
+      if (!launch || launchImagesSent || !images.length) return
+      launchImagesSent = true
+      for (const image of images) sendImageData(image)
+      const prompt = launch.prompt?.trim()
+      if (prompt) sendInput(`\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~\r`)
+      else sendInput('\r')
     }
     let imagePasteHandledAt = 0
     const onPaste = (e: ClipboardEvent) => {
@@ -203,7 +222,10 @@ export function Terminal({
       if (data.startsWith('{"__berth"')) {
         try {
           const ctl = JSON.parse(data)
-          if (ctl.__berth === 'launched' && ctl.sessionId) onLaunched?.(ctl.sessionId)
+          if (ctl.__berth === 'launched' && ctl.sessionId) {
+            onLaunched?.(ctl.sessionId)
+            window.setTimeout(sendLaunchImagesAndPrompt, 50)
+          }
           return // a well-formed control frame is not terminal output
         } catch {
           // not actually a control frame (e.g. pty output that happens to start
@@ -248,7 +270,7 @@ export function Terminal({
       term.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, initialInput, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey])
+  }, [sessionId, initialInput, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey, launch?.images])
 
   return (
     <div ref={shellRef} className="berth-terminal-shell h-full w-full overflow-hidden bg-canvas p-2">

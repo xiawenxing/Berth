@@ -232,28 +232,29 @@ export function ProjectWorkspace() {
 
   // 即时创建：optimistic card NOW, persist via POST /todos, then reload real data.
   // (The server's createTask guard already classifies + titles; AI-summarize is that pipeline.)
-  const createTask = (raw: string, opts: { aiSummarize: boolean; runNow: boolean }) => {
+  const createTask = (raw: string, opts: { aiSummarize: boolean; runNow: boolean; images: string[] }) => {
     const tid = `new-${++taskSeq}`
+    const taskText = raw.trim() || (opts.images.length ? '带图任务' : '')
     // Optimistic card uses the configured vocab (server settles to cfg defaults on reload):
     // runNow → first doing-kind status (else the 2nd column), else the first column; lowest priority.
     const todoStatus = statuses[0] ?? '待办'
     const doingStatus = statuses.find((s) => statusKind(s) === 'doing') ?? statuses[1] ?? todoStatus
     const card: Task = {
       id: tid,
-      title: raw,
+      title: taskText,
       status: opts.runNow ? doingStatus : todoStatus,
       priority: priorities[priorities.length - 1] ?? 'P2',
       summary: opts.aiSummarize ? '港务助手正在总结进展摘要…' : undefined,
       links: [],
     }
     setTasks((ts) => [card, ...ts])
-    if (opts.runNow) openSession(raw)
+    if (opts.runNow) openSession(taskText)
     api
-      .createTask(raw, id)
+      .createTask(taskText, id, opts.images)
       .then(() => reload())
       .catch(() => {
         // keep the optimistic card but settle its title locally if the POST failed
-        const { title, summary } = refineTitle(raw)
+        const { title, summary } = refineTitle(taskText)
         setTasks((ts) => ts.map((t) => (t.id === tid ? { ...t, title, summary } : t)))
       })
   }

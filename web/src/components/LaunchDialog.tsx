@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Anchor, Box, Folder, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
+import { PastedImageStrip, usePastedImages } from './ImagePaste'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
 import { shortCwd } from '@/lib/format'
@@ -20,6 +21,7 @@ export function LaunchDialog() {
   const [dest, setDest] = useState<'task' | 'free'>('task')
   const [cli, setCli] = useState<AgentCli>('claude')
   const [freeText, setFreeText] = useState('')
+  const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
   const [pickedCwd, setPickedCwd] = useState<string | null>(null)
 
   const project = projects.find((p) => p.id === launch?.projectId)
@@ -37,9 +39,10 @@ export function LaunchDialog() {
       setDest(launch.taskTitle ? launch.dest : 'free')
       setCli((prev) => (enabledAgents.some((a) => a.cli === prev) ? prev : enabledAgents[0]?.cli ?? 'claude'))
       setFreeText('')
+      clearImages()
       setPickedCwd(null)
     }
-  }, [launch, enabledAgents])
+  }, [launch, enabledAgents, clearImages])
 
   if (!launch) return null
   const taskTitle = launch.taskTitle
@@ -67,6 +70,7 @@ export function LaunchDialog() {
         projectId: launch.projectId,
         todoKey: launch.todoKey,
         prompt: dest === 'free' ? freeText || undefined : undefined,
+        images: dest === 'free' ? images : undefined,
       },
     })
   }
@@ -94,11 +98,13 @@ export function LaunchDialog() {
             <textarea
               value={freeText}
               onChange={(e) => setFreeText(e.target.value)}
+              onPaste={onPasteImages}
               rows={2}
-              placeholder="想让 agent 做什么…"
+              placeholder="想让 agent 做什么…（可粘贴图片）"
               className="mt-2 w-full resize-none rounded-md border border-border bg-card px-2.5 py-2 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
             />
           )}
+          {dest === 'free' && <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />}
         </div>
 
         {/* Agent */}

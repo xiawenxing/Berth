@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Sparkles, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
+import { PastedImageStrip, pastedImageDataUrls, usePastedImages, type PastedImage } from './ImagePaste'
 import type { Task } from '@/lib/types'
 
 /**
@@ -15,11 +16,12 @@ export function NewTaskDialog({
 }: {
   open: boolean
   onClose: () => void
-  onCreate: (raw: string, opts: { aiSummarize: boolean; runNow: boolean }) => void
+  onCreate: (raw: string, opts: { aiSummarize: boolean; runNow: boolean; images: string[] }) => void
 }) {
   const [text, setText] = useState('')
   const [ai, setAi] = useState(true)
   const [run, setRun] = useState(false)
+  const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
   const ref = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -27,13 +29,14 @@ export function NewTaskDialog({
       setText('')
       setAi(true)
       setRun(false)
+      clearImages()
       setTimeout(() => ref.current?.focus(), 0)
     }
-  }, [open])
+  }, [open, clearImages])
 
   const create = () => {
-    if (!text.trim()) return
-    onCreate(text.trim(), { aiSummarize: ai, runNow: run })
+    if (!text.trim() && images.length === 0) return
+    onCreate(text.trim(), { aiSummarize: ai, runNow: run, images: pastedImageDataUrls(images) })
     onClose()
   }
 
@@ -50,10 +53,12 @@ export function NewTaskDialog({
           ref={ref}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={onPasteImages}
           rows={4}
-          placeholder="粗略写个标题，或贴一段描述都行"
+          placeholder="粗略写个标题，或贴一段描述/图片都行"
           className="min-h-24 w-full resize-y rounded-md border border-border bg-card px-3 py-2.5 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
         />
+        <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />
         <div className="mt-2.5 flex flex-wrap gap-4">
           <MiniCheck on={ai} onToggle={() => setAi((v) => !v)} icon={<Sparkles size={12} />}>
             AI 自动总结任务标题
@@ -105,5 +110,6 @@ export function refineTitle(raw: string): { title: string; summary: string } {
   return { title, summary: raw }
 }
 
-export type NewTaskResult = { raw: string; opts: { aiSummarize: boolean; runNow: boolean } }
+export type NewTaskResult = { raw: string; opts: { aiSummarize: boolean; runNow: boolean; images: string[] } }
 export type { Task }
+export type { PastedImage }

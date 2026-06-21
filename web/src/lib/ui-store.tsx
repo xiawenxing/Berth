@@ -10,6 +10,7 @@ export interface LaunchSpec {
   projectId?: string | null
   todoKey?: string | null
   prompt?: string
+  images?: { name: string; dataUrl: string }[]
 }
 
 export interface DrawerSession {

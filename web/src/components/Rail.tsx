@@ -99,9 +99,19 @@ export function Rail() {
   const unassignedN = unassignedSessions.length
 
   // Optimistic row + persist via POST /projects/create, then reload real data.
-  const addProject = (name: string) => {
+  const addProject = (name: string, desc = '', aiContext = true, images: string[] = []) => {
     setExtra((p) => [...p, { id: name, name, meta: '0 任务 · 0 会话' }])
-    api.createProject(name).then(() => { setExtra([]); reload() }).catch(() => {})
+    api
+      .createProject(name)
+      .then((created: { id?: string; name?: string }) => {
+        const projectName = created.name || name
+        if ((aiContext || images.length) && (desc.trim() || images.length)) {
+          return api.contextUpdate('project', projectName, desc.trim(), images).catch(() => {}).then(() => created)
+        }
+        return created
+      })
+      .then(() => { setExtra([]); reload() })
+      .catch(() => {})
   }
 
   return (
@@ -169,7 +179,7 @@ export function Rail() {
         <NavItem to="/settings" icon={SettingsIcon} label="设置" />
       </div>
 
-      <NewProjectDialog open={newProj} onClose={() => setNewProj(false)} onCreate={(name) => addProject(name)} />
+      <NewProjectDialog open={newProj} onClose={() => setNewProj(false)} onCreate={addProject} />
     </aside>
   )
 }

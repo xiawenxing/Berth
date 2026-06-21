@@ -120,7 +120,7 @@ export const api = {
     getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),
 
   // ── mutations (wired to existing server endpoints) ──
-  createTask: (text: string, projectId?: string) => send('POST', '/api/todos', { text, projectId }),
+  createTask: (text: string, projectId?: string, images?: string[]) => send('POST', '/api/todos', { text, projectId, images }),
   patchTask: (id: string, patch: { status?: string; priority?: string; ddl?: string | null; title?: string }) =>
     send('PATCH', `/api/todos/${id}`, patch),
   deleteTask: (id: string) => send('DELETE', `/api/todos/${id}`),
@@ -150,8 +150,8 @@ export const api = {
   // Session-grained import: mark sessions as in Berth's visible set (+ attach when projectId given).
   importSessions: (ids: string[], projectId?: string) =>
     send('POST', '/api/session-import', { ids, projectId }),
-  contextUpdate: (kind: 'task' | 'project', key: string, userInput: string) =>
-    send('POST', '/api/context/update', { kind, key, userInput }),
+  contextUpdate: (kind: 'task' | 'project', key: string, userInput: string, images?: string[]) =>
+    send('POST', '/api/context/update', { kind, key, userInput, images }),
   // Read the cached 项目小结 + whether a (re)generation is in flight (null summary if never generated).
   getProjectSummary: (id: string) =>
     getJSON<{ summary: StructuredSummary | null; generatedAt?: number; summarizing?: boolean }>(`/api/projects/${id}/summary`),

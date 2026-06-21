@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Sparkles, Copy, Save, RefreshCw, X, CheckCircle2, Circle, List, CheckSquare, type LucideIcon } from 'lucide-react'
 import { Drawer } from './ui/Overlay'
 import { AnchoredPopover } from './ui/Menu'
+import { PastedImageStrip, pastedImageDataUrls, usePastedImages } from './ImagePaste'
 import { api, type StructuredSummary } from '@/lib/api'
 
 const EMPTY_SUMMARY: StructuredSummary = { headline: '', progress: [], milestones: [] }
@@ -262,11 +263,13 @@ export function ContextDocDrawer({ target, onClose }: { target: ContextDocTarget
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
+  const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
 
   useEffect(() => {
     if (!target) return
     setNote('')
     setInput('')
+    clearImages()
     api
       .readDoc(target.path)
       .then((r) => {
@@ -277,7 +280,7 @@ export function ContextDocDrawer({ target, onClose }: { target: ContextDocTarget
         setContent('')
         setMtime(undefined)
       })
-  }, [target])
+  }, [target, clearImages])
 
   const save = () => {
     if (!target) return
@@ -285,16 +288,17 @@ export function ContextDocDrawer({ target, onClose }: { target: ContextDocTarget
     api.saveDoc(target.path, content, mtime).then((r: any) => { if (r?.mtime) setMtime(r.mtime); setNote('已保存') }).catch(() => setNote('保存失败')).finally(() => setBusy(false))
   }
   const aiMerge = () => {
-    if (!target || !input.trim()) return
+    if (!target || (!input.trim() && images.length === 0)) return
     setBusy(true)
     setNote('')
     api
-      .contextUpdate(target.kind, target.key, input.trim())
+      .contextUpdate(target.kind, target.key, input.trim(), pastedImageDataUrls(images))
       .then(() => api.readDoc(target.path))
       .then((r) => {
         setContent(r.content || '')
         setMtime(r.mtime)
         setInput('')
+        clearImages()
         setNote('港务助手已整理并更新上下文')
       })
       .catch(() => setNote('整理失败'))
@@ -328,18 +332,20 @@ export function ContextDocDrawer({ target, onClose }: { target: ContextDocTarget
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                onPaste={onPasteImages}
                 rows={2}
-                placeholder="补充点什么，让港务助手整理进上下文…"
+                placeholder="补充点什么，或粘贴图片，让港务助手整理进上下文…"
                 className="min-h-0 flex-1 resize-none bg-transparent text-[13px] text-foreground outline-none placeholder:text-text-dim"
               />
               <button
                 onClick={aiMerge}
-                disabled={busy || !input.trim()}
+                disabled={busy || (!input.trim() && images.length === 0)}
                 className="flex flex-none items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-[12px] font-semibold text-brand-foreground disabled:opacity-50"
               >
                 <Sparkles size={12} className={busy ? 'spk-twinkle' : ''} /> {busy ? '整理中…' : '让 AI 整理更新'}
               </button>
             </div>
+            <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />
           </div>
         </>
       )}
