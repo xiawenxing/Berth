@@ -44,8 +44,8 @@ export interface CwdGroup {
   tag: string // full tag for the right-side pill: 主上下文 / worktree · 第 2 上下文
   shortTag: string // compact inline label suffix: 主上下文 / worktree·2
   sessions: SessionRow[]
-  kind?: 'workspace' | 'cwd' // 'workspace' = Berth-assigned default dir (masked label, no import icon)
-  rawCwd?: string // the real absolute cwd, for the import-icon's previewDir (absent on workspace group)
+  kind?: 'workspace' | 'cwd' // 'workspace' = Berth-assigned default dir (masked label)
+  rawCwd?: string // the real absolute cwd, for the import-icon's previewDir (present on every group)
 }
 
 export const SHIP_LABEL: Record<ShipStatus, string> = {

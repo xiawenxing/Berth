@@ -107,7 +107,7 @@ function Section({
   limit?: number
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
-  onImport?: () => void // 导入该目录下磁盘上其他会话 (cwd groups only; absent on the workspace group)
+  onImport?: () => void // 导入该目录下磁盘上其他会话 (every group with a rawCwd, incl. the workspace dir)
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const [more, setMore] = useState(false)
@@ -248,7 +248,7 @@ export function SessionModule({
                   limit={4}
                   onOpen={onOpen}
                   onPin={onPin}
-                  onImport={!isWorkspace && g.rawCwd && onImport ? () => onImport(g.rawCwd!) : undefined}
+                  onImport={g.rawCwd && onImport ? () => onImport(g.rawCwd!) : undefined}
                 />
               )
             })}

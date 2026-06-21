@@ -130,7 +130,9 @@ export function ProjectWorkspace() {
     let worktreeN = 1
     return sorted.map(([cwd, rows]) => {
       if (cwd === ws) {
-        return { key: cwd, cwd: '项目默认目录', tag: 'Berth 工作区', shortTag: 'Berth 工作区', sessions: rows, kind: 'workspace' as const }
+        // rawCwd is the real (masked) workspace path — drives the import icon so sessions that ran
+        // in the default workspace dir but weren't auto-curated can still be imported manually.
+        return { key: cwd, cwd: '项目默认目录', tag: 'Berth 工作区', shortTag: 'Berth 工作区', sessions: rows, kind: 'workspace' as const, rawCwd: cwd }
       }
       const isMain = cwd === mainCwd
       const n = isMain ? 0 : ++worktreeN // worktrees count from 2 (主 is the 1st context)
