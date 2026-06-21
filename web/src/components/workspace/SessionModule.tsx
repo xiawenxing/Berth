@@ -222,8 +222,8 @@ function Row({
             disabled={generating}
             onClick={generateTitle}
             className={cn(
-              'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim hover:bg-secondary hover:text-foreground disabled:opacity-50',
-              generating && 'text-brand',
+              'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim transition-opacity hover:bg-secondary hover:text-foreground',
+              generating ? 'text-brand opacity-100' : 'opacity-0 group-hover:opacity-100',
             )}
           >
             <Sparkles size={12} className={cn(generating && 'animate-pulse')} />
@@ -249,8 +249,8 @@ function Row({
           aria-label="更多"
           onClick={() => setMenuOpen((v) => !v)}
           className={cn(
-            'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim hover:bg-secondary hover:text-foreground',
-            menuOpen && 'bg-secondary text-foreground',
+            'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim transition-opacity hover:bg-secondary hover:text-foreground',
+            menuOpen ? 'bg-secondary text-foreground opacity-100' : 'opacity-0 group-hover:opacity-100',
           )}
         >
           <MoreHorizontal size={13} />

@@ -369,7 +369,7 @@ function SessionListRow({
           className={cn(
             'flex-none rounded p-1 hover:bg-secondary',
             isPinned
-              ? 'text-brand'
+              ? 'text-priority'
               : 'text-text-dim opacity-0 hover:text-foreground group-hover:opacity-100',
           )}
         >
@@ -382,8 +382,8 @@ function SessionListRow({
           disabled={generating}
           onClick={generateTitle}
           className={cn(
-            'flex-none rounded p-1 text-text-dim hover:bg-secondary hover:text-foreground disabled:opacity-50',
-            generating && 'text-brand',
+            'flex-none rounded p-1 text-text-dim transition-opacity hover:bg-secondary hover:text-foreground',
+            generating ? 'text-brand opacity-100' : 'opacity-0 group-hover:opacity-100',
           )}
         >
           <Sparkles size={13} className={cn(generating && 'animate-pulse')} />
