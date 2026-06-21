@@ -142,8 +142,8 @@ export interface StructuredSummary {
 
 /** Generate a structured summary (JSON) from a context doc. Falls back to a headline-only summary
  *  if the agent doesn't return parseable JSON. */
-export async function generateStructuredSummary(docText: string, summaryPrompt: string, agent?: BerthAgent): Promise<StructuredSummary> {
-  const prompt = summaryPrompt + '\n\n---\n' + docText.slice(0, 4000)
+export async function generateStructuredSummary(docText: string, summaryPrompt: string, agent?: BerthAgent, maxChars = 4000): Promise<StructuredSummary> {
+  const prompt = summaryPrompt + '\n\n---\n' + docText.slice(0, maxChars)
   const cli = agent?.cli ?? 'claude'
   const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
   const raw = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 60000 }, { cli, timeoutMs: 75000 })

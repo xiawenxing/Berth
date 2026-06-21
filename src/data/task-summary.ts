@@ -7,6 +7,7 @@ import { ensureContextDoc } from './context-doc'
 import { resolveBerthAgent } from './agent-config'
 import { getLocale, contextStrings } from '../i18n'
 import { generateStructuredSummary, type StructuredSummary } from '../agent/index'
+import { meaningfulDocLength, TASK_DOC_MIN_MEANINGFUL, assembleTaskSummaryInput } from './summary-input'
 
 type Store = ReturnType<typeof import('../db/store').openStore>
 
@@ -14,6 +15,16 @@ type Store = ReturnType<typeof import('../db/store').openStore>
 // summary-detail GET) so the UI can show a loading icon at the task's 摘要 position.
 const inFlight = new Set<string>()
 export function isSummarizingTask(id: string): boolean { return inFlight.has(id) }
+
+// Provider injection: the data layer must not import the server's session cache directly. The server
+// (store-singleton) registers a function here at startup that returns up to `budget` chars of the
+// transcript text for the sessions linked to a task (via edges). Returns '' when nothing is linked
+// or no provider is registered (e.g. in unit tests).
+export type TaskTranscriptProvider = (store: Store, taskId: string, budget: number) => string
+let transcriptProvider: TaskTranscriptProvider | null = null
+export function setTaskTranscriptProvider(fn: TaskTranscriptProvider | null) { transcriptProvider = fn }
+
+const TRANSCRIPT_BUDGET = 6000   // chars of linked-session transcript pulled in when the doc is thin
 
 /** Generate + persist the structured task summary, writing the headline back to `progress` (the card's
  *  one-line 进展摘要). Uses store.updateTaskFields directly (not updateTask) to avoid re-triggering the
@@ -26,7 +37,19 @@ export async function generateTaskSummary(store: Store, taskId: string): Promise
   const ensured = ensureContextDoc(ds, 'task', task.id, { title: task.title, projectName: task.project, locale })
   if (ensured.created && !task.detailDoc) store.updateTaskFields(task.id, { detailDoc: ensured.ref }, Date.now())
   const { content } = ds.readDoc(ensured.abs)
-  const summary = await generateStructuredSummary(content, contextStrings(locale).taskSummaryDetailPrompt, resolveBerthAgent(store))
+  // When the context doc is too thin to summarize on its own, supplement it with the transcript of
+  // the task's linked sessions (edges) so the summary still reflects real work that happened there.
+  const strings = contextStrings(locale)
+  let input = content
+  let maxChars = 4000
+  if (meaningfulDocLength(content) < TASK_DOC_MIN_MEANINGFUL && transcriptProvider) {
+    const excerpt = transcriptProvider(store, task.id, TRANSCRIPT_BUDGET)
+    if (excerpt.trim()) {
+      input = assembleTaskSummaryInput(content, excerpt, strings.summarySessionSection)
+      maxChars = 4000 + TRANSCRIPT_BUDGET
+    }
+  }
+  const summary = await generateStructuredSummary(input, strings.taskSummaryDetailPrompt, resolveBerthAgent(store), maxChars)
   if (!summary.headline && !summary.progress.length && !summary.milestones.length)
     throw new Error('agent returned empty summary')
   const generatedAt = Date.now()
