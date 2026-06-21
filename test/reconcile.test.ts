@@ -21,7 +21,7 @@ describe('reconcileLaunchIntents', () => {
       makeSession('new', '/proj', 1100),  // after → bind
     ]
     s.upsertSessions(cache)
-    reconcileLaunchIntents(s, cache)
+    expect(reconcileLaunchIntents(s, cache)).toBe(1)
     expect(s.pendingIntents()).toEqual([])
     expect(s.todoKeyForSession('new')).toBe('rec_A')
     expect(s.getAttach('new')).toMatchObject({ projectId: 'P', state: 'confirmed' })
@@ -41,11 +41,11 @@ describe('reconcileLaunchIntents', () => {
     expect(cache.map(x => x.sessionId)).toEqual([]) // the fresh session is NOT in the cache
 
     // Passing the filtered cache would NOT bind (documents the bug):
-    reconcileLaunchIntents(s, cache)
+    expect(reconcileLaunchIntents(s, cache)).toBe(0)
     expect(s.pendingIntents().map(i => i.id)).toEqual(['i1'])
 
     // Passing the full scan binds it; next refresh's curated set then includes it via bound-launch.
-    reconcileLaunchIntents(s, all)
+    expect(reconcileLaunchIntents(s, all)).toBe(1)
     expect(s.pendingIntents()).toEqual([])
     expect(s.allBoundLaunchSessionIds().has('fresh')).toBe(true)
   })

@@ -9,13 +9,14 @@ import { DEFAULT_STATUSES } from './status'
 export interface PendingLaunch {
   tempId: string // the launchToken (stable across the launch)
   cli: string
-  cwd: string // raw spawn cwd ('' = project default / server workspace fallback)
+  cwd: string // real matching cwd; project-default launches use the resolved workspace cwd when known
   cwdLabel: string // display form
   projectId: string | null
   todoKey: string | null
   sessionId: string | null // exact id from the {"__berth":"launched"} frame, once known
   knownIds: string[] // same-cli+cwd session ids present at launch (so we can spot the NEW one)
   createdAt: number // ms; placeholders age out after PENDING_TTL_MS so a failed launch can't wedge
+  surfaced?: boolean // real session is visible; keep polling only for delayed codex title backfill
 }
 
 // While a launch is in flight we re-scan disk on this cadence until the session surfaces — the old
@@ -38,6 +39,22 @@ function sessionMatchesPending(s: ApiSession, p: PendingLaunch): boolean {
   if (p.todoKey ? s.todoKey !== p.todoKey : !!s.todoKey) return false
   if (p.projectId) return s.projectId === p.projectId
   return s.projectId == null
+}
+
+function findSurfacedSession(sessions: ApiSession[], p: PendingLaunch): ApiSession | undefined {
+  if (p.sessionId) {
+    const exact = sessions.find((s) => s.sessionId === p.sessionId)
+    if (exact) return exact
+  }
+  // Codex's first launched frame reports the temporary intent id. Until the status rekey event gives
+  // us the real id, only use the same-cwd fallback when the launch had a concrete cwd; the project
+  // workspace fallback is sent as "" and must not match arbitrary no-cwd rows.
+  if (!p.cwd) return undefined
+  return sessions.find((s) => sessionMatchesPending(s, p))
+}
+
+function needsTitleBackfill(p: PendingLaunch, s: ApiSession): boolean {
+  return p.cli === 'codex' && !s.title
 }
 
 // One fetch of the whole dataset, shared across pages via context. Refetchable.
@@ -99,18 +116,43 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setPending((cur) => cur.map((x) => (x.tempId === tempId ? { ...x, sessionId } : x)))
   }, [])
 
-  // Drop a placeholder the moment its real session surfaces — by exact id (claude/coco) or by the
-  // first new same-cli+cwd session (codex, bound late by reconcile) — or when it ages out.
+  useEffect(() => {
+    const onRekey = (e: Event) => {
+      const detail = (e as CustomEvent<{ from?: string; to?: string }>).detail
+      if (!detail?.from || !detail?.to) return
+      setPending((cur) => cur.map((p) => (p.sessionId === detail.from ? { ...p, sessionId: detail.to } : p)))
+    }
+    window.addEventListener('berth:session-rekey', onRekey)
+    return () => window.removeEventListener('berth:session-rekey', onRekey)
+  }, [])
+
+  // Drop a visible placeholder the moment its real session surfaces — by exact id (claude/coco) or by
+  // the first new same-cli+cwd session (codex, bound late by reconcile) — or when it ages out.
+  // Codex can surface before it has written a title/thread_name; keep a hidden pending watcher alive
+  // so the normal refresh loop continues until the title backfills.
   useEffect(() => {
     if (pending.length === 0) return
-    const have = new Set(sessions.map((s) => s.sessionId))
     const now = Date.now()
-    const next = pending.filter((p) => {
-      if (p.sessionId && have.has(p.sessionId)) return false
-      if (p.cwd && sessions.some((s) => sessionMatchesPending(s, p))) return false
-      return now - p.createdAt < PENDING_TTL_MS
-    })
-    if (next.length !== pending.length) setPending(next)
+    let changed = false
+    const next: PendingLaunch[] = []
+    for (const p of pending) {
+      const expired = now - p.createdAt >= PENDING_TTL_MS
+      const surfaced = findSurfacedSession(sessions, p)
+      if (surfaced) {
+        if (!expired && needsTitleBackfill(p, surfaced)) {
+          const updated = p.surfaced && p.sessionId === surfaced.sessionId ? p : { ...p, sessionId: surfaced.sessionId, surfaced: true }
+          next.push(updated)
+          if (updated !== p) changed = true
+        } else {
+          changed = true
+        }
+      } else if (!expired) {
+        next.push(p)
+      } else {
+        changed = true
+      }
+    }
+    if (changed || next.length !== pending.length) setPending(next)
   }, [sessions, pending])
 
   // While anything is in flight, keep re-scanning disk until it surfaces (then `pending` empties and

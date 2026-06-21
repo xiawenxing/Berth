@@ -55,6 +55,7 @@ export function LaunchDialog() {
     if (!canSail || !selectedAgent) return
     const cwd = enabledPaths.length === 0 ? '' : selectedCwd || '' // '' → server workspace fallback
     const cwdLabel = cwd ? shortCwd(cwd) : '项目默认目录'
+    const pendingCwd = cwd || project?.workspaceCwd || ''
     // Stable across the fresh Terminal's dev StrictMode effect replay; the server uses it to attach
     // duplicate /pty?new=1 requests to the first live PTY instead of spawning twice. Also the
     // placeholder's stable key until the real session id arrives.
@@ -65,12 +66,12 @@ export function LaunchDialog() {
     addPending({
       tempId: launchToken,
       cli: selectedAgent.cli,
-      cwd,
+      cwd: pendingCwd,
       cwdLabel,
       projectId: launch.projectId ?? null,
       todoKey: launch.todoKey ?? null,
       sessionId: null,
-      knownIds: cwd ? sessions.filter((s) => s.cli === selectedAgent.cli && (s.cwd ?? '') === cwd).map((s) => s.sessionId) : [],
+      knownIds: pendingCwd ? sessions.filter((s) => s.cli === selectedAgent.cli && (s.cwd ?? '') === pendingCwd).map((s) => s.sessionId) : [],
       createdAt: Date.now(),
     })
     openDrawer({

@@ -78,6 +78,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             }
             return next
           })
+          window.dispatchEvent(new CustomEvent('berth:session-rekey', { detail: { from: m.from, to: m.to } }))
           bump()
         }
       }

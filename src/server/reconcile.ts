@@ -25,15 +25,16 @@ function normPath(p: string): string {
  * Among candidates pick the one with the highest updatedAt. If none found, the
  * intent stays pending and will be retried on the next refresh.
  */
-export function reconcileLaunchIntents(store: Store, cache: LogicalSession[]): void {
+export function reconcileLaunchIntents(store: Store, cache: LogicalSession[]): number {
   const pending = store.pendingIntents()
     .filter(i => i.cli === 'codex')
     .sort((a, b) => b.createdAt - a.createdAt)
-  if (pending.length === 0) return
+  if (pending.length === 0) return 0
 
   // Track which sessions have been claimed in this pass so two intents cannot
   // compete for the same session.
   const used = new Set<string>()
+  let bound = 0
 
   for (const intent of pending) {
     const normIntentCwd = normPath(intent.cwd)
@@ -65,5 +66,7 @@ export function reconcileLaunchIntents(store: Store, cache: LogicalSession[]): v
     // The fresh codex pty was registered under the intent id; move it to the real session id so a
     // later click reattaches to the SAME live process instead of spawning a parallel `codex resume`.
     rekeyPty(intent.id, best.sessionId)
+    bound += 1
   }
+  return bound
 }

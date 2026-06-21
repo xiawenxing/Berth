@@ -127,7 +127,11 @@ export function refresh(): LogicalSession[] {
   // Passing `cache` would mean reconcile never finds it → never binds → never surfaces (deadlock).
   // reconcile constrains candidates by intent cwd/cli/time internally, so the wider input is safe;
   // once bound it enters allBoundLaunchSessionIds → curated → surfaces on the next refresh.
-  reconcileLaunchIntents(store, all)
+  const bound = reconcileLaunchIntents(store, all)
+  if (bound > 0) {
+    cache = filterImportedSessions(all, importRoots(), curatedSessionIds())
+    store.upsertSessions(cache)
+  }
   // Auto-pull sources configured for it (default is manual → no-op). Fire-and-forget; never blocks.
   for (const s of store.allDataSources()) {
     if (s.enabled && s.pullMode === 'auto') {

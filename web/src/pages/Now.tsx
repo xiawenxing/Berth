@@ -36,16 +36,18 @@ export function Now() {
   // surfaces; see DataProvider). Saves the user a manual 同步 to see what they just started.
   const pendingShips = useMemo<ApiSession[]>(
     () =>
-      pending.map((p) => ({
-        sessionId: p.tempId,
-        cli: p.cli,
-        title: '创建中…',
-        cwd: p.cwd,
-        updatedAt: Math.floor(p.createdAt / 1000),
-        projectId: p.projectId,
-        project: projects.find((x) => x.id === p.projectId)?.name,
-        __pending: true,
-      })),
+      pending
+        .filter((p) => !p.surfaced)
+        .map((p) => ({
+          sessionId: p.tempId,
+          cli: p.cli,
+          title: '创建中…',
+          cwd: p.cwd,
+          updatedAt: Math.floor(p.createdAt / 1000),
+          projectId: p.projectId,
+          project: projects.find((x) => x.id === p.projectId)?.name,
+          __pending: true,
+        })),
     [pending, projects],
   )
 

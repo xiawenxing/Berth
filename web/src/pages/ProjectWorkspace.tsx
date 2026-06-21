@@ -127,7 +127,7 @@ export function ProjectWorkspace() {
   const pendingRows: SessionRow[] = useMemo(
     () =>
       pending
-        .filter((p) => p.projectId === id)
+        .filter((p) => p.projectId === id && !p.surfaced)
         .map((p) => ({
           id: p.tempId,
           cli: p.cli,

@@ -25,6 +25,16 @@ export function SessionDrawer() {
   useEffect(() => () => {
     if (optimisticTimer.current !== null) clearTimeout(optimisticTimer.current)
   }, [])
+  useEffect(() => {
+    const onRekey = (e: Event) => {
+      const detail = (e as CustomEvent<{ from?: string; to?: string }>).detail
+      if (!detail?.from || !detail?.to || drawer?.sessionId !== detail.from) return
+      openDrawer({ ...drawer, sessionId: detail.to })
+      reload()
+    }
+    window.addEventListener('berth:session-rekey', onRekey)
+    return () => window.removeEventListener('berth:session-rekey', onRekey)
+  }, [drawer, openDrawer, reload])
   const resyncAfterLaunch = (sessionId: string) => {
     if (drawer?.launch?.launchToken) resolvePending(drawer.launch.launchToken, sessionId)
     setOptimisticLiveId(sessionId)
