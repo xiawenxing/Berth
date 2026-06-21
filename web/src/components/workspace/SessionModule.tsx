@@ -1,9 +1,10 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, Loader2, LogOut, Trash2 } from 'lucide-react'
+import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, Loader2, LogOut, Trash2, Check, CircleDot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
+import { useLive } from '@/lib/live'
 import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
-import { SHIP_LABEL, type SessionRow, type CwdGroup, type ShipStatus } from '@/lib/types'
+import { type SessionRow, type CwdGroup, type ShipStatus } from '@/lib/types'
 import { CliBadge } from './TaskCard'
 
 export interface SessionTaskOption {
@@ -11,16 +12,98 @@ export interface SessionTaskOption {
   title: string
 }
 
-const SHIP_TONE: Record<ShipStatus, string> = {
-  sail: 'bg-success/15 text-success',
-  dock: 'bg-brand/15 text-brand',
-  moored: 'bg-muted-foreground/15 text-muted-foreground', // faint tint, not the solid muted surface
+// One lamp carries the whole status (no redundant text pill): sail=运行中(绿脉冲), dock=未读(红点),
+// moored=已读/idle(空心暗点). The word lives in the tooltip; the title's weight/dim reinforces it.
+function Glyph({ status }: { status: ShipStatus }) {
+  if (status === 'sail') return <span className="h-2 w-2 flex-none animate-pulse rounded-full bg-success ring-2 ring-success/25" title="在航" />
+  if (status === 'dock') return <span className="h-2 w-2 flex-none rounded-full bg-destructive ring-2 ring-destructive/25" title="待查收 · 有未读" />
+  return <span className="h-[7px] w-[7px] flex-none rounded-full border border-text-dim/60" title="已停泊" />
 }
 
-function Glyph({ status }: { status: SessionRow['status'] }) {
-  if (status === 'sail') return <span className="h-2 w-2 flex-none animate-pulse rounded-full bg-success" title="在航" />
-  if (status === 'dock') return <span className="h-2 w-2 flex-none rounded-full border-2 border-brand" title="靠岸·待查收" />
-  return <span className="h-2 w-2 flex-none" /> // moored/idle — empty gutter keeps alignment
+/** The linked-task marker — now an interactive control (was a passive label). Linked: a brand tag with
+ *  the task title (truncated, full on hover). Unlinked: a hover-revealed ghost「+ 关联任务」. Click opens
+ *  a searchable picker (replaces the old ⋯ task dump) + 取消关联 when linked. Lives in the right cluster. */
+function TaskTag({
+  s,
+  tasks,
+  onLinkTask,
+}: {
+  s: SessionRow
+  tasks?: SessionTaskOption[]
+  onLinkTask: (sessionId: string, taskId: string | null) => Promise<void> | void
+}) {
+  const ref = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const linked = tasks?.find((t) => t.id === s.taskId)
+  const isLinked = !!s.taskId
+  const close = () => {
+    setOpen(false)
+    setQ('')
+  }
+  const pick = (taskId: string | null) => async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    close()
+    await onLinkTask(s.id, taskId)
+  }
+  const needle = q.trim().toLowerCase()
+  const filtered = (tasks ?? []).filter((t) => !needle || t.title.toLowerCase().includes(needle))
+
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        title={isLinked ? linked?.title ?? '已关联任务' : '关联到任务'}
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+        className={cn(
+          'flex max-w-[160px] flex-none items-center gap-1 rounded-md px-2 py-px text-[10.5px] transition-opacity',
+          isLinked
+            ? 'border border-brand/30 bg-brand/12 text-brand hover:bg-brand/20'
+            : 'border border-dashed border-border text-text-dim opacity-0 hover:border-brand/45 hover:text-brand group-hover:opacity-100',
+          open && 'opacity-100',
+        )}
+      >
+        <Link2 size={10} className="flex-none" />
+        <span className="truncate">{isLinked ? linked?.title ?? '已关联任务' : '关联任务'}</span>
+      </button>
+      {open && (
+        <AnchoredPopover anchor={ref} width={264} onClose={close}>
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="搜索任务…"
+            className="mb-1.5 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-[12px] text-foreground outline-none focus:border-brand"
+          />
+          <MenuLabel>关联任务</MenuLabel>
+          <div className="max-h-60 overflow-y-auto">
+            {filtered.length ? (
+              filtered.map((task) => (
+                <MenuItem key={task.id} onClick={pick(task.id)}>
+                  <span className={cn('h-1.5 w-1.5 flex-none rounded-full', s.taskId === task.id ? 'bg-brand' : 'bg-transparent')} />
+                  <span className="min-w-0 truncate" title={task.title}>{task.title}</span>
+                  {s.taskId === task.id && <Check size={13} className="ml-auto flex-none text-brand" />}
+                </MenuItem>
+              ))
+            ) : (
+              <div className="px-2 py-1.5 text-[12px] text-muted-foreground">{tasks?.length ? '没有匹配的任务' : '当前项目没有任务'}</div>
+            )}
+          </div>
+          {isLinked && (
+            <>
+              <div className="my-1 border-t border-border" />
+              <MenuItem danger onClick={pick(null)}>取消关联</MenuItem>
+            </>
+          )}
+        </AnchoredPopover>
+      )}
+    </>
+  )
 }
 
 /** A session row — faithful to v7 .srow: glyph · cli · title · ship pill · linked · cwd(right) ·
@@ -46,14 +129,12 @@ function Row({
   onDetach?: (id: string) => void // 移出项目 (detach → 无归属)
   onUnimport?: (id: string) => void // 取消导入 (remove from Berth's visible set)
 }) {
+  const live = useLive()
   const ship: ShipStatus = s.status === 'idle' ? 'moored' : s.status
   const moreBtnRef = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [generating, setGenerating] = useState(false)
-  const canLinkTask = !!tasks?.length || !!s.taskId
-  // The ⋯ menu is shared: 关联任务 (when onLinkTask) + 移出项目/取消导入 (when onDetach/onUnimport).
-  const hasMenu = !!(onLinkTask || onDetach || onUnimport)
-  const menuEnabled = canLinkTask || !!onDetach || !!onUnimport
+  // ⋯ menu now holds 标为已读/未读 (always) + 移出项目/取消导入 (when provided). Task-linking moved to TaskTag.
 
   // An in-flight launch placeholder: not yet a real, openable session — show 创建中… with a spinner
   // and no row actions. It's replaced by the real row the moment the session surfaces (data layer).
@@ -87,10 +168,15 @@ function Row({
     }
   }
 
-  const pickTask = (taskId: string | null) => async (e: React.MouseEvent) => {
+  const markRead = (e: React.MouseEvent) => {
     e.stopPropagation()
     setMenuOpen(false)
-    await onLinkTask?.(s.id, taskId)
+    live.markSeen(s.id)
+  }
+  const markUnread = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen(false)
+    live.markUnread(s.id)
   }
 
   return (
@@ -107,22 +193,25 @@ function Row({
       className="group relative flex h-[34px] cursor-pointer items-center gap-2.5 border-t border-border/55 px-3.5 outline-none first:border-t-border hover:bg-accent focus-visible:bg-accent focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-brand"
     >
       <span className="flex w-3.5 flex-none items-center justify-center">
-        <Glyph status={s.status} />
+        <Glyph status={ship} />
       </span>
       <CliBadge cli={s.cli} />
-      <span className="min-w-0 flex-[1_1_auto] truncate text-[13px] font-medium text-foreground" title={s.title}>{s.title}</span>
-      <span className={cn('inline-flex flex-none items-center rounded px-1.5 py-px text-[10.5px] font-semibold', SHIP_TONE[ship])}>
-        {SHIP_LABEL[ship]}
+      {/* title weight/dim reinforces the lamp: unread(dock)→bold, running(sail)→normal, read(moored)→dim */}
+      <span
+        className={cn(
+          'min-w-0 flex-[1_1_auto] truncate text-[13px]',
+          ship === 'dock' ? 'font-semibold text-foreground' : ship === 'moored' ? 'font-normal text-muted-foreground' : 'font-medium text-foreground',
+        )}
+        title={s.title}
+      >
+        {s.title}
       </span>
-      {s.linkedTask && (
-        <span className="inline-flex flex-none items-center gap-0.5 rounded bg-muted px-1.5 py-px text-[10px] text-text-dim">
-          <Link2 size={10} /> 已关联任务
-        </span>
-      )}
       {/* cwd: right-aligned, fills the gap (mirrors v7 .s-cwd flex:1 text-align:right) */}
       <span className={cn('min-w-[30px] max-w-[240px] flex-[0_1_240px] truncate text-right font-mono text-[11px] text-text-dim', !showCwd && 'opacity-0')}>
         {showCwd ? s.cwd : ''}
       </span>
+      {/* 关联任务 — clickable marker in the right cluster (replaces the inline label + ⋯ task dump) */}
+      {onLinkTask && <TaskTag s={s} tasks={tasks} onLinkTask={onLinkTask} />}
       <span className="flex-none whitespace-nowrap text-[11px] text-muted-foreground">{s.time}</span>
       <div className="flex flex-none items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
         {onGenerateTitle && (
@@ -140,77 +229,60 @@ function Row({
             <Sparkles size={12} className={cn(generating && 'animate-pulse')} />
           </button>
         )}
-        {hasMenu && (
-          <>
-            <button
-              ref={moreBtnRef}
-              type="button"
-              title="更多"
-              aria-label="更多"
-              disabled={!menuEnabled}
-              onClick={() => setMenuOpen((v) => !v)}
-              className={cn(
-                'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35',
-                menuOpen && 'bg-secondary text-foreground',
-              )}
-            >
-              <MoreHorizontal size={13} />
-            </button>
-            {menuOpen && (
-              <AnchoredPopover anchor={moreBtnRef} width={260} onClose={() => setMenuOpen(false)}>
-                {onLinkTask && (
-                  <>
-                    <MenuLabel>关联任务</MenuLabel>
-                    {tasks?.length ? (
-                      tasks.map((task) => (
-                        <MenuItem key={task.id} onClick={pickTask(task.id)}>
-                          <span className={cn('h-1.5 w-1.5 flex-none rounded-full', s.taskId === task.id ? 'bg-brand' : 'bg-transparent')} />
-                          <span className="min-w-0 truncate" title={task.title}>{task.title}</span>
-                        </MenuItem>
-                      ))
-                    ) : (
-                      <div className="px-2 py-1.5 text-[12px] text-muted-foreground">当前项目没有任务</div>
-                    )}
-                    {s.taskId && (
-                      <>
-                        <div className="my-1 border-t border-border" />
-                        <MenuItem danger onClick={pickTask(null)}>取消关联任务</MenuItem>
-                      </>
-                    )}
-                  </>
-                )}
-                {(onDetach || onUnimport) && (
-                  <>
-                    {onLinkTask && <div className="my-1 border-t border-border" />}
-                    <MenuLabel>会话</MenuLabel>
-                    {onDetach && (
-                      <MenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setMenuOpen(false)
-                          onDetach(s.id)
-                        }}
-                      >
-                        <LogOut size={13} className="flex-none text-muted-foreground" /> 移出项目
-                      </MenuItem>
-                    )}
-                    {onUnimport && (
-                      <MenuItem
-                        danger
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setMenuOpen(false)
-                          onUnimport(s.id)
-                        }}
-                      >
-                        <Trash2 size={13} className="flex-none" /> 取消导入
-                      </MenuItem>
-                    )}
-                  </>
-                )}
-              </AnchoredPopover>
+        <button
+          ref={moreBtnRef}
+          type="button"
+          title="更多"
+          aria-label="更多"
+          onClick={() => setMenuOpen((v) => !v)}
+          className={cn(
+            'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim hover:bg-secondary hover:text-foreground',
+            menuOpen && 'bg-secondary text-foreground',
+          )}
+        >
+          <MoreHorizontal size={13} />
+        </button>
+        {menuOpen && (
+          <AnchoredPopover anchor={moreBtnRef} width={184} onClose={() => setMenuOpen(false)}>
+            {/* 标为已读 when there's something unread (dock); otherwise offer 标为未读 */}
+            {ship === 'dock' ? (
+              <MenuItem onClick={markRead}>
+                <Check size={13} className="flex-none text-muted-foreground" /> 标为已读
+              </MenuItem>
+            ) : (
+              <MenuItem onClick={markUnread}>
+                <CircleDot size={13} className="flex-none text-muted-foreground" /> 标为未读
+              </MenuItem>
             )}
-          </>
+            {(onDetach || onUnimport) && (
+              <>
+                <div className="my-1 border-t border-border" />
+                {onDetach && (
+                  <MenuItem
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setMenuOpen(false)
+                      onDetach(s.id)
+                    }}
+                  >
+                    <LogOut size={13} className="flex-none text-muted-foreground" /> 移出项目
+                  </MenuItem>
+                )}
+                {onUnimport && (
+                  <MenuItem
+                    danger
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setMenuOpen(false)
+                      onUnimport(s.id)
+                    }}
+                  >
+                    <Trash2 size={13} className="flex-none" /> 取消导入
+                  </MenuItem>
+                )}
+              </>
+            )}
+          </AnchoredPopover>
         )}
         <button
           title={s.pinned ? '取消 Pin' : 'Pin 此会话'}

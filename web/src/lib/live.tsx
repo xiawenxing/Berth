@@ -16,24 +16,29 @@ interface LiveState {
    *  ref-backed and don't change `activity`'s reference, so they'd otherwise go stale. */
   rev: number
   markSeen: (sessionId: string) => void
+  /** Explicitly flag a session as unread (→ dock) regardless of activity, so 标为未读 works for any
+   *  row — including settled/old sessions not in the activity map. Cleared by markSeen / opening. */
+  markUnread: (sessionId: string) => void
   shipStatus: (sessionId: string, fallbackUpdatedAt?: number) => ShipStatus
 }
 
 const Ctx = createContext<LiveState | null>(null)
 
 const SEEN_KEY = 'berth-last-seen'
-function loadSeen(): Record<string, number> {
+const UNREAD_KEY = 'berth-unread' // explicit "标为未读" overrides (session ids), independent of activity
+function loadJson<T>(key: string, fallback: T): T {
   try {
-    return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}')
+    return JSON.parse(localStorage.getItem(key) || '') as T
   } catch {
-    return {}
+    return fallback
   }
 }
 
 export function LiveProvider({ children }: { children: ReactNode }) {
   const [activity, setActivity] = useState<Map<string, Activity>>(new Map())
   const updatedAt = useRef(new Map<string, number>())
-  const seen = useRef<Record<string, number>>(loadSeen())
+  const seen = useRef<Record<string, number>>(loadJson(SEEN_KEY, {}))
+  const unread = useRef<Record<string, boolean>>(loadJson(UNREAD_KEY, {}))
   const [rev, setRev] = useState(0)
   const bump = () => setRev((n) => n + 1)
 
@@ -94,8 +99,25 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     rev,
     markSeen: (sessionId) => {
       seen.current[sessionId] = Math.floor(Date.now() / 1000)
+      if (unread.current[sessionId]) {
+        delete unread.current[sessionId] // opening / reading clears an explicit unread flag
+        try {
+          localStorage.setItem(UNREAD_KEY, JSON.stringify(unread.current))
+        } catch {
+          /* ignore quota */
+        }
+      }
       try {
         localStorage.setItem(SEEN_KEY, JSON.stringify(seen.current))
+      } catch {
+        /* ignore quota */
+      }
+      bump()
+    },
+    markUnread: (sessionId) => {
+      unread.current[sessionId] = true
+      try {
+        localStorage.setItem(UNREAD_KEY, JSON.stringify(unread.current))
       } catch {
         /* ignore quota */
       }
@@ -104,6 +126,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     shipStatus: (sessionId, fallbackUpdatedAt) => {
       const a = activity.get(sessionId)
       if (a === 'running') return 'sail'
+      if (unread.current[sessionId]) return 'dock' // explicit 标为未读 wins over activity heuristics
       const u = updatedAt.current.get(sessionId) ?? fallbackUpdatedAt ?? 0
       const s = seen.current[sessionId] ?? 0
       if (a === 'settled' && u > s) return 'dock'
