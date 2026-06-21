@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, Sparkles, MoreHorizontal, Loader2 } from 'lucide-react'
+import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, Loader2, LogOut, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
 import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
@@ -33,6 +33,8 @@ function Row({
   tasks,
   onGenerateTitle,
   onLinkTask,
+  onDetach,
+  onUnimport,
 }: {
   s: SessionRow
   showCwd?: boolean
@@ -41,12 +43,17 @@ function Row({
   tasks?: SessionTaskOption[]
   onGenerateTitle?: (id: string) => Promise<void> | void
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onDetach?: (id: string) => void // 移出项目 (detach → 无归属)
+  onUnimport?: (id: string) => void // 取消导入 (remove from Berth's visible set)
 }) {
   const ship: ShipStatus = s.status === 'idle' ? 'moored' : s.status
   const moreBtnRef = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [generating, setGenerating] = useState(false)
   const canLinkTask = !!tasks?.length || !!s.taskId
+  // The ⋯ menu is shared: 关联任务 (when onLinkTask) + 移出项目/取消导入 (when onDetach/onUnimport).
+  const hasMenu = !!(onLinkTask || onDetach || onUnimport)
+  const menuEnabled = canLinkTask || !!onDetach || !!onUnimport
 
   // An in-flight launch placeholder: not yet a real, openable session — show 创建中… with a spinner
   // and no row actions. It's replaced by the real row the moment the session surfaces (data layer).
@@ -133,14 +140,14 @@ function Row({
             <Sparkles size={12} className={cn(generating && 'animate-pulse')} />
           </button>
         )}
-        {onLinkTask && (
+        {hasMenu && (
           <>
             <button
               ref={moreBtnRef}
               type="button"
               title="更多"
               aria-label="更多"
-              disabled={!canLinkTask}
+              disabled={!menuEnabled}
               onClick={() => setMenuOpen((v) => !v)}
               className={cn(
                 'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35',
@@ -151,21 +158,54 @@ function Row({
             </button>
             {menuOpen && (
               <AnchoredPopover anchor={moreBtnRef} width={260} onClose={() => setMenuOpen(false)}>
-                <MenuLabel>关联任务</MenuLabel>
-                {tasks?.length ? (
-                  tasks.map((task) => (
-                    <MenuItem key={task.id} onClick={pickTask(task.id)}>
-                      <span className={cn('h-1.5 w-1.5 flex-none rounded-full', s.taskId === task.id ? 'bg-brand' : 'bg-transparent')} />
-                      <span className="min-w-0 truncate" title={task.title}>{task.title}</span>
-                    </MenuItem>
-                  ))
-                ) : (
-                  <div className="px-2 py-1.5 text-[12px] text-muted-foreground">当前项目没有任务</div>
-                )}
-                {s.taskId && (
+                {onLinkTask && (
                   <>
-                    <div className="my-1 border-t border-border" />
-                    <MenuItem danger onClick={pickTask(null)}>取消关联任务</MenuItem>
+                    <MenuLabel>关联任务</MenuLabel>
+                    {tasks?.length ? (
+                      tasks.map((task) => (
+                        <MenuItem key={task.id} onClick={pickTask(task.id)}>
+                          <span className={cn('h-1.5 w-1.5 flex-none rounded-full', s.taskId === task.id ? 'bg-brand' : 'bg-transparent')} />
+                          <span className="min-w-0 truncate" title={task.title}>{task.title}</span>
+                        </MenuItem>
+                      ))
+                    ) : (
+                      <div className="px-2 py-1.5 text-[12px] text-muted-foreground">当前项目没有任务</div>
+                    )}
+                    {s.taskId && (
+                      <>
+                        <div className="my-1 border-t border-border" />
+                        <MenuItem danger onClick={pickTask(null)}>取消关联任务</MenuItem>
+                      </>
+                    )}
+                  </>
+                )}
+                {(onDetach || onUnimport) && (
+                  <>
+                    {onLinkTask && <div className="my-1 border-t border-border" />}
+                    <MenuLabel>会话</MenuLabel>
+                    {onDetach && (
+                      <MenuItem
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setMenuOpen(false)
+                          onDetach(s.id)
+                        }}
+                      >
+                        <LogOut size={13} className="flex-none text-muted-foreground" /> 移出项目
+                      </MenuItem>
+                    )}
+                    {onUnimport && (
+                      <MenuItem
+                        danger
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setMenuOpen(false)
+                          onUnimport(s.id)
+                        }}
+                      >
+                        <Trash2 size={13} className="flex-none" /> 取消导入
+                      </MenuItem>
+                    )}
                   </>
                 )}
               </AnchoredPopover>
@@ -207,6 +247,10 @@ function Section({
   tasks,
   onGenerateTitle,
   onLinkTask,
+  onDetach,
+  onUnimport,
+  onDetachGroup,
+  onUnimportGroup,
 }: {
   icon: ReactNode
   label: string
@@ -223,12 +267,20 @@ function Section({
   tasks?: SessionTaskOption[]
   onGenerateTitle?: (id: string) => Promise<void> | void
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onDetach?: (id: string) => void // row 移出项目
+  onUnimport?: (id: string) => void // row 取消导入
+  onDetachGroup?: (ids: string[]) => void // 移出整组
+  onUnimportGroup?: (ids: string[]) => void // 取消导入整组
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const [shown, setShown] = useState(limit ?? rows.length)
   const limited = limit != null && rows.length > limit
   const visible = limited ? rows.slice(0, shown) : rows
   const hidden = rows.length - visible.length
+  const groupMenuBtnRef = useRef<HTMLSpanElement>(null)
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false)
+  const hasGroupMenu = !!(onDetachGroup || onUnimportGroup)
+  const groupIds = rows.map((r) => r.id)
 
   return (
     <div className="border-t border-border first:border-t-0">
@@ -259,7 +311,50 @@ function Section({
             <FolderInput size={13} />
           </span>
         )}
+        {hasGroupMenu && (
+          <span
+            ref={groupMenuBtnRef}
+            role="button"
+            tabIndex={-1}
+            title="该目录的更多操作"
+            onClick={(e) => {
+              e.stopPropagation()
+              setGroupMenuOpen((v) => !v)
+            }}
+            className="flex-none rounded p-1 text-text-dim hover:bg-secondary hover:text-foreground"
+          >
+            <MoreHorizontal size={13} />
+          </span>
+        )}
       </button>
+      {groupMenuOpen && (
+        <AnchoredPopover anchor={groupMenuBtnRef} width={184} onClose={() => setGroupMenuOpen(false)}>
+          <MenuLabel>该目录</MenuLabel>
+          {onDetachGroup && (
+            <MenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                setGroupMenuOpen(false)
+                onDetachGroup(groupIds)
+              }}
+            >
+              <LogOut size={13} className="flex-none text-muted-foreground" /> 移出整组（{groupIds.length}）
+            </MenuItem>
+          )}
+          {onUnimportGroup && (
+            <MenuItem
+              danger
+              onClick={(e) => {
+                e.stopPropagation()
+                setGroupMenuOpen(false)
+                onUnimportGroup(groupIds)
+              }}
+            >
+              <Trash2 size={13} className="flex-none" /> 取消导入整组（{groupIds.length}）
+            </MenuItem>
+          )}
+        </AnchoredPopover>
+      )}
       {!collapsed && (
         <div>
           {visible.map((s) => (
@@ -272,6 +367,8 @@ function Section({
               tasks={tasks}
               onGenerateTitle={onGenerateTitle}
               onLinkTask={onLinkTask}
+              onDetach={onDetach}
+              onUnimport={onUnimport}
             />
           ))}
           {limited && (
@@ -302,9 +399,14 @@ export function SessionModule({
   onOpen,
   onPin,
   onImport,
+  onImportOther,
   tasks,
   onGenerateTitle,
   onLinkTask,
+  onDetach,
+  onUnimport,
+  onDetachGroup,
+  onUnimportGroup,
 }: {
   pin: SessionRow[]
   groups: CwdGroup[]
@@ -315,9 +417,14 @@ export function SessionModule({
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
   onImport?: (rawCwd: string) => void // 导入某 cwd 组目录下磁盘上的其他会话
+  onImportOther?: () => void // 导入其他（非装载）目录的会话 — pick a folder, then ImportDialog
   tasks?: SessionTaskOption[]
   onGenerateTitle?: (id: string) => Promise<void> | void
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onDetach?: (id: string) => void // row 移出项目
+  onUnimport?: (id: string) => void // row 取消导入
+  onDetachGroup?: (ids: string[], rawCwd?: string) => void // 移出整组
+  onUnimportGroup?: (ids: string[], rawCwd?: string) => void // 取消导入整组
 }) {
   const pendingRows = pending ?? []
   const empty = pin.length === 0 && groups.length === 0 && pendingRows.length === 0
@@ -337,6 +444,15 @@ export function SessionModule({
             className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] text-muted-foreground hover:bg-accent disabled:opacity-50"
           >
             <RefreshCw size={12} className={cn(syncing && 'animate-spin')} /> 同步
+          </button>
+        )}
+        {onImportOther && (
+          <button
+            onClick={onImportOther}
+            title="从其他目录导入会话（不登记为装载目录）"
+            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] text-muted-foreground hover:bg-accent hover:text-brand"
+          >
+            <FolderPlus size={12} /> 导入其他目录
           </button>
         )}
         <button
@@ -373,6 +489,8 @@ export function SessionModule({
                 tasks={tasks}
                 onGenerateTitle={onGenerateTitle}
                 onLinkTask={onLinkTask}
+                onDetach={onDetach}
+                onUnimport={onUnimport}
               />
             )}
             {groups.map((g) => {
@@ -400,6 +518,10 @@ export function SessionModule({
                   tasks={tasks}
                   onGenerateTitle={onGenerateTitle}
                   onLinkTask={onLinkTask}
+                  onDetach={onDetach}
+                  onUnimport={onUnimport}
+                  onDetachGroup={onDetachGroup ? (ids) => onDetachGroup(ids, g.rawCwd) : undefined}
+                  onUnimportGroup={onUnimportGroup ? (ids) => onUnimportGroup(ids, g.rawCwd) : undefined}
                 />
               )
             })}

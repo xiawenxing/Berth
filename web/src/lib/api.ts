@@ -155,6 +155,14 @@ export const api = {
   // Session-grained import: mark sessions as in Berth's visible set (+ attach when projectId given).
   importSessions: (ids: string[], projectId?: string) =>
     send('POST', '/api/session-import', { ids, projectId }),
+  // 移出项目: detach the given sessions (attach → null). They leave the project but stay in Berth
+  // (resurface under 无归属). Does NOT touch session_import or disk transcripts.
+  detachSessions: (ids: string[]) =>
+    send('POST', '/api/sessions/detach', { ids }) as Promise<{ ok: boolean; count: number }>,
+  // 取消导入: remove the given sessions from Berth's visible set (+ detach). They vanish from the list
+  // unless an independent signal (pin/edge/bound-launch/import-dir) still keeps them curated.
+  unimportSessions: (ids: string[]) =>
+    send('POST', '/api/session-import/remove', { ids }) as Promise<{ ok: boolean; count: number }>,
   contextUpdate: (kind: 'task' | 'project', key: string, userInput: string, images?: string[]) =>
     send('POST', '/api/context/update', { kind, key, userInput, images }),
   // Read the cached 项目小结 + whether a (re)generation is in flight (null summary if never generated).

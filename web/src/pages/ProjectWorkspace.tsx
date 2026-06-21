@@ -6,6 +6,7 @@ import { SessionModule } from '@/components/workspace/SessionModule'
 import { CargoDefaults } from '@/components/workspace/CargoDefaults'
 import { ImportDialog } from '@/components/ImportDialog'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
+import { Dialog } from '@/components/ui/Overlay'
 import { useUI } from '@/lib/ui-store'
 import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
 import { ProjectSummaryPopover, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
@@ -42,11 +43,25 @@ export function ProjectWorkspace() {
     resync().finally(() => setSyncing(false))
   }
   // Per-cwd-group import: preview the dir's on-disk sessions, then the dialog imports the picked ones.
-  const [importDlg, setImportDlg] = useState<{ path: string; sessions: PreviewSession[] } | null>(null)
+  // `allowRegister` (§10.3, 导入其他目录) lets the dialog also offer 「同时登记为装载目录」.
+  const [importDlg, setImportDlg] = useState<{ path: string; sessions: PreviewSession[]; allowRegister?: boolean } | null>(null)
   const [importBusy, setImportBusy] = useState(false)
   const importFromGroup = (rawCwd: string) => {
     api.previewDir(rawCwd).then(({ sessions }) => setImportDlg({ path: rawCwd, sessions })).catch(() => {})
   }
+  // §10.3 导入其他目录: pick an arbitrary folder, preview its on-disk sessions, then import (optionally register).
+  const importOther = async () => {
+    try {
+      const picked = await api.pickFolder()
+      if (!picked?.path) return
+      const { sessions } = await api.previewDir(picked.path)
+      setImportDlg({ path: picked.path, sessions, allowRegister: true })
+    } catch {
+      // pick / preview failures are non-fatal
+    }
+  }
+  // §10.1 移除装载目录 (parent-owned so it can offer 「一并移出会话」 with a real session count).
+  const [removeCargo, setRemoveCargo] = useState<{ cwd: string } | null>(null)
 
   const project = projects.find((p) => p.id === id)
   const projName = project?.name ?? id
@@ -234,6 +249,48 @@ export function ProjectWorkspace() {
       .edge(sessionId, taskId, id)
       .then(() => reload())
       .catch(() => reload())
+
+  // ── 会话移除（移出项目 / 取消导入）+ 装载目录联动 (§10.2) ──
+  const norm = (p: string) => p.replace(/\/+$/, '')
+  // The registered 装载目录 cwd matching `cwd` (trailing-slash tolerant), or null.
+  const registeredPath = (cwd: string) =>
+    (project?.pathsMeta ?? []).map((p) => p.cwd).find((rc) => norm(rc) === norm(cwd)) ?? null
+  const cwdsOf = (ids: string[]) =>
+    ids.map((sid) => projSessions.find((s) => s.sessionId === sid)?.cwd ?? '').filter(Boolean)
+  // After a removal that empties a cargo-registered group, offer to also drop the 装载目录 registration.
+  // `projSessions` here is the pre-reload snapshot, so we subtract the just-removed ids explicitly.
+  const offerRemoveCargo = (removedIds: string[], cwds: string[]) => {
+    for (const cwd of [...new Set(cwds)]) {
+      const reg = registeredPath(cwd)
+      if (!reg) continue
+      const remaining = projSessions.filter((s) => s.cwd && norm(s.cwd) === norm(cwd) && !removedIds.includes(s.sessionId))
+      if (remaining.length === 0 && window.confirm(`目录「${shortCwd(cwd)}」已无会话，是否同时移除装载目录登记？`)) {
+        api.removePath(id, reg).then(() => reload()).catch(() => reload())
+      }
+    }
+  }
+  const onDetach = (sid: string) =>
+    api.detachSessions([sid]).then(() => { reload(); offerRemoveCargo([sid], cwdsOf([sid])) }).catch(() => reload())
+  const onUnimport = (sid: string) =>
+    api.unimportSessions([sid]).then(() => { reload(); offerRemoveCargo([sid], cwdsOf([sid])) }).catch(() => reload())
+  const onDetachGroup = (ids: string[], rawCwd?: string) => {
+    if (!ids.length) return
+    if (!window.confirm(`将该目录下的 ${ids.length} 个会话移出本项目（仍保留在 Berth，可在「无归属」重新归类）？`)) return
+    api.detachSessions(ids).then(() => { reload(); offerRemoveCargo(ids, rawCwd ? [rawCwd] : cwdsOf(ids)) }).catch(() => reload())
+  }
+  const onUnimportGroup = (ids: string[], rawCwd?: string) => {
+    if (!ids.length) return
+    // §6.3: the masked workspace-default group holds bound-launch sessions that un-import won't hide.
+    const isWs = !!(rawCwd && project?.workspaceCwd && norm(rawCwd) === norm(project.workspaceCwd))
+    const note = isWs ? '\n（部分由 Berth 起的会话可能仍会显示——它们属于本项目的活跃会话。）' : ''
+    if (!window.confirm(`从 Berth 会话列表移除该目录下的 ${ids.length} 个会话？不会删除磁盘上的转录文件。${note}`)) return
+    api.unimportSessions(ids).then(() => { reload(); offerRemoveCargo(ids, rawCwd ? [rawCwd] : cwdsOf(ids)) }).catch(() => reload())
+  }
+  // §10.1 sessions under a to-be-removed 装载目录 (for the 「一并移出会话」 count + detach).
+  const removeCargoIds = useMemo(
+    () => (removeCargo ? projSessions.filter((s) => s.cwd && norm(s.cwd) === norm(removeCargo.cwd)).map((s) => s.sessionId) : []),
+    [removeCargo, projSessions],
+  )
 
   // ⋯ task-menu actions: optimistic local edit NOW, persist via PATCH/DELETE, then reload.
   const onSetPriority = (taskId: string, priority: Task['priority']) => {
@@ -439,10 +496,15 @@ export function ProjectWorkspace() {
           onOpen={openRow}
           onPin={onPin}
           onImport={importFromGroup}
+          onImportOther={importOther}
           onGenerateTitle={onGenerateSessionTitle}
           onLinkTask={onLinkSessionTask}
+          onDetach={onDetach}
+          onUnimport={onUnimport}
+          onDetachGroup={onDetachGroup}
+          onUnimportGroup={onUnimportGroup}
         />
-        <CargoDefaults paths={project?.pathsMeta ?? []} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} />
+        <CargoDefaults paths={project?.pathsMeta ?? []} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
       </div>
 
       <NewTaskDialog open={newTask} onClose={() => setNewTask(false)} onCreate={createTask} />
@@ -453,11 +515,14 @@ export function ProjectWorkspace() {
           sessions={importDlg.sessions}
           mode="import"
           busy={importBusy}
+          registerOption={importDlg.allowRegister}
           onCancel={() => setImportDlg(null)}
-          onConfirm={async (ids) => {
+          onConfirm={async (ids, alsoRegister) => {
             setImportBusy(true)
             try {
-              await api.importSessions(ids, id)
+              // §10.3: when imported from 「导入其他目录」 with the box checked, also register the dir.
+              if (importDlg.allowRegister && alsoRegister) await api.addPath(id, importDlg.path, { enabled: true })
+              if (ids.length) await api.importSessions(ids, id)
               setImportDlg(null)
               doResync()
             } finally {
@@ -466,7 +531,90 @@ export function ProjectWorkspace() {
           }}
         />
       )}
+      {removeCargo && (
+        <RemoveCargoDialog
+          cwd={removeCargo.cwd}
+          count={removeCargoIds.length}
+          onCancel={() => setRemoveCargo(null)}
+          onConfirm={async (alsoDetach) => {
+            await api.removePath(id, removeCargo.cwd)
+            if (alsoDetach && removeCargoIds.length) await api.detachSessions(removeCargoIds)
+            setRemoveCargo(null)
+            doResync()
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/**
+ * 移除装载目录 — §10.1. Always drops the 货舱 registration; optionally also 移出项目 (detach) the
+ * sessions that ran under that dir, sending them back to 无归属. Never touches disk transcripts.
+ */
+function RemoveCargoDialog({
+  cwd,
+  count,
+  onCancel,
+  onConfirm,
+}: {
+  cwd: string
+  count: number
+  onCancel: () => void
+  onConfirm: (alsoDetach: boolean) => Promise<void>
+}) {
+  const [detach, setDetach] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const confirm = async () => {
+    setBusy(true)
+    try {
+      await onConfirm(detach)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open onClose={busy ? () => {} : onCancel} width={460}>
+      <div className="flex flex-col">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-[13px] font-semibold text-foreground">移除装载目录</div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-text-dim">{cwd}</div>
+        </div>
+        <div className="px-4 py-3 text-[12px] text-muted-foreground">
+          仅移除「默认装载」登记，不影响磁盘文件。
+          {count > 0 && (
+            <label className="mt-2.5 flex cursor-pointer items-start gap-2 text-foreground select-none">
+              <input
+                type="checkbox"
+                checked={detach}
+                onChange={(e) => setDetach(e.target.checked)}
+                disabled={busy}
+                className="mt-0.5 h-3.5 w-3.5 accent-brand"
+              />
+              <span>
+                同时把该目录下的 <b className="text-brand">{count}</b> 个会话移出项目（回到「无归属」，仍保留在 Berth）。
+              </span>
+            </label>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            取消
+          </button>
+          <button
+            className="rounded-md bg-destructive px-3 py-1.5 text-[12px] font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+            onClick={confirm}
+            disabled={busy}
+          >
+            {busy ? '移除中…' : '移除'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
   )
 }
 

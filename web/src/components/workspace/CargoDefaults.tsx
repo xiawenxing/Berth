@@ -42,12 +42,16 @@ export function CargoDefaults({
   paths,
   onOpenDoc,
   onDone,
+  onRemovePath,
 }: {
   projectId?: string
   projectName?: string
   paths: ApiPathMeta[]
   onOpenDoc?: (target: { kind: 'project' | 'task'; key: string; path: string; title: string }) => void
   onDone?: () => void
+  // When provided, the parent owns the remove flow (so it can offer 「一并移出会话」, §10.1).
+  // Absent → fall back to a direct path removal.
+  onRemovePath?: (cwd: string) => void
 }) {
   const [dialog, setDialog] = useState<{ path: string; sessions: PreviewSession[] } | null>(null)
   const [picking, setPicking] = useState(false)
@@ -134,7 +138,7 @@ export function CargoDefaults({
               right={
                 <span className="flex items-center gap-2">
                   <Toggle on={d.enabled} onChange={() => toggle(d.cwd, !d.enabled)} />
-                  <button onClick={() => remove(d.cwd)} title="移除" className="rounded p-1 text-text-dim hover:bg-secondary hover:text-destructive">
+                  <button onClick={() => (onRemovePath ? onRemovePath(d.cwd) : remove(d.cwd))} title="移除" className="rounded p-1 text-text-dim hover:bg-secondary hover:text-destructive">
                     <X size={13} />
                   </button>
                 </span>

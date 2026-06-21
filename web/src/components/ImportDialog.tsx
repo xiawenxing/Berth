@@ -25,15 +25,20 @@ export function ImportDialog({
   busy,
   onCancel,
   onConfirm,
+  registerOption,
 }: {
   path: string
   sessions: PreviewSession[]
   mode: 'register' | 'import'
   busy: boolean
   onCancel: () => void
-  onConfirm: (ids: string[]) => void
+  // alsoRegister carries the optional 「同时登记为装载目录」 choice (only when `registerOption` is set).
+  onConfirm: (ids: string[], alsoRegister?: boolean) => void
+  // 'import' mode only: when true, render a 「同时登记为装载目录」 checkbox (default off, §10.3).
+  registerOption?: boolean
 }) {
   const [checked, setChecked] = useState<Set<string>>(() => new Set()) // default: none
+  const [register, setRegister] = useState(false) // 同时登记为装载目录 (opt-in, §10.3)
   const [shown, setShown] = useState(SESSION_SHOW_MORE_PAGE)
   const allIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions])
   const allOn = sessions.length > 0 && checked.size === sessions.length
@@ -130,7 +135,20 @@ export function ImportDialog({
           </>
         )}
 
-        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+        <div className="flex items-center gap-2 border-t border-border px-4 py-3">
+          {registerOption && mode === 'import' && (
+            <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] text-muted-foreground select-none">
+              <input
+                type="checkbox"
+                checked={register}
+                onChange={(e) => setRegister(e.target.checked)}
+                disabled={busy}
+                className="h-3.5 w-3.5 accent-brand"
+              />
+              同时登记为装载目录
+            </label>
+          )}
+          <span className="flex-1" />
           <button
             className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
             onClick={onCancel}
@@ -140,7 +158,7 @@ export function ImportDialog({
           </button>
           <button
             className="rounded-md bg-brand px-3 py-1.5 text-[12px] font-medium text-brand-foreground hover:bg-brand/90 disabled:opacity-50"
-            onClick={() => onConfirm([...checked])}
+            onClick={() => onConfirm([...checked], register)}
             disabled={confirmDisabled}
           >
             {confirmLabel}
