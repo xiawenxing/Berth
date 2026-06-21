@@ -50,7 +50,7 @@ export function Kanban({
   }
 
   return (
-    <div className="flex max-h-[700px] w-full items-start gap-3 overflow-x-auto pb-1">
+    <div className="flex w-full items-start gap-3 overflow-x-auto pb-1">
       {statuses.map((status) => {
         const items = tasks.filter((t) => resolveColumn(t.status, statuses) === status)
         const isActive = status === active
