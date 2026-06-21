@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon, RefreshCw, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
@@ -58,20 +58,39 @@ export function Unassigned() {
       setPicking(false)
     }
   }
-  // Optimistic pin state: there's no `pinned` field on the unassigned list, so
-  // track locally which ids we've toggled on (POST /pin persists server-side).
-  const [pinned, setPinned] = useState<Set<string>>(new Set())
+  const [pinOverrides, setPinOverrides] = useState<Map<string, boolean>>(new Map())
   const activeProjects = useMemo(() => projects.filter((p) => !p.archived), [projects])
+  const isPinned = (s: ApiSession) => pinOverrides.get(s.sessionId) ?? !!s.pinned
 
-  const togglePin = (id: string) => {
-    setPinned((prev) => {
-      const next = new Set(prev)
-      const on = !next.has(id)
-      if (on) next.add(id)
-      else next.delete(id)
-      api.pin(id, on).catch(() => {})
-      return next
+  useEffect(() => {
+    setPinOverrides((cur) => {
+      if (cur.size === 0) return cur
+      let changed = false
+      const next = new Map(cur)
+      for (const s of sessions) {
+        const override = next.get(s.sessionId)
+        if (override !== undefined && override === !!s.pinned) {
+          next.delete(s.sessionId)
+          changed = true
+        }
+      }
+      return changed ? next : cur
     })
+  }, [sessions])
+
+  const togglePin = (id: string, nextOn: boolean) => {
+    setPinOverrides((prev) => new Map(prev).set(id, nextOn))
+    api
+      .pin(id, nextOn)
+      .then(() => reload())
+      .catch(() => {
+        setPinOverrides((prev) => {
+          const next = new Map(prev)
+          next.delete(id)
+          return next
+        })
+        reload()
+      })
   }
   const attach = (sessionId: string, projectId: string) => {
     api
@@ -80,11 +99,16 @@ export function Unassigned() {
       .catch(() => reload())
   }
 
-  // Unassigned = sessions with no projectId, grouped by raw cwd.
+  // Unassigned = sessions with no projectId. Pinned sessions get a dedicated section above cwd groups.
+  const pinSessions = useMemo(
+    () => sessions.filter((s) => !s.projectId && isPinned(s)).sort((a, b) => b.updatedAt - a.updatedAt),
+    [sessions, pinOverrides],
+  )
   const groups = useMemo(() => {
     const m = new Map<string, ApiSession[]>()
     for (const s of sessions) {
       if (s.projectId) continue
+      if (isPinned(s)) continue
       const key = s.cwd || ''
       const arr = m.get(key)
       if (arr) arr.push(s)
@@ -94,9 +118,9 @@ export function Unassigned() {
       cwd,
       sessions: list.slice().sort((a, b) => b.updatedAt - a.updatedAt),
     }))
-  }, [sessions])
+  }, [sessions, pinOverrides])
 
-  const allUnassigned = useMemo(() => groups.flatMap((g) => g.sessions), [groups])
+  const allUnassigned = useMemo(() => [...pinSessions, ...groups.flatMap((g) => g.sessions)], [pinSessions, groups])
   // First real unassigned session selected by default; fall back if selection vanished.
   const sel =
     allUnassigned.find((s) => s.sessionId === selId) ?? allUnassigned[0] ?? null
@@ -141,19 +165,37 @@ export function Unassigned() {
           {allUnassigned.length === 0 ? (
             <p className="px-3 py-4 text-[12px] text-muted-foreground">没有无归属会话</p>
           ) : (
-            groups.map((g) => (
-              <CwdGroup
-                key={g.cwd || '__no_cwd__'}
-                cwd={g.cwd}
-                sessions={g.sessions.filter((s) => match(s, q))}
-                selId={sel?.sessionId}
-                onSelect={select}
-                pinned={pinned}
-                onTogglePin={togglePin}
-                projects={activeProjects}
-                onAttach={attach}
-              />
-            ))
+            <>
+              {pinSessions.length > 0 && (
+                <SessionGroup
+                  key="__pin__"
+                  label="Pin"
+                  icon={<Pin size={12} className="text-priority" />}
+                  sessions={pinSessions.filter((s) => match(s, q))}
+                  selId={sel?.sessionId}
+                  onSelect={select}
+                  isPinned={isPinned}
+                  onTogglePin={togglePin}
+                  projects={activeProjects}
+                  onAttach={attach}
+                  showCwd
+                />
+              )}
+              {groups.map((g) => (
+                <SessionGroup
+                  key={g.cwd || '__no_cwd__'}
+                  label={shortCwd(g.cwd) || '(无 cwd)'}
+                  labelMono
+                  sessions={g.sessions.filter((s) => match(s, q))}
+                  selId={sel?.sessionId}
+                  onSelect={select}
+                  isPinned={isPinned}
+                  onTogglePin={togglePin}
+                  projects={activeProjects}
+                  onAttach={attach}
+                />
+              ))}
+            </>
           )}
         </div>
       </div>
@@ -208,33 +250,37 @@ export function Unassigned() {
   )
 }
 
-function CwdGroup({
-  cwd,
+function SessionGroup({
+  label,
+  labelMono,
+  icon,
   sessions,
   selId,
   onSelect,
-  pinned,
+  isPinned,
   onTogglePin,
   projects,
   onAttach,
+  showCwd,
 }: {
-  cwd: string
+  label: string
+  labelMono?: boolean
+  icon?: ReactNode
   sessions: ApiSession[]
   selId?: string
   onSelect: (s: ApiSession) => void
-  pinned: Set<string>
-  onTogglePin: (id: string) => void
+  isPinned: (s: ApiSession) => boolean
+  onTogglePin: (id: string, nextOn: boolean) => void
   projects: ApiProject[]
   onAttach: (sessionId: string, projectId: string) => void
+  showCwd?: boolean
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const LIMIT = 4
   const [shown, setShown] = useState(LIMIT)
-  const live = useLive()
   if (sessions.length === 0) return null
   const visible = sessions.slice(0, shown)
   const hidden = sessions.length - visible.length
-  const label = shortCwd(cwd) || '(无 cwd)'
   return (
     <div>
       <button
@@ -242,7 +288,8 @@ function CwdGroup({
         className="flex w-full items-center gap-1.5 px-3 py-1 text-[11px] text-muted-foreground hover:text-foreground"
       >
         {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-        <span className="font-mono">{label}</span>
+        {icon}
+        <span className={cn(labelMono && 'font-mono')}>{label}</span>
         <span className="ml-auto">{sessions.length}</span>
       </button>
       {!collapsed && (
@@ -253,10 +300,11 @@ function CwdGroup({
               s={s}
               selected={selId === s.sessionId}
               onSelect={onSelect}
-              isPinned={pinned.has(s.sessionId)}
+              isPinned={isPinned(s)}
               onTogglePin={onTogglePin}
               projects={projects}
               onAttach={onAttach}
+              showCwd={showCwd}
             />
           ))}
           {sessions.length > LIMIT && (
@@ -285,14 +333,16 @@ function SessionListRow({
   onTogglePin,
   projects,
   onAttach,
+  showCwd,
 }: {
   s: ApiSession
   selected: boolean
   onSelect: (s: ApiSession) => void
   isPinned: boolean
-  onTogglePin: (id: string) => void
+  onTogglePin: (id: string, nextOn: boolean) => void
   projects: ApiProject[]
   onAttach: (sessionId: string, projectId: string) => void
+  showCwd?: boolean
 }) {
   const live = useLive()
   const { reload } = useData()
@@ -349,9 +399,9 @@ function SessionListRow({
       <Glyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-foreground" title={s.title || s.sessionId}>{s.title || s.sessionId}</div>
-        {/* #7: rows are grouped by cwd already — drop the redundant path, keep just the CLI badge */}
         <div className="mt-0.5 flex items-center gap-1.5">
           <CliBadge cli={s.cli} />
+          {showCwd && <span className="truncate text-[11px] text-text-dim">{shortCwd(s.cwd)}</span>}
         </div>
       </div>
 
@@ -365,7 +415,7 @@ function SessionListRow({
           role="button"
           tabIndex={-1}
           title={isPinned ? '取消置顶' : '置顶'}
-          onClick={() => onTogglePin(s.sessionId)}
+          onClick={() => onTogglePin(s.sessionId, !isPinned)}
           className={cn(
             'flex-none rounded p-1 hover:bg-secondary',
             isPinned
