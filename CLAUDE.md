@@ -3,6 +3,22 @@
 Read **`docs/ARCHITECTURE.md` first** (module map, the persistent-PTY model, data model, API surface,
 and the landmines that cost real debugging time). This file is just the working rules.
 
+## ⚠️ The frontend lives in `web/` (Berth 2.0) — `public/` is FROZEN
+
+There are **two** frontends in this repo. Know which one you're editing:
+
+- **`web/`** — the **React SPA (Berth 2.0)**, Vite + TypeScript + Tailwind. **This is the active
+  frontend.** All new features, UI changes, and frontend bug fixes go here.
+- **`public/`** (`app.js`, `style.css`, `tokens.css`, `index.html`) — the legacy vanilla-JS 1.0 UI.
+  It is **paused / maintenance-frozen**. Do **not** add features or UI changes here.
+
+If a task asks for a frontend change and you find yourself editing `public/`, **stop** — the change
+almost certainly belongs in `web/` instead. (This branch already accumulated several 1.0-only commits
+— image-paste, empty-board CTA, launch-scope fix — that had to be re-done or migrated into `web/`;
+don't add more.) Only touch `public/` for a server-contract change the old client still needs to keep
+booting, and call that out explicitly. The shared backend is `src/` (Node server + REST/WS) — that
+serves both, so backend work is normal regardless.
+
 ## Commit conventions — commit promptly, in logical chunks
 
 - **Commit early and often.** Each self-contained change (a fix, a feature, a refactor) gets its own

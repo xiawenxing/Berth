@@ -1,3 +1,7 @@
+/* ⚠️ FROZEN — Berth 1.0 (legacy vanilla UI). The active frontend is the React SPA in `web/`
+ *    (Berth 2.0); its styles are Tailwind classes + `web/src/index.css` + `web/src/lib/theme.ts`.
+ *    Do NOT add UI/style changes here — they belong in `web/`. See CLAUDE.md. */
+
 /* ── Reset & base ──────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

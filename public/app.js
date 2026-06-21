@@ -1,4 +1,9 @@
 /**
+ * ⚠️ FROZEN — Berth 1.0 (legacy vanilla-JS UI). Maintenance-paused. The active frontend is the
+ *    React SPA in `web/` (Berth 2.0). Do NOT add features or UI changes here — they belong in `web/`.
+ *    See CLAUDE.md → "The frontend lives in `web/`". Only edit this file for a server-contract fix
+ *    the old client still needs to boot.
+ *
  * Berth UI — vanilla JS, no framework
  * Functions: loadAll, renderSidebar, relativeTime, openTerminal, closeTerminal, pin, assign
  * View router: setMode('now'|'projects'|'sessions'), openProject(name), openTerminalFor(sessionId)

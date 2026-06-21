@@ -1,4 +1,8 @@
 /* ============================================================================
+ * ⚠️ FROZEN — Berth 1.0 (legacy vanilla UI) design tokens. The active frontend is the React SPA in
+ *    `web/` (Berth 2.0); its themes/palettes live in `web/src/lib/theme.ts`. Edit palettes THERE,
+ *    not here. See CLAUDE.md → "The frontend lives in `web/`".
+ *
  * Berth design tokens — ported from multica's shadcn/ui theme (oklch neutral).
  * Dark is the default (:root); light is opt-in via `html.light`.
  * Every consumer is theme-agnostic: same variable names, different values.

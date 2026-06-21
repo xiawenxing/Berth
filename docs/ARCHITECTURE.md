@@ -120,9 +120,12 @@ Run: `npm start` (vendors xterm+marked, then `tsx bin/berth-serve.ts`) → http:
 **Wiring:** `server/index.ts` (express + ws, JSON limit 30mb for pasted images), `server/api.ts`
 (all REST routes), `bin/berth-serve.ts` (entry).
 
-**Frontend:** `public/{index.html,app.js,style.css}` — currently vanilla JS with no build step (a
-demo-stage choice, see "What Berth is" / Roadmap — the target is a built React SPA). xterm +
-marked vendored into `public/vendor/` by `npm run vendor`.
+**Frontend:** there are **two** trees. **`web/` is the active frontend (Berth 2.0)** — a built React
+SPA (Vite + TypeScript + Tailwind; `web/src/`, design tokens/themes in `web/src/lib/theme.ts`). **All
+new frontend work goes there.** **`public/{index.html,app.js,style.css}` is the FROZEN 1.0 UI**
+(legacy vanilla JS, no build) — maintenance-paused; do not add features/UI changes to it (see
+CLAUDE.md). Both are served by the same `src/` Node backend. The rest of this section documents the
+frozen 1.0 tree for reference (xterm + marked vendored into `public/vendor/` by `npm run vendor`).
 - **Design system (shadcn-style, vanilla):** `public/tokens.css` (oklch neutral palette, dual theme —
   dark is default `:root`, light is `html.light`; radius/shadow/type vars; legacy `--bg/--text/--accent…`
   aliased onto semantic tokens) + `public/components.css` (hand-written `.btn/.card/.badge/.input/.dialog/
