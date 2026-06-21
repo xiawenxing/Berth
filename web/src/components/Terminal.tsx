@@ -43,6 +43,18 @@ function terminalTheme() {
   }
 }
 
+function clipboardImageFiles(e: ClipboardEvent): File[] {
+  const items = e.clipboardData?.items
+  if (!items) return []
+  const files: File[] = []
+  for (const item of Array.from(items)) {
+    if (!item.type.startsWith('image/')) continue
+    const file = item.getAsFile()
+    if (file) files.push(file)
+  }
+  return files
+}
+
 /**
  * Live terminal over the persistent-PTY /pty WebSocket. Two modes:
  *  - resume/attach: pass `sessionId` → /pty?sessionId=… (replays scrollback, streams)
@@ -114,6 +126,22 @@ export function Terminal({
     const sendResize = () => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'r', c: term.cols, r: term.rows }))
     }
+    const sendImage = (file: File) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (ws.readyState !== WebSocket.OPEN || typeof reader.result !== 'string') return
+        ws.send(JSON.stringify({ t: 'img', name: file.name || 'paste', d: reader.result }))
+      }
+      reader.readAsDataURL(file)
+    }
+    const onPaste = (e: ClipboardEvent) => {
+      const files = clipboardImageFiles(e)
+      if (!files.length) return
+      e.preventDefault()
+      e.stopPropagation()
+      files.forEach(sendImage)
+    }
+    host.addEventListener('paste', onPaste, true)
     ws.addEventListener('open', sendResize, { once: true })
 
     if (sessionId && !launch && initialInput) {
@@ -165,6 +193,7 @@ export function Terminal({
       resizeObserver?.disconnect()
       window.removeEventListener('resize', onResize)
       host.removeEventListener('mousedown', refocus)
+      host.removeEventListener('paste', onPaste, true)
       disp.dispose()
       ws.close()
       term.dispose()
