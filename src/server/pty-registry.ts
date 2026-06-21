@@ -123,6 +123,15 @@ export function attachViewer(key: string, ws: WebSocket): boolean {
       const saved = currentDocStore().saveAttachment(msg.d, typeof msg.name === 'string' ? msg.name : 'paste')
       if (saved) {
         const injected = saved.abs.replace(/ /g, '\\ ') + ' '   // escape spaces (drag-drop convention)
+        if (msg.display === 'placeholder') {
+          try {
+            ws.send(JSON.stringify({
+              __berth: 'image-paste',
+              injected,
+              placeholder: typeof msg.placeholder === 'string' && msg.placeholder ? msg.placeholder : '[图片] ',
+            }))
+          } catch {}
+        }
         entry.pty.write(injected)
         activity.input(key, injected)
       }

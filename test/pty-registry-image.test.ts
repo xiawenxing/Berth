@@ -54,6 +54,23 @@ describe('pty-registry image paste', () => {
     killPty('img-1')
   })
 
+  it('can send a placeholder control frame before writing the hidden image path', () => {
+    const pty = fakePty()
+    registerPty('img-placeholder', pty)
+    const ws = fakeWs()
+    attachViewer('img-placeholder', ws)
+
+    ws.emitMsg({ t: 'img', name: 'shot', d: 'data:image/png;base64,AAAA', display: 'placeholder', placeholder: '[图片] ' })
+
+    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({
+      __berth: 'image-paste',
+      injected: '/Users/me/Documents/Obsidian\\ Vault/assets/x.png ',
+      placeholder: '[图片] ',
+    }))
+    expect(pty.write).toHaveBeenCalledWith('/Users/me/Documents/Obsidian\\ Vault/assets/x.png ')
+    killPty('img-placeholder')
+  })
+
   it('falls back to a default name hint when none is provided', () => {
     const pty = fakePty()
     registerPty('img-name', pty)
