@@ -17,7 +17,7 @@ import type { AgentCli } from '@/lib/api'
  */
 export function LaunchDialog() {
   const { launch, closeLaunch, openDrawer } = useUI()
-  const { projects, agents } = useData()
+  const { projects, agents, sessions, addPending } = useData()
   const [dest, setDest] = useState<'task' | 'free'>('task')
   const [cli, setCli] = useState<AgentCli>('claude')
   const [freeText, setFreeText] = useState('')
@@ -54,19 +54,35 @@ export function LaunchDialog() {
   const sail = () => {
     if (!canSail || !selectedAgent) return
     const cwd = enabledPaths.length === 0 ? '' : selectedCwd || '' // '' → server workspace fallback
+    const cwdLabel = cwd ? shortCwd(cwd) : '项目默认目录'
+    // Stable across the fresh Terminal's dev StrictMode effect replay; the server uses it to attach
+    // duplicate /pty?new=1 requests to the first live PTY instead of spawning twice. Also the
+    // placeholder's stable key until the real session id arrives.
+    const launchToken = crypto.randomUUID()
     closeLaunch()
+    // Optimistic placeholder so the launch shows in the lists instantly (创建中…) — the data layer
+    // polls /api/refresh until the real session surfaces, then drops this.
+    addPending({
+      tempId: launchToken,
+      cli: selectedAgent.cli,
+      cwd,
+      cwdLabel,
+      projectId: launch.projectId ?? null,
+      todoKey: launch.todoKey ?? null,
+      sessionId: null,
+      knownIds: cwd ? sessions.filter((s) => s.cli === selectedAgent.cli && (s.cwd ?? '') === cwd).map((s) => s.sessionId) : [],
+      createdAt: Date.now(),
+    })
     openDrawer({
       title,
       cli: selectedAgent.cli,
-      cwd: cwd ? shortCwd(cwd) : '项目默认目录',
+      cwd: cwdLabel,
       status: 'sail',
       task: dest === 'task' ? taskTitle : undefined,
       launch: {
         cli: selectedAgent.cli,
         cwd,
-        // Stable across the fresh Terminal's dev StrictMode effect replay; the server uses it to
-        // attach duplicate /pty?new=1 requests to the first live PTY instead of spawning twice.
-        launchToken: crypto.randomUUID(),
+        launchToken,
         projectId: launch.projectId,
         todoKey: launch.todoKey,
         prompt: dest === 'free' ? freeText || undefined : undefined,

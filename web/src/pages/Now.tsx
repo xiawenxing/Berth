@@ -23,7 +23,7 @@ function todayISO(): string {
 
 export function Now() {
   const { openDrawer, openLaunch } = useUI()
-  const { tasks, sessions, projects } = useData()
+  const { tasks, sessions, projects, pending } = useData()
   const live = useLive()
 
   const byId = useMemo(() => {
@@ -31,6 +31,23 @@ export function Now() {
     for (const s of sessions) m.set(s.sessionId, s)
     return m
   }, [sessions])
+
+  // In-flight launches → optimistic 创建中… ships at the top of 在航 (dropped once the real session
+  // surfaces; see DataProvider). Saves the user a manual 同步 to see what they just started.
+  const pendingShips = useMemo<ApiSession[]>(
+    () =>
+      pending.map((p) => ({
+        sessionId: p.tempId,
+        cli: p.cli,
+        title: '创建中…',
+        cwd: p.cwd,
+        updatedAt: Math.floor(p.createdAt / 1000),
+        projectId: p.projectId,
+        project: projects.find((x) => x.id === p.projectId)?.name,
+        __pending: true,
+      })),
+    [pending, projects],
+  )
 
   // Launch a session bound to this task by its real id (todoKey) + project — never by title. The
   // spawn cwd is resolved in LaunchDialog from the project's enabled 货舱 (falling back to that
@@ -94,7 +111,7 @@ export function Now() {
         {/* 船只 */}
         <ShipSection icon={<Pin size={13} />} title="Pin" ships={pinShips} onOpen={openSession} />
         <ShipSection title="未读 · 靠岸·待查收" ships={dockShips} onOpen={openSession} />
-        <ShipSection title="运行中 · 在航" ships={sailShips} onOpen={openSession} />
+        <ShipSection title="运行中 · 在航" ships={[...pendingShips, ...sailShips]} onOpen={openSession} />
       </div>
     </div>
   )
@@ -177,7 +194,7 @@ function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void
       <ShipGlyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
       <ProjTag proj={s.project} />
       <CliBadge cli={s.cli} />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground" title={s.title || s.sessionId}>
         {s.title || s.sessionId}
       </span>
       <button
@@ -220,7 +237,7 @@ function TaskRow({
       <span className="absolute left-0 top-0 h-full w-[2px]" style={{ background: priorityColors(rank, total).bar }} />
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left">
         <ProjTag proj={t.project} />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{t.title}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground" title={t.title}>{t.title}</span>
         {delivered ? (
           <span className="flex items-center gap-0.5 text-[10.5px] text-success"><Check size={11} /> 已交付</span>
         ) : (
@@ -240,7 +257,7 @@ function TaskRow({
                 <button key={s.sessionId} onClick={() => onOpen(s)} className="flex items-center gap-2 rounded border border-border bg-card px-2 py-1 text-left hover:border-muted-foreground">
                   <ShipGlyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
                   <CliBadge cli={s.cli} />
-                  <span className="truncate text-[12px] text-foreground">{s.title || s.sessionId}</span>
+                  <span className="truncate text-[12px] text-foreground" title={s.title || s.sessionId}>{s.title || s.sessionId}</span>
                 </button>
               ))}
             </div>

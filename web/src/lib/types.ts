@@ -37,6 +37,8 @@ export interface SessionRow {
   linkedTask?: boolean
   taskId?: string | null
   pinned?: boolean
+  /** Optimistic in-flight launch placeholder (创建中…) — not yet a real, openable session. */
+  pending?: boolean
 }
 
 export interface CwdGroup {

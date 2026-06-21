@@ -14,21 +14,19 @@ import { api } from '@/lib/api'
  */
 export function SessionDrawer() {
   const { drawer, closeDrawer, openDrawer } = useUI()
-  const { sessions, reload, resync } = useData()
+  const { sessions, reload, resolvePending } = useData()
   const live = useLive()
   const [optimisticLiveId, setOptimisticLiveId] = useState<string | null>(null)
-  // A fresh launch's session jsonl is written when the CLI initializes/takes its first turn,
-  // which lags the launch by a beat. `GET /api/sessions` serves a disk-scan cache, so re-scan a
-  // few times after launch to let the new session surface in the list (and rebind links/attach).
-  const resyncTimers = useRef<number[]>([])
+  // A fresh launch's session jsonl is written when the CLI initializes/takes its first turn, which
+  // lags the launch by a beat (and well past it for slow CLIs). The data layer drives the disk
+  // re-scan loop (off its `pending` placeholders) until the session surfaces — here we just record
+  // the real id on the placeholder and flip the drawer onto the live session.
   const optimisticTimer = useRef<number | null>(null)
   useEffect(() => () => {
-    resyncTimers.current.forEach((t) => clearTimeout(t))
     if (optimisticTimer.current !== null) clearTimeout(optimisticTimer.current)
   }, [])
   const resyncAfterLaunch = (sessionId: string) => {
-    resyncTimers.current.forEach((t) => clearTimeout(t))
-    resyncTimers.current = [800, 2500, 6000].map((ms) => window.setTimeout(() => void resync(), ms))
+    if (drawer?.launch?.launchToken) resolvePending(drawer.launch.launchToken, sessionId)
     setOptimisticLiveId(sessionId)
     if (optimisticTimer.current !== null) clearTimeout(optimisticTimer.current)
     optimisticTimer.current = window.setTimeout(() => setOptimisticLiveId((id) => (id === sessionId ? null : id)), 8000)

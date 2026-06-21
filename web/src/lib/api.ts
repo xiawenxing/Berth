@@ -49,6 +49,8 @@ export interface ApiSession {
   todoKey?: string | null
   activity?: string | null
   deleted?: boolean
+  /** Client-only: an optimistic in-flight launch placeholder (创建中…), never sent by the server. */
+  __pending?: boolean
 }
 
 // Structured summary (港务助手): a one-line headline + progress bullets + milestone/TODO items.

@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, Sparkles, MoreHorizontal } from 'lucide-react'
+import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, Sparkles, MoreHorizontal, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
 import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
@@ -48,6 +48,27 @@ function Row({
   const [generating, setGenerating] = useState(false)
   const canLinkTask = !!tasks?.length || !!s.taskId
 
+  // An in-flight launch placeholder: not yet a real, openable session — show 创建中… with a spinner
+  // and no row actions. It's replaced by the real row the moment the session surfaces (data layer).
+  if (s.pending) {
+    return (
+      <div className="group relative flex h-[34px] items-center gap-2.5 border-t border-border/55 px-3.5 first:border-t-border">
+        <span className="flex w-3.5 flex-none items-center justify-center">
+          <Loader2 size={12} className="animate-spin text-text-dim" />
+        </span>
+        <CliBadge cli={s.cli} />
+        <span className="min-w-0 flex-[1_1_auto] truncate text-[13px] font-medium text-muted-foreground" title={s.title}>{s.title}</span>
+        <span className="inline-flex flex-none items-center rounded bg-muted-foreground/15 px-1.5 py-px text-[10.5px] font-semibold text-muted-foreground">
+          创建中
+        </span>
+        <span className={cn('min-w-[30px] max-w-[240px] flex-[0_1_240px] truncate text-right font-mono text-[11px] text-text-dim', !showCwd && 'opacity-0')}>
+          {showCwd ? s.cwd : ''}
+        </span>
+        <span className="flex-none whitespace-nowrap text-[11px] text-muted-foreground">{s.time}</span>
+      </div>
+    )
+  }
+
   const generateTitle = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (generating || !onGenerateTitle) return
@@ -82,7 +103,7 @@ function Row({
         <Glyph status={s.status} />
       </span>
       <CliBadge cli={s.cli} />
-      <span className="min-w-0 flex-[1_1_auto] truncate text-[13px] font-medium text-foreground">{s.title}</span>
+      <span className="min-w-0 flex-[1_1_auto] truncate text-[13px] font-medium text-foreground" title={s.title}>{s.title}</span>
       <span className={cn('inline-flex flex-none items-center rounded px-1.5 py-px text-[10.5px] font-semibold', SHIP_TONE[ship])}>
         {SHIP_LABEL[ship]}
       </span>
@@ -135,7 +156,7 @@ function Row({
                   tasks.map((task) => (
                     <MenuItem key={task.id} onClick={pickTask(task.id)}>
                       <span className={cn('h-1.5 w-1.5 flex-none rounded-full', s.taskId === task.id ? 'bg-brand' : 'bg-transparent')} />
-                      <span className="min-w-0 truncate">{task.title}</span>
+                      <span className="min-w-0 truncate" title={task.title}>{task.title}</span>
                     </MenuItem>
                   ))
                 ) : (
@@ -274,6 +295,7 @@ function Section({
 export function SessionModule({
   pin,
   groups,
+  pending,
   onLaunch,
   onResync,
   syncing,
@@ -286,6 +308,7 @@ export function SessionModule({
 }: {
   pin: SessionRow[]
   groups: CwdGroup[]
+  pending?: SessionRow[] // optimistic in-flight launch placeholders (创建中…)
   onLaunch?: () => void
   onResync?: () => void
   syncing?: boolean
@@ -296,7 +319,8 @@ export function SessionModule({
   onGenerateTitle?: (id: string) => Promise<void> | void
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
 }) {
-  const empty = pin.length === 0 && groups.length === 0
+  const pendingRows = pending ?? []
+  const empty = pin.length === 0 && groups.length === 0 && pendingRows.length === 0
   return (
     <section className="mt-4">
       {/* secondary "tool" module: dimmed title + neutral tag (contrasts the brand-colored 任务 hero) */}
@@ -328,6 +352,15 @@ export function SessionModule({
           <div className="px-4 py-6 text-center text-[12px] text-text-dim">还没有会话 — 点「起会话」开一个</div>
         ) : (
           <>
+            {pendingRows.length > 0 && (
+              <Section
+                icon={<Loader2 size={12} className="flex-none animate-spin text-text-dim" />}
+                label="创建中"
+                count={pendingRows.length}
+                rows={pendingRows}
+                showCwd
+              />
+            )}
             {pin.length > 0 && (
               <Section
                 icon={<Pin size={12} className="flex-none text-priority" />}

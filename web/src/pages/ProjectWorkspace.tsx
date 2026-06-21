@@ -28,7 +28,7 @@ export function ProjectWorkspace() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
-  const { projects, tasks: apiTasks, sessions, statuses, priorities, reload, resync } = useData()
+  const { projects, tasks: apiTasks, sessions, statuses, priorities, reload, resync, pending } = useData()
   const live = useLive()
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [ctxDoc, setCtxDoc] = useState<ContextDocTarget | null>(null)
@@ -106,6 +106,23 @@ export function ProjectWorkspace() {
   const pin: SessionRow[] = useMemo(
     () => projSessions.filter((s) => s.pinned).map((s) => toRow(s, true)),
     [projSessions, live.rev],
+  )
+  // In-flight launches for this project → optimistic 创建中… rows (dropped once the real session
+  // surfaces; see DataProvider). Shows the launch immediately instead of after a manual 同步.
+  const pendingRows: SessionRow[] = useMemo(
+    () =>
+      pending
+        .filter((p) => p.projectId === id)
+        .map((p) => ({
+          id: p.tempId,
+          cli: p.cli,
+          title: '创建中…',
+          cwd: p.cwdLabel,
+          time: '刚刚',
+          status: 'idle' as const,
+          pending: true,
+        })),
+    [pending, id],
   )
   const groups: CwdGroup[] = useMemo(() => {
     const NO_CWD = '(无目录)'
@@ -414,6 +431,7 @@ export function ProjectWorkspace() {
         <SessionModule
           pin={pin}
           groups={groups}
+          pending={pendingRows}
           tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))}
           onLaunch={() => launch('')}
           onResync={doResync}

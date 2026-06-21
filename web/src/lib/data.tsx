@@ -1,6 +1,44 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, type AgentConfig, type ApiProject, type ApiSession, type ApiSettings, type ApiTask } from './api'
 import { DEFAULT_STATUSES } from './status'
+
+// A fresh launch in flight: shown as an optimistic "创建中…" placeholder in the lists until its
+// real session surfaces on disk (and in /api/sessions). Reconciled away by exact session id (claude/
+// coco mint it deterministically) or, failing that, the first new same-cli+cwd session (codex, whose
+// real id is assigned later by reconcile-on-refresh).
+export interface PendingLaunch {
+  tempId: string // the launchToken (stable across the launch)
+  cli: string
+  cwd: string // raw spawn cwd ('' = project default / server workspace fallback)
+  cwdLabel: string // display form
+  projectId: string | null
+  todoKey: string | null
+  sessionId: string | null // exact id from the {"__berth":"launched"} frame, once known
+  knownIds: string[] // same-cli+cwd session ids present at launch (so we can spot the NEW one)
+  createdAt: number // ms; placeholders age out after PENDING_TTL_MS so a failed launch can't wedge
+}
+
+// While a launch is in flight we re-scan disk on this cadence until the session surfaces — the old
+// fixed 3-shot resync (800/2500/6000ms) gave up after 6s, but a slow CLI (notably coco's network/
+// update check) writes its session.json well past that, so the session never appeared without a
+// manual 同步. Placeholders also self-expire so a launch that never produces a session can't poll forever.
+const PENDING_POLL_MS = 2500
+const PENDING_TTL_MS = 120_000
+const cwdKey = (c: string) => (c || '').replace(/\/+$/, '')
+
+// Does a surfaced session belong to this in-flight launch? Used for the codex fallback match (no
+// deterministic id), where cli+cwd alone is ambiguous: two launches can share a cwd (one for a task,
+// one free-ask; or two different tasks). Discriminate by todoKey/projectId too so concurrent launches
+// in the same cwd don't cross-match and steal each other's placeholder. (Ported from Berth 1.0's
+// `sessionMatchesPendingLaunch` — the "fix launch project scope for shared cwd" fix.)
+function sessionMatchesPending(s: ApiSession, p: PendingLaunch): boolean {
+  if (s.cli !== p.cli) return false
+  if (cwdKey(s.cwd ?? '') !== cwdKey(p.cwd)) return false
+  if (p.knownIds.includes(s.sessionId)) return false
+  if (p.todoKey ? s.todoKey !== p.todoKey : !!s.todoKey) return false
+  if (p.projectId) return s.projectId === p.projectId
+  return s.projectId == null
+}
 
 // One fetch of the whole dataset, shared across pages via context. Refetchable.
 // Live running/unread status (from the /status WS + local lastSeen) is a follow-up;
@@ -27,6 +65,12 @@ interface DataState {
   agents: AgentConfig // real launch/headless agent config from Settings
   loading: boolean
   error: string | null
+  /** In-flight fresh launches not yet surfaced as real sessions (optimistic "创建中…" placeholders). */
+  pending: PendingLaunch[]
+  /** Register an optimistic placeholder for a fresh launch (called from the launch dialog). */
+  addPending: (p: PendingLaunch) => void
+  /** Record a launch's real session id once the server's launched-frame reports it. */
+  resolvePending: (tempId: string, sessionId: string) => void
   /** Re-read the server cache (cheap; does NOT re-scan disk). */
   reload: () => void
   /** Re-scan the CLI session stores on disk (POST /api/refresh) then re-read. Use after a fresh
@@ -46,6 +90,45 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
+  const [pending, setPending] = useState<PendingLaunch[]>([])
+
+  const addPending = useCallback((p: PendingLaunch) => {
+    setPending((cur) => [...cur.filter((x) => x.tempId !== p.tempId), p])
+  }, [])
+  const resolvePending = useCallback((tempId: string, sessionId: string) => {
+    setPending((cur) => cur.map((x) => (x.tempId === tempId ? { ...x, sessionId } : x)))
+  }, [])
+
+  // Drop a placeholder the moment its real session surfaces — by exact id (claude/coco) or by the
+  // first new same-cli+cwd session (codex, bound late by reconcile) — or when it ages out.
+  useEffect(() => {
+    if (pending.length === 0) return
+    const have = new Set(sessions.map((s) => s.sessionId))
+    const now = Date.now()
+    const next = pending.filter((p) => {
+      if (p.sessionId && have.has(p.sessionId)) return false
+      if (p.cwd && sessions.some((s) => sessionMatchesPending(s, p))) return false
+      return now - p.createdAt < PENDING_TTL_MS
+    })
+    if (next.length !== pending.length) setPending(next)
+  }, [sessions, pending])
+
+  // While anything is in flight, keep re-scanning disk until it surfaces (then `pending` empties and
+  // this stops). Replaces SessionDrawer's old give-up-after-6s resync.
+  useEffect(() => {
+    if (pending.length === 0) return
+    let cancelled = false
+    const tick = async () => {
+      await api.refresh().catch(() => {})
+      if (!cancelled) setNonce((n) => n + 1)
+    }
+    void tick() // immediate, so fast CLIs surface without waiting a full interval
+    const iv = setInterval(() => void tick(), PENDING_POLL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(iv)
+    }
+  }, [pending.length])
 
   useEffect(() => {
     let alive = true
@@ -92,6 +175,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       agents,
       loading,
       error,
+      pending,
+      addPending,
+      resolvePending,
       reload: () => setNonce((n) => n + 1),
       resync: async () => {
         // Best-effort disk re-scan; even if it fails, refetch so the cache view is current.
@@ -99,7 +185,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setNonce((n) => n + 1)
       },
     }),
-    [projects, tasks, sessions, priorities, statuses, agents, loading, error],
+    [projects, tasks, sessions, priorities, statuses, agents, loading, error, pending, addPending, resolvePending],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
