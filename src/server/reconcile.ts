@@ -26,7 +26,9 @@ function normPath(p: string): string {
  * intent stays pending and will be retried on the next refresh.
  */
 export function reconcileLaunchIntents(store: Store, cache: LogicalSession[]): void {
-  const pending = store.pendingIntents().filter(i => i.cli === 'codex')
+  const pending = store.pendingIntents()
+    .filter(i => i.cli === 'codex')
+    .sort((a, b) => b.createdAt - a.createdAt)
   if (pending.length === 0) return
 
   // Track which sessions have been claimed in this pass so two intents cannot

@@ -11,6 +11,7 @@ import { resolveAgentBinary, codexHookTrustSupportCached } from '../pty/binaries
 import { hasLivePty, registerPty, attachViewer } from './pty-registry'
 import { buildManifest, type ManifestInput } from '../agent/manifest'
 import { listTasks, updateTask } from '../data/tasks'
+import { listProjects } from '../data/projects'
 import { getTaskFieldConfig, type TaskFieldConfig } from '../data/task-config'
 import { getAgentConfig } from '../data/agent-config'
 import { getDocsRoot, getDocStore } from '../data/docstore'
@@ -68,6 +69,7 @@ export interface FreshLaunchParams {
   cwd: string
   todoKey: string | null
   projectId: string | null
+  projectName?: string | null
 }
 
 export interface FreshLaunchPlan {
@@ -187,19 +189,21 @@ export async function advanceTodoOnLaunch(store: Store, todo: Task | null | unde
 /** Build the manifest input: a task index when todoKey is set, else a project index. */
 function buildManifestInput(params: FreshLaunchParams, todos: Task[], docsRoot: string): ManifestInput {
   const { todoKey, projectId } = params
+  const explicitProjectName = params.projectName || null
   if (todoKey) {
     const todo = todos.find(t => t.id === todoKey)
     if (todo) {
       return {
         kind: 'task',
-        projectName: todo.project ?? projectId ?? '—',
+        projectName: todo.project ?? explicitProjectName ?? projectId ?? '—',
+        projectId: todo.projectId ?? projectId,
         docsRoot,
         todo,
       }
     }
   }
   const projectName = projectId
-    ? (todos.find(t => t.projectId === projectId || t.project === projectId)?.project ?? projectId)
+    ? (explicitProjectName ?? todos.find(t => t.projectId === projectId || t.project === projectId)?.project ?? projectId)
     : '—'
   const projectTodos = projectId
     ? todos.filter(t => t.projectId === projectId || t.project === projectId).map(t => ({ title: t.title, detailDoc: t.detailDoc }))
@@ -207,6 +211,7 @@ function buildManifestInput(params: FreshLaunchParams, todos: Task[], docsRoot: 
   return {
     kind: 'project',
     projectName,
+    projectId,
     docsRoot,
     projectTodos,
   }
@@ -324,13 +329,14 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // Tasks are read from the canonical internal store (instant; no external latency).
   const docsRoot = getDocsRoot(store)
   const todos = listTasks(store)
+  const projectName = projectId ? listProjects(store).find(p => p.id === projectId || p.name === projectId)?.name ?? null : null
   const launchedTodo = todoKey ? todos.find(t => t.id === todoKey) : undefined
   try {
     await advanceTodoOnLaunch(store, launchedTodo)
   } catch (e: any) {
     try { ws.send(`\r\n[berth] task status update skipped: ${e?.message ?? e}\r\n`) } catch {}
   }
-  const plan = planFreshLaunch({ cli, cwd, todoKey, projectId }, todos, Math.floor(Date.now() / 1000), () => randomUUID(), docsRoot, locale)
+  const plan = planFreshLaunch({ cli, cwd, todoKey, projectId, projectName }, todos, Math.floor(Date.now() / 1000), () => randomUUID(), docsRoot, locale)
 
   // Context maintenance: seed the protocol, ensure this entity's context file, and inject the
   // compact rules + paths through the same silent manifest channel. Also remember the context-file

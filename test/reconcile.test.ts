@@ -93,6 +93,21 @@ describe('reconcileLaunchIntents', () => {
     expect(pending.length).toBe(1)
   })
 
+  it('pairs newer same-cwd codex intents with newer sessions before older ones', () => {
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'i1', cli: 'codex', cwd: '/proj', projectId: 'AI', todoKey: null, sessionId: null, createdAt: 1000, bound: false })
+    s.addLaunchIntent({ id: 'i2', cli: 'codex', cwd: '/proj', projectId: 'Other', todoKey: null, sessionId: null, createdAt: 1010, bound: false })
+    const cache = [
+      makeSession('older-session', '/proj', 1005),
+      makeSession('newer-session', '/proj', 1015),
+    ]
+    s.upsertSessions(cache)
+    reconcileLaunchIntents(s, cache)
+
+    expect(s.getAttach('newer-session')).toMatchObject({ projectId: 'Other', state: 'confirmed' })
+    expect(s.getAttach('older-session')).toMatchObject({ projectId: 'AI', state: 'confirmed' })
+  })
+
   it('ignores non-codex intents', () => {
     const s = openStore(':memory:')
     s.addLaunchIntent({ id: 'i1', cli: 'claude', cwd: '/proj', projectId: 'P', todoKey: 'rec_A', sessionId: null, createdAt: 1000, bound: false })

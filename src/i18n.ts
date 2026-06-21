@@ -29,6 +29,8 @@ export interface ManifestStrings {
   labelStatus: string
   labelPriority: string
   labelProject: string
+  labelProjectId: string
+  projectScopeRules: (projectName: string, projectId: string | null | undefined) => string[]
   labelDetailDoc: string
   projectHeading: (name: string) => string
   pendingDetailDocs: string
@@ -55,6 +57,12 @@ const MANIFEST: Record<Locale, ManifestStrings> = {
     labelStatus: '- 状态: ',
     labelPriority: '- 优先级: ',
     labelProject: '- 项目: ',
+    labelProjectId: '- 项目ID: ',
+    projectScopeRules: (name, id) => [
+      `当前 Berth 项目领域是「${name}」${id ? `（ID: ${id}）` : ''}。`,
+      `用户说“当前项目 / 本项目 / 这个项目”时，指的就是「${name}」；不要根据 cwd、目录名或仓库名重新猜项目领域。`,
+      `如果需要通过 Berth 创建任务，必须显式指定项目：\`berth task add "<任务>" --project "${name}" --confirm\`。`,
+    ],
     labelDetailDoc: '- 详情文档: ',
     projectHeading: (n) => `## 项目: ${n}`,
     pendingDetailDocs: '### 待办详情文档',
@@ -71,6 +79,12 @@ const MANIFEST: Record<Locale, ManifestStrings> = {
     labelStatus: '- Status: ',
     labelPriority: '- Priority: ',
     labelProject: '- Project: ',
+    labelProjectId: '- Project ID: ',
+    projectScopeRules: (name, id) => [
+      `The current Berth project is "${name}"${id ? ` (ID: ${id})` : ''}.`,
+      `When the user says "current project", "this project", or equivalent, it means "${name}"; do not infer the project from cwd, directory name, or repository name.`,
+      `When creating a Berth task, pass the project explicitly: \`berth task add "<task>" --project "${name}" --confirm\`.`,
+    ],
     labelDetailDoc: '- Detail doc: ',
     projectHeading: (n) => `## Project: ${n}`,
     pendingDetailDocs: '### Pending task detail docs',

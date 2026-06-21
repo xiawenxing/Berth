@@ -99,6 +99,26 @@ describe('planFreshLaunch', () => {
       expect(plan.manifestInput.projectTodos.map(t => t.title)).toEqual(['A'])
     }
   })
+
+  it('uses the explicit project name for project launches even when cwd is shared elsewhere', () => {
+    const todos = [
+      { id: 'task_A', title: 'A', projectId: 'ai-id', project: 'AI项目', detailDoc: 'projects/d-a.md', progress: null, status: null, priority: null, updatedAt: 1, syncedAt: 0, deleted: false },
+      { id: 'task_B', title: 'B', projectId: 'other-id', project: '其他业务支持', detailDoc: 'projects/d-b.md', progress: null, status: null, priority: null, updatedAt: 1, syncedAt: 0, deleted: false },
+    ] as any
+    const plan = planFreshLaunch(
+      { cli: 'codex', cwd: '/repo/meego-openapp-v3', todoKey: null, projectId: 'ai-id', projectName: 'AI项目' },
+      todos,
+      1000,
+      () => 'uuid-mint',
+      DOCS,
+    )
+    expect(plan.manifestInput.kind).toBe('project')
+    if (plan.manifestInput.kind === 'project') {
+      expect(plan.manifestInput.projectName).toBe('AI项目')
+      expect(plan.manifestInput.projectId).toBe('ai-id')
+      expect(plan.manifestInput.projectTodos.map(t => t.title)).toEqual(['A'])
+    }
+  })
 })
 
 describe('codexActivityStateForSession', () => {

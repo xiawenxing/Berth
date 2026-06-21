@@ -552,7 +552,7 @@ function reconcilePendingLaunches() {
       realId = p.realId;
     } else {
       const pendingCwd = cwdKey(p.cwd);
-      const cand = allSessions.find(s => s.cli === p.cli && cwdKey(s.cwd) === pendingCwd && !p.knownIds.has(s.sessionId));
+      const cand = allSessions.find(s => sessionMatchesPendingLaunch(s, p, pendingCwd));
       if (cand) realId = cand.sessionId;
     }
     if (!realId) continue;
@@ -560,6 +560,16 @@ function reconcilePendingLaunches() {
     changed = true;
   }
   return changed;
+}
+
+function sessionMatchesPendingLaunch(s, p, pendingCwd) {
+  if (s.cli !== p.cli) return false;
+  if (cwdKey(s.cwd) !== pendingCwd) return false;
+  if (p.knownIds.has(s.sessionId)) return false;
+  if (p.todoKey && s.todoKey !== p.todoKey) return false;
+  if (!p.todoKey && s.todoKey) return false;
+  if (p.projectId) return s.projectId === p.projectId;
+  return s.projectId === null || s.projectId === undefined;
 }
 
 // Keep refreshing until every "创建中…" placeholder has matched its real session. The fixed
@@ -1915,6 +1925,7 @@ function launchFreshSession({ cli, cwd, todoKey, projectId, prompt }) {
   if (currentMode !== 'sessions') setMode('sessions');
 
   const tempId = 'new:' + (++newSessionCounter);
+  const launchToken = `${tempId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
   hideEmptyState();
 
   // LRU cap: evict an idle slot (killing its pty) if at limit — never a pinned/running one.
@@ -1959,6 +1970,7 @@ function launchFreshSession({ cli, cwd, todoKey, projectId, prompt }) {
   // project/cwd, snapshotting the current same-cwd+cli sessions so we can spot the new one later.
   pendingLaunches.set(tempId, {
     tempId, cli, cwd,
+    launchToken,
     projectId: projectId || null,
     todoKey: todoKey || null,
     realId: null,
@@ -1972,7 +1984,7 @@ function launchFreshSession({ cli, cwd, todoKey, projectId, prompt }) {
 
   requestAnimationFrame(() => {
     try { fit.fit(); } catch (e) {}
-    connectFreshWs(entry, pseudoSession, { cli, cwd, todoKey, projectId, prompt });
+    connectFreshWs(entry, pseudoSession, { cli, cwd, todoKey, projectId, prompt, launchToken });
   });
 }
 
@@ -1996,6 +2008,7 @@ function connectFreshWs(entry, session, opts) {
   params.set('cwd', opts.cwd);
   params.set('todoKey', opts.todoKey || '');
   params.set('projectId', opts.projectId || '');
+  params.set('launchToken', opts.launchToken || '');
   if (opts.prompt) params.set('prompt', opts.prompt);
   params.set('cols', String(cols));
   params.set('rows', String(rows));

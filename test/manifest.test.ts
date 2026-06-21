@@ -67,13 +67,16 @@ it('renders the maintain block with compact rules + context/protocol paths when 
 
 it('project manifest points at the project context file when provided', () => {
   const { text } = buildManifest({
-    kind: 'project', projectName: 'Berth', docsRoot: DOCS_ROOT,
+    kind: 'project', projectName: 'Berth', projectId: 'proj-1', docsRoot: DOCS_ROOT,
     projectTodos: [{ title: 'A', detailDoc: 'tasks/a/index.md' }],
     contextDocPath: '/tmp/berth-test/docs/projects/Berth/index.md',
     protocolPath: '/tmp/berth-test/docs/AGENTS.md',
     compactRules: contextStrings('zh-CN').compactRules,
   })
   expect(text).toContain('/tmp/berth-test/docs/projects/Berth/index.md')
+  expect(text).toContain('当前 Berth 项目领域是「Berth」')
+  expect(text).toContain('proj-1')
+  expect(text).toContain('berth task add "<任务>" --project "Berth" --confirm')
 })
 
 it('omits the maintain block when no compact rules are provided (back-compat)', () => {
