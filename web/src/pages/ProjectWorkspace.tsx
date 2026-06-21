@@ -213,8 +213,6 @@ export function ProjectWorkspace() {
     live.markSeen(s.id)
     openDrawer({ title: s.title, cli: s.cli, cwd: s.cwd, status: s.status === 'idle' ? 'moored' : s.status, sessionId: s.id })
   }
-  // From a task mini-row (title only, for a not-yet-created session) → chat preview stub.
-  const openSession = (t: string) => openDrawer({ title: t, cli: 'claude', cwd: '~/Code/berth', status: 'sail' })
   // From a task's expanded linked-session row → open the REAL session by id (markSeen + live pty).
   const openLinkedSession = (l: LinkedSession) => {
     const s = sessById.get(l.id)
@@ -333,10 +331,16 @@ export function ProjectWorkspace() {
       links: [],
     }
     setTasks((ts) => [card, ...ts])
-    if (opts.runNow) openSession(taskText)
     api
       .createTask(taskText, id, opts.images)
-      .then(() => reload())
+      .then((res) => {
+        reload()
+        // 立即启动: the stub drawer never spawned a PTY nor linked the session. Once the task is
+        // created server-side we have its real id → open 起航 with it as todoKey, so confirming
+        // actually launches a session and associates it with this task (same path as the card's 启动).
+        if (opts.runNow && res?.record?.id)
+          openLaunch({ dest: 'task', taskTitle: res.record.title ?? taskText, projectId: id, todoKey: res.record.id })
+      })
       .catch(() => {
         // keep the optimistic card but settle its title locally if the POST failed
         const { title, summary } = refineTitle(taskText)

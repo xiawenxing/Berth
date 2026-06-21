@@ -102,11 +102,11 @@ export function LaunchDialog() {
         {/* 目的地 */}
         <div>
           <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">目的地</div>
-          <div className="flex gap-4 text-[13px]">
-            <Radio checked={dest === 'task'} onClick={() => setDest('task')}>
+          <div className="flex min-w-0 gap-4 text-[13px]">
+            <Radio checked={dest === 'task'} onClick={() => setDest('task')} className="min-w-0 flex-1">
               任务：{taskTitle ?? '选择任务…'}
             </Radio>
-            <Radio checked={dest === 'free'} onClick={() => setDest('free')}>
+            <Radio checked={dest === 'free'} onClick={() => setDest('free')} className="shrink-0">
               自由提问
             </Radio>
           </div>
@@ -212,13 +212,13 @@ export function LaunchDialog() {
   )
 }
 
-function Radio({ checked, onClick, children }: { checked: boolean; onClick: () => void; children: React.ReactNode }) {
+function Radio({ checked, onClick, children, className }: { checked: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
   return (
-    <button onClick={onClick} className="flex items-center gap-1.5 text-foreground">
-      <span className={cn('flex h-3.5 w-3.5 items-center justify-center rounded-full border', checked ? 'border-brand' : 'border-border')}>
+    <button onClick={onClick} className={cn('flex items-center gap-1.5 text-foreground', className)}>
+      <span className={cn('flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border', checked ? 'border-brand' : 'border-border')}>
         {checked && <span className="h-2 w-2 rounded-full bg-brand" />}
       </span>
-      {children}
+      <span className="truncate">{children}</span>
     </button>
   )
 }
