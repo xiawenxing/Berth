@@ -373,7 +373,7 @@ function SessionListRow({
               : 'text-text-dim opacity-0 hover:text-foreground group-hover:opacity-100',
           )}
         >
-          <Pin size={13} className={cn(isPinned && 'fill-current')} />
+          <Pin size={13} />
         </span>
         <button
           type="button"

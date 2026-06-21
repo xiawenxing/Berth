@@ -240,7 +240,7 @@ function Row({
             s.pinned ? 'text-priority opacity-100' : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100',
           )}
         >
-          <Pin size={12} className={cn(s.pinned && 'fill-current')} />
+          <Pin size={12} />
         </button>
         <button
           ref={moreBtnRef}
