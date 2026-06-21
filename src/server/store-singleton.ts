@@ -13,8 +13,9 @@ import { getDocsRoot, setDocStoreStore } from '../data/docstore'
 import { getContextConfig } from '../data/context-config'
 import { setDocGitEnabled } from '../data/doc-git'
 import { syncSource } from '../data/sync/engine'
-import { setTaskTranscriptProvider } from '../data/task-summary'
+import { setTaskSessionDigestProvider } from '../data/task-summary'
 import { readTranscript } from './context-consolidate-service'
+import { extractConversation } from '../agent/transcript'
 import { berthHome } from '../paths'
 import type { LogicalSession } from '../types'
 
@@ -33,9 +34,10 @@ export function getStore() { return store }
 export function getCache(): LogicalSession[] { return cache }
 
 // Let the data-layer task summarizer reach the in-memory session cache (which only the server knows
-// about) without a data→server import: when a task's context doc is too thin, it pulls the transcript
-// of the task's linked sessions (edges) up to `budget` chars total, head-biased and in edge order.
-setTaskTranscriptProvider((s, taskId, budget) => {
+// about) without a data→server import: for each session linked to the task (edges), read its raw
+// transcript and distill it to a conversation digest (user queries + agent textual replies; tool
+// calls / thinking / artifacts dropped), accumulated up to `budget` chars total in edge order.
+setTaskSessionDigestProvider((s, taskId, budget) => {
   const sessionIds = s.edgesByTodo().get(taskId) ?? []
   if (!sessionIds.length) return ''
   const parts: string[] = []
@@ -44,10 +46,11 @@ setTaskTranscriptProvider((s, taskId, budget) => {
     const remaining = budget - used
     if (remaining <= 0) break
     const sess = cache.find(x => x.sessionId === sid)
-    const text = sess ? readTranscript(sess.contentSourcePath, remaining).trim() : ''
-    if (!text) continue
-    parts.push(text)
-    used += text.length
+    if (!sess?.contentSourcePath) continue
+    const digest = extractConversation(readTranscript(sess.contentSourcePath), remaining).trim()
+    if (!digest) continue
+    parts.push(digest)
+    used += digest.length
   }
   return parts.join('\n\n')
 })

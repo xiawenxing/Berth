@@ -4,30 +4,11 @@
 
 import type { StructuredSummary } from '../agent/index'
 
-/** Count the "meaningful" body characters in a context doc: everything that is NOT a markdown
- *  heading, an HTML comment (the template scaffolding), or blank. A freshly-created doc from the
- *  template scores ~0; once the user/agent fills real prose in, it climbs. Used to decide whether
- *  the task context is too thin to summarize on its own. */
-export function meaningfulDocLength(content: string): number {
-  let n = 0
-  for (const raw of content.split('\n')) {
-    const line = raw.trim()
-    if (!line) continue
-    if (line.startsWith('#')) continue          // headings (## 目标 …)
-    if (line.startsWith('<!--')) continue        // template hint comments
-    n += line.length
-  }
-  return n
-}
-
-/** A context doc is "insufficient" when its meaningful body is below this many chars — at that point
- *  the task summary is better served by pulling in the linked sessions' transcripts. */
-export const TASK_DOC_MIN_MEANINGFUL = 80
-
-/** Build the agent input for a task summary, optionally appending the linked sessions' transcript
- *  excerpt under a labeled section when the context doc alone is too thin. */
-export function assembleTaskSummaryInput(doc: string, sessionExcerpt: string, sectionLabel: string): string {
-  const extra = sessionExcerpt.trim()
+/** Build the agent input for a task summary: the context doc plus the linked sessions' conversation
+ *  digest (user queries + agent textual replies) under a labeled section. The digest is always
+ *  appended when present — the context doc and the session record are complementary sources. */
+export function assembleTaskSummaryInput(doc: string, sessionDigest: string, sectionLabel: string): string {
+  const extra = sessionDigest.trim()
   if (!extra) return doc
   return `${doc.trim()}\n\n${sectionLabel}\n${extra}\n`
 }

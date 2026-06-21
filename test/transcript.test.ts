@@ -4,6 +4,7 @@ import {
   extractTitleContext,
   extractTitleContextSample,
   extractUserGist,
+  extractConversation,
   titleInputFromTranscript,
   stripNoise,
   isInjectedText,
@@ -249,5 +250,54 @@ describe('titleInputFromTranscript', () => {
 
   it('keeps plain text input for live agent tests and manual callers', () => {
     expect(titleInputFromTranscript('user: Fix title generation')).toBe('user: Fix title generation')
+  })
+})
+
+describe('extractConversation', () => {
+  const claude = [
+    JSON.stringify({ type: 'user', message: { role: 'user', content: '帮我实现导出功能' } }),
+    JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [
+      { type: 'thinking', thinking: '让我先想想架构' },
+      { type: 'text', text: '好的，我先看一下相关代码' },
+      { type: 'tool_use', name: 'Bash', input: { command: 'ls src' } },
+    ] } }),
+    // tool_result comes back as a user-role message — must be dropped (no top-level .text)
+    JSON.stringify({ type: 'user', message: { role: 'user', content: [
+      { type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'file1\nfile2' }] },
+    ] } }),
+    JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [
+      { type: 'text', text: '已经实现并通过测试' },
+    ] } }),
+  ].join('\n')
+
+  it('keeps user queries and agent text, drops thinking / tool calls / tool results', () => {
+    const out = extractConversation(claude)
+    expect(out).toContain('USER: 帮我实现导出功能')
+    expect(out).toContain('ASSISTANT: 好的，我先看一下相关代码')
+    expect(out).toContain('ASSISTANT: 已经实现并通过测试')
+    expect(out).not.toContain('让我先想想架构')   // thinking
+    expect(out).not.toContain('ls src')           // tool_use input
+    expect(out).not.toContain('file1')            // tool_result artifact
+  })
+
+  it('handles codex response_item messages and skips the env preamble + function_call', () => {
+    const codex = [
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '# environment_context\nstuff' }] } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '修一下这个 bug' }] } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: '{"cmd":"git status"}' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'reasoning', summary: ['想一想'] } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '已修复' }] } }),
+    ].join('\n')
+    const out = extractConversation(codex)
+    expect(out).toContain('USER: 修一下这个 bug')
+    expect(out).toContain('ASSISTANT: 已修复')
+    expect(out).not.toContain('environment_context')
+    expect(out).not.toContain('git status')
+    expect(out).not.toContain('想一想')
+  })
+
+  it('respects the char budget', () => {
+    const out = extractConversation(claude, 20)
+    expect(out.length).toBeLessThanOrEqual(20)
   })
 })
