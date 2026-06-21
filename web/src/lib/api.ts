@@ -127,6 +127,9 @@ export const api = {
   pin: (sessionId: string, on: boolean) => send('POST', '/api/pin', { sessionId, on }),
   // Assign a session to a project (manual attach → state 'confirmed' server-side).
   attach: (sessionId: string, projectId: string) => send('POST', '/api/attach', { sessionId, projectId }),
+  // Assign/detach a session to a task. Passing projectId also confirms the session under that project.
+  edge: (sessionId: string, todoKey: string | null, projectId?: string) =>
+    send('POST', '/api/edge', { sessionId, todoKey, projectId }),
   // Native macOS folder picker → absolute path (or cancelled).
   pickFolder: () => send('POST', '/api/pick-folder', {}) as Promise<{ path?: string; cancelled?: boolean }>,
   // Preview the sessions a candidate dir would surface (no state mutation).

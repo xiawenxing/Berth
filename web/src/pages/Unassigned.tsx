@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon, RefreshCw } from 'lucide-react'
+import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon, RefreshCw, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { Terminal } from '@/components/Terminal'
@@ -295,7 +295,9 @@ function SessionListRow({
   onAttach: (sessionId: string, projectId: string) => void
 }) {
   const live = useLive()
+  const { reload } = useData()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -313,6 +315,19 @@ function SessionListRow({
       document.removeEventListener('keydown', onKey)
     }
   }, [menuOpen])
+
+  const generateTitle = async () => {
+    if (generating) return
+    setGenerating(true)
+    try {
+      await api.sessionTitle(s.sessionId)
+      reload()
+    } catch {
+      reload()
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   return (
     <div
@@ -360,6 +375,19 @@ function SessionListRow({
         >
           <Pin size={13} className={cn(isPinned && 'fill-current')} />
         </span>
+        <button
+          type="button"
+          title="智能生成标题"
+          aria-label="智能生成标题"
+          disabled={generating}
+          onClick={generateTitle}
+          className={cn(
+            'flex-none rounded p-1 text-text-dim hover:bg-secondary hover:text-foreground disabled:opacity-50',
+            generating && 'text-brand',
+          )}
+        >
+          <Sparkles size={13} className={cn(generating && 'animate-pulse')} />
+        </button>
         <button
           title="归属到项目"
           onClick={() => setMenuOpen((v) => !v)}

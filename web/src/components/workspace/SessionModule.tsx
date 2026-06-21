@@ -1,9 +1,15 @@
-import { useState, type ReactNode } from 'react'
-import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
+import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, Sparkles, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
 import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
 import { SHIP_LABEL, type SessionRow, type CwdGroup, type ShipStatus } from '@/lib/types'
 import { CliBadge } from './TaskCard'
+
+export interface SessionTaskOption {
+  id: string
+  title: string
+}
 
 const SHIP_TONE: Record<ShipStatus, string> = {
   sail: 'bg-success/15 text-success',
@@ -24,13 +30,41 @@ function Row({
   showCwd,
   onOpen,
   onPin,
+  tasks,
+  onGenerateTitle,
+  onLinkTask,
 }: {
   s: SessionRow
   showCwd?: boolean
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
+  tasks?: SessionTaskOption[]
+  onGenerateTitle?: (id: string) => Promise<void> | void
+  onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
 }) {
   const ship: ShipStatus = s.status === 'idle' ? 'moored' : s.status
+  const moreBtnRef = useRef<HTMLButtonElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const canLinkTask = !!tasks?.length || !!s.taskId
+
+  const generateTitle = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (generating || !onGenerateTitle) return
+    setGenerating(true)
+    try {
+      await onGenerateTitle(s.id)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const pickTask = (taskId: string | null) => async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen(false)
+    await onLinkTask?.(s.id, taskId)
+  }
+
   return (
     <div
       role="button"
@@ -48,7 +82,7 @@ function Row({
         <Glyph status={s.status} />
       </span>
       <CliBadge cli={s.cli} />
-      <span className="max-w-[280px] flex-none truncate text-[13px] font-medium text-foreground">{s.title}</span>
+      <span className="min-w-0 flex-[1_1_auto] truncate text-[13px] font-medium text-foreground">{s.title}</span>
       <span className={cn('inline-flex flex-none items-center rounded px-1.5 py-px text-[10.5px] font-semibold', SHIP_TONE[ship])}>
         {SHIP_LABEL[ship]}
       </span>
@@ -58,12 +92,65 @@ function Row({
         </span>
       )}
       {/* cwd: right-aligned, fills the gap (mirrors v7 .s-cwd flex:1 text-align:right) */}
-      <span className={cn('min-w-[30px] flex-1 truncate text-right font-mono text-[11px] text-text-dim', !showCwd && 'opacity-0')}>
+      <span className={cn('min-w-[30px] max-w-[240px] flex-[0_1_240px] truncate text-right font-mono text-[11px] text-text-dim', !showCwd && 'opacity-0')}>
         {showCwd ? s.cwd : ''}
       </span>
       <span className="flex-none whitespace-nowrap text-[11px] text-muted-foreground">{s.time}</span>
-      {/* hover actions (pin) — pinned stays lit even off-hover */}
-      <div className="flex flex-none items-center">
+      <div className="flex flex-none items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+        {onGenerateTitle && (
+          <button
+            type="button"
+            title="智能生成标题"
+            aria-label="智能生成标题"
+            disabled={generating}
+            onClick={generateTitle}
+            className={cn(
+              'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim hover:bg-secondary hover:text-foreground disabled:opacity-50',
+              generating && 'text-brand',
+            )}
+          >
+            <Sparkles size={12} className={cn(generating && 'animate-pulse')} />
+          </button>
+        )}
+        {onLinkTask && (
+          <>
+            <button
+              ref={moreBtnRef}
+              type="button"
+              title="更多"
+              aria-label="更多"
+              disabled={!canLinkTask}
+              onClick={() => setMenuOpen((v) => !v)}
+              className={cn(
+                'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35',
+                menuOpen && 'bg-secondary text-foreground',
+              )}
+            >
+              <MoreHorizontal size={13} />
+            </button>
+            {menuOpen && (
+              <AnchoredPopover anchor={moreBtnRef} width={260} onClose={() => setMenuOpen(false)}>
+                <MenuLabel>关联任务</MenuLabel>
+                {tasks?.length ? (
+                  tasks.map((task) => (
+                    <MenuItem key={task.id} onClick={pickTask(task.id)}>
+                      <span className={cn('h-1.5 w-1.5 flex-none rounded-full', s.taskId === task.id ? 'bg-brand' : 'bg-transparent')} />
+                      <span className="min-w-0 truncate">{task.title}</span>
+                    </MenuItem>
+                  ))
+                ) : (
+                  <div className="px-2 py-1.5 text-[12px] text-muted-foreground">当前项目没有任务</div>
+                )}
+                {s.taskId && (
+                  <>
+                    <div className="my-1 border-t border-border" />
+                    <MenuItem danger onClick={pickTask(null)}>取消关联任务</MenuItem>
+                  </>
+                )}
+              </AnchoredPopover>
+            )}
+          </>
+        )}
         <button
           title={s.pinned ? '取消 Pin' : 'Pin 此会话'}
           onClick={(e) => {
@@ -96,6 +183,9 @@ function Section({
   onOpen,
   onPin,
   onImport,
+  tasks,
+  onGenerateTitle,
+  onLinkTask,
 }: {
   icon: ReactNode
   label: string
@@ -109,6 +199,9 @@ function Section({
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
   onImport?: () => void // 导入该目录下磁盘上其他会话 (every group with a rawCwd, incl. the workspace dir)
+  tasks?: SessionTaskOption[]
+  onGenerateTitle?: (id: string) => Promise<void> | void
+  onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const [shown, setShown] = useState(limit ?? rows.length)
@@ -149,7 +242,16 @@ function Section({
       {!collapsed && (
         <div>
           {visible.map((s) => (
-            <Row key={s.id} s={s} showCwd={showCwd} onOpen={onOpen} onPin={onPin} />
+            <Row
+              key={s.id}
+              s={s}
+              showCwd={showCwd}
+              onOpen={onOpen}
+              onPin={onPin}
+              tasks={tasks}
+              onGenerateTitle={onGenerateTitle}
+              onLinkTask={onLinkTask}
+            />
           ))}
           {limited && (
             <button
@@ -178,6 +280,9 @@ export function SessionModule({
   onOpen,
   onPin,
   onImport,
+  tasks,
+  onGenerateTitle,
+  onLinkTask,
 }: {
   pin: SessionRow[]
   groups: CwdGroup[]
@@ -187,6 +292,9 @@ export function SessionModule({
   onOpen?: (s: SessionRow) => void
   onPin?: (id: string, nextOn: boolean) => void
   onImport?: (rawCwd: string) => void // 导入某 cwd 组目录下磁盘上的其他会话
+  tasks?: SessionTaskOption[]
+  onGenerateTitle?: (id: string) => Promise<void> | void
+  onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
 }) {
   const empty = pin.length === 0 && groups.length === 0
   return (
@@ -229,6 +337,9 @@ export function SessionModule({
                 showCwd
                 onOpen={onOpen}
                 onPin={onPin}
+                tasks={tasks}
+                onGenerateTitle={onGenerateTitle}
+                onLinkTask={onLinkTask}
               />
             )}
             {groups.map((g) => {
@@ -253,6 +364,9 @@ export function SessionModule({
                   onOpen={onOpen}
                   onPin={onPin}
                   onImport={g.rawCwd && onImport ? () => onImport(g.rawCwd!) : undefined}
+                  tasks={tasks}
+                  onGenerateTitle={onGenerateTitle}
+                  onLinkTask={onLinkTask}
                 />
               )
             })}

@@ -100,6 +100,7 @@ export function ProjectWorkspace() {
     time: relTime(s.updatedAt),
     status: live.shipStatus(s.sessionId, s.updatedAt),
     linkedTask: !!s.todoKey,
+    taskId: s.todoKey ?? null,
     pinned,
   })
   const pin: SessionRow[] = useMemo(
@@ -206,6 +207,16 @@ export function ProjectWorkspace() {
       .then(() => reload())
       .catch(() => reload())
   }
+  const onGenerateSessionTitle = (sessionId: string) =>
+    api
+      .sessionTitle(sessionId)
+      .then(() => reload())
+      .catch(() => reload())
+  const onLinkSessionTask = (sessionId: string, taskId: string | null) =>
+    api
+      .edge(sessionId, taskId, id)
+      .then(() => reload())
+      .catch(() => reload())
 
   // ⋯ task-menu actions: optimistic local edit NOW, persist via PATCH/DELETE, then reload.
   const onSetPriority = (taskId: string, priority: Task['priority']) => {
@@ -400,7 +411,19 @@ export function ProjectWorkspace() {
           />
         </section>
 
-        <SessionModule pin={pin} groups={groups} onLaunch={() => launch('')} onResync={doResync} syncing={syncing} onOpen={openRow} onPin={onPin} onImport={importFromGroup} />
+        <SessionModule
+          pin={pin}
+          groups={groups}
+          tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))}
+          onLaunch={() => launch('')}
+          onResync={doResync}
+          syncing={syncing}
+          onOpen={openRow}
+          onPin={onPin}
+          onImport={importFromGroup}
+          onGenerateTitle={onGenerateSessionTitle}
+          onLinkTask={onLinkSessionTask}
+        />
         <CargoDefaults paths={project?.pathsMeta ?? []} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} />
       </div>
 
