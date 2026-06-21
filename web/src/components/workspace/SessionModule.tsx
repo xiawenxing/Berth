@@ -230,6 +230,19 @@ function Row({
           </button>
         )}
         <button
+          title={s.pinned ? '取消 Pin' : 'Pin 此会话'}
+          onClick={(e) => {
+            e.stopPropagation()
+            onPin?.(s.id, !s.pinned)
+          }}
+          className={cn(
+            'flex h-[22px] w-[22px] items-center justify-center rounded transition-opacity hover:bg-secondary',
+            s.pinned ? 'text-priority opacity-100' : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100',
+          )}
+        >
+          <Pin size={12} className={cn(s.pinned && 'fill-current')} />
+        </button>
+        <button
           ref={moreBtnRef}
           type="button"
           title="更多"
@@ -284,19 +297,6 @@ function Row({
             )}
           </AnchoredPopover>
         )}
-        <button
-          title={s.pinned ? '取消 Pin' : 'Pin 此会话'}
-          onClick={(e) => {
-            e.stopPropagation()
-            onPin?.(s.id, !s.pinned)
-          }}
-          className={cn(
-            'flex h-[22px] w-[22px] items-center justify-center rounded transition-opacity hover:bg-secondary',
-            s.pinned ? 'text-priority opacity-100' : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100',
-          )}
-        >
-          <Pin size={12} className={cn(s.pinned && 'fill-current')} />
-        </button>
       </div>
     </div>
   )
