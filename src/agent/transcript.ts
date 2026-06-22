@@ -204,7 +204,7 @@ export interface TitleContextSample {
 }
 
 function cleanText(raw: string, max = 700): string {
-  const cleaned = stripNoise(raw).replace(/\s+/g, ' ').trim()
+  const cleaned = stripNoise(raw).replace(/\[Image #[^\]]+\]\s*/g, '').replace(/\s+/g, ' ').trim()
   if (!cleaned || isInjectedText(cleaned)) return ''
   return cleaned.slice(0, max)
 }
@@ -260,11 +260,11 @@ function collectCodexPayload(payload: any, sample: TitleContextSample) {
   if (!payload) return
   if (payload.type === 'message' && payload.role === 'assistant') {
     pushDistinct(sample.assistants, cleanText(extractContentText(payload.content), 500), 3)
+  } else if (payload.type === 'agent_message') {
+    pushDistinct(sample.assistants, cleanText(payload.message ?? '', 500), 3)
   } else if (payload.type === 'function_call') {
     const detail = summarizeObject(payload.arguments ?? payload.input)
     pushDistinct(sample.tools, cleanText(`${payload.name ?? 'function_call'} ${detail}`, 500), 8)
-  } else if (payload.type === 'event_msg' || payload.type === 'task_started' || payload.type === 'task_complete') {
-    pushDistinct(sample.tools, cleanText(payload.type, 200), 8)
   }
 }
 
@@ -301,6 +301,16 @@ export function extractTitleContextSample(head: string): TitleContextSample {
       if (p?.type === 'message' && p.role === 'user') {
         const cleaned = cleanText(extractContentText(p.content), 700)
         if (cleaned && !cleaned.startsWith('#')) pushDistinct(sample.users, cleaned, 3)
+      } else {
+        collectCodexPayload(p, sample)
+      }
+      continue
+    }
+
+    if (o.type === 'event_msg') {
+      const p = o.payload
+      if (p?.type === 'user_message') {
+        pushDistinct(sample.users, cleanText(p.message ?? '', 700), 3)
       } else {
         collectCodexPayload(p, sample)
       }

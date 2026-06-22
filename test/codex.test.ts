@@ -49,6 +49,42 @@ describe('codex adapter', () => {
     const s = listCodexSessions(root).find(x => x.physicalId === id)!
     expect(s.title).toBe('Fix title generation / shell command: rg -n "firstUserTitle|generateTitle" src test')
   })
+  it('extracts title from event_msg user_message after huge codex metadata/image lines', () => {
+    const root = mkdtempSync(join(tmpdir(), 'berth-codex-'))
+    const dir = join(root, 'sessions', '2026', '06', '22')
+    mkdirSync(dir, { recursive: true })
+    const id = '019ea000-0000-7000-8000-000000000101'
+    writeFileSync(join(dir, `rollout-${id}.jsonl`), [
+      JSON.stringify({
+        timestamp: '2026-06-22T00:00:00Z',
+        type: 'session_meta',
+        payload: {
+          type: 'session_meta',
+          id,
+          cwd: '/tmp',
+          timestamp: '2026-06-22T00:00:00Z',
+          base_instructions: { text: 'x'.repeat(160_000) },
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-22T00:00:01Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_image', image_url: `data:image/png;base64,${'a'.repeat(600_000)}` }],
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-22T00:00:02Z',
+        type: 'event_msg',
+        payload: { type: 'user_message', message: '[Image #1] Fix codex launch title backfill' },
+      }),
+    ].join('\n') + '\n')
+
+    const s = listCodexSessions(root).find(x => x.physicalId === id)!
+    expect(s.title).toBe('Fix codex launch title backfill')
+  })
   it('falls back to session_index.jsonl thread_name when no response_item user message exists', () => {
     // The stub (0002) has no response_item lines; it is kind='import-stub' so firstUserTitle is skipped,
     // but we also verify the fallback path works by checking the stub's title is null (no index entry)
