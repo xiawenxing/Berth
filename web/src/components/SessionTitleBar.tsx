@@ -157,17 +157,18 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
           <Sparkles className={cn('h-3.5 w-3.5', generating && 'animate-pulse')} />
         </button>
       )}
-      <ShipPill status={status} />
-      {task && <span className="flex-none whitespace-nowrap text-[11px] text-muted-foreground">· 航线 {task}</span>}
+      <ShipPill status={status} task={task} />
     </div>
   )
 }
 
-function ShipPill({ status }: { status: ShipStatus }) {
+function ShipPill({ status, task }: { status: ShipStatus; task?: string }) {
+  const routeLabel = task ? `航线 ${task}` : undefined
   return (
     <span
+      title={routeLabel}
       className={cn(
-        'inline-flex flex-none shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10.5px]',
+        'group relative inline-flex flex-none shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10.5px]',
         status === 'sail' && 'bg-success/15 text-success',
         status === 'dock' && 'bg-brand/15 text-brand',
         status === 'moored' && 'bg-muted text-muted-foreground',
@@ -175,6 +176,11 @@ function ShipPill({ status }: { status: ShipStatus }) {
     >
       {status === 'sail' && <span className="h-1.5 w-1.5 flex-none rounded-full bg-success" />}
       {SHIP_LABEL[status]}
+      {routeLabel && (
+        <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 hidden max-w-[420px] -translate-y-1/2 truncate rounded-md border border-border bg-popover px-2 py-1 text-[11px] font-normal text-popover-foreground shadow-lg group-hover:block">
+          {routeLabel}
+        </span>
+      )}
     </span>
   )
 }
