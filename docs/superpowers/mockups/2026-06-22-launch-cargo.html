@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>起航 · 货舱交互稿（3 版）</title>
+<style>
+  :root{
+    --background:#141b2e; --foreground:#b3bcd4; --card:#1f2940; --card-foreground:#c7cfe3;
+    --muted:#2c3852; --muted-foreground:#8089a3; --accent:#2c3852; --accent-foreground:#dbe1f0;
+    --border:#3a4768; --canvas:#0d1220; --brand:#56b6ff; --brand-foreground:#0d1220;
+    --warning:#f0c773; --purple:#b88cf0; --text-dim:#6b7280;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--canvas);color:var(--foreground);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    padding:32px 20px 80px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:17px;font-weight:700;color:#e5ebfa;margin:0 0 4px}
+  .sub{font-size:12.5px;color:var(--muted-foreground);margin:0 0 26px;line-height:1.6}
+  .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:start}
+  @media(max-width:1080px){.grid{grid-template-columns:1fr}}
+  .col{display:flex;flex-direction:column;gap:10px}
+  .vtag{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#dbe1f0}
+  .vtag .dot{width:8px;height:8px;border-radius:50%;background:var(--brand)}
+  .vnote{font-size:11.5px;color:var(--muted-foreground);line-height:1.65;min-height:48px}
+  .vnote b{color:var(--card-foreground);font-weight:600}
+
+  /* dialog chrome — faithful to LaunchDialog */
+  .dlg{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;
+    box-shadow:0 18px 50px rgba(0,0,0,.5)}
+  .dlg-head{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);padding:11px 16px}
+  .dlg-head .t{font-size:13px;font-weight:600;color:#e5ebfa}
+  .dlg-body{display:flex;flex-direction:column;gap:13px;padding:16px}
+  .dlg-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;border-top:1px solid var(--border);padding:11px 16px}
+  .lbl{font-size:11px;font-weight:600;color:var(--muted-foreground);margin-bottom:6px}
+  .btn{border:1px solid var(--border);background:transparent;color:var(--foreground);border-radius:7px;
+    padding:6px 12px;font-size:13px;cursor:pointer}
+  .btn:hover{background:var(--accent);color:var(--accent-foreground)}
+  .btn-pri{display:inline-flex;align-items:center;gap:6px;background:var(--brand);color:var(--brand-foreground);
+    border:none;border-radius:7px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  svg{display:block}
+
+  /* 目的地 / agent — minimal, just for context */
+  .row{display:flex;gap:16px;align-items:center;font-size:13px}
+  .radio{display:inline-flex;align-items:center;gap:7px;color:var(--foreground);cursor:pointer}
+  .ring{width:14px;height:14px;border-radius:50%;border:1px solid var(--border);display:inline-flex;
+    align-items:center;justify-content:center;flex:0 0 auto}
+  .ring.on{border-color:var(--brand)}
+  .ring.on::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--brand)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:7px;
+    padding:6px 10px;font-size:12px;color:var(--muted-foreground);cursor:pointer;background:transparent}
+  .chip:hover{background:var(--accent);color:var(--accent-foreground)}
+  .chip.on{border-color:var(--brand);background:rgba(86,182,255,.10);color:#e5ebfa}
+  .chip .m{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--text-dim)}
+
+  /* cargo summary line */
+  .cargo{border:1px solid var(--border);border-radius:8px}
+  .cargo.open{background:rgba(13,18,32,.35)}
+  .cargo-head{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;
+    border:none;color:inherit;padding:10px 12px;cursor:pointer;font-size:13px}
+  .cargo.open .cargo-head{border-bottom:1px solid var(--border)}
+  .cargo-head .sum{color:#d3dbef;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cargo-head .sum .dim{color:var(--text-dim);font-size:12px}
+  .cargo-head .adj{display:inline-flex;align-items:center;gap:5px;color:var(--muted-foreground);font-size:12px;flex:0 0 auto}
+  .chev{transition:transform .18s}
+  .cargo.open .chev{transform:rotate(180deg)}
+  .cargo-body{padding:12px;display:none;flex-direction:column;gap:12px}
+  .cargo.open .cargo-body{display:flex}
+
+  /* context toggles (checkbox style) */
+  .check{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--card-foreground);cursor:pointer}
+  .box{width:15px;height:15px;border-radius:4px;border:1px solid var(--border);display:inline-flex;
+    align-items:center;justify-content:center;flex:0 0 auto;background:transparent}
+  .box.on{background:var(--brand);border-color:var(--brand)}
+  .box.on::after{content:"";width:8px;height:5px;border:2px solid var(--brand-foreground);border-top:none;border-right:none;
+    transform:translateY(-1px) rotate(-45deg)}
+  .check.off{color:var(--text-dim)}
+  .sub-list{display:flex;flex-direction:column;gap:8px}
+  .dirbox{border:1px solid var(--border);border-radius:7px;overflow:hidden}
+  .dirrow{display:flex;align-items:center;gap:10px;padding:8px 10px;border-top:1px solid rgba(58,71,104,.55);
+    cursor:pointer;background:transparent;width:100%;text-align:left;color:inherit;font-size:12px}
+  .dirrow:first-child{border-top:none}
+  .dirrow:hover{background:var(--accent)}
+  .dirrow.sel{background:rgba(86,182,255,.10)}
+  .dirrow .p{font-family:ui-monospace,monospace;color:#d3dbef;flex:1;min-width:0}
+  .dirrow .tag{font-size:10px;color:var(--brand)}
+  .hint{font-size:10.5px;color:var(--text-dim);margin:1px 0 3px}
+  .addbtn{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--brand);background:transparent;
+    border:none;cursor:pointer;padding:2px 0}
+  .addbtn:hover{text-decoration:underline}
+  .static{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:7px;
+    background:var(--background);padding:8px 10px;font-size:12.5px}
+  .static .r{margin-left:auto;font-size:10.5px;color:var(--text-dim)}
+  .seg-grp{display:flex;flex-direction:column;gap:7px}
+  .grp-title{font-size:11px;color:var(--muted-foreground);font-weight:600;display:flex;align-items:center;gap:6px}
+  .clear{font-size:10.5px;color:var(--muted-foreground);background:transparent;border:1px solid var(--border);
+    border-radius:5px;padding:2px 7px;cursor:pointer;margin-left:auto}
+  .clear:hover{color:var(--accent-foreground);background:var(--accent)}
+
+  /* variant B popover */
+  .pop-wrap{position:relative}
+  .pop{position:absolute;z-index:5;top:calc(100% + 6px);left:0;right:0;background:var(--card);
+    border:1px solid var(--border);border-radius:8px;box-shadow:0 14px 36px rgba(0,0,0,.55);padding:10px;display:none}
+  .pop.open{display:block}
+  .pop .check{padding:5px 4px}
+  .linebtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:6px;
+    background:transparent;color:var(--card-foreground);font-size:11.5px;padding:5px 9px;cursor:pointer}
+  .linebtn:hover{background:var(--accent)}
+  .legend{font-size:11px;color:var(--muted-foreground);background:rgba(13,18,32,.4);border:1px dashed var(--border);
+    border-radius:8px;padding:10px 12px;line-height:1.7;margin-top:30px}
+  .legend b{color:var(--card-foreground)}
+  kbd{font-family:ui-monospace,monospace;background:var(--muted);border:1px solid var(--border);border-radius:4px;
+    padding:0 5px;font-size:11px;color:var(--accent-foreground)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>起航 · 货舱交互稿</h1>
+  <p class="sub">同一份能力（启动目录可清除 · 多目录 <span class="mono">--add-dir</span> · 项目/任务/代码三级上下文开关），三种「降低打扰 vs 保留灵活」的折中。点开关、点目录、点「调整装载」都可交互。默认态都尽量干净——直接点 <b style="color:#e5ebfa">起航</b> 即可。</p>
+
+  <div class="grid">
+
+    <!-- ===================== VARIANT A ===================== -->
+    <div class="col">
+      <span class="vtag"><span class="dot"></span>A · 单行摘要 + 调整装载（最克制）</span>
+      <div class="vnote"><b>默认折叠成一行</b>：一眼看清装了什么，想改才点「调整装载」。理解成本最低，沿用旧 UI 心智。代价：改目录要先展开。</div>
+      <div class="dlg">
+        <div class="dlg-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#56b6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 22V8M5 12H2a10 10 0 0 0 20 0h-3"/></svg>
+          <span class="t">起航</span>
+        </div>
+        <div class="dlg-body">
+          <div>
+            <div class="lbl">目的地</div>
+            <div class="row">
+              <span class="radio"><span class="ring on"></span>任务：白色模式样稿确认</span>
+              <span class="radio"><span class="ring"></span>自由提问</span>
+            </div>
+          </div>
+          <div>
+            <div class="lbl">Agent</div>
+            <div class="chips">
+              <span class="chip on">claude <span class="m">opus-4.8</span></span>
+              <span class="chip">codex <span class="m">CLI 默认</span></span>
+              <span class="chip">coco <span class="m">无 --model</span></span>
+            </div>
+          </div>
+          <div>
+            <div class="lbl">货舱</div>
+            <div class="cargo" id="cargoA">
+              <button class="cargo-head" onclick="tog('cargoA')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#56b6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.5 4.21M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                <span class="sum">项目·任务·代码 · <span class="mono">~/code/berth</span> <span class="dim">+2 目录</span></span>
+                <span class="adj">调整装载 <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+              </button>
+              <div class="cargo-body">
+                <label class="check" onclick="ck(this)"><span class="box on"></span>项目上下文（Berth）</label>
+                <label class="check" onclick="ck(this)"><span class="box on"></span>任务上下文 · 进展 6 条</label>
+                <div>
+                  <div class="grp-title">代码上下文</div>
+                  <div class="hint">启动目录（进程 cwd · 单选）</div>
+                  <div class="dirbox">
+                    <button class="dirrow sel" onclick="pick(this)"><span class="ring on"></span><span class="p">~/code/berth</span><span class="tag">已选</span></button>
+                    <button class="dirrow" onclick="pick(this)"><span class="ring"></span><span class="p">~/work/berth-2.0</span></button>
+                    <button class="dirrow" onclick="pick(this)"><span class="ring"></span>项目默认目录<span class="r" style="margin-left:auto;font-size:10px;color:var(--text-dim)">清除装载</span></button>
+                  </div>
+                  <div class="hint" style="margin-top:9px">装载目录（额外 <span class="mono">--add-dir</span> · 多选）</div>
+                  <div class="sub-list">
+                    <label class="check" onclick="ck(this)"><span class="box on"></span><span class="mono">~/work/berth-2.0</span></label>
+                    <label class="check" onclick="ck(this)"><span class="box on"></span><span class="mono">~/Obsidian/specs</span></label>
+                    <button class="addbtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> 额外目录…</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <button class="btn">取消</button>
+          <button class="btn-pri"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> 起航</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== VARIANT B ===================== -->
+    <div class="col">
+      <span class="vtag"><span class="dot"></span>B · 常显胶囊 + 目录浮层（最快调）</span>
+      <div class="vnote"><b>三个上下文做成常显小胶囊</b>，一眼可见、一点切换，零展开。目录收进一个「目录 ▾」浮层。改上下文最快；目录稍隐。</div>
+      <div class="dlg">
+        <div class="dlg-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#56b6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 22V8M5 12H2a10 10 0 0 0 20 0h-3"/></svg>
+          <span class="t">起航</span>
+        </div>
+        <div class="dlg-body">
+          <div>
+            <div class="lbl">目的地</div>
+            <div class="row">
+              <span class="radio"><span class="ring on"></span>任务：白色模式样稿确认</span>
+              <span class="radio"><span class="ring"></span>自由提问</span>
+            </div>
+          </div>
+          <div>
+            <div class="lbl">Agent</div>
+            <div class="chips">
+              <span class="chip on">claude <span class="m">opus-4.8</span></span>
+              <span class="chip">codex <span class="m">CLI 默认</span></span>
+              <span class="chip">coco <span class="m">无 --model</span></span>
+            </div>
+          </div>
+          <div>
+            <div class="lbl">货舱 · 上下文</div>
+            <div class="chips">
+              <span class="chip on" onclick="chipTog(this)"><span class="box on" style="width:13px;height:13px"></span>项目</span>
+              <span class="chip on" onclick="chipTog(this)"><span class="box on" style="width:13px;height:13px"></span>任务</span>
+              <span class="chip on" onclick="chipTog(this)"><span class="box on" style="width:13px;height:13px"></span>代码</span>
+            </div>
+          </div>
+          <div>
+            <div class="lbl">货舱 · 目录</div>
+            <div class="static">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#56b6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+              <span class="mono" style="color:#d3dbef">~/code/berth</span>
+              <span class="pop-wrap" style="margin-left:auto">
+                <button class="linebtn" onclick="tog2('popB')">+2 目录 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+                <div class="pop" id="popB">
+                  <div class="hint">启动目录（cwd · 单选）<button class="clear">清除→默认</button></div>
+                  <label class="check" onclick="pickC(this)"><span class="ring on"></span><span class="mono">~/code/berth</span></label>
+                  <label class="check" onclick="pickC(this)"><span class="ring"></span><span class="mono">~/work/berth-2.0</span></label>
+                  <div class="hint" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">装载目录（--add-dir · 多选）</div>
+                  <label class="check" onclick="ck(this)"><span class="box on"></span><span class="mono">~/work/berth-2.0</span></label>
+                  <label class="check" onclick="ck(this)"><span class="box on"></span><span class="mono">~/Obsidian/specs</span></label>
+                  <button class="addbtn" style="margin-top:4px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> 额外目录…</button>
+                </div>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <button class="btn">取消</button>
+          <button class="btn-pri"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> 起航</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== VARIANT C ===================== -->
+    <div class="col">
+      <span class="vtag"><span class="dot"></span>C · cwd 常显 + 高级抽屉（折中）</span>
+      <div class="vnote"><b>最常改的「启动目录」常显</b>（带清除），其余（上下文开关 + 装载目录）收进「高级 ▾」。日常只看一眼目录，进阶需求一键展开。</div>
+      <div class="dlg">
+        <div class="dlg-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#56b6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 22V8M5 12H2a10 10 0 0 0 20 0h-3"/></svg>
+          <span class="t">起航</span>
+        </div>
+        <div class="dlg-body">
+          <div>
+            <div class="lbl">目的地</div>
+            <div class="row">
+              <span class="radio"><span class="ring on"></span>任务：白色模式样稿确认</span>
+              <span class="radio"><span class="ring"></span>自由提问</span>
+            </div>
+          </div>
+          <div>
+            <div class="lbl">Agent</div>
+            <div class="chips">
+              <span class="chip on">claude <span class="m">opus-4.8</span></span>
+              <span class="chip">codex <span class="m">CLI 默认</span></span>
+              <span class="chip">coco <span class="m">无 --model</span></span>
+            </div>
+          </div>
+          <div>
+            <div class="lbl">启动目录</div>
+            <div class="dirbox">
+              <button class="dirrow sel" onclick="pick(this)"><span class="ring on"></span><span class="p">~/code/berth</span><span class="tag">已选</span></button>
+              <button class="dirrow" onclick="pick(this)"><span class="ring"></span><span class="p">~/work/berth-2.0</span></button>
+              <button class="dirrow" onclick="pick(this)"><span class="ring"></span>项目默认目录<span class="r" style="margin-left:auto;font-size:10px;color:var(--text-dim)">清除装载</span></button>
+            </div>
+          </div>
+          <div>
+            <div class="cargo" id="cargoC">
+              <button class="cargo-head" onclick="tog('cargoC')" style="padding:8px 12px">
+                <span class="sum" style="color:var(--muted-foreground);font-size:12px">货舱 · 上下文 3 项 · 装载 +2 目录</span>
+                <span class="adj">高级 <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+              </button>
+              <div class="cargo-body">
+                <div class="seg-grp">
+                  <div class="grp-title">上下文注入</div>
+                  <label class="check" onclick="ck(this)"><span class="box on"></span>项目上下文（Berth）</label>
+                  <label class="check" onclick="ck(this)"><span class="box on"></span>任务上下文 · 进展 6 条</label>
+                  <label class="check" onclick="ck(this)"><span class="box on"></span>代码上下文（装载下列目录）</label>
+                </div>
+                <div style="margin-top:4px">
+                  <div class="hint">装载目录（额外 <span class="mono">--add-dir</span> · 多选）</div>
+                  <div class="sub-list">
+                    <label class="check" onclick="ck(this)"><span class="box on"></span><span class="mono">~/work/berth-2.0</span></label>
+                    <label class="check" onclick="ck(this)"><span class="box on"></span><span class="mono">~/Obsidian/specs</span></label>
+                    <button class="addbtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> 额外目录…</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <button class="btn">取消</button>
+          <button class="btn-pri"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> 起航</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <b>三版共享的能力 &amp; 默认值</b><br>
+    · <b>启动目录可清除</b>：即使只登记了 1 个货舱，也能「清除」回退到项目默认目录（<span class="mono">cwd=''</span> → 服务端 workspace）。<br>
+    · <b>装载目录</b>：默认勾选所有其它已登记目录（恢复旧「默认装载已登记的目录」），走 <span class="mono">--add-dir</span> 一起挂载；<b>额外目录…</b>用输入框填绝对路径，经 <span class="mono">add-path</span> 登记后挂载。<br>
+    · <b>三级上下文开关</b>：项目 / 任务 / 代码，默认全开；缺省＝当前 always-on 行为（向后兼容）。两者全关则整段注入跳过。<br>
+    · 所有勾选<b>每次启动重置</b>（不持久化），仅沿用现有 sticky <span class="mono">lastCwd</span>。<br>
+    提示：点 <kbd>调整装载</kbd>/<kbd>高级</kbd>/<kbd>+2 目录</kbd> 展开，点开关与目录看交互。
+  </div>
+</div>
+
+<script>
+  function tog(id){document.getElementById(id).classList.toggle('open')}
+  function tog2(id){document.getElementById(id).classList.toggle('open')}
+  function ck(el){const b=el.querySelector('.box');b.classList.toggle('on');el.classList.toggle('off',!b.classList.contains('on'))}
+  function chipTog(el){el.classList.toggle('on');const b=el.querySelector('.box');if(b)b.classList.toggle('on')}
+  function pick(el){const box=el.closest('.dirbox');box.querySelectorAll('.dirrow').forEach(r=>{r.classList.remove('sel');const rg=r.querySelector('.ring');rg.classList.remove('on');const t=r.querySelector('.tag');if(t)t.remove()});el.classList.add('sel');el.querySelector('.ring').classList.add('on');if(el.querySelector('.p')&&!el.querySelector('.tag')){const s=document.createElement('span');s.className='tag';s.textContent='已选';el.appendChild(s)}}
+  function pickC(el){const p=el.parentElement;p.querySelectorAll('.ring').forEach(r=>r.classList.remove('on'));el.querySelector('.ring').classList.add('on')}
+</script>
+</body>
+</html>
