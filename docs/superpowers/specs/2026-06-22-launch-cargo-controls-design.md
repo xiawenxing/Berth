@@ -112,7 +112,7 @@ ctxTask?: boolean           // 任务上下文开关
 3. 门控 manifest 构建：
    - 两者皆关 → **完全跳过注入**：`injectFile=undefined`，不写 inject 文件、不设 codex/coco 的 `BERTH_CONTEXT_FILE`、docsRoot 也不进 addDirs。
    - 否则按门控建 manifest（见 4.4），inject 文件照旧。
-4. spawn 的 `addDirs` = `用户校验后的 addDirs` + (`ctxProject||ctxTask` ? `[docsRoot]` : `[]`)。docsRoot 绑定"有任意上下文"，因为它是上下文文档库（Obsidian vault），属上下文而非用户代码目录。
+4. spawn 的 `addDirs` = `用户校验后的 addDirs` + (`ctxProject||ctxTask` ? `[docsRoot]` : `[]`)。docsRoot 绑定"有任意上下文"，因为它是上下文文档库（Obsidian vault），属上下文而非用户代码目录。**docsRoot 对用户全程隐藏**：不出现在货舱目录列表、不计入"装载 +N"摘要，纯由服务端自动挂载，用户只看见自己登记的项目目录。
 5. `contextProtocolEnabled` 全局设置仍是总闸（关 → 无 ctxInjection，门控无意义）。
 
 ### 4.4 `buildManifest` / 门控（`src/agent/manifest.ts`、`pty-ws.ts:226-230`）
