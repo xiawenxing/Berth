@@ -4,12 +4,18 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 import type { ProxyOptions } from 'vite'
 
+// Backend the dev server proxies to. Defaults to the normal Node server (:7777); point both at a
+// clean test backend with BERTH_API_PORT (e.g. `BERTH_API_PORT=7788`) so a `BERTH_TEST_HOME` instance
+// is reachable from the browser alongside your normal one. BERTH_WEB_PORT moves Vite off :5173.
+const apiPort = process.env.BERTH_API_PORT || '7777'
+const webPort = Number(process.env.BERTH_WEB_PORT) || 5173
+
 // A /pty or /status WebSocket gets torn down abruptly on every page reload / navigation (and on a
 // backend restart), which surfaces upstream as ECONNRESET. That's expected churn, not a fault — so
 // swallow the reset instead of letting http-proxy print a scary `ws proxy socket error` each time.
 // Any other proxy error still logs.
 const wsProxy = (): ProxyOptions => ({
-  target: 'ws://127.0.0.1:7777',
+  target: `ws://127.0.0.1:${apiPort}`,
   ws: true,
   configure: (proxy) => {
     proxy.on('error', (err) => {
@@ -30,9 +36,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
   server: {
-    port: 5173,
+    port: webPort,
     proxy: {
-      '/api': 'http://127.0.0.1:7777',
+      '/api': `http://127.0.0.1:${apiPort}`,
       '/pty': wsProxy(),
       '/status': wsProxy(),
     },

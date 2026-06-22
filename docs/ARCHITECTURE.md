@@ -202,13 +202,22 @@ data-vs-binary split is exactly why `BERTH_TEST_HOME` works where overriding `HO
 (overriding `HOME` empties the binary candidate paths, so launching breaks). `dataHome()` is read at
 call time, so the var can be toggled per process.
 
-Recipe (also `npm run dev:clean`, which defaults the dir to `/tmp/berth-clean`):
+Recipe — the clean instance is **two processes** (the data isolation is all on the backend; Vite is
+just a view that proxies to it). Defaults: backend `:7788`, Vite `:5174`, dir `/tmp/berth-clean`. So
+it runs **alongside** your normal backend (`:7777`) + Vite (`:5173`) without colliding:
 
 ```bash
 mkdir -p /tmp/berth-clean
-BERTH_TEST_HOME=/tmp/berth-clean npm start   # empty sidebar + first-run UI; launch a session → it appears
-rm -rf /tmp/berth-clean                       # reset to a pristine first-install state
+npm run dev:clean                  # clean backend: PORT=7788 BERTH_TEST_HOME=/tmp/berth-clean
+cd web && npm run dev:clean        # clean Vite: :5174, proxies /api+/pty+/status -> :7788
+# open http://localhost:5174/app/  → empty sidebar + first-run UI; launch a session → it appears
+rm -rf /tmp/berth-clean            # reset to a pristine first-install state
 ```
+
+Override any of `PORT` / `BERTH_TEST_HOME` (backend) or `BERTH_WEB_PORT` / `BERTH_API_PORT` (Vite,
+in `web/vite.config.ts`) to pick other ports. Note: `:7777` is the **backend** (REST `/api` + WS
+`/pty`/`/status`), shared by both the 1.0 `public/` UI and the 2.0 SPA — *not* a 1.0-only port; the
+2.0 frontend you browse at `:5173` is the Vite dev server proxying to it.
 
 ### Session import — session-grained (as of 2026-06-17, spec `2026-06-17-project-cwd-cargo-session-import-design.md`)
 

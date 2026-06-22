@@ -5,6 +5,7 @@
   "description": "Berth 2.0 frontend — React SPA (v7 design). Talks to the Node server over /api + /pty + /status.",
   "scripts": {
     "dev": "vite",
+    "dev:clean": "BERTH_WEB_PORT=\"${BERTH_WEB_PORT:-5174}\" BERTH_API_PORT=\"${BERTH_API_PORT:-7788}\" vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
