@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Anchor, Box, Folder, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, usePastedImages } from './ImagePaste'
@@ -23,6 +23,7 @@ export function LaunchDialog() {
   const [freeText, setFreeText] = useState('')
   const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
   const [pickedCwd, setPickedCwd] = useState<string | null>(null)
+  const prevLaunch = useRef<typeof launch>(null)
 
   const project = projects.find((p) => p.id === launch?.projectId)
   const enabledAgents = useMemo(() => agents.list.filter((a) => a.enabled), [agents.list])
@@ -35,14 +36,18 @@ export function LaunchDialog() {
   const selectedCwd = pickedCwd ?? autoPick // undefined when 0 enabled → workspace fallback
 
   useEffect(() => {
-    if (launch) {
+    if (launch && prevLaunch.current !== launch) {
       setDest(launch.taskTitle ? launch.dest : 'free')
-      setCli((prev) => (enabledAgents.some((a) => a.cli === prev) ? prev : enabledAgents[0]?.cli ?? 'claude'))
       setFreeText('')
       clearImages()
       setPickedCwd(null)
     }
-  }, [launch, enabledAgents, clearImages])
+    prevLaunch.current = launch
+  }, [launch, clearImages])
+
+  useEffect(() => {
+    setCli((prev) => (enabledAgents.some((a) => a.cli === prev) ? prev : enabledAgents[0]?.cli ?? 'claude'))
+  }, [enabledAgents])
 
   if (!launch) return null
   const taskTitle = launch.taskTitle

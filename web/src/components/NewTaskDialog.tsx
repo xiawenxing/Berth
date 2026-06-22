@@ -23,15 +23,17 @@ export function NewTaskDialog({
   const [run, setRun] = useState(false)
   const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
   const ref = useRef<HTMLTextAreaElement>(null)
+  const wasOpen = useRef(false)
 
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpen.current) {
       setText('')
       setAi(true)
       setRun(false)
       clearImages()
       setTimeout(() => ref.current?.focus(), 0)
     }
+    wasOpen.current = open
   }, [open, clearImages])
 
   const create = () => {
