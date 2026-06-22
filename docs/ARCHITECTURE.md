@@ -183,6 +183,33 @@ A **task** has a Berth-native uuid `id`; `recordId` no longer exists in the core
 project** link is `attach`. **Projects keep name as their key** (in `attach`/`project_path`/
 `archived_project`/`task.project`).
 
+### Isolating state — `BERTH_HOME` / `BERTH_TEST_HOME` (clean first-run sim)
+
+Two env vars control *where Berth reads/writes state* (see `src/paths.ts`). Both default to your real
+data when unset, so production is untouched.
+
+- **`BERTH_HOME`** — relocates only Berth's OWN state (`<BERTH_HOME>` = the sqlite db, docs default,
+  seed). The CLI session stores are NOT moved, so the sidebar still shows your real sessions.
+- **`BERTH_TEST_HOME`** — simulates a **clean first-install machine**. It backs `dataHome()`, which
+  resolves *all* data/config/session paths: Berth's own state (`<BERTH_TEST_HOME>/.berth`), the CLI
+  stores `storeRoots()` scans (`.claude/projects`, `.codex`, `Library/Caches/coco` — all empty → an
+  **empty sidebar**), the launch-side config Berth writes (claude trust, codex profile, coco hook),
+  and the `HOME`/`CODEX_HOME` handed to spawned CLI children (so a session you launch lands in the
+  test home and **surfaces in the otherwise-empty sidebar** — the loop is closed).
+
+**Binary resolution (`src/pty/binaries.ts`) deliberately keeps using the real `homedir()`** — that
+data-vs-binary split is exactly why `BERTH_TEST_HOME` works where overriding `HOME` does not
+(overriding `HOME` empties the binary candidate paths, so launching breaks). `dataHome()` is read at
+call time, so the var can be toggled per process.
+
+Recipe (also `npm run dev:clean`, which defaults the dir to `/tmp/berth-clean`):
+
+```bash
+mkdir -p /tmp/berth-clean
+BERTH_TEST_HOME=/tmp/berth-clean npm start   # empty sidebar + first-run UI; launch a session → it appears
+rm -rf /tmp/berth-clean                       # reset to a pristine first-install state
+```
+
 ### Session import — session-grained (as of 2026-06-17, spec `2026-06-17-project-cwd-cargo-session-import-design.md`)
 
 A session surfaces iff it is in `curatedSessionIds()` (pin ∪ attach-to-real-project ∪ edge ∪

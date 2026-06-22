@@ -1,8 +1,37 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
-import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd } from '../src/pty/launch'
+import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd, childEnv } from '../src/pty/launch'
+
+describe('childEnv', () => {
+  const orig = process.env.BERTH_TEST_HOME
+  afterEach(() => { if (orig === undefined) delete process.env.BERTH_TEST_HOME; else process.env.BERTH_TEST_HOME = orig })
+
+  it('passes the parent env through unchanged when BERTH_TEST_HOME is unset', () => {
+    delete process.env.BERTH_TEST_HOME
+    const base = { HOME: '/real/home', PATH: '/bin' }
+    expect(childEnv(base)).toEqual(base)
+  })
+
+  it('points the spawned CLI HOME/CODEX_HOME at the test home so launched sessions land there', () => {
+    process.env.BERTH_TEST_HOME = '/tmp/berth-clean'
+    const out = childEnv({ HOME: '/real/home', PATH: '/bin' })
+    expect(out.HOME).toBe('/tmp/berth-clean')
+    expect(out.CODEX_HOME).toBe(join('/tmp/berth-clean', '.codex'))
+    expect(out.PATH).toBe('/bin')   // unrelated vars preserved
+  })
+
+  it('respects an explicit CODEX_HOME over the test-home default', () => {
+    process.env.BERTH_TEST_HOME = '/tmp/berth-clean'
+    process.env.CODEX_HOME = '/custom/codex'
+    try {
+      expect(childEnv({ HOME: '/real/home' }).CODEX_HOME).toBe('/custom/codex')
+    } finally {
+      delete process.env.CODEX_HOME
+    }
+  })
+})
 
 describe('ensureLaunchCwd', () => {
   it('creates a Berth workspace cwd on demand (never falls back to homedir)', () => {

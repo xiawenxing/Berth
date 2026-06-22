@@ -1,4 +1,3 @@
-import { homedir } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { openStore } from '../db/store'
@@ -16,7 +15,7 @@ import { syncSource } from '../data/sync/engine'
 import { setTaskSessionDigestProvider } from '../data/task-summary'
 import { readTranscript } from './context-consolidate-service'
 import { extractConversation } from '../agent/transcript'
-import { berthHome } from '../paths'
+import { berthHome, dataHome } from '../paths'
 import type { LogicalSession } from '../types'
 
 const DB_DIR = berthHome()
@@ -106,10 +105,11 @@ function curatedSessionIds(): Set<string> {
  * preview endpoint (which scans without mutating state) agree on exactly which stores to read.
  */
 export function storeRoots(): { claudeRoot: string; codexRoot: string; cocoRoot: string } {
+  // dataHome() (not homedir()) so BERTH_TEST_HOME relocates the scanned stores → empty clean sidebar.
   return {
-    claudeRoot: join(homedir(), '.claude', 'projects') + '/',
-    codexRoot: join(homedir(), '.codex') + '/',
-    cocoRoot: join(homedir(), 'Library', 'Caches', 'coco') + '/',
+    claudeRoot: join(dataHome(), '.claude', 'projects') + '/',
+    codexRoot: join(dataHome(), '.codex') + '/',
+    cocoRoot: join(dataHome(), 'Library', 'Caches', 'coco') + '/',
   }
 }
 
