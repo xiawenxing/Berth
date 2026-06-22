@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ShipStatus } from './types'
+import { UNREAD_EPOCH_KEY, resolveShipStatus } from './unread'
 
 // Live per-session activity from the /status WS (running / settled), plus a local
 // lastSeen map. Ship status: running→在航(sail); settled & newer than lastSeen→靠岸·待查收(dock);
@@ -26,6 +27,7 @@ const Ctx = createContext<LiveState | null>(null)
 
 const SEEN_KEY = 'berth-last-seen'
 const UNREAD_KEY = 'berth-unread' // explicit "标为未读" overrides (session ids), independent of activity
+
 function loadJson<T>(key: string, fallback: T): T {
   try {
     return JSON.parse(localStorage.getItem(key) || '') as T
@@ -34,11 +36,24 @@ function loadJson<T>(key: string, fallback: T): T {
   }
 }
 
+function loadUnreadEpoch(): number {
+  try {
+    const existing = Number(localStorage.getItem(UNREAD_EPOCH_KEY) || 0)
+    if (Number.isFinite(existing) && existing > 0) return existing
+    const now = Math.floor(Date.now() / 1000)
+    localStorage.setItem(UNREAD_EPOCH_KEY, String(now))
+    return now
+  } catch {
+    return Math.floor(Date.now() / 1000)
+  }
+}
+
 export function LiveProvider({ children }: { children: ReactNode }) {
   const [activity, setActivity] = useState<Map<string, Activity>>(new Map())
   const updatedAt = useRef(new Map<string, number>())
   const seen = useRef<Record<string, number>>(loadJson(SEEN_KEY, {}))
   const unread = useRef<Record<string, boolean>>(loadJson(UNREAD_KEY, {}))
+  const unreadEpoch = useRef(loadUnreadEpoch())
   const [rev, setRev] = useState(0)
   const bump = () => setRev((n) => n + 1)
 
@@ -125,13 +140,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       bump()
     },
     shipStatus: (sessionId, fallbackUpdatedAt) => {
-      const a = activity.get(sessionId)
-      if (a === 'running') return 'sail'
-      if (unread.current[sessionId]) return 'dock' // explicit 标为未读 wins over activity heuristics
-      const u = updatedAt.current.get(sessionId) ?? fallbackUpdatedAt ?? 0
-      const s = seen.current[sessionId] ?? 0
-      if (a === 'settled' && u > s) return 'dock'
-      return 'moored'
+      return resolveShipStatus({
+        activity: activity.get(sessionId),
+        explicitUnread: !!unread.current[sessionId],
+        updatedAt: updatedAt.current.get(sessionId) ?? fallbackUpdatedAt,
+        lastSeen: seen.current[sessionId],
+        unreadEpoch: unreadEpoch.current,
+      })
     },
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
