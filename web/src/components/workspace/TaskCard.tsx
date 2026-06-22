@@ -267,7 +267,20 @@ export function TaskCard({
           )}
           {linkN > 0 ? (
             <>
-              <ExpLabel className="mt-2.5">关联会话</ExpLabel>
+              <div className="mt-2.5 mb-1 flex items-center gap-2">
+                <ExpLabel className="mb-0">关联会话</ExpLabel>
+                {isLive && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onLaunch?.(task.id)
+                    }}
+                    className="inline-flex items-center gap-1 rounded border border-dashed border-brand/50 px-1.5 py-0.5 text-[11px] font-medium text-brand hover:border-brand hover:bg-brand/[0.06]"
+                  >
+                    <Play size={11} /> 起会话
+                  </button>
+                )}
+              </div>
               <div className="flex flex-col gap-1">
                 {task.links!.map((l) => (
                   <button
