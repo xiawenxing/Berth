@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Terminal as Xterm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import '@xterm/xterm/css/xterm.css'
 
 export interface LaunchSpec {
@@ -259,7 +260,8 @@ export function Terminal({
       term.write(data)
     }
     const disp = term.onData((d) => {
-      sendInput(d)
+      const userInput = stripTerminalGeneratedInput(d)
+      if (userInput) sendInput(userInput)
     })
 
     let resizeFrame: number | null = null
