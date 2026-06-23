@@ -6,10 +6,11 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { berthHome } from '../paths'
 import { join } from 'node:path'
 import { getCache, getStore } from './store-singleton'
-import { launchFresh } from '../pty/launch'
+import { launchFresh, launchFreshStream } from '../pty/launch'
 import { resolveAgentBinary, codexHookTrustSupportCached } from '../pty/binaries'
-import { hasLivePty, registerPty, attachViewer } from './pty-registry'
-import { spawnAndRegister, codexHoldRunning } from './resume-spawn'
+import { hasLivePty, registerPty, registerSession, attachViewer } from './pty-registry'
+import { StreamJsonDriver } from './stream-json-driver'
+import { spawnAndRegister, spawnAndRegisterStream, codexHoldRunning } from './resume-spawn'
 import { markOpened } from './warm-pool'
 import { buildManifest, type ManifestInput } from '../agent/manifest'
 import { listTasks, updateTask } from '../data/tasks'
@@ -33,6 +34,12 @@ interface FreshLaunchResult {
   bound: boolean
   cli: AgentCli
   cwd: string
+  mode: 'tui' | 'stream'
+}
+
+/** Model B (stream-json chat renderer) is opt-in via ?render=stream-json, and claude-only for now. */
+function rendersStream(url: URL, cli: AgentCli | null | undefined): boolean {
+  return url.searchParams.get('render') === 'stream-json' && cli === 'claude'
 }
 
 const freshLaunchDedupe = new Map<string, Promise<FreshLaunchResult>>()
@@ -62,7 +69,7 @@ function rememberFreshLaunch(token: string, promise: Promise<FreshLaunchResult>)
 }
 
 function sendLaunchFrame(ws: WebSocket, r: FreshLaunchResult) {
-  try { ws.send(JSON.stringify({ __berth: 'launched', sessionId: r.launchKey, bound: r.bound, cli: r.cli, cwd: r.cwd })) } catch {}
+  try { ws.send(JSON.stringify({ __berth: 'launched', sessionId: r.launchKey, bound: r.bound, cli: r.cli, cwd: r.cwd, mode: r.mode })) } catch {}
 }
 
 export interface FreshLaunchParams {
@@ -258,7 +265,8 @@ export function createPtyWss(): WebSocketServer {
     const s = getCache().find(x => x.sessionId === sessionId)
     if (!s || !s.resume) { try { ws.send('\r\n[berth] session not found or not resumable\r\n') } catch {} ; ws.close(); return }
     try {
-      spawnAndRegister(s, { cols, rows })
+      if (rendersStream(url, s.resume.cli)) spawnAndRegisterStream(s)   // Model B: claude stream-json resume
+      else spawnAndRegister(s, { cols, rows })                          // Model A: TUI resume
     } catch (e: any) { try { ws.send(`\r\n[berth] launch failed: ${e?.message}\r\n`) } catch {} ; ws.close(); return }
     attachViewer(sessionId, ws)
   })
@@ -420,17 +428,6 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     } catch {}
   }
 
-  const pty = launchFresh(cli, {
-    cwd,
-    sessionId: plan.sessionId ?? undefined,
-    injectFile,
-    initialPrompt,
-    model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
-    addDirs: finalAddDirs,
-    cols,
-    rows,
-  })
-
   // Remember this project's last real launch cwd (sticky 主 cwd for the launch dialog's auto-pick).
   // Skip the workspace fallback — it's the catch-all, not a user choice.
   if (projectId && !isWorkspaceCwd) {
@@ -438,25 +435,51 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   }
 
   // Register under the session key (claude/coco minted id; codex uses its intent id and is
-  // rekeyed to the real id by reconcile). The pty now persists across viewer disconnects.
+  // rekeyed to the real id by reconcile). The process now persists across viewer disconnects.
   // A launch with an auto-fired prompt is a turn in progress → show the spinner immediately;
   // a plain empty session is idle until the user types.
-  registerPty(plan.sessionId ?? plan.intent.id, pty, {
-    running: !!initialPrompt,
-    holdRunning: cli === 'codex' ? codexHoldRunning(initialPrompt ? 'running' : 'unknown') : undefined,
-    onExit: contextAbs ? () => {
-      try { rotateContextDocOnDisk(getDocStore(store), contextAbs!, { maxLines: ctxCfg.logMaxLines, keep: ctxCfg.logKeep, locale }) } catch {}
-    } : undefined,
-  })
+  const launchKey = plan.sessionId ?? plan.intent.id
+  const onExit = contextAbs ? () => {
+    try { rotateContextDocOnDisk(getDocStore(store), contextAbs!, { maxLines: ctxCfg.logMaxLines, keep: ctxCfg.logKeep, locale }) } catch {}
+  } : undefined
+
+  const wantStream = rendersStream(url, cli)
+  if (wantStream) {
+    // Model B: claude stream-json. No positional prompt — the driver writes the first user turn to
+    // stdin. Manifest still rides --append-system-prompt-file (injectFile), same channel as Model A.
+    const child = launchFreshStream({
+      cwd,
+      sessionId: plan.sessionId ?? undefined,
+      injectFile,
+      model: agentEntry.model ?? undefined,
+      addDirs: finalAddDirs,
+    })
+    registerSession(launchKey, new StreamJsonDriver(child, { initialPrompt }), { running: !!initialPrompt, onExit })
+  } else {
+    const pty = launchFresh(cli, {
+      cwd,
+      sessionId: plan.sessionId ?? undefined,
+      injectFile,
+      initialPrompt,
+      model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
+      addDirs: finalAddDirs,
+      cols,
+      rows,
+    })
+    registerPty(launchKey, pty, {
+      running: !!initialPrompt,
+      holdRunning: cli === 'codex' ? codexHoldRunning(initialPrompt ? 'running' : 'unknown') : undefined,
+      onExit,
+    })
+  }
   // Tell the client which session id this fresh launch maps to, so it can bind the drawer to the
-  // live registry key. This MUST be after registerPty: 2.0 re-opens /pty?sessionId=… immediately on
+  // live registry key. This MUST be after register*: 2.0 re-opens /pty?sessionId=… immediately on
   // this frame, and sending it earlier races the registry and can attach the UI to stale transcript
   // state instead of the just-launched process.
-  const launchKey = plan.sessionId ?? plan.intent.id
-  const launchResult = { launchKey, bound: !!plan.sessionId, cli, cwd }
+  const launchResult: FreshLaunchResult = { launchKey, bound: !!plan.sessionId, cli, cwd, mode: wantStream ? 'stream' : 'tui' }
   launchDeferred?.resolve(launchResult)
   sendLaunchFrame(ws, launchResult)
-  attachViewer(plan.sessionId ?? plan.intent.id, ws)
+  attachViewer(launchKey, ws)
   } catch (e) {
     launchDeferred?.reject(e)
     throw e

@@ -2,8 +2,9 @@
 // both spawn + register a resumed agent identically. Lives in its own module to keep pty-ws.ts and
 // warm-pool.ts free of an import cycle (pty-ws → resume-spawn ← warm-pool).
 import type { IPty } from 'node-pty'
-import { resumeSession } from '../pty/launch'
-import { registerPty } from './pty-registry'
+import { resumeSession, resumeSessionStream } from '../pty/launch'
+import { registerPty, registerSession } from './pty-registry'
+import { StreamJsonDriver } from './stream-json-driver'
 import { getCache } from './store-singleton'
 import { latestCodexTurnState, type CodexTurnState } from '../adapters/codex-turn'
 import type { LogicalSession } from '../types'
@@ -44,4 +45,14 @@ export function spawnAndRegister(
     onExit: opts.onExit,
   })
   return pty
+}
+
+/**
+ * Model B resume: spawn a `--resume` claude in stream-json mode and register a StreamJsonDriver. The
+ * process idles waiting on stdin (verified) — the frontend seeds history from the on-disk jsonl, then
+ * the user's first typed turn drives it live. Passive open → starts settled (no auto-fired turn).
+ */
+export function spawnAndRegisterStream(s: LogicalSession, opts: { onExit?: () => void } = {}): void {
+  const child = resumeSessionStream(s)
+  registerSession(s.sessionId, new StreamJsonDriver(child), { onExit: opts.onExit })
 }

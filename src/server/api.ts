@@ -23,11 +23,12 @@ import { generateTitle, parseStructuredSummary } from '../agent/index'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { titleInputFromTranscript } from '../agent/transcript'
 import type { Locale } from '../i18n'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { snapshotActivity } from './pty-registry'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { parseTranscriptTurns } from './transcript-turns'
+import { parseClaudeJsonlTurns } from '../agent/normalize/claude-jsonl'
 import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd, berthHome } from '../paths'
 
@@ -821,6 +822,23 @@ api.get('/sessions/:id/transcript', (req, res) => {
   if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
   try {
     const turns = parseTranscriptTurns(s.cli, s.contentSourcePath)
+    res.json({ turns })
+  } catch {
+    res.json({ turns: [] })
+  }
+})
+
+// Model B history replay: the rich ChatTurn[] (folded tool calls, reasoning) the live stream reducer
+// also produces, so resuming a session in chat mode seeds the bubbles from the on-disk jsonl, then
+// attaches the live stream for new turns. claude-only for now (matches the live Model B scope).
+const MAX_CHAT_JSONL_BYTES = 32 * 1024 * 1024
+api.get('/sessions/:id/chat', (req, res) => {
+  const s = getCache().find(x => x.sessionId === req.params.id)
+  if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
+  if (s.cli !== 'claude') return res.json({ turns: [] })   // codex/coco replay not implemented yet
+  try {
+    if (statSync(s.contentSourcePath).size > MAX_CHAT_JSONL_BYTES) return res.json({ turns: [], truncated: true })
+    const turns = parseClaudeJsonlTurns(readFileSync(s.contentSourcePath, 'utf8'))
     res.json({ turns })
   } catch {
     res.json({ turns: [] })
