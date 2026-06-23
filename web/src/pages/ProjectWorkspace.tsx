@@ -522,7 +522,7 @@ export function ProjectWorkspace() {
           onDetachGroup={onDetachGroup}
           onUnimportGroup={onUnimportGroup}
         />
-        <CargoDefaults paths={project?.pathsMeta ?? []} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
+        <CargoDefaults paths={project?.pathsMeta ?? []} tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
       </div>
 
       <NewTaskDialog open={newTask} onClose={() => setNewTask(false)} onCreate={createTask} />
