@@ -50,6 +50,21 @@ describe('PerTurnStreamDriver', () => {
     expect(lastTurn.turn).toMatchObject({ role: 'assistant', streaming: false, blocks: [{ kind: 'text', text: 'PONG' }] })
   })
 
+  it('QUEUES a turn submitted while the previous turn process is still alive (the result/exit race)', () => {
+    // codex emits its result frame a beat BEFORE the process exits; a turn sent in that window must
+    // not be dropped — it queues and fires once the active child exits.
+    const children: ReturnType<typeof fakeChild>[] = []
+    const spawnTurn = () => { const f = fakeChild(); children.push(f); return f.child }
+    const d = new PerTurnStreamDriver(new CodexReducer(clock), spawnTurn, { initialPrompt: 'q1' })
+    expect(children).toHaveLength(1)
+    // turn1 emits its result, but child1 has NOT exited yet — submit turn2 in that window
+    children[0].emit(codexTurn('a1'))
+    d.send({ t: 'turn', text: 'q2' })
+    expect(children).toHaveLength(1)        // not spawned yet (child1 still active)
+    children[0].exit()                       // child1 exits → queued turn fires
+    expect(children).toHaveLength(2)         // q2 now spawned
+  })
+
   it('a child exit ends the TURN, not the session: driver.onExit is NOT fired and pid clears', () => {
     const f = fakeChild()
     const d = new PerTurnStreamDriver(new CodexReducer(clock), () => f.child, { initialPrompt: 'q' })

@@ -18,6 +18,7 @@ export class PerTurnStreamDriver implements SessionDriver {
   private exitCb: () => void = () => {}
   private activityCb: () => void = () => {}
   private active: ChildLike | null = null
+  private pending: string | null = null   // a turn submitted while one was still running (queued)
   private buf = ''
   private sessionEmitted = false
   private resumeId: string | null
@@ -45,16 +46,29 @@ export class PerTurnStreamDriver implements SessionDriver {
   }
 
   private startTurn(prompt: string): void {
-    if (this.active) return   // one turn at a time (the composer disables submit while busy)
+    // Always show the user's bubble immediately. If a turn's process is still alive (codex emits its
+    // result a beat BEFORE the process exits), QUEUE this turn — dropping it silently was a bug — and
+    // fire it when the active child exits.
     const userTurn = this.reducer.addUserTurn(prompt)
     this.emit({ type: 'turn', turn: userTurn })
     this.activityCb()
+    if (this.active) { this.pending = prompt; return }
+    this.spawnFor(prompt)
+  }
+
+  private spawnFor(prompt: string): void {
     this.buf = ''
     const resumeId = this.reducer.sessionId ?? this.resumeId
     const child = this.spawnTurn(prompt, resumeId)
     this.active = child
     child.stdout?.on('data', (d) => this.onStdout(d.toString()))
-    child.on('exit', () => { if (this.active === child) this.active = null })
+    child.on('exit', () => {
+      if (this.active !== child) return
+      this.active = null
+      const next = this.pending
+      this.pending = null
+      if (next !== null) this.spawnFor(next)   // drain a queued turn
+    })
   }
 
   private onStdout(chunk: string): void {
