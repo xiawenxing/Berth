@@ -229,6 +229,18 @@ export function enrichManifestForContext(input: ManifestInput, ctx: ContextInjec
   return { ...input, compactRules: ctx.compactRules, protocolPath: ctx.protocolPath, contextDocPath: ctx.contextDocPath }
 }
 
+/** Per-launch context gates. Absent param = on, so old clients keep the always-on behavior. */
+export function parseContextGates(p: URLSearchParams): { project: boolean; task: boolean } {
+  const on = (k: string) => p.get(k) !== '0'
+  return { project: on('ctxProject'), task: on('ctxTask') }
+}
+
+/** Drop any requested --add-dir that isn't a currently-enabled registered path (anti-arbitrary-mount). */
+export function validateAddDirs(requested: string[], enabledPaths: string[]): string[] {
+  const allow = new Set(enabledPaths)
+  return requested.filter((d) => allow.has(d))
+}
+
 /**
  * Build the /pty WebSocketServer that bridges a CLI session into the browser. Returned in `noServer`
  * mode — the single upgrade router in index.ts dispatches '/pty' upgrades here (so /pty and /status
