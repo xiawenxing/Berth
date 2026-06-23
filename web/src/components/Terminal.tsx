@@ -115,8 +115,9 @@ export function Terminal({
       lineHeight: 1.35,
       letterSpacing: 0,
       scrollback: 8000,
-      smoothScrollDuration: 80,
-      allowTransparency: true,
+      // No smooth-scroll animation: animating every wheel tick over 80ms made scrollback feel laggy
+      // and unresponsive (rapid ticks queue/restart the animation). Default 0 = instant, snappy scroll.
+      smoothScrollDuration: 0,
       cursorBlink: true,
       cursorStyle: 'bar',
       convertEol: true,
@@ -299,7 +300,7 @@ export function Terminal({
   }, [sessionId, initialInput, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey, launch?.images])
 
   return (
-    <div ref={shellRef} className="berth-terminal-shell h-full w-full overflow-hidden bg-canvas p-2">
+    <div ref={shellRef} className="berth-terminal-shell h-full w-full overflow-hidden bg-canvas py-2 pl-4 pr-2">
       <div ref={hostRef} className="berth-xterm h-full w-full" />
     </div>
   )

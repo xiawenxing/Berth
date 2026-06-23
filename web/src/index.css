@@ -106,11 +106,18 @@ html.light {
   height: 100%;
 }
 .berth-xterm .xterm-viewport {
-  background-color: transparent !important;
+  background-color: var(--color-canvas);
   scrollbar-color: var(--color-border) transparent;
+  /* Keep wheel scrolling inside the terminal: without this, hitting the top/bottom chains the
+     scroll into the page content behind the drawer's translucent backdrop. */
+  overscroll-behavior: contain;
+}
+.berth-xterm .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
 }
 .berth-xterm .xterm-viewport::-webkit-scrollbar-thumb {
   background: var(--color-border);
+  border-radius: 4px;
 }
 .berth-xterm .xterm-screen,
 .berth-xterm .xterm-helpers,
