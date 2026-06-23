@@ -69,6 +69,13 @@ export function hasLivePty(key: string): boolean {
   return !!e && !e.exited
 }
 
+/** The render mode of the live driver for `key` ('tui' | 'stream'), or undefined if none is live.
+ *  Used to enforce one-mode-per-session: an attach requesting a different mode kills + respawns. */
+export function liveDriverMode(key: string): 'tui' | 'stream' | undefined {
+  const e = registry.get(key)
+  return e && !e.exited ? e.driver.mode : undefined
+}
+
 export function liveCount(): number { return registry.size }
 
 /**

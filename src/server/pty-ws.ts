@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { getCache, getStore } from './store-singleton'
 import { launchFresh, launchFreshStream } from '../pty/launch'
 import { resolveAgentBinary, codexHookTrustSupportCached } from '../pty/binaries'
-import { hasLivePty, registerPty, registerSession, attachViewer } from './pty-registry'
+import { hasLivePty, liveDriverMode, registerPty, registerSession, attachViewer, killPty } from './pty-registry'
 import { StreamJsonDriver } from './stream-json-driver'
 import { spawnAndRegister, spawnAndRegisterStream, codexHoldRunning } from './resume-spawn'
 import { markOpened } from './warm-pool'
@@ -254,19 +254,25 @@ export function createPtyWss(): WebSocketServer {
       return
     }
 
-    // resume branch — attach to a live pty if one is already running, else spawn `--resume`
+    // resume branch — attach to a live process if one is already running (in the SAME render mode),
+    // else spawn `--resume`. A mode mismatch (the A/B toggle) kills the live process and respawns in
+    // the requested mode, so a chat renderer never attaches to a raw-bytes TUI driver or vice versa.
     const sessionId = url.searchParams.get('sessionId')
     if (!sessionId) { try { ws.send('\r\n[berth] no sessionId\r\n') } catch {} ; ws.close(); return }
+    const s = getCache().find(x => x.sessionId === sessionId)
+    const wantStream = rendersStream(url, s?.cli)
     if (hasLivePty(sessionId)) {                  // already running (incl. a warm-pool pre-spawn)
-      markOpened(sessionId)                       // user opened it → graduate out of the warm pool
-      attachViewer(sessionId, ws); return
+      if (liveDriverMode(sessionId) === (wantStream ? 'stream' : 'tui')) {
+        markOpened(sessionId)                     // user opened it → graduate out of the warm pool
+        attachViewer(sessionId, ws); return
+      }
+      killPty(sessionId)                          // mode switch (A↔B) → respawn in the requested mode below
     }
 
-    const s = getCache().find(x => x.sessionId === sessionId)
     if (!s || !s.resume) { try { ws.send('\r\n[berth] session not found or not resumable\r\n') } catch {} ; ws.close(); return }
     try {
-      if (rendersStream(url, s.resume.cli)) spawnAndRegisterStream(s)   // Model B: claude stream-json resume
-      else spawnAndRegister(s, { cols, rows })                          // Model A: TUI resume
+      if (wantStream && s.resume.cli === 'claude') spawnAndRegisterStream(s)   // Model B: claude stream-json resume
+      else spawnAndRegister(s, { cols, rows })                                 // Model A: TUI resume
     } catch (e: any) { try { ws.send(`\r\n[berth] launch failed: ${e?.message}\r\n`) } catch {} ; ws.close(); return }
     attachViewer(sessionId, ws)
   })
