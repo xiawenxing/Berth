@@ -9,6 +9,7 @@ import { createStatusWss } from './status-ws'
 import { killAllPtys } from './pty-registry'
 import { resolvePublicDir, resolveWebDistDir } from './public-dir'
 import { warmAgentBinaryCaches } from '../pty/binaries'
+import { warmSessionPool } from './warm-pool'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -79,6 +80,9 @@ export async function start(
     server.listen(port, host, () => {
       const shown = host === '0.0.0.0' || host === '::' ? 'localhost' : host
       console.log(`Berth: ${getCache().length} sessions | http://${shown}:${(server.address() as any)?.port ?? port}`)
+      // Pre-spawn the top-K sessions off the request path so their first open is instant. Detached:
+      // warming must never delay the listen, and a warm failure must never crash startup.
+      void warmSessionPool().catch(() => {})
       resolve({ port: (server.address() as any)?.port ?? port })
     })
   })

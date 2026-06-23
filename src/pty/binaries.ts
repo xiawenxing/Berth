@@ -10,7 +10,7 @@ const CANDIDATES: Record<AgentCli, string[]> = {
   coco:   [homedir() + '/.local/bin/coco'],
 }
 
-function firstUsableCandidate(cli: AgentCli): string | null {
+export function firstUsableCandidate(cli: AgentCli): string | null {
   for (const c of CANDIDATES[cli]) {
     if (BLACKLIST.has(c)) continue
     if (c.startsWith('/') ? existsSync(c) : true) return c

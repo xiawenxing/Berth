@@ -10,7 +10,8 @@ vi.mock('../src/data/tasks', () => ({
   updateTask: vi.fn(() => ({ ok: true })),
 }))
 
-import { planFreshLaunch, shouldAdvanceTodoOnLaunch, advanceTodoOnLaunch, buildTaskInitialPrompt, codexActivityStateForSession } from '../src/server/pty-ws'
+import { planFreshLaunch, shouldAdvanceTodoOnLaunch, advanceTodoOnLaunch, buildTaskInitialPrompt } from '../src/server/pty-ws'
+import { codexActivityStateForSession } from '../src/server/resume-spawn'
 import { updateTask } from '../src/data/tasks'
 
 const DOCS = '/tmp/berth-test/docs'

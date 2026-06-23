@@ -6,9 +6,11 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { berthHome } from '../paths'
 import { join } from 'node:path'
 import { getCache, getStore } from './store-singleton'
-import { resumeSession, launchFresh } from '../pty/launch'
+import { launchFresh } from '../pty/launch'
 import { resolveAgentBinary, codexHookTrustSupportCached } from '../pty/binaries'
 import { hasLivePty, registerPty, attachViewer } from './pty-registry'
+import { spawnAndRegister, codexHoldRunning } from './resume-spawn'
+import { markOpened } from './warm-pool'
 import { buildManifest, type ManifestInput } from '../agent/manifest'
 import { listTasks, updateTask } from '../data/tasks'
 import { listProjects } from '../data/projects'
@@ -19,7 +21,6 @@ import { getContextConfig } from '../data/context-config'
 import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
 import { ensureContextDoc, rotateContextDocOnDisk } from '../data/context-doc'
 import { getLocale, promptStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
-import { latestCodexTurnState, type CodexTurnState } from '../adapters/codex-turn'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
 
@@ -91,21 +92,6 @@ export interface FreshLaunchPlan {
  */
 export function buildTaskInitialPrompt(todo: Task, locale: Locale = DEFAULT_LOCALE): string {
   return promptStrings(locale).start(todo.title)
-}
-
-function codexHoldRunning(initialState: CodexTurnState = 'unknown') {
-  let lastState = initialState
-  return (sessionId: string): boolean => {
-    const s = getCache().find(x => x.sessionId === sessionId)
-    const next = s?.contentSourcePath ? latestCodexTurnState(s.contentSourcePath) : 'unknown'
-    if (next !== 'unknown') lastState = next
-    return lastState === 'running'
-  }
-}
-
-export function codexActivityStateForSession(s: Pick<LogicalSession, 'cli' | 'contentSourcePath'>): CodexTurnState {
-  if (s.cli !== 'codex' || !s.contentSourcePath) return 'unknown'
-  return latestCodexTurnState(s.contentSourcePath)
 }
 
 /**
@@ -264,20 +250,16 @@ export function createPtyWss(): WebSocketServer {
     // resume branch — attach to a live pty if one is already running, else spawn `--resume`
     const sessionId = url.searchParams.get('sessionId')
     if (!sessionId) { try { ws.send('\r\n[berth] no sessionId\r\n') } catch {} ; ws.close(); return }
-    if (hasLivePty(sessionId)) { attachViewer(sessionId, ws); return }   // already running → just view it
+    if (hasLivePty(sessionId)) {                  // already running (incl. a warm-pool pre-spawn)
+      markOpened(sessionId)                       // user opened it → graduate out of the warm pool
+      attachViewer(sessionId, ws); return
+    }
 
     const s = getCache().find(x => x.sessionId === sessionId)
     if (!s || !s.resume) { try { ws.send('\r\n[berth] session not found or not resumable\r\n') } catch {} ; ws.close(); return }
-    let pty
     try {
-      pty = resumeSession(s, { cols, rows })
+      spawnAndRegister(s, { cols, rows })
     } catch (e: any) { try { ws.send(`\r\n[berth] launch failed: ${e?.message}\r\n`) } catch {} ; ws.close(); return }
-
-    const codexState = codexActivityStateForSession(s)
-    registerPty(sessionId, pty, {
-      running: codexState === 'running',
-      holdRunning: s.cli === 'codex' ? codexHoldRunning(codexState) : undefined,
-    })
     attachViewer(sessionId, ws)
   })
   return wss
