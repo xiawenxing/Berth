@@ -104,6 +104,7 @@ export function buildManifest(input: ManifestInput, locale: Locale = DEFAULT_LOC
     }
   }
 
+  // Project scope follows the project gate, independent of the task gate (the three-level model).
   if (incl.project && input.projectName && input.projectName !== '—') {
     lines.push('')
     lines.push('## Berth project scope')

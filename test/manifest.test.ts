@@ -130,6 +130,15 @@ it('include.project=false drops project scope but keeps the task section', () =>
   expect(text).not.toContain('Berth project scope')
 })
 
+it('include.project=false on a project launch drops the project todo index', () => {
+  const { text } = buildManifest({
+    kind: 'project', projectName: 'Berth', docsRoot: DOCS_ROOT,
+    include: { project: false },
+    projectTodos: [{ title: '只出现在项目索引里的标题', detailDoc: 'projects/doc-a.md' }],
+  })
+  expect(text).not.toContain('只出现在项目索引里的标题')
+})
+
 it('defaults to both sections when include is omitted (back-compat)', () => {
   const { text } = buildManifest({
     kind: 'task', projectName: 'Berth', docsRoot: DOCS_ROOT,
