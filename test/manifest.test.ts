@@ -107,3 +107,35 @@ it('keeps the maintain block + paths intact even when the index body overflows t
   expect(text).toContain(ctxPath)
   expect(text).toContain(protoPath)
 })
+
+it('include.task=false drops the task section but keeps project scope', () => {
+  const { text } = buildManifest({
+    kind: 'task', projectName: 'Berth', docsRoot: DOCS_ROOT,
+    include: { project: true, task: false },
+    todo: { id: 'u1', title: '秘密任务标题', status: '进行中', priority: 'P1', projectId: 'p1', project: 'Berth',
+            detailDoc: 'projects/x.md', progress: null, updatedAt: 1, syncedAt: 0, deleted: false },
+  })
+  expect(text).not.toContain('秘密任务标题')
+  expect(text).toContain('Berth project scope')
+})
+
+it('include.project=false drops project scope but keeps the task section', () => {
+  const { text } = buildManifest({
+    kind: 'task', projectName: 'Berth', docsRoot: DOCS_ROOT,
+    include: { project: false, task: true },
+    todo: { id: 'u1', title: '可见任务标题', status: '进行中', priority: 'P1', projectId: 'p1', project: 'Berth',
+            detailDoc: 'projects/x.md', progress: null, updatedAt: 1, syncedAt: 0, deleted: false },
+  })
+  expect(text).toContain('可见任务标题')
+  expect(text).not.toContain('Berth project scope')
+})
+
+it('defaults to both sections when include is omitted (back-compat)', () => {
+  const { text } = buildManifest({
+    kind: 'task', projectName: 'Berth', docsRoot: DOCS_ROOT,
+    todo: { id: 'u1', title: '默认标题', status: '进行中', priority: 'P1', projectId: 'p1', project: 'Berth',
+            detailDoc: 'projects/x.md', progress: null, updatedAt: 1, syncedAt: 0, deleted: false },
+  })
+  expect(text).toContain('默认标题')
+  expect(text).toContain('Berth project scope')
+})
