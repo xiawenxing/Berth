@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Terminal as Xterm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
+import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
 import type { LaunchSpec } from '@/lib/ui-store'
 import '@xterm/xterm/css/xterm.css'
 
@@ -98,10 +99,25 @@ export function Terminal({
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
+  // Loading overlay: shown only after a short delay with no pty output yet (a cold `--resume` takes
+  // 2-5s, where a blank terminal reads as broken), hidden on the first byte (a warm/live open
+  // replays in ~50ms and never flashes the spinner). See lib/loading-overlay.ts.
+  const [showOverlay, setShowOverlay] = useState(false)
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
+    setShowOverlay(false)
+    let firstDataSeen = false
+    let overlayTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      setShowOverlay(shouldShowLoadingOverlay({ hasData: firstDataSeen, elapsedMs: LOADING_OVERLAY_DELAY_MS }))
+    }, LOADING_OVERLAY_DELAY_MS)
+    const markDataSeen = () => {
+      if (firstDataSeen) return
+      firstDataSeen = true
+      if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null }
+      setShowOverlay(false)
+    }
 
     const term = new Xterm({
       fontFamily: 'var(--font-mono)',
@@ -253,6 +269,7 @@ export function Terminal({
           // with that text, or a split chunk) — fall through and render it.
         }
       }
+      markDataSeen()   // first real pty output → drop the loading overlay
       recentOutput = (recentOutput + data).slice(-4096)
       maybeSendLaunchImagesAndPrompt()
       term.write(data)
@@ -288,6 +305,7 @@ export function Terminal({
     onResize()
 
     return () => {
+      if (overlayTimer) clearTimeout(overlayTimer)
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
       resizeObserver?.disconnect()
       window.removeEventListener('resize', onResize)
@@ -305,8 +323,14 @@ export function Terminal({
   ])
 
   return (
-    <div ref={shellRef} className="berth-terminal-shell h-full w-full overflow-hidden bg-canvas py-2 pl-4 pr-2">
+    <div ref={shellRef} className="berth-terminal-shell relative h-full w-full overflow-hidden bg-canvas py-2 pl-4 pr-2">
       <div ref={hostRef} className="berth-xterm h-full w-full" />
+      {showOverlay && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-3 bg-canvas/80 text-sm text-muted-foreground">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
+          {launch ? '正在启动会话…' : '正在恢复会话…'}
+        </div>
+      )}
     </div>
   )
 }
