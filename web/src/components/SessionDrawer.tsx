@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Drawer } from './ui/Overlay'
-import { Terminal } from './Terminal'
+import { SessionPanel } from './SessionPanel'
 import { SessionTitleBar } from './SessionTitleBar'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
@@ -79,14 +79,13 @@ export function SessionDrawer() {
             }
           />
 
-          {/* body: existing and newly-launched sessions share the native PTY transport/renderer. */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {drawer.sessionId ? (
-              <Terminal key={drawer.sessionId} sessionId={drawer.sessionId} />
-            ) : drawer.launch ? (
-              <Terminal key="launch" launch={drawer.launch} onLaunched={resyncAfterLaunch} />
-            ) : null}
-          </div>
+          {/* body: terminal (Model A) or stream-json chat (Model B), chosen by the in-panel toggle.
+              Both attach to the same persistent process via /pty; the backend respawns on a mode switch. */}
+          {drawer.sessionId ? (
+            <SessionPanel key={drawer.sessionId} cli={drawer.cli} sessionId={drawer.sessionId} />
+          ) : drawer.launch ? (
+            <SessionPanel key="launch" cli={drawer.cli} launch={drawer.launch} onLaunched={resyncAfterLaunch} />
+          ) : null}
         </>
       )}
     </Drawer>
