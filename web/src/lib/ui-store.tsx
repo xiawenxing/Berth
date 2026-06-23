@@ -33,17 +33,27 @@ export interface LaunchCtx {
   todoKey?: string
 }
 
+/** Global session render mode: 'A' = interactive terminal (xterm), 'B' = stream-json chat bubbles.
+ *  A per-machine preference (localStorage), set once in Settings and applied to every session. */
+export type RenderMode = 'A' | 'B'
+const RENDER_MODE_KEY = 'berth-render-mode'
+function loadRenderMode(): RenderMode {
+  try { return localStorage.getItem(RENDER_MODE_KEY) === 'B' ? 'B' : 'A' } catch { return 'A' }
+}
+
 interface UIState {
   drawer: DrawerSession | null
   launch: LaunchCtx | null
   newTask: boolean
   newProject: boolean
+  renderMode: RenderMode
   openDrawer: (s: DrawerSession) => void
   closeDrawer: () => void
   openLaunch: (c: LaunchCtx) => void
   closeLaunch: () => void
   setNewTask: (v: boolean) => void
   setNewProject: (v: boolean) => void
+  setRenderMode: (m: RenderMode) => void
 }
 
 const Ctx = createContext<UIState | null>(null)
@@ -53,18 +63,24 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [launch, setLaunch] = useState<LaunchCtx | null>(null)
   const [newTask, setNewTask] = useState(false)
   const [newProject, setNewProject] = useState(false)
+  const [renderMode, setRenderModeState] = useState<RenderMode>(loadRenderMode)
 
   const value: UIState = {
     drawer,
     launch,
     newTask,
     newProject,
+    renderMode,
     openDrawer: useCallback((s: DrawerSession) => setDrawer(s), []),
     closeDrawer: useCallback(() => setDrawer(null), []),
     openLaunch: useCallback((c: LaunchCtx) => setLaunch(c), []),
     closeLaunch: useCallback(() => setLaunch(null), []),
     setNewTask,
     setNewProject,
+    setRenderMode: useCallback((m: RenderMode) => {
+      setRenderModeState(m)
+      try { localStorage.setItem(RENDER_MODE_KEY, m) } catch { /* ignore quota */ }
+    }, []),
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

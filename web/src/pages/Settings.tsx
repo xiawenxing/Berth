@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, FolderInput, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, FolderInput, ChevronLeft, ChevronRight, MessagesSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
 import { useData } from '@/lib/data'
+import { useUI } from '@/lib/ui-store'
 import { useInlineEdit } from '@/lib/useInlineEdit'
 import { api } from '@/lib/api'
 import type { AgentCli, AgentEntry } from '@/lib/api'
@@ -18,6 +19,7 @@ export function Settings() {
   const [proactive, setProactive] = useState(true)
   const [autoTitle, setAutoTitle] = useState(true)
   const [dirs, setDirs] = useState(['~/Code/berth', '~/Code', '~/.config'])
+  const { renderMode, setRenderMode } = useUI()
 
   // Task-field vocabularies — edited as a local draft seeded from the live config; persisted
   // (POST /settings) + reload() so the whole app picks up the new statuses/priorities.
@@ -87,6 +89,18 @@ export function Settings() {
                 <SchemeSwatch key={s.id} s={s} active={scheme === s.id} onPick={() => pick(s)} />
               ))}
             </div>
+          </Row>
+        </Card>
+
+        <Card icon={<MessagesSquare size={14} />} title="会话渲染" hint="全局生效 · 决定会话面板用哪种方式呈现（仅 claude 支持对话模式）">
+          <Row label="渲染模式">
+            <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+              <ModeBtn active={renderMode === 'A'} onClick={() => setRenderMode('A')} label="终端" hint="原生 CLI 界面 · 可交互" />
+              <ModeBtn active={renderMode === 'B'} onClick={() => setRenderMode('B')} label="对话" hint="气泡 + 工具调用折叠" />
+            </div>
+            <span className="text-[11px] text-text-dim">
+              {renderMode === 'B' ? '对话：用户右气泡 / agent 左气泡 · 工具调用结束后自动折叠' : '终端：保留完整交互连贯性（输入 / Ctrl-C / TUI）'}
+            </span>
           </Row>
         </Card>
 
@@ -333,6 +347,20 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span className="w-32 flex-none text-[12px] text-muted-foreground">{label}</span>
       <div className="flex flex-1 items-center gap-2">{children}</div>
     </div>
+  )
+}
+function ModeBtn({ active, onClick, label, hint }: { active: boolean; onClick: () => void; label: string; hint: string }) {
+  return (
+    <button
+      onClick={onClick}
+      title={hint}
+      className={cn(
+        'rounded px-3 py-1 text-[12px]',
+        active ? 'bg-brand text-brand-foreground' : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {label}
+    </button>
   )
 }
 function ToggleRow({ label, hint, on, onChange }: { label: string; hint?: string; on: boolean; onChange: () => void }) {
