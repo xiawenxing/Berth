@@ -53,3 +53,12 @@ export type ChatFrame =
   | { type: 'error'; message: string }
 
 export type Clock = () => number   // epoch SECONDS; injectable for deterministic tests
+
+/** Common shape of a per-CLI wire reducer (ClaudeReducer / CodexReducer), so a driver is reducer-agnostic. */
+export interface ChatReducer {
+  readonly sessionId?: string
+  readonly model?: string
+  ingest(line: any): ChatTurn | null
+  addUserTurn(text: string): ChatTurn
+  snapshot(): ChatTurn[]
+}
