@@ -298,6 +298,13 @@ export function ProjectWorkspace() {
       .then(() => reload())
       .catch(() => reload())
   }
+  const onSetDdl = (taskId: string, ddl: string | null) => {
+    setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, ddl } : t)))
+    api
+      .patchTask(taskId, { ddl })
+      .then(() => reload())
+      .catch(() => reload())
+  }
   const onRename = (taskId: string, title: string) => {
     setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, title } : t)))
     api
@@ -489,6 +496,7 @@ export function ProjectWorkspace() {
             onOpenSession={openLinkedSession}
             onMove={onMove}
             onSetPriority={onSetPriority}
+            onSetDdl={onSetDdl}
             onRename={onRename}
             onDelete={onDelete}
             onCreateTask={() => setNewTask(true)}

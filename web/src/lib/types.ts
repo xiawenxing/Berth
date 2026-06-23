@@ -23,7 +23,7 @@ export interface Task {
   priority: Priority
   summary?: string
   summarizing?: boolean // 港务助手 is (re)generating this task's 进展摘要 — drives the loading icon
-  ddl?: string | null // '今日' | '明天' | 'M/D' | '逾期 N天' | null
+  ddl?: string | null // local YYYY-MM-DD deadline overlay from the backend
   links?: LinkedSession[]
 }
 

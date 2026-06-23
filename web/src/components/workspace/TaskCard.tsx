@@ -23,33 +23,128 @@ function ShipGlyph({ status }: { status: ShipStatus }) {
   )
 }
 
-function DdlChip({ ddl }: { ddl?: string | null }) {
+function localIso(offsetDays = 0) {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function formatDdl(ddl: string) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ddl)
+  if (!m) return { label: ddl, tone: 'muted' as const, title: ddl }
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const day = Number(m[3])
+  const target = new Date(y, mo - 1, day)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const diff = Math.round((target.getTime() - today.getTime()) / 86_400_000)
+  if (diff < 0) return { label: `逾期 ${Math.abs(diff)}天`, tone: 'overdue' as const, title: ddl }
+  if (diff === 0) return { label: '今日', tone: 'today' as const, title: ddl }
+  if (diff === 1) return { label: '明天', tone: 'soon' as const, title: ddl }
+  return {
+    label: target.getFullYear() === now.getFullYear() ? `${mo}/${day}` : `${y}/${mo}/${day}`,
+    tone: 'muted' as const,
+    title: ddl,
+  }
+}
+
+function DdlChip({
+  task,
+  onSetDdl,
+}: {
+  task: Task
+  onSetDdl?: (taskId: string, ddl: string | null) => void
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+  const ddl = task.ddl
+  const setDdl = (next: string | null) => {
+    onSetDdl?.(task.id, next)
+    setOpen(false)
+  }
   if (!ddl) {
     return (
-      <span className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10.5px] font-medium text-text-dim opacity-60 hover:bg-muted hover:opacity-100">
+      <button
+        ref={btnRef}
+        type="button"
+        title="设置截止日期"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+        className="relative inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10.5px] font-medium text-text-dim opacity-60 hover:bg-muted hover:opacity-100"
+      >
         <CalendarClock size={11} /> 截止
-      </span>
+        {open && <DdlMenu anchor={btnRef} ddl={null} onSet={setDdl} onClose={() => setOpen(false)} />}
+      </button>
     )
   }
-  const overdue = ddl.startsWith('逾期')
-  const today = ddl === '今日'
+  const display = formatDdl(ddl)
   return (
-    <span
+    <button
+      ref={btnRef}
+      type="button"
+      title={`截止日期：${display.title}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        setOpen((v) => !v)
+      }}
       className={cn(
-        'inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10.5px] font-medium',
-        today && 'bg-warning/15 text-warning',
-        overdue && 'bg-destructive/15 text-destructive',
-        !today && !overdue && 'bg-muted text-muted-foreground',
+        'relative inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10.5px] font-medium hover:brightness-105',
+        display.tone === 'today' && 'bg-warning/15 text-warning',
+        display.tone === 'overdue' && 'bg-destructive/15 text-destructive',
+        display.tone !== 'today' && display.tone !== 'overdue' && 'bg-muted text-muted-foreground',
       )}
     >
-      <CalendarClock size={11} /> {ddl}
-    </span>
+      <CalendarClock size={11} /> {display.label}
+      {open && <DdlMenu anchor={btnRef} ddl={ddl} onSet={setDdl} onClose={() => setOpen(false)} />}
+    </button>
+  )
+}
+
+function DdlMenu({
+  anchor,
+  ddl,
+  onSet,
+  onClose,
+}: {
+  anchor: RefObject<HTMLButtonElement | null>
+  ddl: string | null
+  onSet: (ddl: string | null) => void
+  onClose: () => void
+}) {
+  return (
+    <AnchoredPopover anchor={anchor} width={190} onClose={onClose}>
+      <MenuLabel>截止日期</MenuLabel>
+      <div className="px-2 pb-1">
+        <input
+          type="date"
+          defaultValue={ddl ?? localIso()}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            if (e.currentTarget.value) onSet(e.currentTarget.value)
+          }}
+          className="h-7 w-full rounded border border-input bg-background px-2 text-[12px] text-foreground outline-none focus:border-ring"
+        />
+      </div>
+      <MenuItem onClick={() => onSet(localIso())}>今日</MenuItem>
+      <MenuItem onClick={() => onSet(localIso(1))}>明天</MenuItem>
+      <MenuItem onClick={() => onSet(localIso(7))}>下周</MenuItem>
+      {ddl && (
+        <>
+          <div className="my-1 border-t border-border" />
+          <MenuItem danger onClick={() => onSet(null)}>清除截止日期</MenuItem>
+        </>
+      )}
+    </AnchoredPopover>
   )
 }
 
 type MenuActions = {
   onSetStatus?: (taskId: string, status: TaskStatus) => void
   onSetPriority?: (taskId: string, priority: Priority) => void
+  onSetDdl?: (taskId: string, ddl: string | null) => void
   onRename?: (taskId: string, title: string) => void
   onDelete?: (taskId: string) => void
 }
@@ -62,6 +157,7 @@ export function TaskCard({
   onActivate,
   onSetStatus,
   onSetPriority,
+  onSetDdl,
   onRename,
   onDelete,
 }: {
@@ -163,7 +259,7 @@ export function TaskCard({
         {/* compact (inactive-column) live cards: ddl-if-set + priority chip ride in the head (single-row, dense) */}
         {!active && isLive && (
           <>
-            {task.ddl && <DdlChip ddl={task.ddl} />}
+            {task.ddl && <DdlChip task={task} onSetDdl={onSetDdl} />}
             <PrioChip task={task} priorities={priorities} onSetPriority={onSetPriority} />
           </>
         )}
@@ -208,7 +304,7 @@ export function TaskCard({
               <Link2 size={11} /> {linkN}
             </span>
           )}
-          <DdlChip ddl={task.ddl} />
+          <DdlChip task={task} onSetDdl={onSetDdl} />
           <span className="flex-1" />
           <MoreMenu
             task={task}
