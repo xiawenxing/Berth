@@ -290,6 +290,8 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   const todoKey = url.searchParams.get('todoKey') || null
   const projectId = url.searchParams.get('projectId') || null
   const explicitPrompt = url.searchParams.get('prompt') || undefined
+  const gates = parseContextGates(url.searchParams)
+  const requestedAddDirs = url.searchParams.getAll('addDirs')
 
   if (cli !== 'claude' && cli !== 'codex' && cli !== 'coco') {
     try { ws.send(`\r\n[berth] unknown cli\r\n`) } catch {} ; ws.close(); return
@@ -305,6 +307,11 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   const isWorkspaceCwd = projectId != null && cwd === join(berthHome(), 'workspaces', projectId)
 
   const store = getStore()
+  const enabledPaths = projectId
+    ? (store.allProjectPaths().get(projectId)?.meta.filter((m) => m.enabled).map((m) => m.cwd) ?? [])
+    : []
+  const userAddDirs = validateAddDirs(requestedAddDirs, enabledPaths)
+  const anyCtx = gates.project || gates.task
   // The launching CLI must be a currently-enabled agent (Settings → Agents).
   const agentCfg = getAgentConfig(store)
   const agentEntry = agentCfg.list.find(a => a.cli === cli)
@@ -353,47 +360,51 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // Context maintenance: seed the protocol, ensure this entity's context file, and inject the
   // compact rules + paths through the same silent manifest channel. Also remember the context-file
   // abs path so the PTY-exit mechanical rotation (§7 Phase 1) can roll its progress log.
-  let contextAbs: string | null = null
-  let ctxInjection: ContextInjection | null = null
-  const ctxCfg = getContextConfig(store)
-  if (ctxCfg.protocolEnabled) {
-    try {
-      const ds = getDocStore(store)
-      seedDefaultProtocol(ds, locale)
-      const projectName = plan.manifestInput.projectName
-      const proto = resolveProtocol(ds, locale, projectName)
-      let ensuredAbs: string | null = null
-      if (todoKey && launchedTodo) {
-        const ensured = ensureContextDoc(ds, 'task', launchedTodo.id, { title: launchedTodo.title, projectName: launchedTodo.project, locale })
-        ensuredAbs = ensured.abs
-        if (ensured.created && !launchedTodo.detailDoc) {
-          store.updateTaskFields(launchedTodo.id, { detailDoc: ensured.ref }, Date.now())
-          launchedTodo.detailDoc = ensured.ref
-        }
-      } else if (projectId && projectName && projectName !== '—') {
-        const ensured = ensureContextDoc(ds, 'project', projectName, { title: projectName, projectName, locale })
-        ensuredAbs = ensured.abs
-      }
-      contextAbs = ensuredAbs
-      ctxInjection = { compactRules: proto.compactRules, protocolPath: proto.protocolPath, contextDocPath: ensuredAbs }
-    } catch (e: any) {
-      // docsRoot unwritable etc. → inject read-only context, skip maintenance, never block launch (§10).
-      try { ws.send(`\r\n[berth] context init skipped: ${e?.message ?? e}\r\n`) } catch {}
-    }
-  }
-
-  const enrichedManifest = enrichManifestForContext(plan.manifestInput, ctxInjection)
-  const { text, addDirs } = buildManifest(enrichedManifest, locale)
-
-  mkdirSync(INJECT_DIR, { recursive: true })
-  const injectFilePath = join(INJECT_DIR, `${plan.intent.id}.txt`)
-  writeFileSync(injectFilePath, text)
-
   // Every CLI now receives the manifest through a silent channel — claude via
   // `--append-system-prompt-file`, codex + coco via a SessionStart hook keyed on $BERTH_CONTEXT_FILE
   // (launchFresh sets the env var per CLI). The manifest never rides in the positional prompt, so the
-  // agent loads its context whether or not there is a first turn to submit.
-  const injectFile = injectFilePath
+  // agent loads its context whether or not there is a first turn to submit. The whole build is gated
+  // on at least one context gate being on — both off → no inject file, no docsRoot, no env hook.
+  let contextAbs: string | null = null
+  let injectFile: string | undefined
+  let ctxAddDirs: string[] = []
+  const ctxCfg = getContextConfig(store)
+  if (anyCtx) {
+    let ctxInjection: ContextInjection | null = null
+    if (ctxCfg.protocolEnabled) {
+      try {
+        const ds = getDocStore(store)
+        seedDefaultProtocol(ds, locale)
+        const projectName = plan.manifestInput.projectName
+        const proto = resolveProtocol(ds, locale, projectName)
+        let ensuredAbs: string | null = null
+        if (todoKey && launchedTodo) {
+          const ensured = ensureContextDoc(ds, 'task', launchedTodo.id, { title: launchedTodo.title, projectName: launchedTodo.project, locale })
+          ensuredAbs = ensured.abs
+          if (ensured.created && !launchedTodo.detailDoc) {
+            store.updateTaskFields(launchedTodo.id, { detailDoc: ensured.ref }, Date.now())
+            launchedTodo.detailDoc = ensured.ref
+          }
+        } else if (projectId && projectName && projectName !== '—') {
+          const ensured = ensureContextDoc(ds, 'project', projectName, { title: projectName, projectName, locale })
+          ensuredAbs = ensured.abs
+        }
+        contextAbs = ensuredAbs
+        ctxInjection = { compactRules: proto.compactRules, protocolPath: proto.protocolPath, contextDocPath: ensuredAbs }
+      } catch (e: any) {
+        // docsRoot unwritable etc. → inject read-only context, skip maintenance, never block launch (§10).
+        try { ws.send(`\r\n[berth] context init skipped: ${e?.message ?? e}\r\n`) } catch {}
+      }
+    }
+    const enriched = { ...enrichManifestForContext(plan.manifestInput, ctxInjection), include: { project: gates.project, task: gates.task } }
+    const { text, addDirs } = buildManifest(enriched, locale)
+    mkdirSync(INJECT_DIR, { recursive: true })
+    const injectFilePath = join(INJECT_DIR, `${plan.intent.id}.txt`)
+    writeFileSync(injectFilePath, text)
+    injectFile = injectFilePath
+    ctxAddDirs = addDirs // [docsRoot] — bound to "any context on"; hidden from the user
+  }
+  const finalAddDirs = [...userAddDirs, ...ctxAddDirs]
 
   store.addLaunchIntent(plan.intent)
   if (plan.bindNow) {
@@ -429,7 +440,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     injectFile,
     initialPrompt,
     model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
-    addDirs,
+    addDirs: finalAddDirs,
     cols,
     rows,
   })
