@@ -1,49 +1,49 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Anchor, Box, Folder, Play } from 'lucide-react'
+import { Anchor, ChevronDown, Play, Plus } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, usePastedImages } from './ImagePaste'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
 import { shortCwd } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import type { AgentCli } from '@/lib/api'
+import { api, type AgentCli } from '@/lib/api'
+import { initCargo, toggleDir, anchorDir, setCode, deriveLaunch, type CargoState } from '@/lib/launch-cargo'
 
 /**
- * 装载台 / 起航 — destination (任务 | 自由提问) + the spawn-cwd resolver:
- *  - 0 enabled 货舱  → 项目默认目录 (Berth workspace; cwd sent empty, server resolves + mkdirs)
- *  - 1 enabled 货舱  → that dir (static)
- *  - ≥2 enabled 货舱 → radio list, auto-lit = sticky lastCwd else first enabled; user can switch
+ * 装载台 / 起航 — destination (任务 | 自由提问) + 货舱 (三级上下文开关 + 统一目录列表)。
+ * 目录列表：勾选 = 装载 (--add-dir)；⚓ 点亮其一 = 启动目录 (cwd)，不点 = 默认启动目录 (workspace)。
+ * 代码上下文主开关关闭 = 默认目录、无 --add-dir。docsRoot 由服务端隐式挂载，不在此 UI。
  * 起航 → opens the session drawer with a fresh /pty launch.
  */
 export function LaunchDialog() {
   const { launch, closeLaunch, openDrawer } = useUI()
-  const { projects, agents, sessions, addPending } = useData()
+  const { projects, agents, sessions, addPending, reload } = useData()
   const [dest, setDest] = useState<'task' | 'free'>('task')
   const [cli, setCli] = useState<AgentCli>('claude')
   const [freeText, setFreeText] = useState('')
   const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
-  const [pickedCwd, setPickedCwd] = useState<string | null>(null)
+  const [cargo, setCargo] = useState<CargoState | null>(null)
+  const [adjust, setAdjust] = useState(false)
+  const [extraDir, setExtraDir] = useState('')
   const prevLaunch = useRef<typeof launch>(null)
 
   const project = projects.find((p) => p.id === launch?.projectId)
   const enabledAgents = useMemo(() => agents.list.filter((a) => a.enabled), [agents.list])
   const selectedAgent = enabledAgents.find((a) => a.cli === cli) ?? enabledAgents[0]
   const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
-  const autoPick = useMemo(
-    () => (project?.lastCwd && enabledPaths.includes(project.lastCwd) ? project.lastCwd : enabledPaths[0]),
-    [project, enabledPaths],
-  )
-  const selectedCwd = pickedCwd ?? autoPick // undefined when 0 enabled → workspace fallback
 
   useEffect(() => {
     if (launch && prevLaunch.current !== launch) {
+      const hasTask = launch.taskTitle ? launch.dest === 'task' : false
       setDest(launch.taskTitle ? launch.dest : 'free')
       setFreeText('')
       clearImages()
-      setPickedCwd(null)
+      setAdjust(false)
+      setExtraDir('')
+      setCargo(initCargo(enabledPaths, project?.lastCwd ?? null, hasTask))
     }
     prevLaunch.current = launch
-  }, [launch, clearImages])
+  }, [launch, clearImages, enabledPaths, project])
 
   useEffect(() => {
     setCli((prev) => (enabledAgents.some((a) => a.cli === prev) ? prev : enabledAgents[0]?.cli ?? 'claude'))
@@ -56,9 +56,23 @@ export function LaunchDialog() {
   // project-less launch with no resolvable cwd is blocked.
   const canSail = (!!launch.projectId || enabledPaths.length > 0) && !!selectedAgent
 
+  const addExtraDir = async () => {
+    const cwd = extraDir.trim()
+    if (!cwd || !launch?.projectId || !cargo) return
+    try {
+      await api.addPath(launch.projectId, cwd, { enabled: true })
+      reload() // 重拉项目，新目录进 pathsMeta
+      setCargo({ ...cargo, dirs: [...cargo.dirs, { cwd, loaded: true }] }) // 乐观加入并默认装载
+      setExtraDir('')
+    } catch {
+      /* add-path 校验失败（路径不存在等）→ 静默，不阻断 */
+    }
+  }
+
   const sail = () => {
     if (!canSail || !selectedAgent) return
-    const cwd = enabledPaths.length === 0 ? '' : selectedCwd || '' // '' → server workspace fallback
+    const d = cargo ? deriveLaunch(cargo) : { cwd: '', addDirs: [] as string[], ctxProject: true, ctxTask: dest === 'task' }
+    const cwd = d.cwd // '' → server workspace fallback
     const cwdLabel = cwd ? shortCwd(cwd) : '项目默认目录'
     const pendingCwd = cwd || project?.workspaceCwd || ''
     // Stable across the fresh Terminal's dev StrictMode effect replay; the server uses it to attach
@@ -93,6 +107,9 @@ export function LaunchDialog() {
         todoKey: launch.todoKey,
         prompt: dest === 'free' ? freeText || undefined : undefined,
         images: dest === 'free' ? images : undefined,
+        addDirs: d.addDirs,
+        ctxProject: d.ctxProject,
+        ctxTask: dest === 'task' ? d.ctxTask : false,
       },
     })
   }
@@ -160,45 +177,99 @@ export function LaunchDialog() {
           )}
         </div>
 
-        {/* 启动目录 */}
-        <div>
-          <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">启动目录</div>
-          {enabledPaths.length === 0 ? (
-            <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-[12.5px]">
-              <Box size={14} className="text-purple" />
-              <span className="text-foreground">项目默认目录</span>
-              <span className="ml-auto text-[10.5px] text-text-dim">自动 · 未登记货舱</span>
-            </div>
-          ) : enabledPaths.length === 1 ? (
-            <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-[12.5px]">
-              <Folder size={14} className="text-brand" />
-              <span className="font-mono text-foreground">{shortCwd(enabledPaths[0])}</span>
-              <span className="ml-auto text-[10.5px] text-text-dim">自动 · 唯一装载</span>
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-md border border-border">
-              {enabledPaths.map((cwd) => {
-                const on = selectedCwd === cwd
-                return (
-                  <button
-                    key={cwd}
-                    onClick={() => setPickedCwd(cwd)}
-                    className={cn(
-                      'flex w-full items-center gap-2.5 border-t border-border/55 px-2.5 py-2 text-left first:border-t-0',
-                      on ? 'bg-brand/10' : 'hover:bg-accent',
+        {/* 货舱 */}
+        {cargo && (
+          <div>
+            <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">货舱</div>
+            <div className={cn('rounded-md border border-border', adjust && 'bg-background/30')}>
+              <button
+                onClick={() => setAdjust((v) => !v)}
+                className={cn('flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12.5px]', adjust && 'border-b border-border')}
+              >
+                <span className="flex-1 truncate text-muted-foreground">{cargoSummary(cargo, dest)}</span>
+                <span className="flex shrink-0 items-center gap-1 text-[12px] text-muted-foreground">
+                  高级 <ChevronDown size={13} className={cn('transition-transform', adjust && 'rotate-180')} />
+                </span>
+              </button>
+
+              {adjust && (
+                <div className="flex flex-col gap-3.5 p-3">
+                  {/* 上下文注入 */}
+                  <div>
+                    <div className="mb-2 text-[11px] font-semibold text-muted-foreground">上下文注入</div>
+                    <Check on={cargo.ctxProject} onClick={() => setCargo({ ...cargo, ctxProject: !cargo.ctxProject })}>项目上下文（Berth）</Check>
+                    {dest === 'task' && (
+                      <Check on={cargo.ctxTask} onClick={() => setCargo({ ...cargo, ctxTask: !cargo.ctxTask })} className="mt-2">任务上下文</Check>
                     )}
-                  >
-                    <span className={cn('flex h-3.5 w-3.5 items-center justify-center rounded-full border', on ? 'border-brand' : 'border-border')}>
-                      {on && <span className="h-2 w-2 rounded-full bg-brand" />}
-                    </span>
-                    <span className="font-mono text-[12px] text-foreground">{shortCwd(cwd)}</span>
-                    {on && <span className="ml-auto text-[10px] text-brand">{pickedCwd ? '已选' : '自动选中'}</span>}
-                  </button>
-                )
-              })}
+                  </div>
+
+                  {/* 代码上下文 */}
+                  <div className={cn(!cargo.codeOn && 'opacity-50')}>
+                    <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+                      代码上下文
+                      <button
+                        onClick={() => setCargo(setCode(cargo, !cargo.codeOn))}
+                        className={cn('ml-auto rounded-full border px-2 py-0.5 text-[10px] font-medium', cargo.codeOn ? 'border-brand bg-brand/15 text-brand' : 'border-border text-muted-foreground')}
+                      >
+                        {cargo.codeOn ? '装载中' : '已关闭'}
+                      </button>
+                    </div>
+                    <div className={cn(!cargo.codeOn && 'pointer-events-none')}>
+                      {enabledPaths.length === 0 ? (
+                        <div className="text-[11px] text-text-dim">未登记货舱，仅可起航于项目默认目录</div>
+                      ) : (
+                        <>
+                          <div className="mb-2 text-[10.5px] leading-snug text-text-dim">
+                            勾选要装载的目录（走 --add-dir）；点行尾「设为启动」选其一作为启动目录，不点则用默认启动目录。
+                          </div>
+                          <div className="overflow-hidden rounded-md border border-border">
+                            {cargo.dirs.map((d) => {
+                              const lit = cargo.litCwd === d.cwd
+                              return (
+                                <div key={d.cwd} className="flex items-center gap-2.5 border-t border-border/55 px-2.5 py-2 first:border-t-0">
+                                  <button onClick={() => setCargo(toggleDir(cargo, d.cwd))} className="flex items-center">
+                                    <span className={cn('flex h-[15px] w-[15px] items-center justify-center rounded border', d.loaded ? 'border-brand bg-brand text-brand-foreground' : 'border-border')}>
+                                      {d.loaded && <Check2 />}
+                                    </span>
+                                  </button>
+                                  <button onClick={() => setCargo(toggleDir(cargo, d.cwd))} className={cn('flex-1 truncate text-left font-mono text-[12px]', d.loaded ? 'text-foreground' : 'text-text-dim')}>
+                                    {shortCwd(d.cwd)}
+                                  </button>
+                                  {d.loaded && (
+                                    <button
+                                      onClick={() => setCargo(anchorDir(cargo, d.cwd))}
+                                      className={cn('flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px]', lit ? 'border-brand bg-brand/12 text-brand' : 'border-border text-muted-foreground hover:bg-accent')}
+                                    >
+                                      <Anchor size={11} /> {lit ? '启动目录' : '设为启动'}
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <div className="mt-2 flex items-center gap-1.5">
+                            <input
+                              value={extraDir}
+                              onChange={(e) => setExtraDir(e.target.value)}
+                              placeholder="额外目录绝对路径…"
+                              className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-[12px] text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
+                            />
+                            <button onClick={addExtraDir} disabled={!extraDir.trim()} className="flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-[12px] text-brand disabled:opacity-40">
+                              <Plus size={12} /> 添加
+                            </button>
+                          </div>
+                          <div className="mt-2 text-[11.5px] text-muted-foreground">
+                            启动目录：{cargo.litCwd ? <span className="font-mono text-card-foreground">{shortCwd(cargo.litCwd)}</span> : <span className="text-text-dim">默认启动目录</span>}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
@@ -216,6 +287,29 @@ export function LaunchDialog() {
       </div>
     </Dialog>
   )
+}
+
+function cargoSummary(s: CargoState, dest: 'task' | 'free'): string {
+  const ctxCount = (s.ctxProject ? 1 : 0) + (dest === 'task' && s.ctxTask ? 1 : 0) + (s.codeOn ? 1 : 0)
+  const d = deriveLaunch(s)
+  const start = d.cwd ? shortCwd(d.cwd) : '默认'
+  const extra = d.addDirs.length ? ` · 装载 +${d.addDirs.length}` : ''
+  return `上下文 ${ctxCount} 项 · 启动 ${start}${extra}`
+}
+
+function Check({ on, onClick, children, className }: { on: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
+  return (
+    <button onClick={onClick} className={cn('flex items-center gap-2.5 text-[12.5px]', on ? 'text-card-foreground' : 'text-text-dim', className)}>
+      <span className={cn('flex h-[15px] w-[15px] items-center justify-center rounded border', on ? 'border-brand bg-brand text-brand-foreground' : 'border-border')}>
+        {on && <Check2 />}
+      </span>
+      {children}
+    </button>
+  )
+}
+
+function Check2() {
+  return <svg width="9" height="6" viewBox="0 0 9 6" fill="none"><path d="M1 3l2.2 2L8 1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
 
 function Radio({ checked, onClick, children, className }: { checked: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {

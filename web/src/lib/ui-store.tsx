@@ -11,6 +11,9 @@ export interface LaunchSpec {
   todoKey?: string | null
   prompt?: string
   images?: { name: string; dataUrl: string }[]
+  addDirs?: string[]
+  ctxProject?: boolean
+  ctxTask?: boolean
 }
 
 export interface DrawerSession {
