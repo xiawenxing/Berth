@@ -1,4 +1,5 @@
 import { spawn, type IPty } from 'node-pty'
+import { spawn as spawnChild, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -115,6 +116,65 @@ export function freshArgv(cli: AgentCli, o: FreshOpts): string[] {
       ]
     }
   }
+}
+
+// ─── Model B: claude stream-json spawn (returns a raw ChildProcess; the server wraps it in a
+// StreamJsonDriver). Kept free of any server/ import so the pty→server dependency stays one-way. ───
+
+// stream-json is bidirectional + long-lived: --input-format keeps the process alive across turns
+// (user turns are written to stdin as NDJSON), --output-format emits NDJSON events, --verbose is
+// REQUIRED with stream-json print mode, --include-partial-messages gives token streaming. Verified
+// live against claude 2.1.186 (task smoke tests C4/C5/C6).
+const CLAUDE_STREAM_FLAGS = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
+
+function assertStreamCli(cli: AgentCli): void {
+  if (cli !== 'claude') throw new Error(`Model B (stream-json) is claude-only for now, got ${cli}`)
+}
+
+export function freshArgvStream(cli: AgentCli, o: FreshOpts): string[] {
+  assertStreamCli(cli)
+  const dirs = (o.addDirs ?? []).flatMap(d => ['--add-dir', d])
+  return [
+    ...CLAUDE_STREAM_FLAGS,
+    '--dangerously-skip-permissions',
+    ...(o.sessionId ? ['--session-id', o.sessionId] : []),   // pre-mint id (no --resume) → <id>.jsonl
+    ...(o.model ? ['--model', o.model] : []),
+    ...(o.injectFile ? ['--append-system-prompt-file', o.injectFile] : []),   // manifest, same channel as Model A
+    ...dirs,
+    // NO positional prompt: the user's first turn is written to stdin as NDJSON by the driver.
+  ]
+}
+
+export function resumeArgvStream(cli: AgentCli, id: string, o?: { model?: string }): string[] {
+  assertStreamCli(cli)
+  return [
+    ...CLAUDE_STREAM_FLAGS,
+    '--dangerously-skip-permissions',
+    '--resume', id,   // resume the existing transcript; MUST NOT also pass --session-id (verified: conflicts)
+    ...(o?.model ? ['--model', o.model] : []),
+  ]
+}
+
+const STREAM_STDIO: ['pipe', 'pipe', 'pipe'] = ['pipe', 'pipe', 'pipe']
+
+export function launchFreshStream(o: FreshOpts): ChildProcess {
+  const cwd = ensureLaunchCwd(o.cwd)
+  const bin = resolveAgentBinary('claude')
+  ensureClaudeTrust(cwd)
+  const env = childEnv({ ...(process.env as any) })
+  // detached:true → the child leads its own process group, so the registry's process.kill(-pid)
+  // reaps the whole tree (MCP/sub-procs). Verified (task smoke test C1).
+  return spawnChild(bin, freshArgvStream('claude', o), { cwd, env, detached: true, stdio: STREAM_STDIO })
+}
+
+export function resumeSessionStream(s: LogicalSession, o: { model?: string } = {}): ChildProcess {
+  if (!s.resume) throw new Error(`session ${s.sessionId} has no resume target`)
+  const { cli, id } = s.resume
+  assertStreamCli(cli)
+  const cwd = ensureLaunchCwd(s.cwd)
+  const bin = resolveAgentBinary(cli)
+  ensureClaudeTrust(cwd)
+  return spawnChild(bin, resumeArgvStream(cli, id, o), { cwd, env: childEnv({ ...(process.env as any) }), detached: true, stdio: STREAM_STDIO })
 }
 
 export function ensureCodexBerthHookProfile() {
