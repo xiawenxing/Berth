@@ -3,20 +3,10 @@ import { Terminal as Xterm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
+import type { LaunchSpec } from '@/lib/ui-store'
 import '@xterm/xterm/css/xterm.css'
 
-export interface LaunchSpec {
-  cli: string
-  cwd: string
-  launchToken?: string
-  projectId?: string | null
-  todoKey?: string | null
-  prompt?: string
-  images?: { name: string; dataUrl: string }[]
-  addDirs?: string[]
-  ctxProject?: boolean
-  ctxTask?: boolean
-}
+export type { LaunchSpec }
 
 function cssToken(name: string, fallback: string) {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()

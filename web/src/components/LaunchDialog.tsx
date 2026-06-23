@@ -59,6 +59,7 @@ export function LaunchDialog() {
   const addExtraDir = async () => {
     const cwd = extraDir.trim()
     if (!cwd || !launch?.projectId || !cargo) return
+    if (cargo.dirs.some((d) => d.cwd === cwd)) { setExtraDir(''); return }
     try {
       await api.addPath(launch.projectId, cwd, { enabled: true })
       reload() // 重拉项目，新目录进 pathsMeta
@@ -184,6 +185,7 @@ export function LaunchDialog() {
             <div className={cn('rounded-md border border-border', adjust && 'bg-background/30')}>
               <button
                 onClick={() => setAdjust((v) => !v)}
+                aria-expanded={adjust}
                 className={cn('flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12.5px]', adjust && 'border-b border-border')}
               >
                 <span className="flex-1 truncate text-muted-foreground">{cargoSummary(cargo, dest)}</span>
@@ -227,7 +229,7 @@ export function LaunchDialog() {
                               const lit = cargo.litCwd === d.cwd
                               return (
                                 <div key={d.cwd} className="flex items-center gap-2.5 border-t border-border/55 px-2.5 py-2 first:border-t-0">
-                                  <button onClick={() => setCargo(toggleDir(cargo, d.cwd))} className="flex items-center">
+                                  <button onClick={() => setCargo(toggleDir(cargo, d.cwd))} aria-pressed={d.loaded} aria-label={`装载 ${d.cwd}`} className="flex items-center">
                                     <span className={cn('flex h-[15px] w-[15px] items-center justify-center rounded border', d.loaded ? 'border-brand bg-brand text-brand-foreground' : 'border-border')}>
                                       {d.loaded && <Check2 />}
                                     </span>
@@ -238,6 +240,7 @@ export function LaunchDialog() {
                                   {d.loaded && (
                                     <button
                                       onClick={() => setCargo(anchorDir(cargo, d.cwd))}
+                                      aria-pressed={lit}
                                       className={cn('flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px]', lit ? 'border-brand bg-brand/12 text-brand' : 'border-border text-muted-foreground hover:bg-accent')}
                                     >
                                       <Anchor size={11} /> {lit ? '启动目录' : '设为启动'}
@@ -299,7 +302,7 @@ function cargoSummary(s: CargoState, dest: 'task' | 'free'): string {
 
 function Check({ on, onClick, children, className }: { on: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
   return (
-    <button onClick={onClick} className={cn('flex items-center gap-2.5 text-[12.5px]', on ? 'text-card-foreground' : 'text-text-dim', className)}>
+    <button onClick={onClick} aria-pressed={on} className={cn('flex items-center gap-2.5 text-[12.5px]', on ? 'text-card-foreground' : 'text-text-dim', className)}>
       <span className={cn('flex h-[15px] w-[15px] items-center justify-center rounded border', on ? 'border-brand bg-brand text-brand-foreground' : 'border-border')}>
         {on && <Check2 />}
       </span>
@@ -314,7 +317,7 @@ function Check2() {
 
 function Radio({ checked, onClick, children, className }: { checked: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
   return (
-    <button onClick={onClick} className={cn('flex items-center gap-1.5 text-foreground', className)}>
+    <button onClick={onClick} role="radio" aria-checked={checked} className={cn('flex items-center gap-1.5 text-foreground', className)}>
       <span className={cn('flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border', checked ? 'border-brand' : 'border-border')}>
         {checked && <span className="h-2 w-2 rounded-full bg-brand" />}
       </span>
