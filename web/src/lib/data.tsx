@@ -120,7 +120,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const onRekey = (e: Event) => {
       const detail = (e as CustomEvent<{ from?: string; to?: string }>).detail
       if (!detail?.from || !detail?.to) return
-      setPending((cur) => cur.map((p) => (p.sessionId === detail.from ? { ...p, sessionId: detail.to } : p)))
+      const { from, to } = detail
+      setPending((cur) => cur.map((p) => (p.sessionId === from ? { ...p, sessionId: to } : p)))
     }
     window.addEventListener('berth:session-rekey', onRekey)
     return () => window.removeEventListener('berth:session-rekey', onRekey)

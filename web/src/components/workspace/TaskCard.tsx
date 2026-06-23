@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Pencil, Trash2 } from 'lucide-react'
+import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Pencil, Trash2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/Menu'
 import { TaskSummaryPopover } from '@/components/AiPanels'
@@ -13,14 +13,9 @@ const REFINING = '港务助手正在总结进展摘要…'
 
 function ShipGlyph({ status }: { status: ShipStatus }) {
   if (status === 'moored') return null
-  return (
-    <span
-      className={cn(
-        'h-1.5 w-1.5 flex-none rounded-full',
-        status === 'sail' ? 'bg-success' : 'bg-destructive',
-      )}
-    />
-  )
+  // sail=运行中(蓝色 loading), dock=未读(红点) — mirrors the session-list lamp.
+  if (status === 'sail') return <Loader2 size={11} className="flex-none animate-spin text-brand" aria-label="在航" />
+  return <span className="h-1.5 w-1.5 flex-none rounded-full bg-destructive" title="有未读" />
 }
 
 function localIso(offsetDays = 0) {

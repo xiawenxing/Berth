@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, Loader2 } from 'lucide-react'
 import { CliBadge } from './workspace/TaskCard'
 import { SHIP_LABEL, type ShipStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -169,12 +169,12 @@ function ShipPill({ status, task }: { status: ShipStatus; task?: string }) {
       title={routeLabel}
       className={cn(
         'group relative inline-flex flex-none shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10.5px]',
-        status === 'sail' && 'bg-success/15 text-success',
-        status === 'dock' && 'bg-brand/15 text-brand',
+        status === 'sail' && 'bg-brand/15 text-brand',
+        status === 'dock' && 'bg-destructive/15 text-destructive',
         status === 'moored' && 'bg-muted text-muted-foreground',
       )}
     >
-      {status === 'sail' && <span className="h-1.5 w-1.5 flex-none rounded-full bg-success" />}
+      {status === 'sail' && <Loader2 size={11} className="flex-none animate-spin" />}
       {SHIP_LABEL[status]}
       {routeLabel && (
         <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 hidden max-w-[420px] -translate-y-1/2 truncate rounded-md border border-border bg-popover px-2 py-1 text-[11px] font-normal text-popover-foreground shadow-lg group-hover:block">
