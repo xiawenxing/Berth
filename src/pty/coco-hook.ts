@@ -1,12 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parse, stringify } from 'yaml'
-import { dataHome } from '../paths'
 
 // coco's authoritative config (the file `coco config edit` opens). Hooks live in a flat `hooks:`
 // array of `{ type, command, matchers: [{ event }] }` — confirmed against `coco doc hooks`.
-// dataHome() (call-time) so BERTH_TEST_HOME writes the hook where the test-home coco child reads it.
-const traeConfigPath = () => join(dataHome(), '.trae', 'traecli.yaml')
+const traeConfigPath = () => join(homedir(), '.trae', 'traecli.yaml')
 
 // A `session_start` hook that prints the Berth manifest as the agent's additional context. coco
 // injects `hookSpecificOutput.additionalContext` from a session_start hook as a `<system-reminder>`

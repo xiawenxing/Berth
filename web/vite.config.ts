@@ -5,9 +5,10 @@ import path from 'node:path'
 import type { ProxyOptions } from 'vite'
 import { quietProxyLogger } from './src/lib/dev-proxy'
 
-// Backend the dev server proxies to. Defaults to the normal Node server (:7777); point both at a
-// clean test backend with BERTH_API_PORT (e.g. `BERTH_API_PORT=7788`) so a `BERTH_TEST_HOME` instance
-// is reachable from the browser alongside your normal one. BERTH_WEB_PORT moves Vite off :5173.
+// Backend the dev server proxies to. Defaults to the normal Node server (:7777); point at a clean
+// test backend with BERTH_API_PORT (e.g. `BERTH_API_PORT=7788`) so a `BERTH_HOME`-isolated instance
+// (npm run dev:clean) is reachable from the browser alongside your normal one. BERTH_WEB_PORT moves
+// Vite off :5173.
 const apiPort = process.env.BERTH_API_PORT || '7777'
 const webPort = Number(process.env.BERTH_WEB_PORT) || 5173
 

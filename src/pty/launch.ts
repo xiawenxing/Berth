@@ -6,23 +6,11 @@ import { join } from 'node:path'
 import { resolveAgentBinary, codexHookTrustSupportOrWarm } from './binaries'
 import { ensureClaudeTrust } from './trust'
 import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
-import { berthHome, dataHome } from '../paths'
+import { berthHome } from '../paths'
 import type { AgentCli, LogicalSession } from '../types'
 
 const CODEX_BERTH_PROFILE = 'berth-launch'
-const codexHome = () => process.env.CODEX_HOME || join(dataHome(), '.codex')
-
-/**
- * Env for a spawned CLI child. Under BERTH_TEST_HOME (clean first-run sim) the child's HOME/CODEX_HOME
- * are pointed at the test home so claude/coco/codex write their session files into the SAME dir
- * `storeRoots()` scans — closing the loop: a launched session surfaces in the otherwise-empty sidebar.
- * The binary was already resolved to an absolute path against the real home, so it's still found.
- * No-op when BERTH_TEST_HOME is unset.
- */
-export function childEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  if (!process.env.BERTH_TEST_HOME) return base
-  return { ...base, HOME: process.env.BERTH_TEST_HOME, CODEX_HOME: codexHome() }
-}
+const codexHome = () => process.env.CODEX_HOME || join(homedir(), '.codex')
 
 /**
  * Resolve a spawn cwd safely. A Berth project workspace dir (~/.berth/workspaces/<id>) is created
@@ -61,7 +49,7 @@ export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
   const bin = resolveAgentBinary(cli)
   if (cli === 'claude') ensureClaudeTrust(cwd)   // interactive PTY → trust dialog isn't auto-skipped
   return spawn(bin, resumeArgv(cli, id), {
-    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: childEnv() as any,
+    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: process.env as any,
   })
 }
 
@@ -161,7 +149,7 @@ export function launchFreshStream(o: FreshOpts): ChildProcess {
   const cwd = ensureLaunchCwd(o.cwd)
   const bin = resolveAgentBinary('claude')
   ensureClaudeTrust(cwd)
-  const env = childEnv({ ...(process.env as any) })
+  const env = { ...(process.env as any) }
   // detached:true → the child leads its own process group, so the registry's process.kill(-pid)
   // reaps the whole tree (MCP/sub-procs). Verified (task smoke test C1).
   return spawnChild(bin, freshArgvStream('claude', o), { cwd, env, detached: true, stdio: STREAM_STDIO })
@@ -174,7 +162,7 @@ export function resumeSessionStream(s: LogicalSession, o: { model?: string } = {
   const cwd = ensureLaunchCwd(s.cwd)
   const bin = resolveAgentBinary(cli)
   ensureClaudeTrust(cwd)
-  return spawnChild(bin, resumeArgvStream(cli, id, o), { cwd, env: childEnv({ ...(process.env as any) }), detached: true, stdio: STREAM_STDIO })
+  return spawnChild(bin, resumeArgvStream(cli, id, o), { cwd, env: { ...(process.env as any) }, detached: true, stdio: STREAM_STDIO })
 }
 
 export function ensureCodexBerthHookProfile() {
@@ -204,7 +192,7 @@ export function launchFresh(cli: AgentCli, o: FreshOpts): IPty {
   if (cli === 'codex' && o.injectFile && codexHookTrustSupportOrWarm(bin) !== true) {
     opts = { ...o, injectFile: undefined }
   }
-  const env = childEnv({ ...(process.env as any) })
+  const env = { ...(process.env as any) }
   if (cli === 'codex' && opts.injectFile) {
     ensureCodexBerthHookProfile()
     env.BERTH_CONTEXT_FILE = opts.injectFile            // codex hook cats raw text as context

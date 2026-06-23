@@ -1,9 +1,8 @@
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { dataHome } from '../paths'
 
-// dataHome() (call-time) so BERTH_TEST_HOME writes trust where the test-home child reads it.
-const claudeConfigPath = () => join(dataHome(), '.claude.json')
+const CLAUDE_CONFIG = join(homedir(), '.claude.json')
 
 /**
  * Pure: return `config` with `projects[realCwd].hasTrustDialogAccepted = true`, creating the
@@ -31,7 +30,7 @@ export function withTrustedProject(config: any, realCwd: string): any {
  *
  * Never throws: on any failure the launch proceeds unchanged (claude just shows the dialog as before).
  */
-export function ensureClaudeTrust(cwd: string, configPath: string = claudeConfigPath()): void {
+export function ensureClaudeTrust(cwd: string, configPath: string = CLAUDE_CONFIG): void {
   try {
     let real = cwd
     try { real = realpathSync(cwd) } catch {}

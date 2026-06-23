@@ -36,7 +36,7 @@
     "build:web": "cd web && npm ci && npm run build",
     "prepublishOnly": "npm run build",
     "start": "npm run vendor && tsx bin/berth-serve.ts",
-    "dev:clean": "PORT=\"${PORT:-7788}\" BERTH_TEST_HOME=\"${BERTH_TEST_HOME:-/tmp/berth-clean}\" npm start",
+    "dev:clean": "PORT=\"${PORT:-7788}\" BERTH_HOME=\"${BERTH_HOME:-/tmp/berth-clean}\" npm start",
     "serve": "tsx bin/berth-serve.ts",
     "vendor": "node scripts/vendor.mjs",
     "electron:dev": "npm run build && electron-rebuild -f -w better-sqlite3,node-pty && electron electron/main.cjs",
