@@ -13,6 +13,9 @@ export interface LaunchSpec {
   todoKey?: string | null
   prompt?: string
   images?: { name: string; dataUrl: string }[]
+  addDirs?: string[]
+  ctxProject?: boolean
+  ctxTask?: boolean
 }
 
 function cssToken(name: string, fallback: string) {
@@ -142,6 +145,9 @@ export function Terminal({
       if (launch.launchToken) qs.set('launchToken', launch.launchToken)
       if (launch.projectId) qs.set('projectId', launch.projectId)
       if (launch.todoKey) qs.set('todoKey', launch.todoKey)
+      for (const d of launch.addDirs ?? []) qs.append('addDirs', d)
+      if (launch.ctxProject === false) qs.set('ctxProject', '0')
+      if (launch.ctxTask === false) qs.set('ctxTask', '0')
       if (launch.prompt && !launch.images?.length) qs.set('prompt', launch.prompt)
     } else if (sessionId) {
       qs.set('sessionId', sessionId)
@@ -304,7 +310,9 @@ export function Terminal({
       term.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, initialInput, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey, launch?.images])
+  }, [sessionId, initialInput, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey, launch?.images,
+    launch?.addDirs, launch?.ctxProject, launch?.ctxTask,
+  ])
 
   return (
     <div ref={shellRef} className="berth-terminal-shell h-full w-full overflow-hidden bg-canvas py-2 pl-4 pr-2">
