@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon, RefreshCw, Sparkles, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
-import { Terminal } from '@/components/Terminal'
+import { SessionPanel } from '@/components/SessionPanel'
 import { SessionTitleBar } from '@/components/SessionTitleBar'
 import { useData } from '@/lib/data'
 import { relTime, shortCwd } from '@/lib/format'
@@ -221,7 +221,7 @@ export function Unassigned() {
               }}
             />
             <div className="min-h-0 flex-1 overflow-hidden">
-              <Terminal key={sel.sessionId} sessionId={sel.sessionId} />
+              <SessionPanel key={sel.sessionId} cli={sel.cli} sessionId={sel.sessionId} />
             </div>
           </>
         ) : null}
