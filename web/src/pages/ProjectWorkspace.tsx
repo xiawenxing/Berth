@@ -390,6 +390,12 @@ export function ProjectWorkspace() {
                 {projName}
               </h1>
             )}
+            {project?.archived && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                <Archive size={11} />
+                已归档
+              </span>
+            )}
             {project?.homeCwd && <span className="font-mono text-[12px] text-muted-foreground">{shortCwd(project.homeCwd)}</span>}
           </div>
           <div className="flex items-center gap-2">

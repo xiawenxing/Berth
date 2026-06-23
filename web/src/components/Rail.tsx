@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Anchor, Inbox, Folder, Settings as SettingsIcon, Plus, Ban, Sun, Moon } from 'lucide-react'
+import { Anchor, Inbox, Folder, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
 import { useData } from '@/lib/data'
@@ -12,6 +12,7 @@ interface ProjRow {
   id: string
   name: string
   meta: string
+  archived?: boolean
 }
 
 /** Aggregate live status for a bucket of sessions: 'sail' if any is running, else 'dock' if any is
@@ -83,17 +84,23 @@ export function Rail() {
     return m
   }, [sessions])
 
-  // Real projects (non-archived) + counts derived from tasks/sessions.
+  const rowForProject = (p: (typeof apiProjects)[number]): ProjRow => {
+    const tN = tasks.filter((t) => t.projectId === p.id).length
+    const sN = sessions.filter((s) => s.projectId === p.id).length
+    return { id: p.id, name: p.name, meta: `${tN} 任务 · ${sN} 会话`, archived: p.archived }
+  }
+
+  // Real active projects + optimistic newly-created rows.
   const projects = useMemo<ProjRow[]>(() => {
     const real = apiProjects
       .filter((p) => !p.archived)
-      .map((p) => {
-        const tN = tasks.filter((t) => t.projectId === p.id).length
-        const sN = sessions.filter((s) => s.projectId === p.id).length
-        return { id: p.id, name: p.name, meta: `${tN} 任务 · ${sN} 会话` }
-      })
+      .map(rowForProject)
     return [...real, ...extra]
   }, [apiProjects, tasks, sessions, extra])
+  const archivedProjects = useMemo<ProjRow[]>(
+    () => apiProjects.filter((p) => p.archived).map(rowForProject),
+    [apiProjects, tasks, sessions],
+  )
 
   const unassignedSessions = byProject.get('__none__') ?? []
   const unassignedN = unassignedSessions.length
@@ -141,24 +148,21 @@ export function Rail() {
           项目
         </div>
         {projects.map((p) => (
-          <NavLink
-            key={p.id}
-            to={`/project/${encodeURIComponent(p.id)}`}
-            className={({ isActive }) =>
-              cn(
-                'relative block rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent',
-                isActive &&
-                  'bg-sidebar-accent before:absolute before:-left-2 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-brand',
-              )
-            }
-          >
-            <span className="flex items-center gap-1.5">
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-accent-foreground" title={p.name}>{p.name}</span>
-              <ShipDot kind={bucketShip(byProject.get(p.id) ?? [], live)} />
-            </span>
-            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{p.meta}</span>
-          </NavLink>
+          <ProjectNavRow key={p.id} project={p} ship={bucketShip(byProject.get(p.id) ?? [], live)} />
         ))}
+
+        {archivedProjects.length > 0 && (
+          <div className="mt-3">
+            <div className="flex items-center gap-1.5 px-1 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <Archive size={12} />
+              已归档
+              <span className="ml-auto rounded-full bg-muted px-1.5 py-0 text-[10px] font-medium text-muted-foreground">{archivedProjects.length}</span>
+            </div>
+            {archivedProjects.map((p) => (
+              <ProjectNavRow key={p.id} project={p} ship={bucketShip(byProject.get(p.id) ?? [], live)} />
+            ))}
+          </div>
+        )}
 
         <NavLink
           to="/unassigned"
@@ -181,5 +185,28 @@ export function Rail() {
 
       <NewProjectDialog open={newProj} onClose={() => setNewProj(false)} onCreate={addProject} />
     </aside>
+  )
+}
+
+function ProjectNavRow({ project, ship }: { project: ProjRow; ship: 'sail' | 'dock' | null }) {
+  return (
+    <NavLink
+      to={`/project/${encodeURIComponent(project.id)}`}
+      className={({ isActive }) =>
+        cn(
+          'relative block rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent',
+          project.archived && 'opacity-75',
+          isActive &&
+            'bg-sidebar-accent opacity-100 before:absolute before:-left-2 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-brand',
+        )
+      }
+    >
+      <span className="flex items-center gap-1.5">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-accent-foreground" title={project.name}>{project.name}</span>
+        {project.archived && <Archive size={11} className="flex-none text-muted-foreground" />}
+        <ShipDot kind={ship} />
+      </span>
+      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{project.meta}</span>
+    </NavLink>
   )
 }
