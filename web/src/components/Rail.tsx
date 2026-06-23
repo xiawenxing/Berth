@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Anchor, Inbox, Folder, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive } from 'lucide-react'
+import { Anchor, Inbox, Folder, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
 import { useData } from '@/lib/data'
@@ -73,6 +73,7 @@ export function Rail() {
   const live = useLive()
   const [extra, setExtra] = useState<ProjRow[]>([])
   const [newProj, setNewProj] = useState(false)
+  const [archivedOpen, setArchivedOpen] = useState(false)
 
   // Sessions bucketed by project id, so each rail row can show its aggregate live status.
   const byProject = useMemo(() => {
@@ -153,14 +154,21 @@ export function Rail() {
 
         {archivedProjects.length > 0 && (
           <div className="mt-3">
-            <div className="flex items-center gap-1.5 px-1 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <button
+              type="button"
+              onClick={() => setArchivedOpen((v) => !v)}
+              className="flex w-full items-center gap-1.5 rounded-md px-1 pb-1 pt-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+              aria-expanded={archivedOpen}
+            >
+              <ChevronRight size={12} className={cn('transition-transform', archivedOpen && 'rotate-90')} />
               <Archive size={12} />
               已归档
               <span className="ml-auto rounded-full bg-muted px-1.5 py-0 text-[10px] font-medium text-muted-foreground">{archivedProjects.length}</span>
-            </div>
-            {archivedProjects.map((p) => (
-              <ProjectNavRow key={p.id} project={p} ship={bucketShip(byProject.get(p.id) ?? [], live)} />
-            ))}
+            </button>
+            {archivedOpen &&
+              archivedProjects.map((p) => (
+                <ProjectNavRow key={p.id} project={p} ship={bucketShip(byProject.get(p.id) ?? [], live)} />
+              ))}
           </div>
         )}
 
