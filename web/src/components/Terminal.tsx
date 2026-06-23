@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Terminal as Xterm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
+import { attachImeComposition } from '@/lib/ime-input'
 import '@xterm/xterm/css/xterm.css'
 
 export interface LaunchSpec {
@@ -264,6 +265,11 @@ export function Terminal({
       const userInput = stripTerminalGeneratedInput(d)
       if (userInput) sendInput(userInput)
     })
+    // IME-safe CJK input: bypass xterm's textarea-slicing CompositionHelper (it intermittently
+    // drops/duplicates/reorders committed characters) and send the browser's authoritative
+    // CompositionEvent.data ourselves. Attached after term.open() so it runs after xterm's own
+    // composition handler. See lib/ime-input.ts.
+    const disposeIme = term.textarea ? attachImeComposition(term.textarea, sendInput) : undefined
 
     let resizeFrame: number | null = null
     const fitAndResize = () => {
@@ -293,6 +299,7 @@ export function Terminal({
       document.removeEventListener('paste', onPaste, true)
       document.removeEventListener('keydown', onKeyDown, true)
       disp.dispose()
+      disposeIme?.()
       ws.close()
       term.dispose()
     }
