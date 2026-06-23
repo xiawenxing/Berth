@@ -77,6 +77,14 @@ describe('PerTurnStreamDriver', () => {
     ])
   })
 
+  it('resumeId seed makes the FIRST turn resume the existing session (codex/coco resume open)', () => {
+    const spawns: Array<{ prompt: string; resumeId: string | null }> = []
+    const spawnTurn = (prompt: string, resumeId: string | null) => { spawns.push({ prompt, resumeId }); return fakeChild().child }
+    const d = new PerTurnStreamDriver(new CodexReducer(clock), spawnTurn, { resumeId: 'existing-id' })
+    d.send({ t: 'turn', text: 'continue' })
+    expect(spawns).toEqual([{ prompt: 'continue', resumeId: 'existing-id' }])
+  })
+
   it('interrupt kills the active turn process', () => {
     const f = fakeChild()
     const d = new PerTurnStreamDriver(new CodexReducer(clock), () => f.child, { initialPrompt: 'q' })

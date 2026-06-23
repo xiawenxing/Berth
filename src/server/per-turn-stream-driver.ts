@@ -20,8 +20,12 @@ export class PerTurnStreamDriver implements SessionDriver {
   private active: ChildLike | null = null
   private buf = ''
   private sessionEmitted = false
+  private resumeId: string | null
 
-  constructor(private reducer: ChatReducer, private spawnTurn: SpawnTurn, opts?: { initialPrompt?: string }) {
+  constructor(private reducer: ChatReducer, private spawnTurn: SpawnTurn, opts?: { initialPrompt?: string; resumeId?: string }) {
+    // resumeId seeds a RESUME open (codex/coco) so the very first turn continues the existing session
+    // instead of spawning a fresh one; a fresh launch leaves it null.
+    this.resumeId = opts?.resumeId ?? null
     if (opts?.initialPrompt) this.startTurn(opts.initialPrompt)
   }
 
@@ -46,7 +50,7 @@ export class PerTurnStreamDriver implements SessionDriver {
     this.emit({ type: 'turn', turn: userTurn })
     this.activityCb()
     this.buf = ''
-    const resumeId = this.reducer.sessionId ?? null
+    const resumeId = this.reducer.sessionId ?? this.resumeId
     const child = this.spawnTurn(prompt, resumeId)
     this.active = child
     child.stdout?.on('data', (d) => this.onStdout(d.toString()))

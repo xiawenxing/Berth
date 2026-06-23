@@ -92,7 +92,7 @@ export function Settings() {
           </Row>
         </Card>
 
-        <Card icon={<MessagesSquare size={14} />} title="会话渲染" hint="全局生效 · 决定会话面板用哪种方式呈现（仅 claude 支持对话模式）">
+        <Card icon={<MessagesSquare size={14} />} title="会话渲染" hint="全局生效 · 决定会话面板用哪种方式呈现（claude / codex / coco 均支持对话模式）">
           <Row label="渲染模式">
             <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
               <ModeBtn active={renderMode === 'A'} onClick={() => setRenderMode('A')} label="终端" hint="原生 CLI 界面 · 可交互" />

@@ -10,7 +10,7 @@ import { useUI, type LaunchSpec } from '@/lib/ui-store'
  * xterm terminal, Model B the stream-json chat view. Both attach to the same persistent process via
  * /pty; the backend kills + respawns on a mode switch so the same session id works in either view.
  *
- * Model B is claude-only for now; other CLIs always render as Model A regardless of the global mode.
+ * All three CLIs support Model B (claude / codex / coco); the toggle has no effect for any other cli.
  */
 export function SessionPanel({
   cli,
@@ -25,7 +25,9 @@ export function SessionPanel({
 }) {
   const { renderMode } = useUI()
   const effectiveCli = cli ?? launch?.cli
-  const active = effectiveCli === 'claude' && renderMode === 'B' ? 'B' : 'A'
+  // All three CLIs support Model B (claude = persistent stream-json; codex/coco = per-turn).
+  const canChat = effectiveCli === 'claude' || effectiveCli === 'codex' || effectiveCli === 'coco'
+  const active = canChat && renderMode === 'B' ? 'B' : 'A'
 
   if (active === 'B') {
     return <ChatPanel key={`B:${sessionId ?? 'launch'}`} sessionId={sessionId} launch={launch} onLaunched={onLaunched} />
