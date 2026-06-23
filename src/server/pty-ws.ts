@@ -307,10 +307,14 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   const isWorkspaceCwd = projectId != null && cwd === join(berthHome(), 'workspaces', projectId)
 
   const store = getStore()
+  // NB: keyed strictly by project id (not name); LaunchDialog always passes a real projectId.
   const enabledPaths = projectId
     ? (store.allProjectPaths().get(projectId)?.meta.filter((m) => m.enabled).map((m) => m.cwd) ?? [])
     : []
   const userAddDirs = validateAddDirs(requestedAddDirs, enabledPaths)
+  if (requestedAddDirs.length > userAddDirs.length) {
+    try { ws.send(`\r\n[berth] ignored ${requestedAddDirs.length - userAddDirs.length} unregistered --add-dir path(s)\r\n`) } catch {}
+  }
   const anyCtx = gates.project || gates.task
   // The launching CLI must be a currently-enabled agent (Settings → Agents).
   const agentCfg = getAgentConfig(store)
