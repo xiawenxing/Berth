@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Sparkles, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, pastedImageDataUrls, usePastedImages, type PastedImage } from './ImagePaste'
+import { LaunchConfigFields } from './LaunchConfigFields'
+import type { AgentCli, AgentConfig, ApiProject } from '@/lib/api'
+import { initCargo, type CargoState } from '@/lib/launch-cargo'
 import type { Task } from '@/lib/types'
 
 /**
@@ -13,43 +16,80 @@ export function NewTaskDialog({
   open,
   onClose,
   onCreate,
+  project,
+  agents,
+  onAddLaunchPath,
 }: {
   open: boolean
   onClose: () => void
-  onCreate: (raw: string, opts: { aiSummarize: boolean; runNow: boolean; images: string[] }) => void
+  onCreate: (raw: string, opts: NewTaskCreateOptions) => void
+  project?: ApiProject
+  agents?: AgentConfig
+  onAddLaunchPath?: (cwd: string) => Promise<boolean>
 }) {
   const [text, setText] = useState('')
   const [ai, setAi] = useState(true)
   const [run, setRun] = useState(false)
+  const [cli, setCli] = useState<AgentCli>('claude')
+  const [cargo, setCargo] = useState<CargoState | null>(null)
+  const [adjust, setAdjust] = useState(false)
+  const [extraDir, setExtraDir] = useState('')
   const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
   const ref = useRef<HTMLTextAreaElement>(null)
   const wasOpen = useRef(false)
+  const enabledAgents = useMemo(() => agents?.list.filter((a) => a.enabled) ?? [], [agents?.list])
+  const selectedAgent = enabledAgents.find((a) => a.cli === cli) ?? enabledAgents[0]
+  const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
+  const canRun = !run || (!!project?.id && !!selectedAgent)
 
   useEffect(() => {
     if (open && !wasOpen.current) {
       setText('')
       setAi(true)
       setRun(false)
+      setAdjust(false)
+      setExtraDir('')
+      setCargo(initCargo(enabledPaths, project?.lastCwd ?? null, true))
       clearImages()
       setTimeout(() => ref.current?.focus(), 0)
     }
     wasOpen.current = open
-  }, [open, clearImages])
+  }, [open, clearImages, enabledPaths, project?.lastCwd])
+
+  useEffect(() => {
+    setCli((prev) => (enabledAgents.some((a) => a.cli === prev) ? prev : enabledAgents[0]?.cli ?? 'claude'))
+  }, [enabledAgents])
+
+  const addExtraDir = async () => {
+    const cwd = extraDir.trim()
+    if (!cwd || !cargo || !onAddLaunchPath) return
+    if (cargo.dirs.some((d) => d.cwd === cwd)) { setExtraDir(''); return }
+    const ok = await onAddLaunchPath(cwd)
+    if (!ok) return
+    setCargo({ ...cargo, dirs: [...cargo.dirs, { cwd, loaded: true }] })
+    setExtraDir('')
+  }
 
   const create = () => {
     if (!text.trim() && images.length === 0) return
-    onCreate(text.trim(), { aiSummarize: ai, runNow: run, images: pastedImageDataUrls(images) })
+    if (!canRun) return
+    onCreate(text.trim(), {
+      aiSummarize: ai,
+      runNow: run,
+      images: pastedImageDataUrls(images),
+      launch: run && selectedAgent ? { cli: selectedAgent.cli, cargo } : undefined,
+    })
     onClose()
   }
 
   return (
-    <Dialog open={open} onClose={onClose} width={460}>
+    <Dialog open={open} onClose={onClose} width={run ? 560 : 460}>
       <div className="border-b border-border px-4 py-3">
         <h3 className="text-[13px] font-semibold text-foreground">新建任务</h3>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">写个标题就走 · 港务助手在后台补全</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{run ? '创建后直接起航 · 配置会随任务一起生效' : '写个标题就走 · 港务助手在后台补全'}</p>
       </div>
 
-      <div className="p-4">
+      <div className="flex max-h-[72vh] flex-col gap-3 overflow-y-auto p-4">
         <label className="mb-1 block text-[10.5px] text-muted-foreground">任务标题</label>
         <textarea
           ref={ref}
@@ -69,13 +109,36 @@ export function NewTaskDialog({
             立即执行
           </MiniCheck>
         </div>
+        {run && (
+          <div className="flex flex-col gap-3 border-t border-border pt-3">
+            <LaunchConfigFields
+              dest="task"
+              cargo={cargo}
+              setCargo={setCargo}
+              enabledAgents={enabledAgents}
+              selectedCli={selectedAgent?.cli ?? cli}
+              onSelectCli={setCli}
+              enabledPaths={enabledPaths}
+              adjust={adjust}
+              setAdjust={setAdjust}
+              extraDir={extraDir}
+              setExtraDir={setExtraDir}
+              onAddExtraDir={addExtraDir}
+            />
+            {!canRun && (
+              <div className="text-[11px] text-warning">
+                {enabledAgents.length === 0 ? '请先在设置页启用启动 Agent' : '当前项目还没加载完成，暂不能立即执行'}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
         <button onClick={onClose} className="rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
           取消
         </button>
-        <button onClick={create} className="rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground">
+        <button onClick={create} disabled={!canRun} className="rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground disabled:opacity-50">
           创建
         </button>
       </div>
@@ -112,6 +175,8 @@ export function refineTitle(raw: string): { title: string; summary: string } {
   return { title, summary: raw }
 }
 
-export type NewTaskResult = { raw: string; opts: { aiSummarize: boolean; runNow: boolean; images: string[] } }
+export interface NewTaskLaunchConfig { cli: AgentCli; cargo: CargoState | null }
+export interface NewTaskCreateOptions { aiSummarize: boolean; runNow: boolean; images: string[]; launch?: NewTaskLaunchConfig }
+export type NewTaskResult = { raw: string; opts: NewTaskCreateOptions }
 export type { Task }
 export type { PastedImage }

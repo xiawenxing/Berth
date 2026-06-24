@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Anchor, ChevronDown, Play, Plus } from 'lucide-react'
+import { Anchor, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, usePastedImages } from './ImagePaste'
+import { LaunchConfigFields } from './LaunchConfigFields'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
-import { shortCwd } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { api, type AgentCli } from '@/lib/api'
-import { initCargo, toggleDir, anchorDir, setCode, deriveLaunch, type CargoState } from '@/lib/launch-cargo'
+import { initCargo, type CargoState } from '@/lib/launch-cargo'
+import { startFreshLaunch } from '@/lib/launch-runner'
 
 /**
  * 装载台 / 起航 — destination (任务 | 自由提问) + 货舱 (三级上下文开关 + 统一目录列表)。
@@ -72,46 +73,21 @@ export function LaunchDialog() {
 
   const sail = () => {
     if (!canSail || !selectedAgent) return
-    const d = cargo ? deriveLaunch(cargo) : { cwd: '', addDirs: [] as string[], ctxProject: true, ctxTask: dest === 'task' }
-    const cwd = d.cwd // '' → server workspace fallback
-    const cwdLabel = cwd ? shortCwd(cwd) : '项目默认目录'
-    const pendingCwd = cwd || project?.workspaceCwd || ''
-    // Stable across the fresh Terminal's dev StrictMode effect replay; the server uses it to attach
-    // duplicate /pty?new=1 requests to the first live PTY instead of spawning twice. Also the
-    // placeholder's stable key until the real session id arrives.
-    const launchToken = crypto.randomUUID()
     closeLaunch()
-    // Optimistic placeholder so the launch shows in the lists instantly (创建中…) — the data layer
-    // polls /api/refresh until the real session surfaces, then drops this.
-    addPending({
-      tempId: launchToken,
-      cli: selectedAgent.cli,
-      cwd: pendingCwd,
-      cwdLabel,
-      projectId: launch.projectId ?? null,
-      todoKey: launch.todoKey ?? null,
-      sessionId: null,
-      knownIds: pendingCwd ? sessions.filter((s) => s.cli === selectedAgent.cli && (s.cwd ?? '') === pendingCwd).map((s) => s.sessionId) : [],
-      createdAt: Date.now(),
-    })
-    openDrawer({
+    startFreshLaunch({
+      dest,
       title,
       cli: selectedAgent.cli,
-      cwd: cwdLabel,
-      status: 'sail',
-      task: dest === 'task' ? taskTitle : undefined,
-      launch: {
-        cli: selectedAgent.cli,
-        cwd,
-        launchToken,
-        projectId: launch.projectId,
-        todoKey: launch.todoKey,
-        prompt: dest === 'free' ? freeText || undefined : undefined,
-        images: dest === 'free' ? images : undefined,
-        addDirs: d.addDirs,
-        ctxProject: d.ctxProject,
-        ctxTask: dest === 'task' ? d.ctxTask : false,
-      },
+      cargo,
+      project,
+      projectId: launch.projectId,
+      todoKey: launch.todoKey,
+      taskTitle,
+      freeText,
+      images,
+      sessions,
+      addPending,
+      openDrawer,
     })
   }
 
@@ -147,132 +123,20 @@ export function LaunchDialog() {
           {dest === 'free' && <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />}
         </div>
 
-        {/* Agent */}
-        <div>
-          <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">Agent</div>
-          {enabledAgents.length === 0 ? (
-            <div className="rounded-md border border-warning/50 bg-warning/10 px-2.5 py-2 text-[12px] text-warning">
-              设置页里没有启用任何启动 Agent
-            </div>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {enabledAgents.map((a) => {
-                const on = selectedAgent?.cli === a.cli
-                return (
-                  <button
-                    key={a.cli}
-                    onClick={() => setCli(a.cli)}
-                    className={cn(
-                      'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[12px]',
-                      on ? 'border-brand bg-brand/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground',
-                    )}
-                  >
-                    <span className="font-semibold">{a.cli}</span>
-                    <span className="font-mono text-[10.5px] text-text-dim">
-                      {a.cli === 'coco' ? '无 --model' : a.model || 'CLI 默认模型'}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* 货舱 */}
-        {cargo && (
-          <div>
-            <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">货舱</div>
-            <div className={cn('rounded-md border border-border', adjust && 'bg-background/30')}>
-              <button
-                onClick={() => setAdjust((v) => !v)}
-                aria-expanded={adjust}
-                className={cn('flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12.5px]', adjust && 'border-b border-border')}
-              >
-                <span className="flex-1 truncate text-muted-foreground">{cargoSummary(cargo, dest)}</span>
-                <span className="flex shrink-0 items-center gap-1 text-[12px] text-muted-foreground">
-                  高级 <ChevronDown size={13} className={cn('transition-transform', adjust && 'rotate-180')} />
-                </span>
-              </button>
-
-              {adjust && (
-                <div className="flex flex-col gap-3.5 p-3">
-                  {/* 上下文注入 */}
-                  <div>
-                    <div className="mb-2 text-[11px] font-semibold text-muted-foreground">上下文注入</div>
-                    <Check on={cargo.ctxProject} onClick={() => setCargo({ ...cargo, ctxProject: !cargo.ctxProject })}>项目上下文（Berth）</Check>
-                    {dest === 'task' && (
-                      <Check on={cargo.ctxTask} onClick={() => setCargo({ ...cargo, ctxTask: !cargo.ctxTask })} className="mt-2">任务上下文</Check>
-                    )}
-                  </div>
-
-                  {/* 代码上下文 */}
-                  <div className={cn(!cargo.codeOn && 'opacity-50')}>
-                    <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
-                      代码上下文
-                      <button
-                        onClick={() => setCargo(setCode(cargo, !cargo.codeOn))}
-                        className={cn('ml-auto rounded-full border px-2 py-0.5 text-[10px] font-medium', cargo.codeOn ? 'border-brand bg-brand/15 text-brand' : 'border-border text-muted-foreground')}
-                      >
-                        {cargo.codeOn ? '装载中' : '已关闭'}
-                      </button>
-                    </div>
-                    <div className={cn(!cargo.codeOn && 'pointer-events-none')}>
-                      {enabledPaths.length === 0 ? (
-                        <div className="text-[11px] text-text-dim">未登记货舱，仅可起航于项目默认目录</div>
-                      ) : (
-                        <>
-                          <div className="mb-2 text-[10.5px] leading-snug text-text-dim">
-                            勾选要装载的目录（走 --add-dir）；点行尾「设为启动」选其一作为启动目录，不点则用默认启动目录。
-                          </div>
-                          <div className="overflow-hidden rounded-md border border-border">
-                            {cargo.dirs.map((d) => {
-                              const lit = cargo.litCwd === d.cwd
-                              return (
-                                <div key={d.cwd} className="flex items-center gap-2.5 border-t border-border/55 px-2.5 py-2 first:border-t-0">
-                                  <button onClick={() => setCargo(toggleDir(cargo, d.cwd))} aria-pressed={d.loaded} aria-label={`装载 ${d.cwd}`} className="flex items-center">
-                                    <span className={cn('flex h-[15px] w-[15px] items-center justify-center rounded border', d.loaded ? 'border-brand bg-brand text-brand-foreground' : 'border-border')}>
-                                      {d.loaded && <Check2 />}
-                                    </span>
-                                  </button>
-                                  <button onClick={() => setCargo(toggleDir(cargo, d.cwd))} className={cn('flex-1 truncate text-left font-mono text-[12px]', d.loaded ? 'text-foreground' : 'text-text-dim')}>
-                                    {shortCwd(d.cwd)}
-                                  </button>
-                                  {d.loaded && (
-                                    <button
-                                      onClick={() => setCargo(anchorDir(cargo, d.cwd))}
-                                      aria-pressed={lit}
-                                      className={cn('flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px]', lit ? 'border-brand bg-brand/12 text-brand' : 'border-border text-muted-foreground hover:bg-accent')}
-                                    >
-                                      <Anchor size={11} /> {lit ? '启动目录' : '设为启动'}
-                                    </button>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                          <div className="mt-2 flex items-center gap-1.5">
-                            <input
-                              value={extraDir}
-                              onChange={(e) => setExtraDir(e.target.value)}
-                              placeholder="额外目录绝对路径…"
-                              className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-[12px] text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
-                            />
-                            <button onClick={addExtraDir} disabled={!extraDir.trim()} className="flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-[12px] text-brand disabled:opacity-40">
-                              <Plus size={12} /> 添加
-                            </button>
-                          </div>
-                          <div className="mt-2 text-[11.5px] text-muted-foreground">
-                            启动目录：{cargo.litCwd ? <span className="font-mono text-card-foreground">{shortCwd(cargo.litCwd)}</span> : <span className="text-text-dim">默认启动目录</span>}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <LaunchConfigFields
+          dest={dest}
+          cargo={cargo}
+          setCargo={setCargo}
+          enabledAgents={enabledAgents}
+          selectedCli={selectedAgent?.cli ?? cli}
+          onSelectCli={setCli}
+          enabledPaths={enabledPaths}
+          adjust={adjust}
+          setAdjust={setAdjust}
+          extraDir={extraDir}
+          setExtraDir={setExtraDir}
+          onAddExtraDir={addExtraDir}
+        />
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
@@ -290,29 +154,6 @@ export function LaunchDialog() {
       </div>
     </Dialog>
   )
-}
-
-function cargoSummary(s: CargoState, dest: 'task' | 'free'): string {
-  const ctxCount = (s.ctxProject ? 1 : 0) + (dest === 'task' && s.ctxTask ? 1 : 0) + (s.codeOn ? 1 : 0)
-  const d = deriveLaunch(s)
-  const start = d.cwd ? shortCwd(d.cwd) : '默认'
-  const extra = d.addDirs.length ? ` · 装载 +${d.addDirs.length}` : ''
-  return `上下文 ${ctxCount} 项 · 启动 ${start}${extra}`
-}
-
-function Check({ on, onClick, children, className }: { on: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
-  return (
-    <button onClick={onClick} aria-pressed={on} className={cn('flex items-center gap-2.5 text-[12.5px]', on ? 'text-card-foreground' : 'text-text-dim', className)}>
-      <span className={cn('flex h-[15px] w-[15px] items-center justify-center rounded border', on ? 'border-brand bg-brand text-brand-foreground' : 'border-border')}>
-        {on && <Check2 />}
-      </span>
-      {children}
-    </button>
-  )
-}
-
-function Check2() {
-  return <svg width="9" height="6" viewBox="0 0 9 6" fill="none"><path d="M1 3l2.2 2L8 1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
 
 function Radio({ checked, onClick, children, className }: { checked: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {

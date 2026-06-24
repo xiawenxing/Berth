@@ -8,13 +8,14 @@ import { ImportDialog } from '@/components/ImportDialog'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
 import { Dialog } from '@/components/ui/Overlay'
 import { useUI } from '@/lib/ui-store'
-import { NewTaskDialog, refineTitle } from '@/components/NewTaskDialog'
+import { NewTaskDialog, refineTitle, type NewTaskCreateOptions } from '@/components/NewTaskDialog'
 import { ProjectSummaryPopover, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
 import { useData } from '@/lib/data'
 import { useInlineEdit } from '@/lib/useInlineEdit'
 import { relTime, shortCwd, normPriority } from '@/lib/format'
 import { isDoneStatus, statusKind } from '@/lib/status'
 import { useLive } from '@/lib/live'
+import { startFreshLaunch } from '@/lib/launch-runner'
 import { api, type PreviewSession } from '@/lib/api'
 import type { Task, SessionRow, CwdGroup, TaskStatus, LinkedSession } from '@/lib/types'
 
@@ -29,7 +30,7 @@ export function ProjectWorkspace() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
-  const { projects, tasks: apiTasks, sessions, statuses, priorities, reload, resync, pending } = useData()
+  const { projects, tasks: apiTasks, sessions, statuses, priorities, agents, pending, addPending, reload, resync } = useData()
   const live = useLive()
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [ctxDoc, setCtxDoc] = useState<ContextDocTarget | null>(null)
@@ -322,7 +323,7 @@ export function ProjectWorkspace() {
 
   // 即时创建：optimistic card NOW, persist via POST /todos, then reload real data.
   // (The server's createTask guard already classifies + titles; AI-summarize is that pipeline.)
-  const createTask = (raw: string, opts: { aiSummarize: boolean; runNow: boolean; images: string[] }) => {
+  const createTask = (raw: string, opts: NewTaskCreateOptions) => {
     const tid = `new-${++taskSeq}`
     const taskText = raw.trim() || (opts.images.length ? '带图任务' : '')
     // Optimistic card uses the configured vocab (server settles to cfg defaults on reload):
@@ -342,11 +343,22 @@ export function ProjectWorkspace() {
       .createTask(taskText, id, opts.images, opts.aiSummarize)
       .then((res) => {
         reload()
-        // 立即启动: the stub drawer never spawned a PTY nor linked the session. Once the task is
-        // created server-side we have its real id → open 起航 with it as todoKey, so confirming
-        // actually launches a session and associates it with this task (same path as the card's 启动).
-        if (opts.runNow && res?.record?.id)
-          openLaunch({ dest: 'task', taskTitle: res.record.title ?? taskText, projectId: id, todoKey: res.record.id })
+        // 立即执行: 新建任务弹窗已经收集了会话启动配置。拿到服务端真实 task id 后直接起航，
+        // 不再打开第二个 LaunchDialog。
+        if (opts.runNow && res?.record?.id && opts.launch)
+          startFreshLaunch({
+            dest: 'task',
+            title: res.record.title ?? taskText,
+            taskTitle: res.record.title ?? taskText,
+            cli: opts.launch.cli,
+            cargo: opts.launch.cargo,
+            project,
+            projectId: id,
+            todoKey: res.record.id,
+            sessions,
+            addPending,
+            openDrawer,
+          })
       })
       .catch(() => {
         // keep the optimistic card but settle its title locally if the POST failed
@@ -525,7 +537,22 @@ export function ProjectWorkspace() {
         <CargoDefaults paths={project?.pathsMeta ?? []} tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
       </div>
 
-      <NewTaskDialog open={newTask} onClose={() => setNewTask(false)} onCreate={createTask} />
+      <NewTaskDialog
+        open={newTask}
+        onClose={() => setNewTask(false)}
+        onCreate={createTask}
+        project={project}
+        agents={agents}
+        onAddLaunchPath={async (cwd) => {
+          try {
+            await api.addPath(id, cwd, { enabled: true })
+            reload()
+            return true
+          } catch {
+            return false
+          }
+        }}
+      />
       <ContextDocDrawer target={ctxDoc} onClose={() => setCtxDoc(null)} />
       {importDlg && (
         <ImportDialog
