@@ -84,7 +84,7 @@ function ToolCallView({ block }: { block: Extract<Block, { kind: 'tool_call' }> 
     <details className="rounded-md border border-border bg-card/60 text-xs">
       <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-1.5 text-muted-foreground">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-        <span className="font-medium text-foreground">{block.name}</span>
+        <span className="font-medium text-foreground">{prettyToolName(block.name)}</span>
         <span className="truncate opacity-70">{summarizeInput(block.input)}</span>
       </summary>
       <div className="space-y-2 border-t border-border/60 px-3 py-2">
@@ -128,4 +128,17 @@ function stringify(v: unknown): string {
 
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…' : s
+}
+
+// codex emits snake_case item types as the tool name (command_execution, web_search, …); map the
+// known ones to friendly labels. claude tool names (Bash, Read, Edit, …) are already clean → pass through.
+const TOOL_LABELS: Record<string, string> = {
+  command_execution: '命令执行',
+  file_change: '文件改动',
+  mcp_tool_call: 'MCP 工具',
+  web_search: '网页搜索',
+  plan_update: '计划更新',
+}
+export function prettyToolName(name: string): string {
+  return TOOL_LABELS[name] ?? name
 }
