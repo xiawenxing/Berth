@@ -12,7 +12,7 @@ import { getDocStore, getDocsRoot } from '../data/docstore'
 import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, setAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getLocale, normalizeLocale, LOCALES, contextStrings } from '../i18n'
-import { ensureContextDoc, appendContextLogOnDisk } from '../data/context-doc'
+import { ensureContextDoc, appendContextLogOnDiskAsync } from '../data/context-doc'
 import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
 import { getContextConfig, setContextConfig } from '../data/context-config'
 import { lastLogEntries } from '../data/context-log'
@@ -20,6 +20,7 @@ import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
 import { generateTitle, parseStructuredSummary } from '../agent/index'
+import { summarizeCompactedContext } from '../agent/context-compact'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { titleInputFromTranscript } from '../agent/transcript'
 import type { Locale } from '../i18n'
@@ -474,7 +475,7 @@ api.post('/context', (req, res) => {
 })
 
 // Mechanically append a dated entry to an entity's progress-log section (canonical B).
-api.post('/context/log', (req, res) => {
+api.post('/context/log', async (req, res) => {
   const { kind, key, text } = req.body ?? {}
   if ((kind !== 'task' && kind !== 'project') || typeof key !== 'string' || !key.trim())
     return res.status(400).json({ error: 'kind:task|project, key:string required' })
@@ -493,10 +494,10 @@ api.post('/context/log', (req, res) => {
     }
     const date = new Date().toISOString().slice(0, 10)
     // appendLogEntry collapses internal whitespace/newlines into a single line — no pre-processing needed here.
-    const r = appendContextLogOnDisk(ds, ensured.abs, {
+    const r = await appendContextLogOnDiskAsync(ds, ensured.abs, {
       text, date, maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale,
       maxChars: cfg.docMaxChars, keepChars: cfg.docKeepChars,
-    })
+    }, (input) => summarizeCompactedContext(input, resolveBerthAgent(store)))
     res.json({ ref: ensured.ref, appended: r.appended, rotated: r.rotated, compacted: r.compacted })
   } catch (e: any) {
     res.status(500).json({ error: String(e?.message ?? e) })

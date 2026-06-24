@@ -16,11 +16,12 @@ import { buildManifest, type ManifestInput } from '../agent/manifest'
 import { listTasks, updateTask } from '../data/tasks'
 import { listProjects } from '../data/projects'
 import { getTaskFieldConfig, type TaskFieldConfig } from '../data/task-config'
-import { getAgentConfig } from '../data/agent-config'
+import { getAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getDocsRoot, getDocStore } from '../data/docstore'
 import { getContextConfig } from '../data/context-config'
 import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
-import { ensureContextDoc, maintainContextDocOnDisk } from '../data/context-doc'
+import { ensureContextDoc, maintainContextDocOnDiskAsync } from '../data/context-doc'
+import { summarizeCompactedContext } from '../agent/context-compact'
 import { getLocale, promptStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
@@ -447,7 +448,10 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // a plain empty session is idle until the user types.
   const launchKey = plan.sessionId ?? plan.intent.id
   const onExit = contextAbs ? () => {
-    try { maintainContextDocOnDisk(getDocStore(store), contextAbs!, { ...ctxCfg, locale }) } catch {}
+    void maintainContextDocOnDiskAsync(
+      getDocStore(store), contextAbs!, { ...ctxCfg, locale },
+      (input) => summarizeCompactedContext(input, resolveBerthAgent(store)),
+    ).catch(() => {})
   } : undefined
 
   const wantStream = rendersStream(url, cli)

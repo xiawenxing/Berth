@@ -3,8 +3,9 @@
 // transcript, run the unified updater, and write the result back deterministically (then rotate).
 import { openSync, readSync, closeSync, existsSync, readFileSync } from 'node:fs'
 import type { DocStore } from '../data/docstore'
-import { ensureContextDoc, maintainContextDocOnDisk } from '../data/context-doc'
+import { ensureContextDoc, maintainContextDocOnDiskAsync } from '../data/context-doc'
 import { updateContext } from '../agent/context-update'
+import { summarizeCompactedContext } from '../agent/context-compact'
 import { headCommit } from '../data/doc-git'
 import { runAgent, type BerthAgent } from '../agent/index'
 import { type Locale } from '../i18n'
@@ -65,7 +66,10 @@ export async function runContextUpdate(args: {
   const cfg = args.getCfg()
   // Note: if maintenance fires below it adds further commits; `commit` intentionally points at the doc update so
   // the revert affordance targets the user's change. Revert is best-effort if maintenance intervened.
-  const maintained = maintainContextDocOnDisk(docStore, target.abs, { ...cfg, locale, date: args.date })
+  const maintained = await maintainContextDocOnDiskAsync(
+    docStore, target.abs, { ...cfg, locale, date: args.date },
+    (input) => summarizeCompactedContext(input, agent),
+  )
   return { ok: true, changed: diff.changed, added: diff.added, removed: diff.removed, commit, ...maintained }
 }
 

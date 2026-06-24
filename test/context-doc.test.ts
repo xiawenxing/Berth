@@ -3,7 +3,10 @@ import { mkdtempSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DocStore } from '../src/data/docstore'
-import { ensureContextDoc, archivePathFor, rotateContextDocOnDisk, appendContextLogOnDisk, compactContextDocOnDisk, maintainContextDocOnDisk } from '../src/data/context-doc'
+import {
+  ensureContextDoc, archivePathFor, rotateContextDocOnDisk, appendContextLogOnDisk,
+  compactContextDocOnDisk, compactContextDocOnDiskAsync, maintainContextDocOnDisk,
+} from '../src/data/context-doc'
 import { contextStrings } from '../src/i18n'
 
 function tmpRoot() { return mkdtempSync(join(tmpdir(), 'berth-ctxdoc-')) }
@@ -115,6 +118,48 @@ describe('context-doc', () => {
     expect(ref).toContain('## 摘要')
     expect(ref).toContain('## 拆分前完整上下文')
     expect(ref).toContain('背景 '.repeat(20).trim())
+  })
+
+  it('compactContextDocOnDiskAsync uses a valid summarizer for the live main doc', async () => {
+    const ds = new DocStore(tmpRoot())
+    const r = ensureContextDoc(ds, 'project', 'Berth', { title: 'Berth', projectName: 'Berth', locale: 'zh-CN' })
+    ds.writeDoc(r.abs, ['# Berth — 项目上下文', '', '## 当前状态', '状态 '.repeat(600), ''].join('\n'))
+
+    const compacted = await compactContextDocOnDiskAsync(
+      ds, r.abs, { maxChars: 800, keepChars: 500, logKeep: 3, locale: 'zh-CN', date: '2026-06-24' },
+      async (input) => [
+        '# Berth — 项目上下文',
+        '',
+        '## 参考子文档',
+        `- 2026-06-24: [上下文参考](${input.referenceRel})`,
+        '',
+        '## 当前状态',
+        'LLM 生成的接手摘要，完整历史见 reference。',
+        '',
+      ].join('\n'),
+    )
+
+    expect(compacted).toBe(true)
+    const main = ds.readDoc(r.abs).content
+    expect(main).toContain('LLM 生成的接手摘要')
+    expect(main).toContain('references/context-2026-06-24.md')
+    expect(ds.readDoc(join(ds.root, 'projects/Berth/references/context-2026-06-24.md')).content).toContain('状态 '.repeat(20).trim())
+  })
+
+  it('compactContextDocOnDiskAsync falls back when the summarizer omits the reference link', async () => {
+    const ds = new DocStore(tmpRoot())
+    const r = ensureContextDoc(ds, 'project', 'Berth', { title: 'Berth', projectName: 'Berth', locale: 'zh-CN' })
+    ds.writeDoc(r.abs, ['# Berth — 项目上下文', '', '## 当前状态', '状态 '.repeat(600), ''].join('\n'))
+
+    const compacted = await compactContextDocOnDiskAsync(
+      ds, r.abs, { maxChars: 800, keepChars: 500, logKeep: 3, locale: 'zh-CN', date: '2026-06-24' },
+      async () => '# Berth — 项目上下文\n\n## 当前状态\n缺少 reference 链接\n',
+    )
+
+    expect(compacted).toBe(true)
+    const main = ds.readDoc(r.abs).content
+    expect(main).not.toContain('缺少 reference 链接')
+    expect(main).toContain('references/context-2026-06-24.md')
   })
 
   it('maintainContextDocOnDisk reports both log rotation and document compaction', () => {
