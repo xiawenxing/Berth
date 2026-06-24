@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Block, ChatTurn } from '@/lib/chat'
+import { Markdown } from './Markdown'
 
 /**
  * Model B chat renderer: user turns as right-aligned bubbles, assistant turns left-aligned, tool calls
@@ -61,8 +62,8 @@ function AssistantTurn({ turn }: { turn: ChatTurn }) {
 function BlockView({ block }: { block: Block }) {
   if (block.kind === 'text') {
     return (
-      <div className="whitespace-pre-wrap break-words rounded-2xl rounded-bl-sm bg-card px-4 py-2 text-sm text-foreground">
-        {block.text}
+      <div className="break-words rounded-2xl rounded-bl-sm bg-card px-4 py-2 text-sm text-foreground">
+        <Markdown text={block.text} />
       </div>
     )
   }
@@ -70,7 +71,7 @@ function BlockView({ block }: { block: Block }) {
     return (
       <details className="rounded-md border border-border/60 bg-card/50 px-3 py-1.5 text-xs text-muted-foreground">
         <summary className="cursor-pointer select-none">💭 思考</summary>
-        {!block.opaque && block.text && <div className="mt-1 whitespace-pre-wrap break-words">{block.text}</div>}
+        {!block.opaque && block.text && <Markdown text={block.text} className="mt-1" />}
       </details>
     )
   }

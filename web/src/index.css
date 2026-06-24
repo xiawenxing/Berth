@@ -95,6 +95,46 @@ html.light {
 .kanban-card { background: var(--color-secondary); }
 .kanban-card:hover { background: color-mix(in oklab, var(--color-secondary) 88%, var(--color-foreground) 12%); }
 
+/* Markdown rendered inside Model B chat bubbles. Compact, bubble-friendly spacing (no typography
+   plugin) — first/last child margins collapse so a bubble hugs its content. */
+.berth-md > :first-child { margin-top: 0; }
+.berth-md > :last-child { margin-bottom: 0; }
+.berth-md p { margin: 0.4em 0; }
+.berth-md h1, .berth-md h2, .berth-md h3, .berth-md h4 { margin: 0.6em 0 0.3em; font-weight: 600; line-height: 1.3; }
+.berth-md h1 { font-size: 1.25em; }
+.berth-md h2 { font-size: 1.15em; }
+.berth-md h3 { font-size: 1.05em; }
+.berth-md ul, .berth-md ol { margin: 0.4em 0; padding-left: 1.4em; }
+.berth-md li { margin: 0.15em 0; }
+.berth-md ul { list-style: disc; }
+.berth-md ol { list-style: decimal; }
+.berth-md a { color: var(--color-brand); text-decoration: underline; }
+.berth-md code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--color-canvas);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.berth-md pre {
+  margin: 0.5em 0;
+  padding: 0.7em 0.9em;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.berth-md pre code { background: transparent; padding: 0; font-size: 0.85em; }
+.berth-md blockquote {
+  margin: 0.5em 0;
+  padding-left: 0.8em;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-muted-foreground);
+}
+.berth-md table { border-collapse: collapse; margin: 0.5em 0; }
+.berth-md th, .berth-md td { border: 1px solid var(--color-border); padding: 0.3em 0.6em; }
+.berth-md hr { margin: 0.8em 0; border: 0; border-top: 1px solid var(--color-border); }
+
 /* AI loading: sparkle twinkle (used for 总结中 / 生成中 / 整理中 …) */
 @keyframes spk-twinkle {
   0%, 100% { opacity: 0.35; transform: scale(0.86) rotate(-8deg); }
