@@ -1,4 +1,4 @@
-import type { Block, ChatTurn } from './chat'
+import type { ChatTurn } from './chat'
 
 export interface DiffLine { op: ' ' | '+' | '-'; text: string }
 
