@@ -165,6 +165,36 @@ export function resumeSessionStream(s: LogicalSession, o: { model?: string } = {
   return spawnChild(bin, resumeArgvStream(cli, id, o), { cwd, env: { ...(process.env as any) }, detached: true, stdio: STREAM_STDIO })
 }
 
+// ─── Model B per-turn spawn for codex + coco (single-turn-then-exit: each user turn is a fresh
+// process — `exec`/`--print` for the first turn, `resume` thereafter). The driver captures the
+// session id from the stream (codex thread.started / coco system.init) and passes it as `resumeId`.
+// Verified live against codex-cli 0.139.0 + coco 0.120.41 (task smoke tests). ───
+
+export function codexTurnArgv(prompt: string, resumeId: string | null, o?: { model?: string }): string[] {
+  // -C/--cd is NOT accepted on the `resume` subcommand (verified); cwd is set via the spawn option.
+  const flags = ['--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', ...(o?.model ? ['--model', o.model] : [])]
+  return resumeId ? ['exec', 'resume', resumeId, ...flags, prompt] : ['exec', ...flags, prompt]
+}
+
+export function cocoTurnArgv(prompt: string, resumeId: string | null, sessionId: string): string[] {
+  const flags = ['--print', '--output-format=stream-json', '--include-partial-messages', '-y']
+  // coco honors a pre-minted --session-id on the fresh turn; resume uses the `--resume=<id>` = form.
+  return resumeId ? [`--resume=${resumeId}`, ...flags, prompt] : ['--session-id', sessionId, ...flags, prompt]
+}
+
+export interface PerTurnOpts { cwd: string; sessionId?: string; model?: string; prompt: string; resumeId: string | null }
+
+export function spawnPerTurn(cli: AgentCli, o: PerTurnOpts): ChildProcess {
+  const cwd = ensureLaunchCwd(o.cwd)
+  const bin = resolveAgentBinary(cli)
+  const argv = cli === 'codex' ? codexTurnArgv(o.prompt, o.resumeId, { model: o.model })
+    : cli === 'coco' ? cocoTurnArgv(o.prompt, o.resumeId, o.sessionId ?? '')
+      : (() => { throw new Error(`per-turn stream not supported for ${cli}`) })()
+  // stdin is 'ignore' (prompt rides argv) so codex never blocks on "Reading additional input from
+  // stdin…"; detached:true makes the child a group leader for the registry's process.kill(-pid).
+  return spawnChild(bin, argv, { cwd, env: { ...(process.env as any) }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+}
+
 export function ensureCodexBerthHookProfile() {
   const home = codexHome()
   mkdirSync(home, { recursive: true })

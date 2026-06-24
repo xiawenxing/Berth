@@ -6,10 +6,10 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { berthHome } from '../paths'
 import { join } from 'node:path'
 import { getCache, getStore } from './store-singleton'
-import { launchFresh, launchFreshStream } from '../pty/launch'
+import { launchFresh } from '../pty/launch'
 import { resolveAgentBinary, codexHookTrustSupportCached } from '../pty/binaries'
 import { hasLivePty, liveDriverMode, registerPty, registerSession, attachViewer, killPty } from './pty-registry'
-import { StreamJsonDriver } from './stream-json-driver'
+import { makeFreshStreamDriver } from './stream-driver-factory'
 import { spawnAndRegister, spawnAndRegisterStream, codexHoldRunning } from './resume-spawn'
 import { markOpened } from './warm-pool'
 import { buildManifest, type ManifestInput } from '../agent/manifest'
@@ -37,9 +37,10 @@ interface FreshLaunchResult {
   mode: 'tui' | 'stream'
 }
 
-/** Model B (stream-json chat renderer) is opt-in via ?render=stream-json, and claude-only for now. */
+/** Model B (stream-json chat renderer) is opt-in via ?render=stream-json. All three CLIs support it:
+ *  claude = persistent stream-json; codex/coco = per-turn spawn. */
 function rendersStream(url: URL, cli: AgentCli | null | undefined): boolean {
-  return url.searchParams.get('render') === 'stream-json' && cli === 'claude'
+  return url.searchParams.get('render') === 'stream-json' && (cli === 'claude' || cli === 'codex' || cli === 'coco')
 }
 
 const freshLaunchDedupe = new Map<string, Promise<FreshLaunchResult>>()
@@ -271,7 +272,7 @@ export function createPtyWss(): WebSocketServer {
 
     if (!s || !s.resume) { try { ws.send('\r\n[berth] session not found or not resumable\r\n') } catch {} ; ws.close(); return }
     try {
-      if (wantStream && s.resume.cli === 'claude') spawnAndRegisterStream(s)   // Model B: claude stream-json resume
+      if (wantStream) spawnAndRegisterStream(s)                                 // Model B: stream-json resume (claude/codex/coco)
       else spawnAndRegister(s, { cols, rows })                                 // Model A: TUI resume
     } catch (e: any) { try { ws.send(`\r\n[berth] launch failed: ${e?.message}\r\n`) } catch {} ; ws.close(); return }
     attachViewer(sessionId, ws)
@@ -451,16 +452,18 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
 
   const wantStream = rendersStream(url, cli)
   if (wantStream) {
-    // Model B: claude stream-json. No positional prompt — the driver writes the first user turn to
-    // stdin. Manifest still rides --append-system-prompt-file (injectFile), same channel as Model A.
-    const child = launchFreshStream({
+    // Model B: no positional prompt — the driver delivers the first user turn (claude via stdin NDJSON;
+    // codex/coco as the per-turn exec prompt). claude's manifest rides --append-system-prompt-file
+    // (injectFile); codex/coco Model B v1 doesn't inject the manifest yet (per-turn hook is a follow-up).
+    const driver = makeFreshStreamDriver(cli, {
       cwd,
       sessionId: plan.sessionId ?? undefined,
       injectFile,
       model: agentEntry.model ?? undefined,
       addDirs: finalAddDirs,
+      initialPrompt,
     })
-    registerSession(launchKey, new StreamJsonDriver(child, { initialPrompt }), { running: !!initialPrompt, onExit })
+    registerSession(launchKey, driver, { running: !!initialPrompt, onExit })
   } else {
     const pty = launchFresh(cli, {
       cwd,
