@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import type { Block, ChatTurn } from '@/lib/chat'
-import { fileEditsFromTurn, type FileEdit } from '@/lib/fileEdits'
 import { cn } from '@/lib/utils'
 import { Markdown } from './Markdown'
 
 /**
- * Model B chat renderer: user turns as right-aligned bubbles, assistant turns left-aligned, tool calls
- * folded into one collapsed disclosure (call + result), reasoning as a collapsed chip, and a per-turn
- * "Worked for Ns" footer. Pure presentational — it just renders the ChatTurn[] the backend reduced.
+ * Model B chat renderer: user turns as right-aligned bubbles, assistant turns left-aligned. Assistant
+ * text and tool calls stay in one chronological flow; tool calls are muted text, final answers are
+ * rendered with normal text weight/color. Pure presentational — it just renders ChatTurn[].
  */
 export function ChatTranscript({ turns, thinking = false }: { turns: ChatTurn[]; thinking?: boolean }) {
   const endRef = useRef<HTMLDivElement>(null)
@@ -65,173 +63,49 @@ function UserBubble({ turn }: { turn: ChatTurn }) {
 }
 
 function AssistantTurn({ turn }: { turn: ChatTurn }) {
-  const { work, answer } = splitBlocks(turn.blocks)
-  const edits = useMemo(() => fileEditsFromTurn(turn), [turn])
-  const hasFold = work.length > 0
   return (
     <div className="flex flex-col items-start gap-1.5">
-      <div className="w-full max-w-[88%] space-y-2">
-        {hasFold && <WorkFold turn={turn} work={work} />}
-        {answer.map((b, i) => (
-          <BlockView key={i} block={b} />
+      <div className="w-full max-w-[88%] space-y-2 text-sm leading-relaxed text-foreground">
+        {turn.blocks.map((b, i) => (
+          <FlowBlock key={i} block={b} />
         ))}
-        {edits.length > 0 && <EditedFilesCard edits={edits} />}
         {turn.streaming && <span className="inline-block h-3 w-1.5 animate-pulse rounded-sm bg-muted-foreground align-middle" />}
       </div>
-      {!hasFold && turn.result && <TurnFooter turn={turn} />}
+      {turn.result && <TurnFooter turn={turn} />}
     </div>
   )
 }
 
-/** Split a turn into work (everything up to the trailing text run) and answer (the trailing text run). */
-function splitBlocks(blocks: Block[]): { work: Block[]; answer: Block[] } {
-  let i = blocks.length
-  while (i > 0 && blocks[i - 1].kind === 'text') i--
-  return { work: blocks.slice(0, i), answer: blocks.slice(i) }
-}
-
-function WorkFold({ turn, work }: { turn: ChatTurn; work: Block[] }) {
-  const [override, setOverride] = useState<boolean | null>(null)
-  const open = override ?? !!turn.streaming
-  const steps = work.filter((b) => b.kind === 'tool_call').length
-  const r = turn.result
-  const secs = r?.durationMs ? (r.durationMs / 1000).toFixed(r.durationMs < 10000 ? 1 : 0) : null
-  let label: string
-  if (r?.isError) label = `已中断${r.errorSubtype ? ` (${r.errorSubtype})` : ''}`
-  else if (turn.streaming) label = `工作中… · ${steps} 步`
-  else label = `${secs ? `Worked for ${secs}s` : '已完成'} · ${steps} 步`
-  return (
-    <div className="rounded-md border border-border/60 bg-card/40">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOverride(!open)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-muted-foreground"
-      >
-        <ChevronRight size={14} className={cn('flex-none transition-transform', open && 'rotate-90')} />
-        <span className={r?.isError ? 'text-destructive' : undefined}>{label}</span>
-        {r?.usage?.output != null && <span className="opacity-70">· {r.usage.output} tok</span>}
-      </button>
-      {open && (
-        <div className="space-y-2 border-t border-border/60 px-3 py-2 pl-4">
-          {work.map((b, i) => (
-            <BlockView key={i} block={b} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function EditedFilesCard({ edits }: { edits: FileEdit[] }) {
-  const totalAdded = edits.reduce((s, e) => s + e.added, 0)
-  const totalRemoved = edits.reduce((s, e) => s + e.removed, 0)
-  return (
-    <div className="overflow-hidden rounded-md border border-border bg-card/60 text-xs">
-      <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5">
-        <span className="font-medium text-foreground">Edited {edits.length} file{edits.length > 1 ? 's' : ''}</span>
-        <span className="tabular-nums">
-          <span className="text-success">+{totalAdded}</span> <span className="text-destructive">-{totalRemoved}</span>
-        </span>
-      </div>
-      <ul>
-        {edits.map((e) => (
-          <EditedFileRow key={e.path} edit={e} />
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function EditedFileRow({ edit }: { edit: FileEdit }) {
-  const [open, setOpen] = useState(false)
-  const expandable = edit.hunks.length > 0
-  const slash = edit.path.lastIndexOf('/')
-  const dir = slash >= 0 ? edit.path.slice(0, slash + 1) : ''
-  const base = slash >= 0 ? edit.path.slice(slash + 1) : edit.path
-  return (
-    <li className="border-t border-border/40 first:border-t-0">
-      <button
-        type="button"
-        disabled={!expandable}
-        aria-expanded={expandable ? open : undefined}
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left disabled:cursor-default"
-      >
-        {expandable ? (
-          <ChevronRight size={12} className={cn('flex-none text-muted-foreground transition-transform', open && 'rotate-90')} />
-        ) : (
-          <span className="w-3 flex-none" />
-        )}
-        <span className="truncate">
-          <span className="opacity-60">{dir}</span>
-          <span className="text-foreground">{base}</span>
-        </span>
-        <span className="ml-auto flex-none tabular-nums">
-          <span className="text-success">+{edit.added}</span> <span className="text-destructive">-{edit.removed}</span>
-        </span>
-      </button>
-      {open && expandable && (
-        <div className="border-t border-border/40">
-          <pre className="max-h-72 overflow-auto text-[11px] leading-relaxed">
-            {edit.hunks.map((h, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'px-3',
-                  h.op === '+' && 'bg-success/10 text-success',
-                  h.op === '-' && 'bg-destructive/10 text-destructive',
-                )}
-              >
-                <span className="select-none opacity-60">{h.op}</span> {h.text}
-              </div>
-            ))}
-          </pre>
-          {edit.truncated && <div className="px-3 py-1 text-[11px] text-muted-foreground">diff 已截断</div>}
-        </div>
-      )}
-    </li>
-  )
-}
-
-function BlockView({ block }: { block: Block }) {
+function FlowBlock({ block }: { block: Block }) {
   if (block.kind === 'text') {
-    return (
-      <div className="break-words rounded-2xl rounded-bl-sm bg-card px-4 py-2 text-sm text-foreground">
-        <Markdown text={block.text} />
-      </div>
-    )
+    if (!block.text.trim()) return null
+    return <Markdown text={block.text} className="break-words text-foreground" />
   }
   if (block.kind === 'reasoning') {
     return (
-      <details className="rounded-md border border-border/60 bg-card/50 px-3 py-1.5 text-xs text-muted-foreground">
-        <summary className="cursor-pointer select-none">💭 思考</summary>
-        {!block.opaque && block.text && <Markdown text={block.text} className="mt-1" />}
-      </details>
+      <div className="break-words text-sm text-muted-foreground">
+        {block.opaque || !block.text ? '思考中…' : <Markdown text={block.text} />}
+      </div>
     )
   }
-  return <ToolCallView block={block} />
+  return <ToolCallLine block={block} />
 }
 
-function ToolCallView({ block }: { block: Extract<Block, { kind: 'tool_call' }> }) {
-  const dot = block.status === 'error' ? 'bg-destructive' : block.status === 'running' ? 'bg-warning animate-pulse' : 'bg-success'
+function ToolCallLine({ block }: { block: Extract<Block, { kind: 'tool_call' }> }) {
+  const error = block.status === 'error'
   return (
-    <details className="rounded-md border border-border bg-card/60 text-xs">
-      <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-1.5 text-muted-foreground">
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-        <span className="font-medium text-foreground">{prettyToolName(block.name)}</span>
-        <span className="truncate opacity-70">{summarizeInput(block.input)}</span>
-      </summary>
-      <div className="space-y-2 border-t border-border/60 px-3 py-2">
-        <pre className="overflow-x-auto whitespace-pre-wrap break-words text-[11px] text-muted-foreground">{stringify(block.input)}</pre>
-        {block.result !== undefined && (
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border/40 pt-2 text-[11px] text-foreground">
-            {clip(stringify(block.result.output), 4000)}
-          </pre>
-        )}
-      </div>
-    </details>
+    <div className={cn('flex min-w-0 items-baseline gap-2 text-sm leading-relaxed text-muted-foreground', error && 'text-destructive')}>
+      <span className="select-none opacity-70">›</span>
+      <span className="min-w-0 truncate">{toolCallSummary(block)}</span>
+    </div>
   )
+}
+
+export function toolCallSummary(block: Extract<Block, { kind: 'tool_call' }>): string {
+  const label = prettyToolName(block.name)
+  const input = summarizeInput(block.input)
+  const status = block.status === 'running' ? '运行中' : block.status === 'error' ? '失败' : ''
+  return [label, input, status].filter(Boolean).join(' · ')
 }
 
 function TurnFooter({ turn }: { turn: ChatTurn }) {
@@ -253,12 +127,6 @@ function summarizeInput(input: unknown): string {
   }
   if (typeof input === 'string') return clip(input, 80)
   return ''
-}
-
-function stringify(v: unknown): string {
-  if (typeof v === 'string') return v
-  if (Array.isArray(v)) return v.map((x) => (x && typeof x === 'object' && 'text' in (x as any) ? (x as any).text : stringify(x))).join('\n')
-  try { return JSON.stringify(v, null, 2) } catch { return String(v) }
 }
 
 function clip(s: string, n: number): string {

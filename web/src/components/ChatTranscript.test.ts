@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { prettyToolName } from './ChatTranscript'
+import { prettyToolName, toolCallSummary } from './ChatTranscript'
 
 describe('prettyToolName', () => {
   it('maps codex snake_case item types to friendly labels', () => {
@@ -10,5 +10,14 @@ describe('prettyToolName', () => {
   it('passes through claude tool names unchanged', () => {
     expect(prettyToolName('Bash')).toBe('Bash')
     expect(prettyToolName('Read')).toBe('Read')
+  })
+})
+
+describe('toolCallSummary', () => {
+  it('summarizes tool calls as muted inline text content', () => {
+    expect(toolCallSummary({ kind: 'tool_call', id: '1', name: 'command_execution', status: 'done', input: { command: 'npm test' } }))
+      .toBe('命令执行 · npm test')
+    expect(toolCallSummary({ kind: 'tool_call', id: '2', name: 'Read', status: 'running', input: { file_path: 'web/src/App.tsx' } }))
+      .toBe('Read · web/src/App.tsx · 运行中')
   })
 })
