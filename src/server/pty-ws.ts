@@ -469,7 +469,9 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       addDirs: finalAddDirs,
       initialPrompt,
     })
-    registerSession(launchKey, driver, { running: !!initialPrompt, onExit })
+    // holdRunning keeps the session `running` through the agent's silent thinking gap (no output for
+    // >IDLE_MS) so a freshly-launched chat turn never falsely settles to 停泊 mid-turn.
+    registerSession(launchKey, driver, { running: !!initialPrompt, holdRunning: () => driver.turnActive?.() ?? false, onExit })
   } else {
     const pty = launchFresh(cli, {
       cwd,

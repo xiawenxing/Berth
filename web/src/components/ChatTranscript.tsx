@@ -10,7 +10,7 @@ import { Markdown } from './Markdown'
  * folded into one collapsed disclosure (call + result), reasoning as a collapsed chip, and a per-turn
  * "Worked for Ns" footer. Pure presentational — it just renders the ChatTurn[] the backend reduced.
  */
-export function ChatTranscript({ turns }: { turns: ChatTurn[] }) {
+export function ChatTranscript({ turns, thinking = false }: { turns: ChatTurn[]; thinking?: boolean }) {
   const endRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -32,7 +32,23 @@ export function ChatTranscript({ turns }: { turns: ChatTurn[] }) {
         <div className="m-auto text-sm text-muted-foreground">还没有对话。在下方输入开始。</div>
       )}
       {turns.map((t) => (t.role === 'user' ? <UserBubble key={t.id} turn={t} /> : <AssistantTurn key={t.id} turn={t} />))}
+      {thinking && <ThinkingBubble />}
       <div ref={endRef} />
+    </div>
+  )
+}
+
+/** Shown between submitting a turn and the agent's first frame — the "thinking" gap that otherwise
+ *  looked idle and made users think the session never started. */
+function ThinkingBubble() {
+  return (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+      <span className="flex gap-1">
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.3s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.15s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" />
+      </span>
+      正在思考…
     </div>
   )
 }

@@ -39,6 +39,21 @@ export function makeUserTurn(id: string, text: string, ts = Math.floor(Date.now(
   return { id, role: 'user', ts, blocks: [{ kind: 'text', text }] }
 }
 
+/**
+ * Is the chat busy (a turn in flight)? `streaming` alone leaves a feedback gap: the optimistic user
+ * turn isn't streaming, and the assistant turn only becomes streaming at the agent's first frame —
+ * seconds later while it thinks. `awaiting` covers that gap (submitted → first assistant frame).
+ */
+export function chatBusy(turns: ChatTurn[], awaiting: boolean): boolean {
+  return awaiting || turns.some((t) => t.streaming)
+}
+
+/** Does this frame end the `awaiting` gap? The agent's first assistant turn (it has begun
+ *  responding) or an error (the turn failed to start). The echoed user turn / session frame do not. */
+export function clearsAwaiting(frame: ChatFrame): boolean {
+  return frame.type === 'error' || (frame.type === 'turn' && frame.turn.role === 'assistant')
+}
+
 /** Apply one chat frame to the turn list: snapshot replaces, turn upserts by id (order preserved). */
 export function applyChatFrame(turns: ChatTurn[], frame: ChatFrame): ChatTurn[] {
   if (frame.type === 'snapshot') return frame.turns

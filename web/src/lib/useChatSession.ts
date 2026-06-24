@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import type { LaunchSpec } from './ui-store'
 import { api } from './api'
-import { applyChatFrame, makeUserTurn, type ChatFrame, type ChatTurn } from './chat'
+import { applyChatFrame, chatBusy, clearsAwaiting, makeUserTurn, type ChatFrame, type ChatTurn } from './chat'
 
 export interface ChatSession {
   turns: ChatTurn[]
   model?: string
-  /** any assistant turn still streaming → disable the composer's submit */
+  /** a turn is in flight (submitted-and-awaiting OR an assistant turn streaming) → composer shows 停止 */
   busy: boolean
+  /** submitted, but the agent hasn't produced its first frame yet — show a "thinking…" indicator */
+  thinking: boolean
   connected: boolean
   send: (text: string, images?: ChatImage[]) => void
   interrupt: () => void
@@ -36,6 +38,10 @@ export function useChatSession({
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [model, setModel] = useState<string | undefined>()
   const [connected, setConnected] = useState(false)
+  // True from a user submit until the agent's first assistant frame (or an error). Bridges the
+  // thinking gap where neither the optimistic user turn nor any assistant turn is `streaming` yet,
+  // so the composer/transcript still show "in flight" instead of looking idle.
+  const [awaiting, setAwaiting] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const turnSeqRef = useRef(0)
   const launchTurnSentRef = useRef<string | null>(null)
@@ -44,6 +50,7 @@ export function useChatSession({
     let disposed = false
     setTurns([])
     setModel(undefined)
+    setAwaiting(false)
 
     // Resume: seed history from the durable jsonl before the live stream attaches (resume does NOT
     // re-stream prior turns — verified). Fresh launches have no history.
@@ -72,7 +79,7 @@ export function useChatSession({
     const ws = new WebSocket(`${proto}://${location.host}/pty?${qs.toString()}`)
     wsRef.current = ws
     ws.addEventListener('open', () => { if (!disposed) setConnected(true) })
-    ws.addEventListener('close', () => { if (!disposed) setConnected(false) })
+    ws.addEventListener('close', () => { if (!disposed) { setConnected(false); setAwaiting(false) } })
     ws.onmessage = (e) => {
       if (disposed || typeof e.data !== 'string') return
       let msg: any
@@ -80,9 +87,13 @@ export function useChatSession({
       if (msg.__berth === 'launched') {
         if (msg.sessionId) onLaunched?.(msg.sessionId)
         if (launch?.images?.length) sendLaunchTurn(ws, launch, launchTurnSentRef)
+        // A launch that auto-fires a first turn (manual images here, or a server-side ?prompt=) is
+        // immediately awaiting the agent — show the thinking indicator from the handshake on.
+        if (launch?.prompt?.trim() || launch?.images?.length) setAwaiting(true)
         return
       }
       const frame = msg as ChatFrame
+      if (clearsAwaiting(frame)) setAwaiting(false)
       if (frame.type === 'session') { if (frame.model) setModel(frame.model); return }
       setTurns((cur) => applyChatFrame(cur, frame))
     }
@@ -104,7 +115,8 @@ export function useChatSession({
     turns,
     model,
     connected,
-    busy: turns.some((t) => t.streaming),
+    busy: chatBusy(turns, awaiting),
+    thinking: awaiting && !turns.some((t) => t.streaming),
     send: (text: string, images?: ChatImage[]) => {
       const t = text.trim()
       const validImages = (images ?? []).filter((image) => image.dataUrl)
@@ -112,6 +124,7 @@ export function useChatSession({
       if ((!t && validImages.length === 0) || !ws || ws.readyState !== WebSocket.OPEN) return
       const clientTurnId = `client_${Date.now()}_${++turnSeqRef.current}`
       setTurns((cur) => applyChatFrame(cur, { type: 'turn', turn: makeUserTurn(clientTurnId, displayTurnText(t, validImages.length)) }))
+      setAwaiting(true)   // waiting on the agent's first frame — keeps the composer/transcript "in flight"
       ws.send(JSON.stringify({ t: 'turn', text: t, images: validImages, clientTurnId }))
     },
     interrupt: () => sendRaw({ t: 'interrupt' }),

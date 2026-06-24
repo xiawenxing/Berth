@@ -53,5 +53,8 @@ export function spawnAndRegister(
  * then the user's first typed turn drives it live.
  */
 export function spawnAndRegisterStream(s: LogicalSession, opts: { onExit?: () => void } = {}): void {
-  registerSession(s.sessionId, makeResumeStreamDriver(s), { onExit: opts.onExit })
+  const driver = makeResumeStreamDriver(s)
+  // holdRunning keeps the session `running` through the agent's silent thinking gap (no output for
+  // >IDLE_MS) — a stream driver knows its turn boundaries precisely, unlike the TUI idle heuristic.
+  registerSession(s.sessionId, driver, { holdRunning: () => driver.turnActive?.() ?? false, onExit: opts.onExit })
 }

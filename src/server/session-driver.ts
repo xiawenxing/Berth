@@ -34,4 +34,9 @@ export interface SessionDriver {
   snapshot(maxBytes?: number): string[]
   /** Optional: live sessions may need to move durable sidecars when an intent id becomes a real id. */
   rekey?(key: string): void
+  /** Optional (stream drivers): is a turn currently in flight? Used as the activity `holdRunning`
+   *  guard so a Model B turn stays `running` through the agent's silent thinking gap (no output for
+   *  >IDLE_MS) instead of falsely settling to 停泊 mid-turn. TUI drivers omit it (raw bytes carry no
+   *  turn boundary; the idle-output heuristic is correct there). */
+  turnActive?(): boolean
 }

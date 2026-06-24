@@ -33,6 +33,10 @@ export class PerTurnStreamDriver implements SessionDriver {
   }
 
   get pid(): number | undefined { return this.active?.pid }
+  /** A turn is in flight while a turn process is alive OR one is queued behind it (the result→exit
+   *  race). The registry uses this as the activity holdRunning guard so the session stays `running`
+   *  through the agent's silent thinking gap instead of falsely settling to 停泊 mid-turn. */
+  turnActive(): boolean { return this.active !== null || this.pending !== null }
   kill(signal: NodeJS.Signals): void { try { this.active?.kill(signal) } catch {} }
   onFrame(cb: (s: string) => void): void { this.frameCb = cb }
   onExit(cb: () => void): void { this.exitCb = cb }   // only fired by the registry on explicit kill; a child exit is just turn-done

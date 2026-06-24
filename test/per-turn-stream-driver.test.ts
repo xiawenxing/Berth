@@ -168,4 +168,26 @@ describe('PerTurnStreamDriver', () => {
     d.kill('SIGTERM')
     expect(f.killSpy).toHaveBeenCalledWith('SIGTERM')
   })
+
+  it('turnActive: false at rest, true while a turn process is alive, false after it exits', () => {
+    const f = fakeChild()
+    const d = new PerTurnStreamDriver(new CodexReducer(clock), () => f.child)
+    expect(d.turnActive()).toBe(false)
+    d.send({ t: 'turn', text: 'q' })
+    expect(d.turnActive()).toBe(true)            // child running (incl. the silent thinking gap)
+    f.emit(codexTurn('done'))
+    f.exit()
+    expect(d.turnActive()).toBe(false)           // turn process gone, nothing queued
+  })
+
+  it('turnActive: stays true across the result→exit race when a follow-up turn is queued', () => {
+    const children: ReturnType<typeof fakeChild>[] = []
+    const spawnTurn = () => { const f = fakeChild(); children.push(f); return f.child }
+    const d = new PerTurnStreamDriver(new CodexReducer(clock), spawnTurn, { initialPrompt: 'q1' })
+    children[0].emit(codexTurn('a1'))
+    d.send({ t: 'turn', text: 'q2' })            // queued while child1 still alive
+    expect(d.turnActive()).toBe(true)            // a turn is pending even though child1 has its result
+    children[0].exit()                            // child1 exits → queued q2 spawns
+    expect(d.turnActive()).toBe(true)            // child2 now active
+  })
 })

@@ -169,4 +169,31 @@ describe('StreamJsonDriver', () => {
     f.exit()
     expect(exited).toBe(true)
   })
+
+  it('turnActive: false at rest, true from a submitted turn through the silent thinking gap, false at the result', () => {
+    const f = fakeChild()
+    const d = new StreamJsonDriver(f.child, { clock })
+    expect(d.turnActive()).toBe(false)
+    d.send({ t: 'turn', text: 'go', clientTurnId: 'c1' })
+    expect(d.turnActive()).toBe(true)        // submitted but no agent output yet (the thinking gap)
+    f.emit(JSON.stringify({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm1' } } }) + '\n')
+    expect(d.turnActive()).toBe(true)        // streaming
+    f.emit(JSON.stringify({ type: 'result', duration_ms: 5 }) + '\n')
+    expect(d.turnActive()).toBe(false)       // turn complete
+  })
+
+  it('turnActive: true while the initialPrompt turn is in flight, false once it results', () => {
+    const f = fakeChild()
+    const d = new StreamJsonDriver(f.child, { clock, initialPrompt: 'kick' })
+    expect(d.turnActive()).toBe(true)
+    f.emit(JSON.stringify({ type: 'result' }) + '\n')
+    expect(d.turnActive()).toBe(false)
+  })
+
+  it('turnActive: an empty/deduped submit does not light a phantom turn', () => {
+    const f = fakeChild()
+    const d = new StreamJsonDriver(f.child, { clock })
+    d.send({ t: 'turn', text: '   ', clientTurnId: 'blank' })   // no agent text → nothing sent
+    expect(d.turnActive()).toBe(false)
+  })
 })

@@ -30,6 +30,7 @@ export class StreamJsonDriver implements SessionDriver {
   private interruptSeq = 0
   private sessionEmitted = false
   private seenClientTurnIds = new Set<string>()
+  private inFlight = false   // a turn was written to stdin and no `result` line has closed it yet
 
   constructor(private child: ChildLike, opts?: { initialPrompt?: string; clock?: Clock }) {
     this.reducer = new ClaudeReducer(opts?.clock ?? (() => Math.floor(Date.now() / 1000)))
@@ -40,6 +41,9 @@ export class StreamJsonDriver implements SessionDriver {
   }
 
   get pid(): number | undefined { return this.child.pid }
+  /** A turn is in flight from submission until the closing `result` line — through the silent
+   *  thinking gap and any inter-tool pauses. The registry uses this as the activity holdRunning guard. */
+  turnActive(): boolean { return this.inFlight }
   kill(signal: NodeJS.Signals): void { try { this.child.kill(signal) } catch {} }
   onFrame(cb: (s: string) => void): void { this.frameCb = cb }
   onExit(cb: () => void): void { this.exitCb = cb }
@@ -80,6 +84,7 @@ export class StreamJsonDriver implements SessionDriver {
 
   private ingest(obj: any): void {
     const turn = this.reducer.ingest(obj)
+    if (obj?.type === 'result') this.inFlight = false   // turn closed — release the activity hold
     if (!this.sessionEmitted && this.reducer.sessionId) {
       this.sessionEmitted = true
       this.emit({ type: 'session', sessionId: this.reducer.sessionId, model: this.reducer.model })
@@ -94,6 +99,7 @@ export class StreamJsonDriver implements SessionDriver {
     }
     const prepared = prepareStreamTurn(text, images)
     if (!prepared.agentText) return
+    this.inFlight = true   // turn begins now; cleared by the `result` line in ingest()
     const turn = this.reducer.addUserTurn(prepared.displayText, clientTurnId)
     this.emit({ type: 'turn', turn })
     this.activityCb()
