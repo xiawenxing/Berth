@@ -24,9 +24,16 @@ describe('applyChatFrame', () => {
     expect((next[1].blocks[0] as any).text).toBe('complete')
   })
 
-  it('session and error frames leave the turn list unchanged', () => {
+  it('session frames leave the turn list unchanged', () => {
     const prev = [turn('a', 'user', 'q')]
     expect(applyChatFrame(prev, { type: 'session', sessionId: 's' })).toBe(prev)
-    expect(applyChatFrame(prev, { type: 'error', message: 'boom' })).toBe(prev)
+  })
+
+  it('error frames append a failed assistant turn', () => {
+    const prev = [turn('a', 'user', 'q')]
+    const next = applyChatFrame(prev, { type: 'error', message: 'boom' })
+    expect(next).toHaveLength(2)
+    expect(next[1]).toMatchObject({ role: 'assistant', result: { isError: true } })
+    expect((next[1].blocks[0] as any).text).toBe('boom')
   })
 })

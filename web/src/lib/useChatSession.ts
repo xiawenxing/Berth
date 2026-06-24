@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import type { LaunchSpec } from './ui-store'
 import { api } from './api'
 import { applyChatFrame, makeUserTurn, type ChatFrame, type ChatTurn } from './chat'
@@ -33,6 +33,7 @@ export function useChatSession({
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const turnSeqRef = useRef(0)
+  const launchTurnSentRef = useRef<string | null>(null)
 
   useEffect(() => {
     let disposed = false
@@ -56,7 +57,7 @@ export function useChatSession({
       if (launch.launchToken) qs.set('launchToken', launch.launchToken)
       if (launch.projectId) qs.set('projectId', launch.projectId)
       if (launch.todoKey) qs.set('todoKey', launch.todoKey)
-      if (launch.prompt) qs.set('prompt', launch.prompt)
+      if (launch.prompt && !launch.images?.length) qs.set('prompt', launch.prompt)
       if (launch.ctxProject === false) qs.set('ctxProject', '0')
       if (launch.ctxTask === false) qs.set('ctxTask', '0')
       for (const d of launch.addDirs ?? []) qs.append('addDirs', d)
@@ -71,7 +72,11 @@ export function useChatSession({
       if (disposed || typeof e.data !== 'string') return
       let msg: any
       try { msg = JSON.parse(e.data) } catch { return }   // stream mode is all-JSON; ignore stray bytes
-      if (msg.__berth === 'launched') { if (msg.sessionId) onLaunched?.(msg.sessionId); return }
+      if (msg.__berth === 'launched') {
+        if (msg.sessionId) onLaunched?.(msg.sessionId)
+        if (launch?.images?.length) sendLaunchTurn(ws, launch, launchTurnSentRef)
+        return
+      }
       const frame = msg as ChatFrame
       if (frame.type === 'session') { if (frame.model) setModel(frame.model); return }
       setTurns((cur) => applyChatFrame(cur, frame))
@@ -83,7 +88,7 @@ export function useChatSession({
       try { ws.close() } catch {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey])
+  }, [sessionId, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey, launch?.images])
 
   const sendRaw = (obj: unknown) => {
     const ws = wsRef.current
@@ -105,4 +110,16 @@ export function useChatSession({
     },
     interrupt: () => sendRaw({ t: 'interrupt' }),
   }
+}
+
+function sendLaunchTurn(ws: WebSocket, launch: LaunchSpec, sentRef: MutableRefObject<string | null>): void {
+  const key = launch.launchToken ?? `${launch.cli}:${launch.cwd}:${launch.prompt ?? ''}`
+  if (sentRef.current === key) return
+  if (ws.readyState !== WebSocket.OPEN) return
+  sentRef.current = key
+  const text = launch.prompt?.trim() ?? ''
+  const imageCount = launch.images?.length ?? 0
+  if (!text && imageCount === 0) return
+  const clientTurnId = `launch_${key}`
+  ws.send(JSON.stringify({ t: 'turn', text, images: launch.images ?? [], clientTurnId }))
 }

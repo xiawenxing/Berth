@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { ClaudeReducer } from '../agent/normalize/claude-reducer'
 import type { ChatFrame, Clock } from '../agent/normalize/chat-model'
 import type { Inbound, SessionDriver } from './session-driver'
+import { prepareStreamTurn, type TurnImage } from './stream-turn'
 
 /** The subset of a Node ChildProcess the driver needs (so tests can pass a fake). */
 export interface ChildLike {
@@ -28,10 +29,12 @@ export class StreamJsonDriver implements SessionDriver {
   private buf = ''
   private interruptSeq = 0
   private sessionEmitted = false
+  private seenClientTurnIds = new Set<string>()
 
   constructor(private child: ChildLike, opts?: { initialPrompt?: string; clock?: Clock }) {
     this.reducer = new ClaudeReducer(opts?.clock ?? (() => Math.floor(Date.now() / 1000)))
     this.child.stdout?.on('data', (d) => this.onStdout(d.toString()))
+    this.child.stderr?.on('data', (d) => this.onStderr(d.toString()))
     this.child.on('exit', () => { try { this.exitCb() } catch {} })
     if (opts?.initialPrompt) this.sendUserTurn(opts.initialPrompt)
   }
@@ -47,7 +50,10 @@ export class StreamJsonDriver implements SessionDriver {
   }
 
   send(msg: Inbound): void {
-    if (msg.t === 'turn' && typeof msg.text === 'string') this.sendUserTurn(msg.text, typeof msg.clientTurnId === 'string' ? msg.clientTurnId : undefined)
+    if (msg.t === 'turn' && typeof msg.text === 'string') {
+      const images = Array.isArray(msg.images) ? msg.images.filter((image: any): image is TurnImage => !!image && typeof image.dataUrl === 'string') : undefined
+      this.sendUserTurn(msg.text, typeof msg.clientTurnId === 'string' ? msg.clientTurnId : undefined, images)
+    }
     else if (msg.t === 'interrupt') this.sendInterrupt()
     // image paste folding + resize are no-ops for stream mode (no TUI, no terminal image channel) in v1.
   }
@@ -65,6 +71,13 @@ export class StreamJsonDriver implements SessionDriver {
     }
   }
 
+  private onStderr(chunk: string): void {
+    const text = chunk.trim()
+    if (!text) return
+    this.emit({ type: 'error', message: text })
+    this.activityCb()
+  }
+
   private ingest(obj: any): void {
     const turn = this.reducer.ingest(obj)
     if (!this.sessionEmitted && this.reducer.sessionId) {
@@ -74,11 +87,17 @@ export class StreamJsonDriver implements SessionDriver {
     if (turn) { this.emit({ type: 'turn', turn }); this.activityCb() }
   }
 
-  private sendUserTurn(text: string, clientTurnId?: string): void {
-    const turn = this.reducer.addUserTurn(text, clientTurnId)
+  private sendUserTurn(text: string, clientTurnId?: string, images?: TurnImage[]): void {
+    if (clientTurnId) {
+      if (this.seenClientTurnIds.has(clientTurnId)) return
+      this.seenClientTurnIds.add(clientTurnId)
+    }
+    const prepared = prepareStreamTurn(text, images)
+    if (!prepared.agentText) return
+    const turn = this.reducer.addUserTurn(prepared.displayText, clientTurnId)
     this.emit({ type: 'turn', turn })
     this.activityCb()
-    const msg = JSON.stringify({ type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null })
+    const msg = JSON.stringify({ type: 'user', message: { role: 'user', content: prepared.agentText }, parent_tool_use_id: null })
     try { this.child.stdin?.write(msg + '\n') } catch {}
   }
 

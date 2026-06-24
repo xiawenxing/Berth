@@ -1,6 +1,7 @@
 import type { ChatFrame, ChatReducer } from '../agent/normalize/chat-model'
 import type { Inbound, SessionDriver } from './session-driver'
 import type { ChildLike } from './stream-json-driver'
+import { prepareStreamTurn, type TurnImage } from './stream-turn'
 
 /** Spawns one turn's process. `resumeId` is null for the first (fresh) turn, else the session id to resume. */
 export type SpawnTurn = (prompt: string, resumeId: string | null) => ChildLike
@@ -22,6 +23,7 @@ export class PerTurnStreamDriver implements SessionDriver {
   private buf = ''
   private sessionEmitted = false
   private resumeId: string | null
+  private seenClientTurnIds = new Set<string>()
 
   constructor(private reducer: ChatReducer, private spawnTurn: SpawnTurn, opts?: { initialPrompt?: string; resumeId?: string }) {
     // resumeId seeds a RESUME open (codex/coco) so the very first turn continues the existing session
@@ -41,19 +43,28 @@ export class PerTurnStreamDriver implements SessionDriver {
   }
 
   send(msg: Inbound): void {
-    if (msg.t === 'turn' && typeof msg.text === 'string') this.startTurn(msg.text, typeof msg.clientTurnId === 'string' ? msg.clientTurnId : undefined)
+    if (msg.t === 'turn' && typeof msg.text === 'string') {
+      const images = Array.isArray(msg.images) ? msg.images.filter((image: any): image is TurnImage => !!image && typeof image.dataUrl === 'string') : undefined
+      this.startTurn(msg.text, typeof msg.clientTurnId === 'string' ? msg.clientTurnId : undefined, images)
+    }
     else if (msg.t === 'interrupt') { try { this.active?.kill('SIGTERM') } catch {} }
   }
 
-  private startTurn(prompt: string, clientTurnId?: string): void {
+  private startTurn(prompt: string, clientTurnId?: string, images?: TurnImage[]): void {
+    if (clientTurnId) {
+      if (this.seenClientTurnIds.has(clientTurnId)) return
+      this.seenClientTurnIds.add(clientTurnId)
+    }
+    const prepared = prepareStreamTurn(prompt, images)
+    if (!prepared.agentText) return
     // Always show the user's bubble immediately. If a turn's process is still alive (codex emits its
     // result a beat BEFORE the process exits), QUEUE this turn — dropping it silently was a bug — and
     // fire it when the active child exits.
-    const userTurn = this.reducer.addUserTurn(prompt, clientTurnId)
+    const userTurn = this.reducer.addUserTurn(prepared.displayText, clientTurnId)
     this.emit({ type: 'turn', turn: userTurn })
     this.activityCb()
-    if (this.active) { this.pending = prompt; return }
-    this.spawnFor(prompt)
+    if (this.active) { this.pending = prepared.agentText; return }
+    this.spawnFor(prepared.agentText)
   }
 
   private spawnFor(prompt: string): void {
@@ -62,6 +73,7 @@ export class PerTurnStreamDriver implements SessionDriver {
     const child = this.spawnTurn(prompt, resumeId)
     this.active = child
     child.stdout?.on('data', (d) => this.onStdout(d.toString()))
+    child.stderr?.on('data', (d) => this.onStderr(d.toString()))
     child.on('exit', () => {
       if (this.active !== child) return
       this.active = null
@@ -69,6 +81,13 @@ export class PerTurnStreamDriver implements SessionDriver {
       this.pending = null
       if (next !== null) this.spawnFor(next)   // drain a queued turn
     })
+  }
+
+  private onStderr(chunk: string): void {
+    const text = chunk.trim()
+    if (!text) return
+    this.emit({ type: 'error', message: text })
+    this.activityCb()
   }
 
   private onStdout(chunk: string): void {

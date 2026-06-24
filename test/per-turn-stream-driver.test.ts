@@ -1,4 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
+
+const saveAttachment = vi.hoisted(() => vi.fn((_dataUrl: string, _nameHint: string) => ({
+  rel: 'assets/x.png',
+  abs: '/tmp/berth-docs/assets/x.png',
+})))
+vi.mock('../src/data/docstore', () => ({
+  currentDocStore: () => ({ saveAttachment }),
+}))
+
 import { PerTurnStreamDriver } from '../src/server/per-turn-stream-driver'
 import { CodexReducer } from '../src/agent/normalize/codex-reducer'
 import type { ChildLike } from '../src/server/stream-json-driver'
@@ -6,16 +15,17 @@ import type { ChatFrame } from '../src/agent/normalize/chat-model'
 
 function fakeChild(pid = 100) {
   let dataCb: (d: string) => void = () => {}
+  let errCb: (d: string) => void = () => {}
   let exitCb: () => void = () => {}
   const child: ChildLike = {
     pid,
     stdout: { on: (_e, cb) => { dataCb = cb } },
-    stderr: { on: () => {} },
+    stderr: { on: (_e, cb) => { errCb = cb } },
     stdin: { write: () => {} },
     on: (_e, cb) => { exitCb = cb },
     kill: vi.fn(),
   }
-  return { child, emit: (s: string) => dataCb(s), exit: () => exitCb(), killSpy: child.kill as any }
+  return { child, emit: (s: string) => dataCb(s), emitErr: (s: string) => errCb(s), exit: () => exitCb(), killSpy: child.kill as any }
 }
 
 const clock = () => 1000
@@ -107,6 +117,42 @@ describe('PerTurnStreamDriver', () => {
     d.send({ t: 'turn', text: 'continue', clientTurnId: 'client-2' })
     const userFrame = frames(sent).find((x) => x.type === 'turn' && x.turn.role === 'user') as Extract<ChatFrame, { type: 'turn' }>
     expect(userFrame.turn).toMatchObject({ id: 'client-2', role: 'user', blocks: [{ kind: 'text', text: 'continue' }] })
+  })
+
+  it('send turn with images: persists images, displays an attachment label, and spawns with image paths', () => {
+    saveAttachment.mockClear()
+    const spawns: Array<{ prompt: string; resumeId: string | null }> = []
+    const d = new PerTurnStreamDriver(new CodexReducer(clock), (prompt, resumeId) => {
+      spawns.push({ prompt, resumeId })
+      return fakeChild().child
+    })
+    const sent: string[] = []
+    d.onFrame((s) => sent.push(s))
+    d.send({ t: 'turn', text: 'inspect', clientTurnId: 'client-img', images: [{ name: 'shot', dataUrl: 'data:image/png;base64,AAAA' }] })
+    expect(saveAttachment).toHaveBeenCalledWith('data:image/png;base64,AAAA', 'shot')
+    expect(spawns[0].prompt).toContain('inspect')
+    expect(spawns[0].prompt).toContain('Attached images:')
+    expect(spawns[0].prompt).toContain('/tmp/berth-docs/assets/x.png')
+    const userFrame = frames(sent).find((x) => x.type === 'turn' && x.turn.role === 'user') as Extract<ChatFrame, { type: 'turn' }>
+    expect(userFrame.turn.blocks).toEqual([{ kind: 'text', text: 'inspect\n\n已附加 1 张图片' }])
+  })
+
+  it('dedupes repeated client turn ids before spawning a turn', () => {
+    const spawns: string[] = []
+    const d = new PerTurnStreamDriver(new CodexReducer(clock), (prompt) => { spawns.push(prompt); return fakeChild().child })
+    d.send({ t: 'turn', text: 'once', clientTurnId: 'same-id' })
+    d.send({ t: 'turn', text: 'twice', clientTurnId: 'same-id' })
+    expect(spawns).toEqual(['once'])
+  })
+
+  it('emits stderr as an error frame instead of swallowing it', () => {
+    const f = fakeChild()
+    const d = new PerTurnStreamDriver(new CodexReducer(clock), () => f.child)
+    const sent: string[] = []
+    d.onFrame((s) => sent.push(s))
+    d.send({ t: 'turn', text: 'q' })
+    f.emitErr('boom\n')
+    expect(frames(sent).find((x) => x.type === 'error')).toEqual({ type: 'error', message: 'boom' })
   })
 
   it('interrupt kills the active turn process', () => {

@@ -49,5 +49,17 @@ export function applyChatFrame(turns: ChatTurn[], frame: ChatFrame): ChatTurn[] 
     next[i] = frame.turn
     return next
   }
-  return turns   // session / error don't change the turn list
+  if (frame.type === 'error') {
+    return [
+      ...turns,
+      {
+        id: `error_${Date.now()}_${turns.length}`,
+        role: 'assistant',
+        ts: Math.floor(Date.now() / 1000),
+        blocks: [{ kind: 'text', text: frame.message }],
+        result: { isError: true },
+      },
+    ]
+  }
+  return turns   // session doesn't change the turn list
 }
