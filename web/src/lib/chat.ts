@@ -35,6 +35,10 @@ export type ChatFrame =
   | { type: 'session'; sessionId: string; model?: string }
   | { type: 'error'; message: string }
 
+export function makeUserTurn(id: string, text: string, ts = Math.floor(Date.now() / 1000)): ChatTurn {
+  return { id, role: 'user', ts, blocks: [{ kind: 'text', text }] }
+}
+
 /** Apply one chat frame to the turn list: snapshot replaces, turn upserts by id (order preserved). */
 export function applyChatFrame(turns: ChatTurn[], frame: ChatFrame): ChatTurn[] {
   if (frame.type === 'snapshot') return frame.turns

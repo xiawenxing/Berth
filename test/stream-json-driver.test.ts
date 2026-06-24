@@ -78,7 +78,7 @@ describe('StreamJsonDriver', () => {
     const d = new StreamJsonDriver(f.child, { clock })
     const sent: string[] = []
     d.onFrame((s) => sent.push(s))
-    d.send({ t: 'turn', text: 'do the thing' })
+    d.send({ t: 'turn', text: 'do the thing', clientTurnId: 'client-1' })
     // stdin line is valid NDJSON with the SDKUserMessage shape
     expect(f.stdinWrites).toHaveLength(1)
     const obj = JSON.parse(f.stdinWrites[0].trim())
@@ -86,7 +86,7 @@ describe('StreamJsonDriver', () => {
     expect(f.stdinWrites[0].endsWith('\n')).toBe(true)
     // optimistic user bubble emitted
     const turnFrames = parseFrames(sent).filter((x) => x.type === 'turn') as Extract<ChatFrame, { type: 'turn' }>[]
-    expect(turnFrames[0].turn).toMatchObject({ role: 'user', blocks: [{ kind: 'text', text: 'do the thing' }] })
+    expect(turnFrames[0].turn).toMatchObject({ id: 'client-1', role: 'user', blocks: [{ kind: 'text', text: 'do the thing' }] })
   })
 
   it('send interrupt: writes a control_request with subtype interrupt to stdin', () => {

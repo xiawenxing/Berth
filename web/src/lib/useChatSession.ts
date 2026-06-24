@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { LaunchSpec } from './ui-store'
 import { api } from './api'
-import { applyChatFrame, type ChatFrame, type ChatTurn } from './chat'
+import { applyChatFrame, makeUserTurn, type ChatFrame, type ChatTurn } from './chat'
 
 export interface ChatSession {
   turns: ChatTurn[]
@@ -32,6 +32,7 @@ export function useChatSession({
   const [model, setModel] = useState<string | undefined>()
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
+  const turnSeqRef = useRef(0)
 
   useEffect(() => {
     let disposed = false
@@ -94,7 +95,14 @@ export function useChatSession({
     model,
     connected,
     busy: turns.some((t) => t.streaming),
-    send: (text: string) => { const t = text.trim(); if (t) sendRaw({ t: 'turn', text: t }) },
+    send: (text: string) => {
+      const t = text.trim()
+      const ws = wsRef.current
+      if (!t || !ws || ws.readyState !== WebSocket.OPEN) return
+      const clientTurnId = `client_${Date.now()}_${++turnSeqRef.current}`
+      setTurns((cur) => applyChatFrame(cur, { type: 'turn', turn: makeUserTurn(clientTurnId, t) }))
+      ws.send(JSON.stringify({ t: 'turn', text: t, clientTurnId }))
+    },
     interrupt: () => sendRaw({ t: 'interrupt' }),
   }
 }

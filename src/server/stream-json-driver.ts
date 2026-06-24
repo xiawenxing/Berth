@@ -47,7 +47,7 @@ export class StreamJsonDriver implements SessionDriver {
   }
 
   send(msg: Inbound): void {
-    if (msg.t === 'turn' && typeof msg.text === 'string') this.sendUserTurn(msg.text)
+    if (msg.t === 'turn' && typeof msg.text === 'string') this.sendUserTurn(msg.text, typeof msg.clientTurnId === 'string' ? msg.clientTurnId : undefined)
     else if (msg.t === 'interrupt') this.sendInterrupt()
     // image paste folding + resize are no-ops for stream mode (no TUI, no terminal image channel) in v1.
   }
@@ -74,8 +74,8 @@ export class StreamJsonDriver implements SessionDriver {
     if (turn) { this.emit({ type: 'turn', turn }); this.activityCb() }
   }
 
-  private sendUserTurn(text: string): void {
-    const turn = this.reducer.addUserTurn(text)
+  private sendUserTurn(text: string, clientTurnId?: string): void {
+    const turn = this.reducer.addUserTurn(text, clientTurnId)
     this.emit({ type: 'turn', turn })
     this.activityCb()
     const msg = JSON.stringify({ type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null })
