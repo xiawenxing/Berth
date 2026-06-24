@@ -3,7 +3,7 @@ import { hasVisibleOutput } from './activity'
 import { currentDocStore } from '../data/docstore'
 import type { Inbound, SessionDriver } from './session-driver'
 
-const MAX_BUFFER_BYTES = 512 * 1024   // ~scrollback kept per session for replay
+const MAX_BUFFER_BYTES = 2 * 1024 * 1024   // ~scrollback kept per session for replay on (re)attach
 const RESIZE_QUIET_MS = 500           // a resize triggers a full repaint — not a turn, so don't spin
 
 /**

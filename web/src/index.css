@@ -70,7 +70,12 @@ html.light {
 }
 
 @layer base {
+  /* Fixed-viewport SPA: the document itself must never scroll. The app shell + every page own their
+     own internal scroll containers, so locking html/body scroll (and disabling overscroll chaining)
+     stops a nested scroller — most notably the xterm terminal inside the session drawer — from
+     bleeding its wheel scroll into the page behind once it hits its top/bottom boundary. */
   html, body, #root { height: 100%; }
+  html, body { overflow: hidden; overscroll-behavior: none; }
   body {
     margin: 0;
     background: var(--color-background);
@@ -101,9 +106,14 @@ html.light {
    scrollbar and selection so the byte-stream view feels native to Berth 2.0. */
 .berth-terminal-shell {
   background: var(--color-canvas);
+  /* Contain the wheel here too: xterm's text layer (.xterm-screen) is a SIBLING of the scrollable
+     .xterm-viewport, so a wheel over the text area chains through the shell — not the viewport — when
+     it hits the scroll boundary. Containing at the shell (an ancestor of both) stops the leak. */
+  overscroll-behavior: contain;
 }
 .berth-xterm .xterm {
   height: 100%;
+  overscroll-behavior: contain;
 }
 .berth-xterm .xterm-viewport {
   background-color: var(--color-canvas);
