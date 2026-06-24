@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { Block, ChatTurn } from '@/lib/chat'
+import { turnHasVisibleContent, type Block, type ChatTurn } from '@/lib/chat'
 import { cn } from '@/lib/utils'
 import { Markdown } from './Markdown'
 
@@ -52,24 +52,56 @@ function ThinkingBubble() {
 }
 
 function UserBubble({ turn }: { turn: ChatTurn }) {
+  const images = turn.blocks.filter((b): b is Extract<Block, { kind: 'image' }> => b.kind === 'image')
   const text = turn.blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('')
+  const hasImages = images.length > 0
   return (
     <div className="flex justify-end">
-      <div className="max-w-[78%] whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-brand px-4 py-2 text-sm text-brand-foreground">
-        {text}
+      <div className="flex max-w-[78%] flex-col items-end gap-2">
+        {hasImages && (
+          <div className="flex max-w-full flex-wrap justify-end gap-2">
+            {images.map((image, idx) => (
+              <img
+                key={`${image.src}-${idx}`}
+                src={image.src}
+                alt={image.alt ?? ''}
+                className="max-h-28 max-w-[180px] rounded-xl border border-border bg-card object-contain shadow-sm"
+              />
+            ))}
+          </div>
+        )}
+        {text.trim() && (
+          <div
+            className={cn(
+              'whitespace-pre-wrap break-words rounded-2xl rounded-br-sm px-4 py-2 text-sm',
+              hasImages ? 'bg-card/70 text-foreground' : 'bg-brand text-brand-foreground',
+            )}
+          >
+            {text}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
 function AssistantTurn({ turn }: { turn: ChatTurn }) {
+  const visible = turnHasVisibleContent(turn)
+  if (!visible && turn.streaming) return null
+
   return (
     <div className="flex flex-col items-start gap-1.5">
       <div className="w-full max-w-[88%] space-y-2 text-sm leading-relaxed text-foreground">
-        {turn.blocks.map((b, i) => (
-          <FlowBlock key={i} block={b} />
-        ))}
-        {turn.streaming && <span className="inline-block h-3 w-1.5 animate-pulse rounded-sm bg-muted-foreground align-middle" />}
+        {visible ? (
+          <>
+            {turn.blocks.map((b, i) => (
+              <FlowBlock key={i} block={b} />
+            ))}
+            {turn.streaming && <span className="inline-block h-3 w-1.5 animate-pulse rounded-sm bg-muted-foreground align-middle" />}
+          </>
+        ) : (
+          <span className="text-muted-foreground">没有可显示的回复。</span>
+        )}
       </div>
       {turn.result && <TurnFooter turn={turn} />}
     </div>
@@ -87,6 +119,9 @@ function FlowBlock({ block }: { block: Block }) {
         {block.opaque || !block.text ? '思考中…' : <Markdown text={block.text} />}
       </div>
     )
+  }
+  if (block.kind === 'image') {
+    return <img src={block.src} alt={block.alt ?? ''} className="max-h-72 max-w-full rounded-md border border-border object-contain" />
   }
   return <ToolCallLine block={block} />
 }

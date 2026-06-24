@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import type { LaunchSpec } from './ui-store'
 import { api } from './api'
-import { applyChatFrame, chatBusy, clearsAwaiting, makeUserTurn, type ChatFrame, type ChatTurn } from './chat'
+import { applyChatFrame, chatBusy, chatThinking, clearsAwaiting, makeUserTurn, type ChatFrame, type ChatTurn } from './chat'
 
 export interface ChatSession {
   turns: ChatTurn[]
@@ -116,25 +116,22 @@ export function useChatSession({
     model,
     connected,
     busy: chatBusy(turns, awaiting),
-    thinking: awaiting && !turns.some((t) => t.streaming),
+    thinking: chatThinking(turns, awaiting),
     send: (text: string, images?: ChatImage[]) => {
       const t = text.trim()
       const validImages = (images ?? []).filter((image) => image.dataUrl)
       const ws = wsRef.current
       if ((!t && validImages.length === 0) || !ws || ws.readyState !== WebSocket.OPEN) return
       const clientTurnId = `client_${Date.now()}_${++turnSeqRef.current}`
-      setTurns((cur) => applyChatFrame(cur, { type: 'turn', turn: makeUserTurn(clientTurnId, displayTurnText(t, validImages.length)) }))
+      setTurns((cur) => applyChatFrame(cur, {
+        type: 'turn',
+        turn: makeUserTurn(clientTurnId, t, undefined, validImages.map((image) => ({ src: image.dataUrl, alt: image.name }))),
+      }))
       setAwaiting(true)   // waiting on the agent's first frame — keeps the composer/transcript "in flight"
       ws.send(JSON.stringify({ t: 'turn', text: t, images: validImages, clientTurnId }))
     },
     interrupt: () => sendRaw({ t: 'interrupt' }),
   }
-}
-
-function displayTurnText(text: string, imageCount: number): string {
-  if (!imageCount) return text
-  const label = `已附加 ${imageCount} 张图片`
-  return text ? `${text}\n\n${label}` : label
 }
 
 function sendLaunchTurn(ws: WebSocket, launch: LaunchSpec, sentRef: MutableRefObject<string | null>): void {
