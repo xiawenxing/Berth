@@ -20,7 +20,7 @@ import { getAgentConfig } from '../data/agent-config'
 import { getDocsRoot, getDocStore } from '../data/docstore'
 import { getContextConfig } from '../data/context-config'
 import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
-import { ensureContextDoc, rotateContextDocOnDisk } from '../data/context-doc'
+import { ensureContextDoc, maintainContextDocOnDisk } from '../data/context-doc'
 import { getLocale, promptStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
@@ -447,7 +447,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // a plain empty session is idle until the user types.
   const launchKey = plan.sessionId ?? plan.intent.id
   const onExit = contextAbs ? () => {
-    try { rotateContextDocOnDisk(getDocStore(store), contextAbs!, { maxLines: ctxCfg.logMaxLines, keep: ctxCfg.logKeep, locale }) } catch {}
+    try { maintainContextDocOnDisk(getDocStore(store), contextAbs!, { ...ctxCfg, locale }) } catch {}
   } : undefined
 
   const wantStream = rendersStream(url, cli)

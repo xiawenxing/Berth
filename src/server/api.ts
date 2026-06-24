@@ -493,8 +493,11 @@ api.post('/context/log', (req, res) => {
     }
     const date = new Date().toISOString().slice(0, 10)
     // appendLogEntry collapses internal whitespace/newlines into a single line — no pre-processing needed here.
-    const r = appendContextLogOnDisk(ds, ensured.abs, { text, date, maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })
-    res.json({ ref: ensured.ref, appended: r.appended, rotated: r.rotated })
+    const r = appendContextLogOnDisk(ds, ensured.abs, {
+      text, date, maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale,
+      maxChars: cfg.docMaxChars, keepChars: cfg.docKeepChars,
+    })
+    res.json({ ref: ensured.ref, appended: r.appended, rotated: r.rotated, compacted: r.compacted })
   } catch (e: any) {
     res.status(500).json({ error: String(e?.message ?? e) })
   }
@@ -533,13 +536,16 @@ api.post('/context/update', async (req, res) => {
       target, docStore: ds, locale, agent: resolveBerthAgent(store),
       userInput: effectiveUserInput || undefined, transcript,
       date: new Date().toISOString().slice(0, 10),
-      getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
+      getCfg: () => {
+        const c = getContextConfig(store)
+        return { logMaxLines: c.logMaxLines, logKeep: c.logKeep, docMaxChars: c.docMaxChars, docKeepChars: c.docKeepChars }
+      },
     })
     if (!outcome.ok) {
       try { refresh() } catch {}
       return res.status(409).json(contextAgentError(outcome.reason))
     }
-    res.json({ ok: true, ref, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
+    res.json({ ok: true, ref, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated, compacted: outcome.compacted })
   } catch (e: any) {
     try { refresh() } catch {}
     res.status(502).json(contextAgentError(e))
@@ -801,13 +807,16 @@ api.post('/sessions/:id/consolidate', async (req, res) => {
       session: { sessionId: s.sessionId, todoKey, projectId, contentSourcePath: s.contentSourcePath },
       task: task ? { title: task.title, project: task.project } : null,
       docStore, locale, agent: resolveBerthAgent(store),
-      getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
+      getCfg: () => {
+        const c = getContextConfig(store)
+        return { logMaxLines: c.logMaxLines, logKeep: c.logKeep, docMaxChars: c.docMaxChars, docKeepChars: c.docKeepChars }
+      },
     })
     if (!outcome.ok) {
       try { refresh() } catch {}
       return res.status(409).json(contextAgentError(outcome.reason))
     }
-    res.json({ ok: true, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
+    res.json({ ok: true, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated, compacted: outcome.compacted })
   } catch (e: any) {
     try { refresh() } catch {}
     sendAgentError(res, e, locale)

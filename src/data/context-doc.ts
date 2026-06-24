@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path'
 import type { DocStore } from './docstore'
 import { contextStrings, type Locale } from '../i18n'
 import { rotateLog, appendLogEntry } from './context-log'
+import { compactContextDoc } from './context-split'
 
 export interface EnsuredDoc { ref: string; abs: string; created: boolean }
 
@@ -31,19 +32,75 @@ export function archivePathFor(contextAbs: string): string {
   return join(dirname(contextAbs), 'progress-archive.md')
 }
 
+export function referencePathFor(contextAbs: string, stamp: string): { abs: string; rel: string } {
+  const rel = `references/context-${stamp}.md`
+  return { abs: join(dirname(contextAbs), rel), rel }
+}
+
+function uniqueReferencePath(contextAbs: string, stamp: string): { abs: string; rel: string } {
+  let n = 0
+  while (true) {
+    const suffix = n ? `-${n}` : ''
+    const rel = `references/context-${stamp}${suffix}.md`
+    const abs = join(dirname(contextAbs), rel)
+    if (!existsSync(abs)) return { abs, rel }
+    n += 1
+  }
+}
+
+function stampFromDate(date: string): string {
+  const safe = date.replace(/[^0-9A-Za-z-]/g, '')
+  if (safe) return safe
+  return new Date().toISOString().slice(0, 10)
+}
+
+export function compactContextDocOnDisk(
+  docStore: DocStore, contextAbs: string,
+  cfg: { maxChars: number; keepChars: number; logKeep: number; locale: Locale; date?: string },
+): boolean {
+  if (!existsSync(contextAbs)) return false
+  const doc = readFileSync(contextAbs, 'utf8')
+  if (doc.length <= cfg.maxChars) return false
+  const ref = uniqueReferencePath(contextAbs, stampFromDate(cfg.date ?? new Date().toISOString()))
+  const c = contextStrings(cfg.locale)
+  const r = compactContextDoc({
+    doc, maxChars: cfg.maxChars, keepChars: cfg.keepChars, referenceRel: ref.rel,
+    date: cfg.date ?? new Date().toISOString().slice(0, 10),
+    locale: cfg.locale, logHeading: c.logHeading, logKeep: cfg.logKeep,
+  })
+  if (!r.compacted) return false
+  docStore.writeDoc(ref.abs, r.reference)
+  docStore.writeDoc(contextAbs, r.doc)
+  return true
+}
+
+export function maintainContextDocOnDisk(
+  docStore: DocStore, contextAbs: string,
+  cfg: { logMaxLines: number; logKeep: number; docMaxChars: number; docKeepChars: number; locale: Locale; date?: string },
+): { rotated: boolean; compacted: boolean } {
+  const rotated = rotateContextDocOnDisk(docStore, contextAbs, { maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale: cfg.locale })
+  const compacted = compactContextDocOnDisk(docStore, contextAbs, {
+    maxChars: cfg.docMaxChars, keepChars: cfg.docKeepChars, logKeep: cfg.logKeep, locale: cfg.locale, date: cfg.date,
+  })
+  return { rotated, compacted }
+}
+
 /** Append a dated entry to the context file's log section, then roll if it overflows. */
 export function appendContextLogOnDisk(
   docStore: DocStore, contextAbs: string,
-  cfg: { text: string; date: string; maxLines: number; keep: number; locale: Locale },
-): { appended: boolean; rotated: boolean } {
-  if (!existsSync(contextAbs)) return { appended: false, rotated: false }
+  cfg: { text: string; date: string; maxLines: number; keep: number; locale: Locale; maxChars?: number; keepChars?: number },
+): { appended: boolean; rotated: boolean; compacted: boolean } {
+  if (!existsSync(contextAbs)) return { appended: false, rotated: false, compacted: false }
   const c = contextStrings(cfg.locale)
   const doc0 = readFileSync(contextAbs, 'utf8')
   const { doc, appended } = appendLogEntry({ doc: doc0, logHeading: c.logHeading, date: cfg.date, text: cfg.text })
-  if (!appended) return { appended: false, rotated: false }
+  if (!appended) return { appended: false, rotated: false, compacted: false }
   docStore.writeDoc(contextAbs, doc)
   const rotated = rotateContextDocOnDisk(docStore, contextAbs, { maxLines: cfg.maxLines, keep: cfg.keep, locale: cfg.locale })
-  return { appended: true, rotated }
+  const compacted = cfg.maxChars && cfg.keepChars
+    ? compactContextDocOnDisk(docStore, contextAbs, { maxChars: cfg.maxChars, keepChars: cfg.keepChars, logKeep: cfg.keep, locale: cfg.locale, date: cfg.date })
+    : false
+  return { appended: true, rotated, compacted }
 }
 
 /** Read the context file + its archive, roll the log if over threshold, write both back. Returns whether it rolled. */
