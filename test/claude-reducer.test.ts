@@ -101,6 +101,27 @@ describe('ClaudeReducer', () => {
     expect(tc.result).toMatchObject({ output: 'file1\nfile2', ok: true })
   })
 
+  it('keeps multi-message tool turns in one assistant turn and closes it on result', () => {
+    const r = new ClaudeReducer(clock)
+    r.ingest(msgStart('m_tool'))
+    r.ingest(blockStart(0, { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: {} }))
+    r.ingest(inputDelta(0, '{"command":"npm test"}'))
+    r.ingest(blockStop(0))
+    r.ingest(toolResultUser('toolu_1', 'ok'))
+    r.ingest(msgStart('m_answer'))
+    r.ingest(blockStart(0, { type: 'text', text: '' }))
+    r.ingest(textDelta(0, 'Done.'))
+    r.ingest(resultOk)
+
+    expect(r.turns).toHaveLength(1)
+    expect(r.turns[0].streaming).toBe(false)
+    expect(r.turns[0].result).toMatchObject({ durationMs: 7677, usage: { output: 2 } })
+    expect(r.turns[0].blocks).toMatchObject([
+      { kind: 'tool_call', id: 'toolu_1', status: 'done', input: { command: 'npm test' } },
+      { kind: 'text', text: 'Done.' },
+    ])
+  })
+
   it('marks a tool_call errored when tool_result.is_error is true', () => {
     const r = new ClaudeReducer(clock)
     r.ingest(msgStart('m1'))

@@ -63,11 +63,13 @@ export class ClaudeReducer {
     if (!ev || typeof ev !== 'object') return null
     switch (ev.type) {
       case 'message_start': {
-        const t: ChatTurn = { id: this.turnId(ev.message?.id), role: 'assistant', ts: this.clock(), blocks: [], streaming: true }
-        this.current = t
+        const t = this.current ?? { id: this.turnId(ev.message?.id), role: 'assistant' as const, ts: this.clock(), blocks: [], streaming: true }
+        if (!this.current) {
+          this.current = t
+          this.turns.push(t)
+        }
         this.blockAt.clear()
         this.toolJson.clear()
-        this.turns.push(t)
         return t
       }
       case 'content_block_start': {
