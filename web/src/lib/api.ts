@@ -126,7 +126,7 @@ export const api = {
     getJSON<{ turns: ChatTurn[]; truncated?: boolean }>(`/api/sessions/${sessionId}/chat`),
 
   // ── mutations (wired to existing server endpoints) ──
-  createTask: (text: string, projectId?: string, images?: string[]) => send('POST', '/api/todos', { text, projectId, images }),
+  createTask: (text: string, projectId?: string, images?: string[], autoTitle?: boolean) => send('POST', '/api/todos', { text, projectId, images, autoTitle }),
   patchTask: (id: string, patch: { status?: string; priority?: string; ddl?: string | null; title?: string }) =>
     send('PATCH', `/api/todos/${id}`, patch),
   deleteTask: (id: string) => send('DELETE', `/api/todos/${id}`),

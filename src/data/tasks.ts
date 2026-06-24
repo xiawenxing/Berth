@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { generateTaskTitle } from '../agent/index'
 import { classifyProject } from '../agent/triage'
 import { listProjects, createProject } from './projects'
 import { getTaskFieldConfig } from './task-config'
@@ -34,7 +35,7 @@ export async function createTask(
   store: Store,
   docStore: DocStore,
   text: string,
-  opts: { projectId?: string; confirm?: boolean; createOption?: boolean; images?: string[] } = {},
+  opts: { projectId?: string; confirm?: boolean; createOption?: boolean; images?: string[]; autoTitle?: boolean } = {},
   now: Now = Date.now,
 ): Promise<CreateResult> {
   text = text.trim()
@@ -76,12 +77,24 @@ export async function createTask(
     }
   }
 
+  let title = text
+  if (opts.autoTitle) {
+    try {
+      const generated = (await generateTaskTitle(text, resolveBerthAgent(store))).trim()
+      if (generated) title = generated
+    } catch {
+      // Title generation is best-effort; task creation should not fail just because the agent is blocked.
+    }
+    const titleDup = title !== text ? findDuplicate(store, title) : null
+    if (titleDup && !opts.confirm) return { status: 'duplicate', existing: titleDup }
+  }
+
   // 3. mint + insert
   const id = randomUUID()
   const t = now()
   const cfg = getTaskFieldConfig(store)
   const task: Task = {
-    id, title: text, status: cfg.defaultStatus, priority: cfg.defaultPriority,
+    id, title, status: cfg.defaultStatus, priority: cfg.defaultPriority,
     projectId, project, detailDoc: null, progress: null, updatedAt: t, syncedAt: 0, deleted: false,
   }
   store.insertTask(task)
@@ -89,11 +102,11 @@ export async function createTask(
   // 4. pasted images → detail doc owned by Berth
   let detailDoc: string | undefined
   if (opts.images && opts.images.length) {
-    try { detailDoc = attachImagesAsDetailDoc(store, docStore, id, text, project, opts.images, now) }
+    try { detailDoc = attachImagesAsDetailDoc(store, docStore, id, title, project, opts.images, now) }
     catch { /* best-effort; the task already exists */ }
   }
 
-  return { status: 'created', record: { id, title: text, projectId, project, detailDoc } }
+  return { status: 'created', record: { id, title, projectId, project, detailDoc } }
 }
 
 /** Update a task's editable fields (title / priority / status). Validates enums; bumps updated_at. */

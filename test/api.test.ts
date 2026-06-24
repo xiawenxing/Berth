@@ -631,7 +631,7 @@ describe('POST /api/todos', () => {
     expect(res.status).toBe(502)
   })
 
-  it('forwards projectId, confirm, createOption from body', async () => {
+  it('forwards projectId, confirm, createOption, and autoTitle from body', async () => {
     const port = await listen()
     const base = `http://localhost:${port}/api`
 
@@ -640,12 +640,12 @@ describe('POST /api/todos', () => {
     await fetch(`${base}/todos`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: 'x', projectId: 'P', confirm: true, createOption: false }),
+      body: JSON.stringify({ text: 'x', projectId: 'P', confirm: true, createOption: false, autoTitle: true }),
     })
     // createTask(store, docStore, text, opts)
     expect(mockCreateTask).toHaveBeenCalledWith(
       expect.anything(), expect.anything(), 'x',
-      expect.objectContaining({ projectId: 'P', confirm: true, createOption: false }),
+      expect.objectContaining({ projectId: 'P', confirm: true, createOption: false, autoTitle: true }),
     )
   })
 })

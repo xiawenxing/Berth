@@ -132,6 +132,23 @@ export async function generateTitle(transcriptHead: string, agent?: BerthAgent):
   return out
 }
 
+/** Generate a concise task title from a rough task title/description. */
+export async function generateTaskTitle(input: string, agent?: BerthAgent): Promise<string> {
+  const text = input.replace(/\s+/g, ' ').trim()
+  if (!text) return ''
+  const prompt =
+    `Below is a rough task title or task description. ` +
+    `Rewrite it as ONLY a concise task title of at most 8 words, in the same language. ` +
+    `Keep the concrete object and action. Do not add details that are not present. ` +
+    `No surrounding quotes, no trailing punctuation.\n\n---\n` +
+    text.slice(0, 4000)
+  const cli = agent?.cli ?? 'claude'
+  const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
+  let out = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 45000 }, { cli, timeoutMs: 60000 })
+  out = (out.split('\n').find(l => l.trim()) ?? '').replace(/^["'""\s]+|["'""\s]+$/g, '').slice(0, 100)
+  return out
+}
+
 /** Structured summary (shared by 项目小结 and the task 进展详情): a one-line headline + progress
  *  bullets + milestone/TODO items. */
 export interface StructuredSummary {

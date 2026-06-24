@@ -600,13 +600,13 @@ api.get('/todos/:id/progress', (req, res) => {
 })
 
 api.post('/todos', async (req, res) => {
-  const { text, projectId, confirm, createOption, images } = req.body ?? {}
+  const { text, projectId, confirm, createOption, images, autoTitle } = req.body ?? {}
   if (typeof text !== 'string' || (text.trim() === '' && (!Array.isArray(images) || images.length === 0)))
     return res.status(400).json({ error: 'text or images required' })
   try {
     const store = getStore()
     const imgs = Array.isArray(images) ? images.filter((s: any) => typeof s === 'string') : undefined
-    const result = await createTask(store, getDocStore(store), text, { projectId, confirm, createOption, images: imgs })
+    const result = await createTask(store, getDocStore(store), text, { projectId, confirm, createOption, images: imgs, autoTitle: autoTitle === true })
     res.json(result)
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })

@@ -339,7 +339,7 @@ export function ProjectWorkspace() {
     }
     setTasks((ts) => [card, ...ts])
     api
-      .createTask(taskText, id, opts.images)
+      .createTask(taskText, id, opts.images, opts.aiSummarize)
       .then((res) => {
         reload()
         // 立即启动: the stub drawer never spawned a PTY nor linked the session. Once the task is
