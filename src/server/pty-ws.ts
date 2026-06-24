@@ -9,6 +9,7 @@ import { getCache, getStore } from './store-singleton'
 import { launchFresh } from '../pty/launch'
 import { resolveAgentBinary, codexHookTrustSupportCached } from '../pty/binaries'
 import { hasLivePty, liveDriverMode, registerPty, registerSession, attachViewer, killPty } from './pty-registry'
+import { parsePtyReplayBytes } from './pty-spool'
 import { makeFreshStreamDriver } from './stream-driver-factory'
 import { spawnAndRegister, spawnAndRegisterStream, codexHoldRunning } from './resume-spawn'
 import { markOpened } from './warm-pool'
@@ -247,6 +248,7 @@ export function createPtyWss(): WebSocketServer {
     const url = new URL(req.url ?? '', 'http://localhost')
     const cols = Number(url.searchParams.get('cols')) || 120
     const rows = Number(url.searchParams.get('rows')) || 30
+    const replayBytes = parsePtyReplayBytes(url.searchParams.get('historyBytes'))
 
     if (url.searchParams.get('new') === '1') {
       handleFresh(ws, url, cols, rows).catch(e => {
@@ -266,7 +268,7 @@ export function createPtyWss(): WebSocketServer {
     if (hasLivePty(sessionId)) {                  // already running (incl. a warm-pool pre-spawn)
       if (liveDriverMode(sessionId) === (wantStream ? 'stream' : 'tui')) {
         markOpened(sessionId)                     // user opened it → graduate out of the warm pool
-        attachViewer(sessionId, ws); return
+        attachViewer(sessionId, ws, { replayBytes }); return
       }
       killPty(sessionId)                          // mode switch (A↔B) → respawn in the requested mode below
     }
@@ -276,7 +278,7 @@ export function createPtyWss(): WebSocketServer {
       if (wantStream) spawnAndRegisterStream(s)                                 // Model B: stream-json resume (claude/codex/coco)
       else spawnAndRegister(s, { cols, rows })                                 // Model A: TUI resume
     } catch (e: any) { try { ws.send(`\r\n[berth] launch failed: ${e?.message}\r\n`) } catch {} ; ws.close(); return }
-    attachViewer(sessionId, ws)
+    attachViewer(sessionId, ws, { replayBytes })
   })
   return wss
 }
@@ -327,7 +329,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       try {
         const result = await existing
         sendLaunchFrame(ws, result)
-        if (!attachViewer(result.launchKey, ws)) {
+        if (!attachViewer(result.launchKey, ws, { replayBytes: parsePtyReplayBytes(url.searchParams.get('historyBytes')) })) {
           try { ws.send('\r\n[berth] launch exists but live pty is gone\r\n') } catch {}
           ws.close()
         }
@@ -492,7 +494,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   const launchResult: FreshLaunchResult = { launchKey, bound: !!plan.sessionId, cli, cwd, mode: wantStream ? 'stream' : 'tui' }
   launchDeferred?.resolve(launchResult)
   sendLaunchFrame(ws, launchResult)
-  attachViewer(launchKey, ws)
+  attachViewer(launchKey, ws, { replayBytes: parsePtyReplayBytes(url.searchParams.get('historyBytes')) })
   } catch (e) {
     launchDeferred?.reject(e)
     throw e

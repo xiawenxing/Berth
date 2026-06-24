@@ -7,6 +7,9 @@ import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loadin
 import type { LaunchSpec } from '@/lib/ui-store'
 import '@xterm/xterm/css/xterm.css'
 
+const DEFAULT_PTY_HISTORY_BYTES = 16 * 1024 * 1024
+const MAX_PTY_HISTORY_BYTES = 64 * 1024 * 1024
+
 export type { LaunchSpec }
 
 function cssToken(name: string, fallback: string) {
@@ -99,6 +102,7 @@ export function Terminal({
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
+  const [historyBytes, setHistoryBytes] = useState(DEFAULT_PTY_HISTORY_BYTES)
   // Loading overlay: shown only after a short delay with no pty output yet (a cold `--resume` takes
   // 2-5s, where a blank terminal reads as broken), hidden on the first byte (a warm/live open
   // replays in ~50ms and never flashes the spinner). See lib/loading-overlay.ts.
@@ -161,6 +165,7 @@ export function Terminal({
       if (launch.prompt && !launch.images?.length) qs.set('prompt', launch.prompt)
     } else if (sessionId) {
       qs.set('sessionId', sessionId)
+      qs.set('historyBytes', String(historyBytes))
     }
     const ws = new WebSocket(`${proto}://${location.host}/pty?${qs.toString()}`)
     ws.binaryType = 'arraybuffer'
@@ -203,6 +208,8 @@ export function Terminal({
     let launchImagesSent = false
     let launchedSessionId: string | null = null
     let recentOutput = ''
+    let replayPositionRestored = false
+    let suppressHistoryLoadUntil = 0
     const sendLaunchImagesAndPrompt = (): boolean => {
       const images = launch?.images?.filter((image) => image.dataUrl) ?? []
       if (!launch || launchImagesSent || !images.length) return false
@@ -276,7 +283,13 @@ export function Terminal({
       markDataSeen()   // first real pty output → drop the loading overlay
       recentOutput = (recentOutput + data).slice(-4096)
       maybeSendLaunchImagesAndPrompt()
-      term.write(data)
+      term.write(data, () => {
+        if (!replayPositionRestored && !launch && historyBytes > DEFAULT_PTY_HISTORY_BYTES) {
+          replayPositionRestored = true
+          suppressHistoryLoadUntil = Date.now() + 1000
+          term.scrollToTop()
+        }
+      })
     }
     const disp = term.onData((d) => {
       const userInput = stripTerminalGeneratedInput(d)
@@ -307,6 +320,12 @@ export function Terminal({
     resizeObserver?.observe(host)
     if (shellRef.current) resizeObserver?.observe(shellRef.current)
     onResize()
+    const scrollDisp = term.onScroll((pos) => {
+      if (launch || !sessionId || historyBytes >= MAX_PTY_HISTORY_BYTES) return
+      if (!firstDataSeen || Date.now() < suppressHistoryLoadUntil) return
+      if (pos > 2 || term.buffer.active.length <= term.rows + 5) return
+      setHistoryBytes((cur) => cur >= MAX_PTY_HISTORY_BYTES ? cur : Math.min(cur * 2, MAX_PTY_HISTORY_BYTES))
+    })
 
     return () => {
       if (overlayTimer) clearTimeout(overlayTimer)
@@ -317,13 +336,14 @@ export function Terminal({
       document.removeEventListener('paste', onPaste, true)
       document.removeEventListener('keydown', onKeyDown, true)
       disp.dispose()
+      scrollDisp.dispose()
       disposeIme?.()
       ws.close()
       term.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, initialInput, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey, launch?.images,
-    launch?.addDirs, launch?.ctxProject, launch?.ctxTask,
+    launch?.addDirs, launch?.ctxProject, launch?.ctxTask, historyBytes,
   ])
 
   return (

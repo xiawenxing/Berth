@@ -31,5 +31,7 @@ export interface SessionDriver {
   /** Inbound frame from a viewer. `t:'kill'` is handled by the registry and never reaches here. */
   send(msg: Inbound): void
   /** Already-serialized frames to replay to a (re)attaching viewer (scrollback for A; a chat snapshot for B). */
-  snapshot(): string[]
+  snapshot(maxBytes?: number): string[]
+  /** Optional: live sessions may need to move durable sidecars when an intent id becomes a real id. */
+  rekey?(key: string): void
 }

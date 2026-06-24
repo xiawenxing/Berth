@@ -147,8 +147,14 @@ replaced an earlier design where the agent process was tied 1:1 to its WebSocket
 view-switch / pool-eviction / tab-close.
 
 `server/pty-registry.ts` keeps a `Map<sessionId, {pty, ring-buffer, viewers}>`:
-- A WebSocket is just a **view**. `attachViewer` replays the scrollback ring buffer (~512KB) then
-  streams; on socket close it **detaches only** — the pty keeps running.
+- A WebSocket is just a **view**. `attachViewer` replays the scrollback ring buffer / persisted spool
+  tail (2MB in-memory; larger replay from disk), then streams; on socket close it **detaches only** —
+  the pty keeps running.
+- TUI raw bytes are also appended to Berth's own durable spool under
+  `<BERTH_HOME>/pty-streams/*.ansi` (`server/pty-spool.ts`). Reattach replays a bounded tail from
+  this spool (default 16MB, max 64MB) before streaming live output, so long-running sessions no
+  longer depend only on the in-memory ring. This is a terminal-byte replay cache, not the CLI's JSONL
+  conversation transcript.
 - **Switching sessions / closing the view / reloading the tab does NOT stop the agent.** Reconnecting
   re-attaches to the same live process with full scrollback.
 - A `{t:'kill'}` message (the **■** header button) actually kills; **×** just closes the view.
@@ -158,8 +164,11 @@ view-switch / pool-eviction / tab-close.
 **Remaining boundary:** PTYs are children of the Berth server process — if the server stops, they
 stop. Surviving a server restart would need a detached daemon/tmux; not done.
 
-Frontend side: `public/app.js` `connectFreshWs`/`connectWsForEntry` open the WS; reconnect is the
-default path (clicking a session whose view was disposed just re-attaches server-side).
+Frontend side: `web/src/components/Terminal.tsx` opens `/pty`; reconnect is the default path
+(clicking a session whose view was disposed just re-attaches server-side). In TUI mode, scrolling to
+the top expands the requested `historyBytes` window and reconnects to replay a larger spool tail.
+Because xterm raw ANSI state cannot be safely prepended from an arbitrary byte boundary, this is a
+larger-tail replay rather than a seamless infinite-scroll prepend.
 
 ---
 

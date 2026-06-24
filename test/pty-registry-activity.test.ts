@@ -1,8 +1,25 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   registerPty, attachViewer, killPty, rekeyPty,
   subscribeActivity, snapshotActivity, IDLE_MS,
 } from '../src/server/pty-registry'
+
+const origBerthHome = process.env.BERTH_HOME
+let testHome = ''
+
+beforeEach(() => {
+  testHome = mkdtempSync(join(tmpdir(), 'berth-pty-activity-'))
+  process.env.BERTH_HOME = testHome
+})
+
+afterEach(() => {
+  if (origBerthHome === undefined) delete process.env.BERTH_HOME
+  else process.env.BERTH_HOME = origBerthHome
+  if (testHome) rmSync(testHome, { recursive: true, force: true })
+})
 
 function fakePty() {
   let dataCb: (d: string) => void = () => {}

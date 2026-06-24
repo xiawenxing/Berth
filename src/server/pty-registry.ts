@@ -105,7 +105,7 @@ export function registerSession(key: string, driver: SessionDriver, opts?: { run
  * tests pass an IPty here; new Model B callers use registerSession with a StreamJsonDriver.
  */
 export function registerPty(key: string, pty: IPty, opts?: { running?: boolean; holdRunning?: HoldRunning; onExit?: () => void }): void {
-  registerSession(key, new TuiDriver(pty), opts)
+  registerSession(key, new TuiDriver(pty, key), opts)
 }
 
 /**
@@ -113,10 +113,10 @@ export function registerPty(key: string, pty: IPty, opts?: { running?: boolean; 
  * and accept input. When the socket closes the viewer DETACHES — the session keeps running. A
  * `{t:'kill'}` message ends the session for real. Returns false if there is no live session for `key`.
  */
-export function attachViewer(key: string, ws: WebSocket): boolean {
+export function attachViewer(key: string, ws: WebSocket, opts?: { replayBytes?: number }): boolean {
   const entry = registry.get(key)
   if (!entry || entry.exited) return false
-  for (const frame of entry.driver.snapshot()) { try { ws.send(frame) } catch {} }
+  for (const frame of entry.driver.snapshot(opts?.replayBytes)) { try { ws.send(frame) } catch {} }
   entry.attached.add(ws)
   ws.on('message', (raw) => {
     let msg: Inbound
@@ -166,6 +166,7 @@ export function rekeyPty(oldKey: string, newKey: string): void {
   const clash = registry.get(newKey)
   if (clash && clash !== entry) { registry.delete(newKey); terminateTree(clash.driver) }
   entry.key = newKey
+  try { entry.driver.rekey?.(newKey) } catch {}
   registry.set(newKey, entry)
   activity.rekey(oldKey, newKey)
 }

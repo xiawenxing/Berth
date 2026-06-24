@@ -2,6 +2,7 @@ import type { IPty } from 'node-pty'
 import { hasVisibleOutput } from './activity'
 import { currentDocStore } from '../data/docstore'
 import type { Inbound, SessionDriver } from './session-driver'
+import { DEFAULT_PTY_REPLAY_BYTES, PtySpool } from './pty-spool'
 
 const MAX_BUFFER_BYTES = 2 * 1024 * 1024   // ~scrollback kept per session for replay on (re)attach
 const RESIZE_QUIET_MS = 500           // a resize triggers a full repaint — not a turn, so don't spin
@@ -19,9 +20,12 @@ export class TuiDriver implements SessionDriver {
   private frameCb: (s: string) => void = () => {}
   private exitCb: () => void = () => {}
   private activityCb: () => void = () => {}
+  private spool: PtySpool
 
-  constructor(private pty: IPty) {
+  constructor(private pty: IPty, key: string) {
+    this.spool = new PtySpool(key)
     pty.onData((d) => {
+      this.spool.append(d)
       this.chunks.push(d)
       this.bytes += d.length
       while (this.bytes > MAX_BUFFER_BYTES && this.chunks.length > 1) this.bytes -= this.chunks.shift()!.length
@@ -32,6 +36,7 @@ export class TuiDriver implements SessionDriver {
     })
     pty.onExit(() => {
       try { this.frameCb('\r\n[berth] session ended.\r\n') } catch {}
+      this.spool.close()
       this.exitCb()
     })
   }
@@ -41,7 +46,13 @@ export class TuiDriver implements SessionDriver {
   onFrame(cb: (s: string) => void): void { this.frameCb = cb }
   onExit(cb: () => void): void { this.exitCb = cb }
   onActivity(cb: () => void): void { this.activityCb = cb }
-  snapshot(): string[] { const j = this.chunks.join(''); return j ? [j] : [] }
+  snapshot(maxBytes = DEFAULT_PTY_REPLAY_BYTES): string[] {
+    const persisted = this.spool.snapshot(maxBytes)
+    if (persisted) return [persisted]
+    const j = this.chunks.join('')
+    return j ? [j] : []
+  }
+  rekey(key: string): void { this.spool.rekey(key) }
 
   send(msg: Inbound): void {
     if (msg.t === 'i' && typeof msg.d === 'string') {
