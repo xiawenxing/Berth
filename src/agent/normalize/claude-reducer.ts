@@ -150,8 +150,8 @@ export class ClaudeReducer {
   }
 
   /** Add an optimistic user turn (the viewer's submitted message). Returns the new turn. */
-  addUserTurn(text: string): ChatTurn {
-    const t: ChatTurn = { id: this.turnId(), role: 'user', ts: this.clock(), blocks: [{ kind: 'text', text }] }
+  addUserTurn(text: string, id?: string): ChatTurn {
+    const t: ChatTurn = { id: id ?? this.turnId(), role: 'user', ts: this.clock(), blocks: [{ kind: 'text', text }] }
     this.turns.push(t)
     return t
   }

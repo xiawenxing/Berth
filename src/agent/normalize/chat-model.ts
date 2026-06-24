@@ -59,6 +59,6 @@ export interface ChatReducer {
   readonly sessionId?: string
   readonly model?: string
   ingest(line: any): ChatTurn | null
-  addUserTurn(text: string): ChatTurn
+  addUserTurn(text: string, id?: string): ChatTurn
   snapshot(): ChatTurn[]
 }

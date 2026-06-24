@@ -100,6 +100,15 @@ describe('PerTurnStreamDriver', () => {
     expect(spawns).toEqual([{ prompt: 'continue', resumeId: 'existing-id' }])
   })
 
+  it('preserves the client turn id for the optimistic user bubble', () => {
+    const d = new PerTurnStreamDriver(new CodexReducer(clock), () => fakeChild().child)
+    const sent: string[] = []
+    d.onFrame((s) => sent.push(s))
+    d.send({ t: 'turn', text: 'continue', clientTurnId: 'client-2' })
+    const userFrame = frames(sent).find((x) => x.type === 'turn' && x.turn.role === 'user') as Extract<ChatFrame, { type: 'turn' }>
+    expect(userFrame.turn).toMatchObject({ id: 'client-2', role: 'user', blocks: [{ kind: 'text', text: 'continue' }] })
+  })
+
   it('interrupt kills the active turn process', () => {
     const f = fakeChild()
     const d = new PerTurnStreamDriver(new CodexReducer(clock), () => f.child, { initialPrompt: 'q' })

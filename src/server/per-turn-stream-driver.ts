@@ -41,15 +41,15 @@ export class PerTurnStreamDriver implements SessionDriver {
   }
 
   send(msg: Inbound): void {
-    if (msg.t === 'turn' && typeof msg.text === 'string') this.startTurn(msg.text)
+    if (msg.t === 'turn' && typeof msg.text === 'string') this.startTurn(msg.text, typeof msg.clientTurnId === 'string' ? msg.clientTurnId : undefined)
     else if (msg.t === 'interrupt') { try { this.active?.kill('SIGTERM') } catch {} }
   }
 
-  private startTurn(prompt: string): void {
+  private startTurn(prompt: string, clientTurnId?: string): void {
     // Always show the user's bubble immediately. If a turn's process is still alive (codex emits its
     // result a beat BEFORE the process exits), QUEUE this turn — dropping it silently was a bug — and
     // fire it when the active child exits.
-    const userTurn = this.reducer.addUserTurn(prompt)
+    const userTurn = this.reducer.addUserTurn(prompt, clientTurnId)
     this.emit({ type: 'turn', turn: userTurn })
     this.activityCb()
     if (this.active) { this.pending = prompt; return }

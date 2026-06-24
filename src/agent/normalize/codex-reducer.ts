@@ -97,8 +97,8 @@ export class CodexReducer {
     return t
   }
 
-  addUserTurn(text: string): ChatTurn {
-    const t: ChatTurn = { id: `u${this.turns.length}_${this.clock()}`, role: 'user', ts: this.clock(), blocks: [{ kind: 'text', text }] }
+  addUserTurn(text: string, id?: string): ChatTurn {
+    const t: ChatTurn = { id: id ?? `u${this.turns.length}_${this.clock()}`, role: 'user', ts: this.clock(), blocks: [{ kind: 'text', text }] }
     this.turns.push(t)
     return t
   }
