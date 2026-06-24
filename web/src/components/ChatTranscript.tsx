@@ -88,6 +88,7 @@ function WorkFold({ turn, work }: { turn: ChatTurn; work: Block[] }) {
     <div className="rounded-md border border-border/60 bg-card/40">
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOverride(!open)}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-muted-foreground"
       >
@@ -137,6 +138,7 @@ function EditedFileRow({ edit }: { edit: FileEdit }) {
       <button
         type="button"
         disabled={!expandable}
+        aria-expanded={expandable ? open : undefined}
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left disabled:cursor-default"
       >
