@@ -86,7 +86,8 @@ async function readClipboardImageFiles(): Promise<File[]> {
  *  - resume/attach: pass `sessionId` → /pty?sessionId=… (replays scrollback, streams)
  *  - fresh launch:  pass `launch` → /pty?new=1&cli=…&cwd=… (spawns a new agent); the
  *    server's first control frame {"__berth":"launched",sessionId} gives the real id,
- *    surfaced via onLaunched so callers can rebind the drawer to the live session.
+ *    surfaced via onLaunched so callers can bind list/header metadata while keeping this first
+ *    launch socket mounted for the initial streamed turn.
  */
 export function Terminal({
   sessionId,

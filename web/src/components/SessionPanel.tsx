@@ -3,6 +3,7 @@ import { ChatTranscript } from './ChatTranscript'
 import { Composer } from './Composer'
 import { useChatSession } from '@/lib/useChatSession'
 import { useUI, type LaunchSpec } from '@/lib/ui-store'
+import { resolveSessionPanelConnection } from '@/lib/session-panel-connection'
 
 /**
  * The Model A / Model B seam on the frontend. One mount point for a session; the active renderer is
@@ -25,19 +26,21 @@ export function SessionPanel({
 }) {
   const { renderMode } = useUI()
   const effectiveCli = cli ?? launch?.cli
+  const connection = resolveSessionPanelConnection(sessionId, launch)
   // All three CLIs support Model B (claude = persistent stream-json; codex/coco = per-turn).
   const canChat = effectiveCli === 'claude' || effectiveCli === 'codex' || effectiveCli === 'coco'
   const active = canChat && renderMode === 'B' ? 'B' : 'A'
 
   if (active === 'B') {
-    return <ChatPanel key={`B:${sessionId ?? 'launch'}`} sessionId={sessionId} launch={launch} onLaunched={onLaunched} />
+    const key = connection.launch ? `B:launch:${connection.launch.launchToken ?? 'pending'}` : `B:${connection.sessionId}`
+    return <ChatPanel key={key} sessionId={connection.sessionId} launch={connection.launch} onLaunched={onLaunched} />
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {sessionId ? (
-        <Terminal key={`A:${sessionId}`} sessionId={sessionId} />
-      ) : launch ? (
-        <Terminal key="A:launch" launch={launch} onLaunched={onLaunched} />
+      {connection.launch ? (
+        <Terminal key="A:launch" launch={connection.launch} onLaunched={onLaunched} />
+      ) : connection.sessionId ? (
+        <Terminal key={`A:${connection.sessionId}`} sessionId={connection.sessionId} />
       ) : null}
     </div>
   )
