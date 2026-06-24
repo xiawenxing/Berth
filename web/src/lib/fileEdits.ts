@@ -4,6 +4,8 @@ export interface DiffLine { op: ' ' | '+' | '-'; text: string }
 
 export interface FileEdit {
   path: string
+  /** Informational classification; the card renders from added/removed/hunks, not op. 'delete' is
+   *  reserved for a future "deleted file" affordance — no adapter emits it yet. */
   op: 'edit' | 'add' | 'delete'
   added: number
   removed: number
