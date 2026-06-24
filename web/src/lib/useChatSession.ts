@@ -9,8 +9,13 @@ export interface ChatSession {
   /** any assistant turn still streaming → disable the composer's submit */
   busy: boolean
   connected: boolean
-  send: (text: string) => void
+  send: (text: string, images?: ChatImage[]) => void
   interrupt: () => void
+}
+
+export interface ChatImage {
+  name: string
+  dataUrl: string
 }
 
 /**
@@ -100,16 +105,23 @@ export function useChatSession({
     model,
     connected,
     busy: turns.some((t) => t.streaming),
-    send: (text: string) => {
+    send: (text: string, images?: ChatImage[]) => {
       const t = text.trim()
+      const validImages = (images ?? []).filter((image) => image.dataUrl)
       const ws = wsRef.current
-      if (!t || !ws || ws.readyState !== WebSocket.OPEN) return
+      if ((!t && validImages.length === 0) || !ws || ws.readyState !== WebSocket.OPEN) return
       const clientTurnId = `client_${Date.now()}_${++turnSeqRef.current}`
-      setTurns((cur) => applyChatFrame(cur, { type: 'turn', turn: makeUserTurn(clientTurnId, t) }))
-      ws.send(JSON.stringify({ t: 'turn', text: t, clientTurnId }))
+      setTurns((cur) => applyChatFrame(cur, { type: 'turn', turn: makeUserTurn(clientTurnId, displayTurnText(t, validImages.length)) }))
+      ws.send(JSON.stringify({ t: 'turn', text: t, images: validImages, clientTurnId }))
     },
     interrupt: () => sendRaw({ t: 'interrupt' }),
   }
+}
+
+function displayTurnText(text: string, imageCount: number): string {
+  if (!imageCount) return text
+  const label = `已附加 ${imageCount} 张图片`
+  return text ? `${text}\n\n${label}` : label
 }
 
 function sendLaunchTurn(ws: WebSocket, launch: LaunchSpec, sentRef: MutableRefObject<string | null>): void {
