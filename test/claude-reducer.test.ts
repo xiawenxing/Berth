@@ -52,6 +52,38 @@ describe('ClaudeReducer', () => {
     expect(r.turns[0].result?.usage).toMatchObject({ input: 10, output: 2 })
   })
 
+  it('builds a turn from a COMPLETE assistant message when no partials preceded it (coco shape)', () => {
+    // coco emits the assistant as a whole message with content as a plain string — no message_start /
+    // content_block_delta stream. The reducer must still produce one assistant turn.
+    const r = new ClaudeReducer(clock)
+    const t = r.ingest({ type: 'assistant', uuid: 'a1', message: { role: 'assistant', content: 'PONG' } })
+    expect(t).not.toBeNull()
+    expect(r.turns).toHaveLength(1)
+    expect(r.turns[0]).toMatchObject({ role: 'assistant', blocks: [{ kind: 'text', text: 'PONG' }] })
+    r.ingest({ type: 'result', subtype: 'success', is_error: false, duration_ms: 37039, result: 'PONG', usage: { input_tokens: 1, output_tokens: 1 } })
+    expect(r.turns[0].streaming).toBe(false)
+    expect(r.turns[0].result?.durationMs).toBe(37039)
+  })
+
+  it('builds a turn from a complete assistant message whose content is a block array', () => {
+    const r = new ClaudeReducer(clock)
+    r.ingest({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }, { type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'ls' } }] } })
+    expect(r.turns[0].blocks).toEqual([
+      { kind: 'text', text: 'hi' },
+      { kind: 'tool_call', id: 'tu1', name: 'Bash', input: { command: 'ls' }, status: 'running' },
+    ])
+  })
+
+  it('IGNORES the redundant assistant line during claude partial streaming (deltas already built it)', () => {
+    const r = new ClaudeReducer(clock)
+    r.ingest(msgStart('m1'))
+    r.ingest(blockStart(0, { type: 'text', text: '' }))
+    r.ingest(textDelta(0, 'PONG'))
+    r.ingest({ type: 'assistant', message: { role: 'assistant', content: 'PONG' } })   // redundant
+    expect(r.turns).toHaveLength(1)   // not duplicated
+    expect(r.turns[0].blocks).toEqual([{ kind: 'text', text: 'PONG' }])
+  })
+
   it('folds a tool_use block + its later tool_result into one collapsed tool_call block', () => {
     const r = new ClaudeReducer(clock)
     r.ingest(msgStart('m1'))

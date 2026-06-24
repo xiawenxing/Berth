@@ -32,13 +32,31 @@ export class ClaudeReducer {
         return null   // init re-emits per turn; hooks/status are noise
       case 'stream_event':
         return this.onStreamEvent(line.event)
+      case 'assistant':
+        return this.onAssistantLine(line)
       case 'user':
         return this.onUserLine(line)
       case 'result':
         return this.onResult(line)
       default:
-        return null   // assistant (redundant w/ deltas), rate_limit_event, anything unknown
+        return null   // rate_limit_event, anything unknown
     }
+  }
+
+  /**
+   * A COMPLETE assistant message. claude streams via stream_event deltas and this line is redundant
+   * (current is set) → ignore. coco does NOT stream partials — it emits only this whole message with
+   * content as a string or block array → build the turn from it.
+   */
+  private onAssistantLine(line: any): ChatTurn | null {
+    if (this.current) return null   // claude: deltas already built the turn
+    const content = line.message?.content
+    const blocks = blocksFromMessageContent(content, this.toolById)
+    if (!blocks.length) return null
+    const t: ChatTurn = { id: this.turnId(line.uuid), role: 'assistant', ts: this.clock(), blocks, streaming: true }
+    this.current = t
+    this.turns.push(t)
+    return t
   }
 
   private onStreamEvent(ev: any): ChatTurn | null {
@@ -145,4 +163,22 @@ export class ClaudeReducer {
   private turnId(hint?: string): string {
     return hint ? `${hint}` : `t${++this.seq}`
   }
+}
+
+/** Blocks from a COMPLETE assistant message.content (string | block array) — coco's whole-message
+ *  form. Registers any tool_use in toolById so a later tool_result still folds in. */
+function blocksFromMessageContent(content: any, toolById: Map<string, Block & { kind: 'tool_call' }>): Block[] {
+  if (typeof content === 'string') return content ? [{ kind: 'text', text: content }] : []
+  if (!Array.isArray(content)) return []
+  const blocks: Block[] = []
+  for (const b of content) {
+    if (b?.type === 'text') { if (b.text) blocks.push({ kind: 'text', text: b.text }) }
+    else if (b?.type === 'thinking') { if (b.thinking) blocks.push({ kind: 'reasoning', text: b.thinking, opaque: false }) }
+    else if (b?.type === 'tool_use') {
+      const tc: Block & { kind: 'tool_call' } = { kind: 'tool_call', id: b.id, name: b.name, input: b.input ?? {}, status: 'running' }
+      toolById.set(b.id, tc)
+      blocks.push(tc)
+    }
+  }
+  return blocks
 }
