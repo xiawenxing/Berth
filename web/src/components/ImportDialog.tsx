@@ -1,9 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { relTime } from '@/lib/format'
-import { CliBadge } from '@/components/workspace/TaskCard'
 import { Dialog } from '@/components/ui/Overlay'
+import { SessionPickRow } from '@/components/SessionPickRow'
 import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
 import type { PreviewSession } from '@/lib/api'
 
@@ -97,31 +95,14 @@ export function ImportDialog({
             </div>
             <div className="max-h-[44vh] overflow-y-auto px-4 py-2">
               <div className="flex flex-col gap-1">
-                {visible.map((s) => {
-                  const on = checked.has(s.sessionId)
-                  return (
-                    <button
-                      key={s.sessionId}
-                      onClick={() => toggleOne(s.sessionId)}
-                      className={cn(
-                        'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left transition-colors',
-                        on ? 'border-brand/50 bg-brand/5' : 'border-transparent hover:bg-muted/40',
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'flex h-[15px] w-[15px] flex-none items-center justify-center rounded border text-[10px]',
-                          on ? 'border-brand bg-brand text-brand-foreground' : 'border-border text-transparent',
-                        )}
-                      >
-                        ✓
-                      </span>
-                      <CliBadge cli={s.cli} />
-                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground" title={s.title || '(未命名)'}>{s.title || '(未命名)'}</span>
-                      <span className="flex-none text-[10.5px] text-text-dim">{relTime(s.updatedAt)}</span>
-                    </button>
-                  )
-                })}
+                {visible.map((s) => (
+                  <SessionPickRow
+                    key={s.sessionId}
+                    session={s}
+                    checked={checked.has(s.sessionId)}
+                    onToggle={() => toggleOne(s.sessionId)}
+                  />
+                ))}
                 {hidden > 0 && (
                   <button
                     onClick={() => setShown((v) => v + SESSION_SHOW_MORE_PAGE)}

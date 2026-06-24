@@ -9,6 +9,9 @@ import { relTime, shortCwd } from '@/lib/format'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
 import { ImportDialog } from '@/components/ImportDialog'
+import { ImportChooser, type ImportChoice } from '@/components/ImportChooser'
+import { CliImportDialog } from '@/components/CliImportDialog'
+import { ImportByIdDialog } from '@/components/ImportByIdDialog'
 import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
 import { type ShipStatus } from '@/lib/types'
 import type { ApiSession, ApiProject, PreviewSession } from '@/lib/api'
@@ -40,11 +43,16 @@ export function Unassigned() {
     setSyncing(true)
     resync().finally(() => setSyncing(false))
   }
-  // 导入目录: pick a dir → preview its on-disk sessions → import the picked ones (project-less).
+  // 导入目录: open a chooser (导入 CLI 会话 / 选路径 / 按 ID) before any picker. Each route lands in
+  // its own dialog; all imports are project-less → surface under 无归属.
+  const [chooserOpen, setChooserOpen] = useState(false)
   const [importDlg, setImportDlg] = useState<{ path: string; sessions: PreviewSession[] } | null>(null)
   const [importBusy, setImportBusy] = useState(false)
   const [picking, setPicking] = useState(false)
-  const onImportDir = async () => {
+  const [cliDlg, setCliDlg] = useState<{ cli: 'claude' | 'codex' | 'coco'; sessions: PreviewSession[] } | null>(null)
+  const [idDlgOpen, setIdDlgOpen] = useState(false)
+  // 选择导入路径: native folder pick → preview-by-cwd → ImportDialog (the original flow).
+  const onPickPath = async () => {
     if (picking) return
     setPicking(true)
     try {
@@ -54,6 +62,22 @@ export function Unassigned() {
       setImportDlg({ path: picked.path, sessions })
     } catch {
       // folder pick / preview failures are non-fatal
+    } finally {
+      setPicking(false)
+    }
+  }
+  const onPickChoice = async (c: ImportChoice) => {
+    setChooserOpen(false)
+    if (c.type === 'path') return onPickPath()
+    if (c.type === 'id') return setIdDlgOpen(true)
+    // c.type === 'cli': scan that CLI's whole store, then open the grouped-by-cwd dialog.
+    if (picking) return
+    setPicking(true)
+    try {
+      const { sessions } = await api.previewByCli(c.cli)
+      setCliDlg({ cli: c.cli, sessions })
+    } catch {
+      // scan failure is non-fatal — just don't open the dialog
     } finally {
       setPicking(false)
     }
@@ -153,7 +177,7 @@ export function Unassigned() {
             <RefreshCw size={14} className={cn(syncing && 'animate-spin')} />
           </button>
           <button
-            onClick={onImportDir}
+            onClick={() => setChooserOpen(true)}
             disabled={picking}
             className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
             title="导入目录"
@@ -227,6 +251,8 @@ export function Unassigned() {
         ) : null}
       </div>
 
+      {chooserOpen && <ImportChooser onPick={onPickChoice} onCancel={() => setChooserOpen(false)} />}
+
       {importDlg && (
         <ImportDialog
           path={importDlg.path}
@@ -244,6 +270,32 @@ export function Unassigned() {
               setImportBusy(false)
             }
           }}
+        />
+      )}
+
+      {cliDlg && (
+        <CliImportDialog
+          cli={cliDlg.cli}
+          sessions={cliDlg.sessions}
+          busy={importBusy}
+          onCancel={() => setCliDlg(null)}
+          onConfirm={async (ids) => {
+            setImportBusy(true)
+            try {
+              await api.importSessions(ids) // project-less import → surfaces under 无归属
+              setCliDlg(null)
+              doResync()
+            } finally {
+              setImportBusy(false)
+            }
+          }}
+        />
+      )}
+
+      {idDlgOpen && (
+        <ImportByIdDialog
+          onCancel={() => setIdDlgOpen(false)}
+          onDone={() => { setIdDlgOpen(false); doResync() }}
         />
       )}
     </div>

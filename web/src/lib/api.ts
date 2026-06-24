@@ -141,6 +141,12 @@ export const api = {
   // Preview the sessions a candidate dir would surface (no state mutation).
   previewDir: (cwd: string) =>
     send('POST', '/api/session-dirs/preview', { cwd }) as Promise<{ sessions: PreviewSession[] }>,
+  // 导入会话 chooser: all sessions for one CLI (grouped by cwd client-side), no state mutation.
+  previewByCli: (cli: 'claude' | 'codex' | 'coco') =>
+    send('POST', '/api/sessions/preview-by-cli', { cli }) as Promise<{ sessions: PreviewSession[] }>,
+  // 导入会话 chooser: look up pasted ids across all stores → found/notFound (no state mutation).
+  previewByIds: (ids: string[]) =>
+    send('POST', '/api/sessions/preview-by-ids', { ids }) as Promise<{ found: PreviewSession[]; notFound: string[] }>,
   // Register a dir as an import root (surfaces its sessions to the store) + refresh.
   importDir: (cwd: string) => send('POST', '/api/session-dirs', { cwd }) as Promise<{ ok: boolean; count: number }>,
   createProject: (name: string, cwd?: string) => send('POST', '/api/projects/create', { name, cwd }),
