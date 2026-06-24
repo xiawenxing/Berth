@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
 import { useData } from '@/lib/data'
 import { useUI } from '@/lib/ui-store'
+import { useLive } from '@/lib/live'
 import { useInlineEdit } from '@/lib/useInlineEdit'
 import { api } from '@/lib/api'
 import type { AgentCli, AgentEntry } from '@/lib/api'
@@ -20,6 +21,11 @@ export function Settings() {
   const [autoTitle, setAutoTitle] = useState(true)
   const [dirs, setDirs] = useState(['~/Code/berth', '~/Code', '~/.config'])
   const { renderMode, setRenderMode } = useUI()
+  // Switching render mode kills + respawns each session in the other mode (A↔B). Doing that to a
+  // running session would interrupt its in-flight turn, so the toggle is locked while any session is
+  // 在航 (running); it frees up once they all settle. Settled/idle sessions switch losslessly (resume).
+  const live = useLive()
+  const anyRunning = [...live.activity.values()].some((s) => s === 'running')
 
   // Task-field vocabularies — edited as a local draft seeded from the live config; persisted
   // (POST /settings) + reload() so the whole app picks up the new statuses/priorities.
@@ -94,12 +100,16 @@ export function Settings() {
 
         <Card icon={<MessagesSquare size={14} />} title="会话渲染" hint="全局生效 · 决定会话面板用哪种方式呈现（claude / codex / coco 均支持对话模式）">
           <Row label="渲染模式">
-            <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
-              <ModeBtn active={renderMode === 'A'} onClick={() => setRenderMode('A')} label="终端" hint="原生 CLI 界面 · 可交互" />
-              <ModeBtn active={renderMode === 'B'} onClick={() => setRenderMode('B')} label="对话" hint="气泡 + 工具调用折叠" />
+            <div className={cn('flex items-center gap-1 rounded-md border border-border p-0.5', anyRunning && 'opacity-50')}>
+              <ModeBtn active={renderMode === 'A'} disabled={anyRunning} onClick={() => setRenderMode('A')} label="终端" hint="原生 CLI 界面 · 可交互" />
+              <ModeBtn active={renderMode === 'B'} disabled={anyRunning} onClick={() => setRenderMode('B')} label="对话" hint="气泡 + 工具调用折叠" />
             </div>
             <span className="text-[11px] text-text-dim">
-              {renderMode === 'B' ? '对话：用户右气泡 / agent 左气泡 · 工具调用结束后自动折叠' : '终端：保留完整交互连贯性（输入 / Ctrl-C / TUI）'}
+              {anyRunning
+                ? '有会话在航中——切换会打断进行中的回合，已暂时锁定；待全部靠岸后可切换'
+                : renderMode === 'B'
+                  ? '对话：用户右气泡 / agent 左气泡 · 工具调用结束后自动折叠'
+                  : '终端：保留完整交互连贯性（输入 / Ctrl-C / TUI）'}
             </span>
           </Row>
         </Card>
@@ -349,14 +359,16 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     </div>
   )
 }
-function ModeBtn({ active, onClick, label, hint }: { active: boolean; onClick: () => void; label: string; hint: string }) {
+function ModeBtn({ active, onClick, label, hint, disabled }: { active: boolean; onClick: () => void; label: string; hint: string; disabled?: boolean }) {
   return (
     <button
       onClick={onClick}
-      title={hint}
+      disabled={disabled}
+      title={disabled ? '有会话在航，暂不可切换' : hint}
       className={cn(
         'rounded px-3 py-1 text-[12px]',
         active ? 'bg-brand text-brand-foreground' : 'text-muted-foreground hover:text-foreground',
+        disabled && 'cursor-not-allowed hover:text-muted-foreground',
       )}
     >
       {label}
