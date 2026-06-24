@@ -134,3 +134,21 @@ function parseUnifiedDiff(text: string): { added: number; removed: number; hunks
   }
   return capHunks(added, removed, hunks)
 }
+
+/** Aggregate every file-editing tool_call in a turn into one FileEdit per path (counts summed, hunks concatenated). */
+export function fileEditsFromTurn(turn: ChatTurn): FileEdit[] {
+  const byPath = new Map<string, FileEdit>()
+  for (const b of turn.blocks) {
+    if (b.kind !== 'tool_call') continue
+    for (const fe of fileEditsFromTool(b.name, b.input)) {
+      const prev = byPath.get(fe.path)
+      if (!prev) { byPath.set(fe.path, { ...fe, hunks: fe.hunks.slice() }); continue }
+      prev.added += fe.added
+      prev.removed += fe.removed
+      prev.truncated = prev.truncated || fe.truncated
+      prev.hunks.push(...fe.hunks)
+      if (prev.op === 'add' && fe.op === 'edit') prev.op = 'edit'
+    }
+  }
+  return [...byPath.values()]
+}

@@ -94,3 +94,31 @@ describe('fileEditsFromTool', () => {
     expect(r[0]).toMatchObject({ path: 'a.ts', added: 2, removed: 1 })
   })
 })
+
+import { fileEditsFromTurn } from './fileEdits'
+import type { ChatTurn } from './chat'
+
+function turnWith(blocks: ChatTurn['blocks']): ChatTurn {
+  return { id: 't1', role: 'assistant', ts: 0, blocks }
+}
+
+describe('fileEditsFromTurn', () => {
+  it('aggregates and dedups by path across tool_calls', () => {
+    const turn = turnWith([
+      { kind: 'tool_call', id: '1', name: 'Edit', status: 'done', input: { file_path: 'a.ts', old_string: 'x', new_string: 'X' } },
+      { kind: 'tool_call', id: '2', name: 'Edit', status: 'done', input: { file_path: 'a.ts', old_string: 'y', new_string: 'Y' } },
+      { kind: 'tool_call', id: '3', name: 'Write', status: 'done', input: { file_path: 'b.ts', content: 'one\ntwo' } },
+      { kind: 'tool_call', id: '4', name: 'Bash', status: 'done', input: { command: 'ls' } },
+    ])
+    const edits = fileEditsFromTurn(turn)
+    expect(edits).toHaveLength(2)
+    const a = edits.find((e) => e.path === 'a.ts')!
+    expect(a).toMatchObject({ added: 2, removed: 2 })
+    expect(a.hunks.length).toBe(4) // two edits' hunks concatenated
+    expect(edits.find((e) => e.path === 'b.ts')).toMatchObject({ op: 'add', added: 2 })
+  })
+
+  it('returns [] when no editing tools', () => {
+    expect(fileEditsFromTurn(turnWith([{ kind: 'text', text: 'hi' }]))).toEqual([])
+  })
+})
