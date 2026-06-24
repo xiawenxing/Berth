@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { lineDiff } from './fileEdits'
+import { fileEditsFromTool } from './fileEdits'
 
 describe('lineDiff', () => {
   it('counts pure additions (empty before)', () => {
@@ -45,5 +46,51 @@ describe('lineDiff', () => {
     expect(d.added).toBe(500)
     expect(d.hunks.length).toBe(400)
     expect(d.truncated).toBe(true)
+  })
+})
+
+describe('fileEditsFromTool', () => {
+  it('claude Edit → one FileEdit from old/new diff', () => {
+    const r = fileEditsFromTool('Edit', { file_path: 'a.ts', old_string: 'x\ny', new_string: 'x\nY' })
+    expect(r).toHaveLength(1)
+    expect(r[0]).toMatchObject({ path: 'a.ts', op: 'edit', added: 1, removed: 1 })
+  })
+
+  it('claude MultiEdit → sums edits for one file', () => {
+    const r = fileEditsFromTool('MultiEdit', {
+      file_path: 'a.ts',
+      edits: [
+        { old_string: 'a', new_string: 'A' },
+        { old_string: 'b\nc', new_string: 'b\nC' },
+      ],
+    })
+    expect(r).toHaveLength(1)
+    expect(r[0]).toMatchObject({ path: 'a.ts', op: 'edit', added: 2, removed: 2 })
+  })
+
+  it('claude Write → op:add, all content lines added', () => {
+    const r = fileEditsFromTool('Write', { file_path: 'new.ts', content: 'one\ntwo' })
+    expect(r[0]).toMatchObject({ path: 'new.ts', op: 'add', added: 2, removed: 0 })
+  })
+
+  it('non-editing tool → []', () => {
+    expect(fileEditsFromTool('Bash', { command: 'ls' })).toEqual([])
+    expect(fileEditsFromTool('Read', { file_path: 'a.ts' })).toEqual([])
+  })
+
+  it('codex file_change with explicit counts', () => {
+    const r = fileEditsFromTool('file_change', { changes: { 'a.ts': { added: 5, removed: 2 } } })
+    expect(r[0]).toMatchObject({ path: 'a.ts', added: 5, removed: 2 })
+  })
+
+  it('codex file_change unknown shape → path-only fallback', () => {
+    const r = fileEditsFromTool('file_change', { changes: { 'a.ts': { weird: true } } })
+    expect(r[0]).toMatchObject({ path: 'a.ts', op: 'edit', added: 0, removed: 0, hunks: [] })
+  })
+
+  it('codex file_change with unified diff string', () => {
+    const diff = '@@\n ctx\n-old\n+new1\n+new2'
+    const r = fileEditsFromTool('file_change', { changes: { 'a.ts': { diff } } })
+    expect(r[0]).toMatchObject({ path: 'a.ts', added: 2, removed: 1 })
   })
 })
