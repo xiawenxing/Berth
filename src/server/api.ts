@@ -3,6 +3,8 @@ import { openSync, readSync, closeSync, fstatSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { getStore, getCache, refresh, storeRoots } from './store-singleton'
 import { collectLogicalSessions } from '../sessions'
+import { toPreview, previewByCli, previewByIds } from './import-preview'
+import type { AgentCli } from '../types'
 import { canonicalPathKey } from '../path-normalize'
 import { listProjects, createProject, updateProject, deleteProject } from '../data/projects'
 import { listTasks, createTask, updateTask, deleteTask } from '../data/tasks'
@@ -308,14 +310,26 @@ api.post('/session-dirs/preview', (req, res) => {
   const sessions = all
     .filter(s => s.cwd != null && normDirForMatch(s.cwd) === target)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map(s => ({
-      sessionId: s.sessionId,
-      cli: s.cli,
-      title: s.title ?? null,
-      cwd: s.cwd ?? null,
-      updatedAt: s.updatedAt,
-    }))
+    .map(toPreview)
   res.json({ sessions })
+})
+
+// 导入会话 chooser — per-CLI source. Returns every session for one CLI (across all cwds), recent-first;
+// the dialog groups them by cwd client-side. Same scan source as the per-cwd preview above.
+const IMPORT_CLIS = new Set<AgentCli>(['claude', 'codex', 'coco'])
+api.post('/sessions/preview-by-cli', (req, res) => {
+  const cli = req.body?.cli
+  if (typeof cli !== 'string' || !IMPORT_CLIS.has(cli as AgentCli))
+    return res.status(400).json({ error: 'cli must be one of claude|codex|coco' })
+  res.json({ sessions: previewByCli(collectLogicalSessions(storeRoots()), cli as AgentCli) })
+})
+
+// 导入会话 chooser — by-id source. Looks the given ids up across all stores so the paste-ids flow can
+// show found/notFound before importing (the actual import still goes through POST /session-import).
+api.post('/sessions/preview-by-ids', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
+  if (ids.length === 0) return res.status(400).json({ error: 'ids:string[] required' })
+  res.json(previewByIds(collectLogicalSessions(storeRoots()), ids))
 })
 
 api.delete('/session-dirs', (req, res) => {
