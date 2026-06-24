@@ -3,7 +3,8 @@
 // warm-pool.ts free of an import cycle (pty-ws → resume-spawn ← warm-pool).
 import type { IPty } from 'node-pty'
 import { resumeSession } from '../pty/launch'
-import { registerPty } from './pty-registry'
+import { registerPty, registerSession } from './pty-registry'
+import { makeResumeStreamDriver } from './stream-driver-factory'
 import { getCache } from './store-singleton'
 import { latestCodexTurnState, type CodexTurnState } from '../adapters/codex-turn'
 import type { LogicalSession } from '../types'
@@ -44,4 +45,13 @@ export function spawnAndRegister(
     onExit: opts.onExit,
   })
   return pty
+}
+
+/**
+ * Model B resume: register the per-CLI stream driver (claude = persistent stream-json process;
+ * codex/coco = per-turn resume). Passive open → starts settled; the frontend seeds history (claude)
+ * then the user's first typed turn drives it live.
+ */
+export function spawnAndRegisterStream(s: LogicalSession, opts: { onExit?: () => void } = {}): void {
+  registerSession(s.sessionId, makeResumeStreamDriver(s), { onExit: opts.onExit })
 }

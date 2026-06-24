@@ -124,7 +124,11 @@ export function Terminal({
       fontSize: 13,
       lineHeight: 1.35,
       letterSpacing: 0,
-      scrollback: 8000,
+      // Deep scrollback so a long claude/codex session keeps far more history reachable by scrolling
+      // up. A TUI byte stream can't paginate older history on demand (once bytes leave the buffer
+      // they're gone) — the full transcript lives in the chat (Model B) view; this just widens how
+      // much the terminal itself retains. Paired with the server ring buffer (replayed on resume).
+      scrollback: 50000,
       // No smooth-scroll animation: animating every wheel tick over 80ms made scrollback feel laggy
       // and unresponsive (rapid ticks queue/restart the animation). Default 0 = instant, snappy scroll.
       smoothScrollDuration: 0,

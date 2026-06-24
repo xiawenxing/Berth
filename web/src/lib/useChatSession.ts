@@ -1,0 +1,100 @@
+import { useEffect, useRef, useState } from 'react'
+import type { LaunchSpec } from './ui-store'
+import { api } from './api'
+import { applyChatFrame, type ChatFrame, type ChatTurn } from './chat'
+
+export interface ChatSession {
+  turns: ChatTurn[]
+  model?: string
+  /** any assistant turn still streaming → disable the composer's submit */
+  busy: boolean
+  connected: boolean
+  send: (text: string) => void
+  interrupt: () => void
+}
+
+/**
+ * Model B session over the persistent-PTY /pty WS in stream-json render mode. Mirrors Terminal's WS
+ * lifecycle (resume via sessionId / fresh launch via launch spec, the {__berth:'launched'} handshake,
+ * teardown on unmount) but consumes structured ChatFrames instead of raw bytes, and exposes send/
+ * interrupt for the composer. On resume it seeds history from the on-disk jsonl, then attaches live.
+ */
+export function useChatSession({
+  sessionId,
+  launch,
+  onLaunched,
+}: {
+  sessionId?: string
+  launch?: LaunchSpec
+  onLaunched?: (sessionId: string) => void
+}): ChatSession {
+  const [turns, setTurns] = useState<ChatTurn[]>([])
+  const [model, setModel] = useState<string | undefined>()
+  const [connected, setConnected] = useState(false)
+  const wsRef = useRef<WebSocket | null>(null)
+
+  useEffect(() => {
+    let disposed = false
+    setTurns([])
+    setModel(undefined)
+
+    // Resume: seed history from the durable jsonl before the live stream attaches (resume does NOT
+    // re-stream prior turns — verified). Fresh launches have no history.
+    if (sessionId && !launch) {
+      api.chatHistory(sessionId)
+        .then((r) => { if (!disposed && r.turns?.length) setTurns((cur) => (cur.length ? cur : r.turns)) })
+        .catch(() => {})
+    }
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    const qs = new URLSearchParams({ render: 'stream-json' })
+    if (launch) {
+      qs.set('new', '1')
+      qs.set('cli', launch.cli)
+      qs.set('cwd', launch.cwd)
+      if (launch.launchToken) qs.set('launchToken', launch.launchToken)
+      if (launch.projectId) qs.set('projectId', launch.projectId)
+      if (launch.todoKey) qs.set('todoKey', launch.todoKey)
+      if (launch.prompt) qs.set('prompt', launch.prompt)
+      if (launch.ctxProject === false) qs.set('ctxProject', '0')
+      if (launch.ctxTask === false) qs.set('ctxTask', '0')
+      for (const d of launch.addDirs ?? []) qs.append('addDirs', d)
+    } else if (sessionId) {
+      qs.set('sessionId', sessionId)
+    }
+    const ws = new WebSocket(`${proto}://${location.host}/pty?${qs.toString()}`)
+    wsRef.current = ws
+    ws.addEventListener('open', () => { if (!disposed) setConnected(true) })
+    ws.addEventListener('close', () => { if (!disposed) setConnected(false) })
+    ws.onmessage = (e) => {
+      if (disposed || typeof e.data !== 'string') return
+      let msg: any
+      try { msg = JSON.parse(e.data) } catch { return }   // stream mode is all-JSON; ignore stray bytes
+      if (msg.__berth === 'launched') { if (msg.sessionId) onLaunched?.(msg.sessionId); return }
+      const frame = msg as ChatFrame
+      if (frame.type === 'session') { if (frame.model) setModel(frame.model); return }
+      setTurns((cur) => applyChatFrame(cur, frame))
+    }
+
+    return () => {
+      disposed = true
+      wsRef.current = null
+      try { ws.close() } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, launch?.cli, launch?.cwd, launch?.launchToken, launch?.prompt, launch?.projectId, launch?.todoKey])
+
+  const sendRaw = (obj: unknown) => {
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj))
+  }
+
+  return {
+    turns,
+    model,
+    connected,
+    busy: turns.some((t) => t.streaming),
+    send: (text: string) => { const t = text.trim(); if (t) sendRaw({ t: 'turn', text: t }) },
+    interrupt: () => sendRaw({ t: 'interrupt' }),
+  }
+}

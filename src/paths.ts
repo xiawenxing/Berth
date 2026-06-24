@@ -2,28 +2,17 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * Home dir used to resolve Berth's DATA / CONFIG / SESSION paths: Berth's own state (`berthHome`), the
- * CLI session stores Berth scans (`storeRoots`), the per-CLI config Berth reads/writes on launch
- * (claude trust, codex home, coco hook), and the `HOME` handed to spawned CLI children. Defaults to
- * the real home; set `BERTH_TEST_HOME` to a directory to simulate a CLEAN first-install machine —
- * empty sidebar, isolated Berth state, sessions you launch land in the test dir and surface there.
- *
- * Binary resolution (`src/pty/binaries.ts`) intentionally does NOT use this — it must find the REAL
- * installed CLIs. That data-vs-binary split is exactly why `BERTH_TEST_HOME` works where overriding
- * `HOME` does not (overriding `HOME` empties the binary candidate paths, so launching breaks).
- */
-export function dataHome(): string {
-  return process.env.BERTH_TEST_HOME || homedir()
-}
-
-/**
  * Root directory for Berth's OWN writable state — the sqlite db, the docs root default, the first-run
- * seed, and the launch-manifest inject dir. Default `<dataHome>/.berth`; an explicit `BERTH_HOME`
- * still wins (a fully ISOLATED instance without touching real data). With only `BERTH_TEST_HOME` set,
- * Berth state lands under the clean test dir alongside the relocated session stores.
+ * seed, and the launch-manifest inject dir. Default `~/.berth`; override with the `BERTH_HOME` env var
+ * to run an ISOLATED instance without touching your real data.
+ *
+ * This is the switch for testing the first-install / init chain: pointing `BERTH_HOME` at a fresh dir
+ * gives a never-installed-Berth state (empty db, no pins/attach/tasks/imports) while the read-only CLI
+ * session stores (`~/.claude`, `~/.codex`, coco cache) stay on the real home — so the machine's real
+ * sessions are still scanned and offered for import, exactly like a new Berth user on an existing box.
  */
 export function berthHome(): string {
-  return process.env.BERTH_HOME || join(dataHome(), '.berth')
+  return process.env.BERTH_HOME || join(homedir(), '.berth')
 }
 
 /** Stable cwd used by Berth's internal management agent so its CLI sessions are discoverable. */

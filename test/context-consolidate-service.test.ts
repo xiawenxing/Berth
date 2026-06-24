@@ -19,7 +19,7 @@ import { setDocGitEnabled, __resetDocGit, headCommit } from '../src/data/doc-git
 import { contextStrings } from '../src/i18n'
 
 function tmpRoot() { return mkdtempSync(join(tmpdir(), 'berth-ctxsvc-')) }
-const getCfg = () => ({ logMaxLines: 10_000, logKeep: 50 })
+const getCfg = () => ({ logMaxLines: 10_000, logKeep: 50, docMaxChars: 1_000_000, docKeepChars: 500_000 })
 
 describe('resolveSessionContextTarget', () => {
   const docStore: any = { taskDocRef: (id: string) => `tasks/${id}/index.md`, projectDocRef: (n: string) => `projects/${n}/index.md`, resolveDocPath: (r: string) => '/root/' + r }
@@ -199,7 +199,7 @@ describe('runContextUpdate', () => {
         return lines.join('\n')
       })
 
-      const lowCfg = () => ({ logMaxLines: 3, logKeep: 2 })
+      const lowCfg = () => ({ logMaxLines: 3, logKeep: 2, docMaxChars: 1_000_000, docKeepChars: 500_000 })
       const outcome = await runContextUpdate({
         target, docStore: ds, locale: 'zh-CN', agent: { cli: 'claude' },
         userInput: '补充触发滚动的信息', date: '2026-06-16', getCfg: lowCfg,

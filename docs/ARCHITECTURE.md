@@ -183,24 +183,15 @@ A **task** has a Berth-native uuid `id`; `recordId` no longer exists in the core
 project** link is `attach`. **Projects keep name as their key** (in `attach`/`project_path`/
 `archived_project`/`task.project`).
 
-### Isolating state — `BERTH_HOME` / `BERTH_TEST_HOME` (clean first-run sim)
+### Testing the first-install / init chain — `BERTH_HOME` (clean Berth data, real sessions)
 
-Two env vars control *where Berth reads/writes state* (see `src/paths.ts`). Both default to your real
-data when unset, so production is untouched.
-
-- **`BERTH_HOME`** — relocates only Berth's OWN state (`<BERTH_HOME>` = the sqlite db, docs default,
-  seed). The CLI session stores are NOT moved, so the sidebar still shows your real sessions.
-- **`BERTH_TEST_HOME`** — simulates a **clean first-install machine**. It backs `dataHome()`, which
-  resolves *all* data/config/session paths: Berth's own state (`<BERTH_TEST_HOME>/.berth`), the CLI
-  stores `storeRoots()` scans (`.claude/projects`, `.codex`, `Library/Caches/coco` — all empty → an
-  **empty sidebar**), the launch-side config Berth writes (claude trust, codex profile, coco hook),
-  and the `HOME`/`CODEX_HOME` handed to spawned CLI children (so a session you launch lands in the
-  test home and **surfaces in the otherwise-empty sidebar** — the loop is closed).
-
-**Binary resolution (`src/pty/binaries.ts`) deliberately keeps using the real `homedir()`** — that
-data-vs-binary split is exactly why `BERTH_TEST_HOME` works where overriding `HOME` does not
-(overriding `HOME` empties the binary candidate paths, so launching breaks). `dataHome()` is read at
-call time, so the var can be toggled per process.
+`BERTH_HOME` (see `src/paths.ts`) relocates only Berth's OWN state — the sqlite db, docs-root default,
+and first-run seed — to a directory you choose. It defaults to `~/.berth`, so production is untouched.
+Pointing it at a fresh dir gives the **never-installed-Berth** state (empty db: no pins/attach/tasks/
+imports) **while the CLI session stores (`~/.claude`, `~/.codex`, coco cache) stay on the real home** —
+so the machine's real sessions are still scanned and offered for import. That is the actual first-run
+a new Berth user hits on an existing machine, and it's the switch for polishing the init/onboarding
+chain. (Binaries also resolve from the real home, so launching works normally.)
 
 Recipe — the clean instance is **two processes** (the data isolation is all on the backend; Vite is
 just a view that proxies to it). Defaults: backend `:7788`, Vite `:5174`, dir `/tmp/berth-clean`. So
@@ -208,14 +199,15 @@ it runs **alongside** your normal backend (`:7777`) + Vite (`:5173`) without col
 
 ```bash
 mkdir -p /tmp/berth-clean
-npm run dev:clean                  # clean backend: PORT=7788 BERTH_TEST_HOME=/tmp/berth-clean
+npm run dev:clean                  # clean backend: PORT=7788 BERTH_HOME=/tmp/berth-clean
 cd web && npm run dev:clean        # clean Vite: :5174, proxies /api+/pty+/status -> :7788
-# open http://localhost:5174/app/  → empty sidebar + first-run UI; launch a session → it appears
+# open http://localhost:5174/app/  → fresh Berth; sidebar starts empty (nothing imported yet), but
+#   the import dialog finds your real sessions; import / launch to exercise the onboarding flow
 rm -rf /tmp/berth-clean            # reset to a pristine first-install state
 ```
 
-Override any of `PORT` / `BERTH_TEST_HOME` (backend) or `BERTH_WEB_PORT` / `BERTH_API_PORT` (Vite,
-in `web/vite.config.ts`) to pick other ports. Note: `:7777` is the **backend** (REST `/api` + WS
+Override any of `PORT` / `BERTH_HOME` (backend) or `BERTH_WEB_PORT` / `BERTH_API_PORT` (Vite, in
+`web/vite.config.ts`) to pick other dirs/ports. Note: `:7777` is the **backend** (REST `/api` + WS
 `/pty`/`/status`), shared by both the 1.0 `public/` UI and the 2.0 SPA — *not* a 1.0-only port; the
 2.0 frontend you browse at `:5173` is the Vite dev server proxying to it.
 

@@ -1,27 +1,16 @@
 import { spawn, type IPty } from 'node-pty'
+import { spawn as spawnChild, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { resolveAgentBinary, codexHookTrustSupportOrWarm } from './binaries'
 import { ensureClaudeTrust } from './trust'
 import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
-import { berthHome, dataHome } from '../paths'
+import { berthHome } from '../paths'
 import type { AgentCli, LogicalSession } from '../types'
 
 const CODEX_BERTH_PROFILE = 'berth-launch'
-const codexHome = () => process.env.CODEX_HOME || join(dataHome(), '.codex')
-
-/**
- * Env for a spawned CLI child. Under BERTH_TEST_HOME (clean first-run sim) the child's HOME/CODEX_HOME
- * are pointed at the test home so claude/coco/codex write their session files into the SAME dir
- * `storeRoots()` scans — closing the loop: a launched session surfaces in the otherwise-empty sidebar.
- * The binary was already resolved to an absolute path against the real home, so it's still found.
- * No-op when BERTH_TEST_HOME is unset.
- */
-export function childEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  if (!process.env.BERTH_TEST_HOME) return base
-  return { ...base, HOME: process.env.BERTH_TEST_HOME, CODEX_HOME: codexHome() }
-}
+const codexHome = () => process.env.CODEX_HOME || join(homedir(), '.codex')
 
 /**
  * Resolve a spawn cwd safely. A Berth project workspace dir (~/.berth/workspaces/<id>) is created
@@ -60,7 +49,7 @@ export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
   const bin = resolveAgentBinary(cli)
   if (cli === 'claude') ensureClaudeTrust(cwd)   // interactive PTY → trust dialog isn't auto-skipped
   return spawn(bin, resumeArgv(cli, id), {
-    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: childEnv() as any,
+    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: process.env as any,
   })
 }
 
@@ -117,6 +106,95 @@ export function freshArgv(cli: AgentCli, o: FreshOpts): string[] {
   }
 }
 
+// ─── Model B: claude stream-json spawn (returns a raw ChildProcess; the server wraps it in a
+// StreamJsonDriver). Kept free of any server/ import so the pty→server dependency stays one-way. ───
+
+// stream-json is bidirectional + long-lived: --input-format keeps the process alive across turns
+// (user turns are written to stdin as NDJSON), --output-format emits NDJSON events, --verbose is
+// REQUIRED with stream-json print mode, --include-partial-messages gives token streaming. Verified
+// live against claude 2.1.186 (task smoke tests C4/C5/C6).
+const CLAUDE_STREAM_FLAGS = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
+
+function assertStreamCli(cli: AgentCli): void {
+  if (cli !== 'claude') throw new Error(`Model B (stream-json) is claude-only for now, got ${cli}`)
+}
+
+export function freshArgvStream(cli: AgentCli, o: FreshOpts): string[] {
+  assertStreamCli(cli)
+  const dirs = (o.addDirs ?? []).flatMap(d => ['--add-dir', d])
+  return [
+    ...CLAUDE_STREAM_FLAGS,
+    '--dangerously-skip-permissions',
+    ...(o.sessionId ? ['--session-id', o.sessionId] : []),   // pre-mint id (no --resume) → <id>.jsonl
+    ...(o.model ? ['--model', o.model] : []),
+    ...(o.injectFile ? ['--append-system-prompt-file', o.injectFile] : []),   // manifest, same channel as Model A
+    ...dirs,
+    // NO positional prompt: the user's first turn is written to stdin as NDJSON by the driver.
+  ]
+}
+
+export function resumeArgvStream(cli: AgentCli, id: string, o?: { model?: string }): string[] {
+  assertStreamCli(cli)
+  return [
+    ...CLAUDE_STREAM_FLAGS,
+    '--dangerously-skip-permissions',
+    '--resume', id,   // resume the existing transcript; MUST NOT also pass --session-id (verified: conflicts)
+    ...(o?.model ? ['--model', o.model] : []),
+  ]
+}
+
+const STREAM_STDIO: ['pipe', 'pipe', 'pipe'] = ['pipe', 'pipe', 'pipe']
+
+export function launchFreshStream(o: FreshOpts): ChildProcess {
+  const cwd = ensureLaunchCwd(o.cwd)
+  const bin = resolveAgentBinary('claude')
+  ensureClaudeTrust(cwd)
+  const env = { ...(process.env as any) }
+  // detached:true → the child leads its own process group, so the registry's process.kill(-pid)
+  // reaps the whole tree (MCP/sub-procs). Verified (task smoke test C1).
+  return spawnChild(bin, freshArgvStream('claude', o), { cwd, env, detached: true, stdio: STREAM_STDIO })
+}
+
+export function resumeSessionStream(s: LogicalSession, o: { model?: string } = {}): ChildProcess {
+  if (!s.resume) throw new Error(`session ${s.sessionId} has no resume target`)
+  const { cli, id } = s.resume
+  assertStreamCli(cli)
+  const cwd = ensureLaunchCwd(s.cwd)
+  const bin = resolveAgentBinary(cli)
+  ensureClaudeTrust(cwd)
+  return spawnChild(bin, resumeArgvStream(cli, id, o), { cwd, env: { ...(process.env as any) }, detached: true, stdio: STREAM_STDIO })
+}
+
+// ─── Model B per-turn spawn for codex + coco (single-turn-then-exit: each user turn is a fresh
+// process — `exec`/`--print` for the first turn, `resume` thereafter). The driver captures the
+// session id from the stream (codex thread.started / coco system.init) and passes it as `resumeId`.
+// Verified live against codex-cli 0.139.0 + coco 0.120.41 (task smoke tests). ───
+
+export function codexTurnArgv(prompt: string, resumeId: string | null, o?: { model?: string }): string[] {
+  // -C/--cd is NOT accepted on the `resume` subcommand (verified); cwd is set via the spawn option.
+  const flags = ['--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', ...(o?.model ? ['--model', o.model] : [])]
+  return resumeId ? ['exec', 'resume', resumeId, ...flags, prompt] : ['exec', ...flags, prompt]
+}
+
+export function cocoTurnArgv(prompt: string, resumeId: string | null, sessionId: string): string[] {
+  const flags = ['--print', '--output-format=stream-json', '--include-partial-messages', '-y']
+  // coco honors a pre-minted --session-id on the fresh turn; resume uses the `--resume=<id>` = form.
+  return resumeId ? [`--resume=${resumeId}`, ...flags, prompt] : ['--session-id', sessionId, ...flags, prompt]
+}
+
+export interface PerTurnOpts { cwd: string; sessionId?: string; model?: string; prompt: string; resumeId: string | null }
+
+export function spawnPerTurn(cli: AgentCli, o: PerTurnOpts): ChildProcess {
+  const cwd = ensureLaunchCwd(o.cwd)
+  const bin = resolveAgentBinary(cli)
+  const argv = cli === 'codex' ? codexTurnArgv(o.prompt, o.resumeId, { model: o.model })
+    : cli === 'coco' ? cocoTurnArgv(o.prompt, o.resumeId, o.sessionId ?? '')
+      : (() => { throw new Error(`per-turn stream not supported for ${cli}`) })()
+  // stdin is 'ignore' (prompt rides argv) so codex never blocks on "Reading additional input from
+  // stdin…"; detached:true makes the child a group leader for the registry's process.kill(-pid).
+  return spawnChild(bin, argv, { cwd, env: { ...(process.env as any) }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+}
+
 export function ensureCodexBerthHookProfile() {
   const home = codexHome()
   mkdirSync(home, { recursive: true })
@@ -144,7 +222,7 @@ export function launchFresh(cli: AgentCli, o: FreshOpts): IPty {
   if (cli === 'codex' && o.injectFile && codexHookTrustSupportOrWarm(bin) !== true) {
     opts = { ...o, injectFile: undefined }
   }
-  const env = childEnv({ ...(process.env as any) })
+  const env = { ...(process.env as any) }
   if (cli === 'codex' && opts.injectFile) {
     ensureCodexBerthHookProfile()
     env.BERTH_CONTEXT_FILE = opts.injectFile            // codex hook cats raw text as context

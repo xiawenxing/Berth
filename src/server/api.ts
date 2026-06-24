@@ -12,7 +12,7 @@ import { getDocStore, getDocsRoot } from '../data/docstore'
 import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, setAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getLocale, normalizeLocale, LOCALES, contextStrings } from '../i18n'
-import { ensureContextDoc, appendContextLogOnDisk } from '../data/context-doc'
+import { ensureContextDoc, appendContextLogOnDiskAsync } from '../data/context-doc'
 import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
 import { getContextConfig, setContextConfig } from '../data/context-config'
 import { lastLogEntries } from '../data/context-log'
@@ -20,14 +20,16 @@ import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
 import { generateTitle, parseStructuredSummary } from '../agent/index'
+import { summarizeCompactedContext } from '../agent/context-compact'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { titleInputFromTranscript } from '../agent/transcript'
 import type { Locale } from '../i18n'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { snapshotActivity } from './pty-registry'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { parseTranscriptTurns } from './transcript-turns'
+import { parseClaudeJsonlTurns } from '../agent/normalize/claude-jsonl'
 import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd, berthHome } from '../paths'
 
@@ -473,7 +475,7 @@ api.post('/context', (req, res) => {
 })
 
 // Mechanically append a dated entry to an entity's progress-log section (canonical B).
-api.post('/context/log', (req, res) => {
+api.post('/context/log', async (req, res) => {
   const { kind, key, text } = req.body ?? {}
   if ((kind !== 'task' && kind !== 'project') || typeof key !== 'string' || !key.trim())
     return res.status(400).json({ error: 'kind:task|project, key:string required' })
@@ -492,8 +494,11 @@ api.post('/context/log', (req, res) => {
     }
     const date = new Date().toISOString().slice(0, 10)
     // appendLogEntry collapses internal whitespace/newlines into a single line — no pre-processing needed here.
-    const r = appendContextLogOnDisk(ds, ensured.abs, { text, date, maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })
-    res.json({ ref: ensured.ref, appended: r.appended, rotated: r.rotated })
+    const r = await appendContextLogOnDiskAsync(ds, ensured.abs, {
+      text, date, maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale,
+      maxChars: cfg.docMaxChars, keepChars: cfg.docKeepChars,
+    }, (input) => summarizeCompactedContext(input, resolveBerthAgent(store)))
+    res.json({ ref: ensured.ref, appended: r.appended, rotated: r.rotated, compacted: r.compacted })
   } catch (e: any) {
     res.status(500).json({ error: String(e?.message ?? e) })
   }
@@ -532,13 +537,16 @@ api.post('/context/update', async (req, res) => {
       target, docStore: ds, locale, agent: resolveBerthAgent(store),
       userInput: effectiveUserInput || undefined, transcript,
       date: new Date().toISOString().slice(0, 10),
-      getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
+      getCfg: () => {
+        const c = getContextConfig(store)
+        return { logMaxLines: c.logMaxLines, logKeep: c.logKeep, docMaxChars: c.docMaxChars, docKeepChars: c.docKeepChars }
+      },
     })
     if (!outcome.ok) {
       try { refresh() } catch {}
       return res.status(409).json(contextAgentError(outcome.reason))
     }
-    res.json({ ok: true, ref, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
+    res.json({ ok: true, ref, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated, compacted: outcome.compacted })
   } catch (e: any) {
     try { refresh() } catch {}
     res.status(502).json(contextAgentError(e))
@@ -800,13 +808,16 @@ api.post('/sessions/:id/consolidate', async (req, res) => {
       session: { sessionId: s.sessionId, todoKey, projectId, contentSourcePath: s.contentSourcePath },
       task: task ? { title: task.title, project: task.project } : null,
       docStore, locale, agent: resolveBerthAgent(store),
-      getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
+      getCfg: () => {
+        const c = getContextConfig(store)
+        return { logMaxLines: c.logMaxLines, logKeep: c.logKeep, docMaxChars: c.docMaxChars, docKeepChars: c.docKeepChars }
+      },
     })
     if (!outcome.ok) {
       try { refresh() } catch {}
       return res.status(409).json(contextAgentError(outcome.reason))
     }
-    res.json({ ok: true, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
+    res.json({ ok: true, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated, compacted: outcome.compacted })
   } catch (e: any) {
     try { refresh() } catch {}
     sendAgentError(res, e, locale)
@@ -821,6 +832,23 @@ api.get('/sessions/:id/transcript', (req, res) => {
   if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
   try {
     const turns = parseTranscriptTurns(s.cli, s.contentSourcePath)
+    res.json({ turns })
+  } catch {
+    res.json({ turns: [] })
+  }
+})
+
+// Model B history replay: the rich ChatTurn[] (folded tool calls, reasoning) the live stream reducer
+// also produces, so resuming a session in chat mode seeds the bubbles from the on-disk jsonl, then
+// attaches the live stream for new turns. claude-only for now (matches the live Model B scope).
+const MAX_CHAT_JSONL_BYTES = 32 * 1024 * 1024
+api.get('/sessions/:id/chat', (req, res) => {
+  const s = getCache().find(x => x.sessionId === req.params.id)
+  if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
+  if (s.cli !== 'claude') return res.json({ turns: [] })   // codex/coco replay not implemented yet
+  try {
+    if (statSync(s.contentSourcePath).size > MAX_CHAT_JSONL_BYTES) return res.json({ turns: [], truncated: true })
+    const turns = parseClaudeJsonlTurns(readFileSync(s.contentSourcePath, 'utf8'))
     res.json({ turns })
   } catch {
     res.json({ turns: [] })

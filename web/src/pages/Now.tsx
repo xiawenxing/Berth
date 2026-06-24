@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pin, Play, ChevronDown, CalendarClock, Check, Sparkles } from 'lucide-react'
+import { Pin, Play, ChevronDown, CalendarClock, Check, Sparkles, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { useUI } from '@/lib/ui-store'
@@ -129,7 +129,7 @@ function ProjTag({ proj }: { proj?: string }) {
 }
 
 function ShipGlyph({ status }: { status: ShipStatus }) {
-  if (status === 'sail') return <span className="h-1.5 w-1.5 flex-none rounded-full bg-success" />
+  if (status === 'sail') return <Loader2 size={11} className="flex-none animate-spin text-brand" aria-label="在航" />
   if (status === 'dock') return <span className="h-1.5 w-1.5 flex-none rounded-full bg-destructive" title="有未读" />
   return <span className="h-1.5 w-1.5 flex-none" />
 }

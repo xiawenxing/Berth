@@ -15,6 +15,7 @@ export function Kanban({
   onOpenSession,
   onMove,
   onSetPriority,
+  onSetDdl,
   onRename,
   onDelete,
   onCreateTask,
@@ -24,6 +25,7 @@ export function Kanban({
   onOpenSession?: (link: LinkedSession) => void
   onMove?: (taskId: string, status: TaskStatus) => void
   onSetPriority?: (taskId: string, priority: Priority) => void
+  onSetDdl?: (taskId: string, ddl: string | null) => void
   onRename?: (taskId: string, title: string) => void
   onDelete?: (taskId: string) => void
   onCreateTask?: () => void
@@ -113,6 +115,7 @@ export function Kanban({
                     onActivate={() => setActive(status)}
                     onSetStatus={onMove}
                     onSetPriority={onSetPriority}
+                    onSetDdl={onSetDdl}
                     onRename={onRename}
                     onDelete={onDelete}
                   />

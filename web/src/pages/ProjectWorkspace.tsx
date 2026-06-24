@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Plus, Play, Sparkles, MoreHorizontal, Anchor, Pencil, Archive, ArchiveRestore, Trash2 } from 'lucide-react'
+import { Plus, Play, Sparkles, MoreHorizontal, Anchor, Pencil, Archive, ArchiveRestore, Trash2, Loader2 } from 'lucide-react'
 import { Kanban } from '@/components/workspace/Kanban'
 import { SessionModule } from '@/components/workspace/SessionModule'
 import { CargoDefaults } from '@/components/workspace/CargoDefaults'
@@ -298,6 +298,13 @@ export function ProjectWorkspace() {
       .then(() => reload())
       .catch(() => reload())
   }
+  const onSetDdl = (taskId: string, ddl: string | null) => {
+    setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, ddl } : t)))
+    api
+      .patchTask(taskId, { ddl })
+      .then(() => reload())
+      .catch(() => reload())
+  }
   const onRename = (taskId: string, title: string) => {
     setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, title } : t)))
     api
@@ -470,8 +477,8 @@ export function ProjectWorkspace() {
         <div className="mt-3 flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2">
           <Anchor size={14} className="text-brand" />
           <span className="text-[12px] font-semibold text-foreground">港湾概览</span>
-          <Pill tone="success">在跑 {sailN}</Pill>
-          <Pill tone="brand">靠岸·待查收 {dockN}</Pill>
+          <Pill tone="brand" loading>在跑 {sailN}</Pill>
+          <Pill tone="destructive">靠岸·待查收 {dockN}</Pill>
           <Pill tone="warning">今日交付 {todayDone}/{todayTasks.length}</Pill>
         </div>
       </header>
@@ -489,6 +496,7 @@ export function ProjectWorkspace() {
             onOpenSession={openLinkedSession}
             onMove={onMove}
             onSetPriority={onSetPriority}
+            onSetDdl={onSetDdl}
             onRename={onRename}
             onDelete={onDelete}
             onCreateTask={() => setNewTask(true)}
@@ -514,7 +522,7 @@ export function ProjectWorkspace() {
           onDetachGroup={onDetachGroup}
           onUnimportGroup={onUnimportGroup}
         />
-        <CargoDefaults paths={project?.pathsMeta ?? []} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
+        <CargoDefaults paths={project?.pathsMeta ?? []} tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
       </div>
 
       <NewTaskDialog open={newTask} onClose={() => setNewTask(false)} onCreate={createTask} />
@@ -637,11 +645,12 @@ function HBtn({ icon, children, onClick, btnRef }: { icon: ReactNode; children: 
   )
 }
 
-function Pill({ children, tone }: { children: ReactNode; tone: 'success' | 'brand' | 'warning' }) {
-  const dot = tone === 'success' ? 'bg-success' : tone === 'brand' ? 'bg-brand' : 'bg-warning'
+function Pill({ children, tone, loading }: { children: ReactNode; tone: 'brand' | 'destructive' | 'warning'; loading?: boolean }) {
+  const dot = tone === 'brand' ? 'bg-brand' : tone === 'destructive' ? 'bg-destructive' : 'bg-warning'
+  const ink = tone === 'brand' ? 'text-brand' : tone === 'destructive' ? 'text-destructive' : 'text-warning'
   return (
     <span className="flex items-center gap-1.5 rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
-      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+      {loading ? <Loader2 size={10} className={`animate-spin ${ink}`} /> : <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />}
       {children}
     </span>
   )

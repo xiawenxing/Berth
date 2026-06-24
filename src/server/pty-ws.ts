@@ -8,18 +8,20 @@ import { join } from 'node:path'
 import { getCache, getStore } from './store-singleton'
 import { launchFresh } from '../pty/launch'
 import { resolveAgentBinary, codexHookTrustSupportCached } from '../pty/binaries'
-import { hasLivePty, registerPty, attachViewer } from './pty-registry'
-import { spawnAndRegister, codexHoldRunning } from './resume-spawn'
+import { hasLivePty, liveDriverMode, registerPty, registerSession, attachViewer, killPty } from './pty-registry'
+import { makeFreshStreamDriver } from './stream-driver-factory'
+import { spawnAndRegister, spawnAndRegisterStream, codexHoldRunning } from './resume-spawn'
 import { markOpened } from './warm-pool'
 import { buildManifest, type ManifestInput } from '../agent/manifest'
 import { listTasks, updateTask } from '../data/tasks'
 import { listProjects } from '../data/projects'
 import { getTaskFieldConfig, type TaskFieldConfig } from '../data/task-config'
-import { getAgentConfig } from '../data/agent-config'
+import { getAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getDocsRoot, getDocStore } from '../data/docstore'
 import { getContextConfig } from '../data/context-config'
 import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
-import { ensureContextDoc, rotateContextDocOnDisk } from '../data/context-doc'
+import { ensureContextDoc, maintainContextDocOnDiskAsync } from '../data/context-doc'
+import { summarizeCompactedContext } from '../agent/context-compact'
 import { getLocale, promptStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
@@ -33,6 +35,13 @@ interface FreshLaunchResult {
   bound: boolean
   cli: AgentCli
   cwd: string
+  mode: 'tui' | 'stream'
+}
+
+/** Model B (stream-json chat renderer) is opt-in via ?render=stream-json. All three CLIs support it:
+ *  claude = persistent stream-json; codex/coco = per-turn spawn. */
+function rendersStream(url: URL, cli: AgentCli | null | undefined): boolean {
+  return url.searchParams.get('render') === 'stream-json' && (cli === 'claude' || cli === 'codex' || cli === 'coco')
 }
 
 const freshLaunchDedupe = new Map<string, Promise<FreshLaunchResult>>()
@@ -62,7 +71,7 @@ function rememberFreshLaunch(token: string, promise: Promise<FreshLaunchResult>)
 }
 
 function sendLaunchFrame(ws: WebSocket, r: FreshLaunchResult) {
-  try { ws.send(JSON.stringify({ __berth: 'launched', sessionId: r.launchKey, bound: r.bound, cli: r.cli, cwd: r.cwd })) } catch {}
+  try { ws.send(JSON.stringify({ __berth: 'launched', sessionId: r.launchKey, bound: r.bound, cli: r.cli, cwd: r.cwd, mode: r.mode })) } catch {}
 }
 
 export interface FreshLaunchParams {
@@ -247,18 +256,25 @@ export function createPtyWss(): WebSocketServer {
       return
     }
 
-    // resume branch — attach to a live pty if one is already running, else spawn `--resume`
+    // resume branch — attach to a live process if one is already running (in the SAME render mode),
+    // else spawn `--resume`. A mode mismatch (the A/B toggle) kills the live process and respawns in
+    // the requested mode, so a chat renderer never attaches to a raw-bytes TUI driver or vice versa.
     const sessionId = url.searchParams.get('sessionId')
     if (!sessionId) { try { ws.send('\r\n[berth] no sessionId\r\n') } catch {} ; ws.close(); return }
+    const s = getCache().find(x => x.sessionId === sessionId)
+    const wantStream = rendersStream(url, s?.cli)
     if (hasLivePty(sessionId)) {                  // already running (incl. a warm-pool pre-spawn)
-      markOpened(sessionId)                       // user opened it → graduate out of the warm pool
-      attachViewer(sessionId, ws); return
+      if (liveDriverMode(sessionId) === (wantStream ? 'stream' : 'tui')) {
+        markOpened(sessionId)                     // user opened it → graduate out of the warm pool
+        attachViewer(sessionId, ws); return
+      }
+      killPty(sessionId)                          // mode switch (A↔B) → respawn in the requested mode below
     }
 
-    const s = getCache().find(x => x.sessionId === sessionId)
     if (!s || !s.resume) { try { ws.send('\r\n[berth] session not found or not resumable\r\n') } catch {} ; ws.close(); return }
     try {
-      spawnAndRegister(s, { cols, rows })
+      if (wantStream) spawnAndRegisterStream(s)                                 // Model B: stream-json resume (claude/codex/coco)
+      else spawnAndRegister(s, { cols, rows })                                 // Model A: TUI resume
     } catch (e: any) { try { ws.send(`\r\n[berth] launch failed: ${e?.message}\r\n`) } catch {} ; ws.close(); return }
     attachViewer(sessionId, ws)
   })
@@ -420,17 +436,6 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     } catch {}
   }
 
-  const pty = launchFresh(cli, {
-    cwd,
-    sessionId: plan.sessionId ?? undefined,
-    injectFile,
-    initialPrompt,
-    model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
-    addDirs: finalAddDirs,
-    cols,
-    rows,
-  })
-
   // Remember this project's last real launch cwd (sticky 主 cwd for the launch dialog's auto-pick).
   // Skip the workspace fallback — it's the catch-all, not a user choice.
   if (projectId && !isWorkspaceCwd) {
@@ -438,25 +443,56 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   }
 
   // Register under the session key (claude/coco minted id; codex uses its intent id and is
-  // rekeyed to the real id by reconcile). The pty now persists across viewer disconnects.
+  // rekeyed to the real id by reconcile). The process now persists across viewer disconnects.
   // A launch with an auto-fired prompt is a turn in progress → show the spinner immediately;
   // a plain empty session is idle until the user types.
-  registerPty(plan.sessionId ?? plan.intent.id, pty, {
-    running: !!initialPrompt,
-    holdRunning: cli === 'codex' ? codexHoldRunning(initialPrompt ? 'running' : 'unknown') : undefined,
-    onExit: contextAbs ? () => {
-      try { rotateContextDocOnDisk(getDocStore(store), contextAbs!, { maxLines: ctxCfg.logMaxLines, keep: ctxCfg.logKeep, locale }) } catch {}
-    } : undefined,
-  })
+  const launchKey = plan.sessionId ?? plan.intent.id
+  const onExit = contextAbs ? () => {
+    void maintainContextDocOnDiskAsync(
+      getDocStore(store), contextAbs!, { ...ctxCfg, locale },
+      (input) => summarizeCompactedContext(input, resolveBerthAgent(store)),
+    ).catch(() => {})
+  } : undefined
+
+  const wantStream = rendersStream(url, cli)
+  if (wantStream) {
+    // Model B: no positional prompt — the driver delivers the first user turn (claude via stdin NDJSON;
+    // codex/coco as the per-turn exec prompt). claude's manifest rides --append-system-prompt-file
+    // (injectFile); codex/coco Model B v1 doesn't inject the manifest yet (per-turn hook is a follow-up).
+    const driver = makeFreshStreamDriver(cli, {
+      cwd,
+      sessionId: plan.sessionId ?? undefined,
+      injectFile,
+      model: agentEntry.model ?? undefined,
+      addDirs: finalAddDirs,
+      initialPrompt,
+    })
+    registerSession(launchKey, driver, { running: !!initialPrompt, onExit })
+  } else {
+    const pty = launchFresh(cli, {
+      cwd,
+      sessionId: plan.sessionId ?? undefined,
+      injectFile,
+      initialPrompt,
+      model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
+      addDirs: finalAddDirs,
+      cols,
+      rows,
+    })
+    registerPty(launchKey, pty, {
+      running: !!initialPrompt,
+      holdRunning: cli === 'codex' ? codexHoldRunning(initialPrompt ? 'running' : 'unknown') : undefined,
+      onExit,
+    })
+  }
   // Tell the client which session id this fresh launch maps to, so it can bind the drawer to the
-  // live registry key. This MUST be after registerPty: 2.0 re-opens /pty?sessionId=… immediately on
+  // live registry key. This MUST be after register*: 2.0 re-opens /pty?sessionId=… immediately on
   // this frame, and sending it earlier races the registry and can attach the UI to stale transcript
   // state instead of the just-launched process.
-  const launchKey = plan.sessionId ?? plan.intent.id
-  const launchResult = { launchKey, bound: !!plan.sessionId, cli, cwd }
+  const launchResult: FreshLaunchResult = { launchKey, bound: !!plan.sessionId, cli, cwd, mode: wantStream ? 'stream' : 'tui' }
   launchDeferred?.resolve(launchResult)
   sendLaunchFrame(ws, launchResult)
-  attachViewer(plan.sessionId ?? plan.intent.id, ws)
+  attachViewer(launchKey, ws)
   } catch (e) {
     launchDeferred?.reject(e)
     throw e

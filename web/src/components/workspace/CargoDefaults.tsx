@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { FileText, Folder, Plus, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileText, Folder, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api, type PreviewSession, type ApiPathMeta } from '@/lib/api'
 import { shortCwd } from '@/lib/format'
@@ -40,6 +40,7 @@ export function CargoDefaults({
   projectId,
   projectName,
   paths,
+  tasks = [],
   onOpenDoc,
   onDone,
   onRemovePath,
@@ -47,6 +48,8 @@ export function CargoDefaults({
   projectId?: string
   projectName?: string
   paths: ApiPathMeta[]
+  // 已登记任务 — each gets a context doc at tasks/<id>/index.md, surfaced as a collapsible list.
+  tasks?: { id: string; title: string }[]
   onOpenDoc?: (target: { kind: 'project' | 'task'; key: string; path: string; title: string }) => void
   onDone?: () => void
   // When provided, the parent owns the remove flow (so it can offer 「一并移出会话」, §10.1).
@@ -56,6 +59,7 @@ export function CargoDefaults({
   const [dialog, setDialog] = useState<{ path: string; sessions: PreviewSession[] } | null>(null)
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [tasksOpen, setTasksOpen] = useState(false)
 
   const toggle = (cwd: string, enabled: boolean) => {
     if (!projectId) return
@@ -118,6 +122,33 @@ export function CargoDefaults({
             <RegRow icon={FileText} name={`项目上下文${projectName ? ` (${projectName})` : ''}`} sub={projectName ? `projects/${projectName}/index.md` : ''} right={<Toggle on onChange={() => {}} />} />
           </button>
           <div className="text-[11px] text-text-dim">点开上方可编辑，或写一句让港务助手整理进上下文</div>
+
+          {/* 任务上下文 — collapsible list, each task → tasks/<id>/index.md */}
+          {tasks.length > 0 && (
+            <div className="mt-0.5">
+              <button
+                onClick={() => setTasksOpen((o) => !o)}
+                className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                {tasksOpen ? <ChevronDown size={13} className="flex-none" /> : <ChevronRight size={13} className="flex-none" />}
+                <span className="font-medium">任务上下文</span>
+                <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-text-dim">{tasks.length}</span>
+              </button>
+              {tasksOpen && (
+                <div className="mt-1 flex flex-col gap-1.5 pl-1.5">
+                  {tasks.map((t) => (
+                    <button
+                      key={t.id}
+                      className="text-left"
+                      onClick={() => onOpenDoc?.({ kind: 'task', key: t.id, path: `tasks/${t.id}/index.md`, title: `任务上下文 · ${t.title}` })}
+                    >
+                      <RegRow icon={FileText} name={t.title} sub={`tasks/${t.id}/index.md`} />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

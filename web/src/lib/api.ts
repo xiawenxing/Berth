@@ -1,4 +1,5 @@
 // Thin typed client over the Berth Node REST API (proxied by Vite in dev, same-origin under /app).
+import type { ChatTurn } from './chat'
 
 export interface ApiPathMeta {
   cwd: string
@@ -120,6 +121,9 @@ export const api = {
   // Structured codex-style chat turns for a real session's drawer/right-pane.
   transcript: (sessionId: string) =>
     getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),
+  // Model B history replay: rich ChatTurn[] from the on-disk jsonl, to seed the chat view on resume.
+  chatHistory: (sessionId: string) =>
+    getJSON<{ turns: ChatTurn[]; truncated?: boolean }>(`/api/sessions/${sessionId}/chat`),
 
   // ── mutations (wired to existing server endpoints) ──
   createTask: (text: string, projectId?: string, images?: string[]) => send('POST', '/api/todos', { text, projectId, images }),

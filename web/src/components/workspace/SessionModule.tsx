@@ -12,12 +12,13 @@ export interface SessionTaskOption {
   title: string
 }
 
-// One lamp carries the whole status (no redundant text pill): sail=运行中(绿脉冲), dock=未读(红点),
-// moored=已读/idle(空心暗点). The word lives in the tooltip; the title's weight/dim reinforces it.
+// One lamp carries the whole status (no redundant text pill): sail=运行中(蓝色 loading), dock=未读(红点),
+// moored=已读/idle(无标记，仅保留占位). The word lives in the tooltip; the title's weight/dim reinforces it.
 function Glyph({ status }: { status: ShipStatus }) {
-  if (status === 'sail') return <span className="h-2 w-2 flex-none animate-pulse rounded-full bg-success ring-2 ring-success/25" title="在航" />
+  if (status === 'sail') return <Loader2 size={13} className="flex-none animate-spin text-brand" aria-label="在航" />
   if (status === 'dock') return <span className="h-2 w-2 flex-none rounded-full bg-destructive ring-2 ring-destructive/25" title="待查收 · 有未读" />
-  return <span className="h-[7px] w-[7px] flex-none rounded-full border border-text-dim/60" title="已停泊" />
+  // moored=已读/idle: no glyph — the fixed-width slot keeps rows aligned without an empty hollow dot.
+  return null
 }
 
 /** The linked-task marker — now an interactive control (was a passive label). Linked: a brand tag with
@@ -149,7 +150,10 @@ function Row({
         <span className="inline-flex flex-none items-center rounded bg-muted-foreground/15 px-1.5 py-px text-[10.5px] font-semibold text-muted-foreground">
           创建中
         </span>
-        <span className={cn('min-w-[30px] max-w-[240px] flex-[0_1_240px] truncate text-right font-mono text-[11px] text-text-dim', !showCwd && 'opacity-0')}>
+        <span
+          className={cn('min-w-[30px] max-w-[240px] flex-[0_1_240px] truncate text-right font-mono text-[11px] text-text-dim', !showCwd && 'opacity-0')}
+          title={showCwd && s.cwd ? s.cwd : undefined}
+        >
           {showCwd ? s.cwd : ''}
         </span>
         <span className="flex-none whitespace-nowrap text-[11px] text-muted-foreground">{s.time}</span>
@@ -207,7 +211,10 @@ function Row({
         {s.title}
       </span>
       {/* cwd: right-aligned, fills the gap (mirrors v7 .s-cwd flex:1 text-align:right) */}
-      <span className={cn('min-w-[30px] max-w-[240px] flex-[0_1_240px] truncate text-right font-mono text-[11px] text-text-dim', !showCwd && 'opacity-0')}>
+      <span
+        className={cn('min-w-[30px] max-w-[240px] flex-[0_1_240px] truncate text-right font-mono text-[11px] text-text-dim', !showCwd && 'opacity-0')}
+        title={showCwd && s.cwd ? s.cwd : undefined}
+      >
         {showCwd ? s.cwd : ''}
       </span>
       {/* 关联任务 — clickable marker in the right cluster (replaces the inline label + ⋯ task dump) */}
@@ -362,8 +369,11 @@ function Section({
       >
         <ChevronDown size={13} className={cn('flex-none text-text-dim transition-transform', collapsed && '-rotate-90')} />
         {icon}
-        <span className={cn('inline-flex items-center gap-1.5 text-foreground', labelMono ? 'font-mono text-[11.5px]' : 'text-[12px]')}>
-          {label}
+        <span
+          className={cn('inline-flex min-w-0 flex-[0_1_auto] items-center gap-1.5 text-foreground', labelMono ? 'font-mono text-[11.5px]' : 'text-[12px]')}
+          title={label}
+        >
+          <span className="min-w-0 truncate">{label}</span>
           {labelSuffix && <span className="text-text-dim"> · {labelSuffix}</span>}
         </span>
         <span className="font-normal text-text-dim">{count}</span>

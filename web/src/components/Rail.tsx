@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Anchor, Inbox, Folder, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight } from 'lucide-react'
+import { Anchor, Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Loader2, Archive, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
 import { useData } from '@/lib/data'
@@ -30,15 +30,9 @@ function bucketShip(sessions: ApiSession[], live: ReturnType<typeof useLive>): '
 /** The little nav-row status dot, same visual language as Now/Unassigned/TaskCard ShipGlyph. */
 function ShipDot({ kind }: { kind: 'sail' | 'dock' | null }) {
   if (!kind) return null
-  return (
-    <span
-      title={kind === 'sail' ? '有会话在跑' : '有未读会话'}
-      className={cn(
-        'h-1.5 w-1.5 flex-none rounded-full',
-        kind === 'sail' ? 'bg-success' : 'bg-destructive',
-      )}
-    />
-  )
+  // sail=运行中(蓝色 loading), dock=未读(红点) — mirrors the session-list lamp.
+  if (kind === 'sail') return <Loader2 size={11} className="flex-none animate-spin text-brand" aria-label="有会话在跑" />
+  return <span title="有未读会话" className="h-1.5 w-1.5 flex-none rounded-full bg-destructive" />
 }
 
 function ThemeToggle() {
@@ -132,7 +126,6 @@ export function Rail() {
 
       <nav className="flex flex-col gap-0.5 px-2.5">
         <NavItem to="/now" icon={Inbox} label="Now" />
-        <NavItem to="/project/Berth" icon={Folder} label="项目" />
       </nav>
 
       <div className="mx-3 my-2.5 h-px bg-border" />
