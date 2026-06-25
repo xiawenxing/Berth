@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseCliArgs } from '../src/cli'
 import { resolvePublicDir } from '../src/server/public-dir'
+import { formatStartupError } from '../src/startup-error'
 
 describe('parseCliArgs', () => {
   it('keeps the published CLI entry executable', () => {
@@ -49,5 +50,14 @@ describe('resolvePublicDir', () => {
     const root = mkdtempSync(join(tmpdir(), 'berth-nopub-'))
     mkdirSync(join(root, 'a', 'b'), { recursive: true })
     expect(() => resolvePublicDir(join(root, 'a', 'b'))).toThrow(/public/i)
+  })
+})
+
+describe('formatStartupError', () => {
+  it('turns EADDRINUSE listen failures into a useful startup hint', () => {
+    const msg = formatStartupError({ code: 'EADDRINUSE', syscall: 'listen', address: '127.0.0.1', port: 7777 })
+    expect(msg).toContain('127.0.0.1:7777 is already in use')
+    expect(msg).toContain('lsof -nP -iTCP:7777 -sTCP:LISTEN')
+    expect(msg).toContain('PORT=7778 npm start')
   })
 })

@@ -81,8 +81,11 @@ export async function start(
   const server = createServer(createApp())
   attachWebSockets(server)   // /pty terminals + /status live-activity broadcast, one upgrade router
   const hasWeb = !!WEB_DIST   // 2.0 SPA built and served at /app → callers open /app/ directly
-  return new Promise<{ port: number; hasWeb: boolean }>((resolve) => {
+  return new Promise<{ port: number; hasWeb: boolean }>((resolve, reject) => {
+    const onListenError = (error: Error) => reject(error)
+    server.once('error', onListenError)
     server.listen(port, host, () => {
+      server.off('error', onListenError)
       const shown = host === '0.0.0.0' || host === '::' ? 'localhost' : host
       const realPort = (server.address() as any)?.port ?? port
       console.log(`Berth: ${getCache().length} sessions | http://${shown}:${realPort}${hasWeb ? '/app/' : ''}`)
