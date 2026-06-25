@@ -18,7 +18,7 @@ import { startFreshLaunch } from '@/lib/launch-runner'
  */
 export function LaunchDialog() {
   const { launch, closeLaunch, openDrawer } = useUI()
-  const { projects, agents, sessions, addPending, reload } = useData()
+  const { projects, agents, sessions, addPending, resolvePending, reload } = useData()
   const [dest, setDest] = useState<'task' | 'free'>('task')
   const [cli, setCli] = useState<AgentCli>('claude')
   const [freeText, setFreeText] = useState('')
@@ -90,6 +90,7 @@ export function LaunchDialog() {
       images,
       sessions,
       addPending,
+      resolvePending,
       openDrawer,
     })
   }

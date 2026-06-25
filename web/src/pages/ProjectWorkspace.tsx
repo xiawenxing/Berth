@@ -30,7 +30,7 @@ export function ProjectWorkspace() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
-  const { projects, tasks: apiTasks, sessions, statuses, priorities, agents, pending, addPending, reload, resync } = useData()
+  const { projects, tasks: apiTasks, sessions, statuses, priorities, agents, pending, addPending, resolvePending, reload, resync } = useData()
   const live = useLive()
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [ctxDoc, setCtxDoc] = useState<ContextDocTarget | null>(null)
@@ -130,13 +130,14 @@ export function ProjectWorkspace() {
       pending
         .filter((p) => p.projectId === id && !p.surfaced)
         .map((p) => ({
-          id: p.tempId,
+          id: p.sessionId ?? p.tempId,
           cli: p.cli,
-          title: '创建中…',
+          title: p.sessionId ? '启动中…' : '创建中…',
           cwd: p.cwdLabel,
           time: '刚刚',
           status: 'idle' as const,
           pending: true,
+          pendingOpenable: !!p.sessionId,
         })),
     [pending, id],
   )
@@ -357,6 +358,7 @@ export function ProjectWorkspace() {
             todoKey: res.record.id,
             sessions,
             addPending,
+            resolvePending,
             openDrawer,
           })
       })

@@ -46,6 +46,7 @@ export interface StartFreshLaunchInput {
   cargo: CargoState | null
   sessions: ApiSession[]
   addPending: (p: LaunchPending) => void
+  resolvePending?: (tempId: string, sessionId: string) => void
   openDrawer: (s: LaunchDrawerSession) => void
   project?: ApiProject
   projectId?: string | null
@@ -56,6 +57,47 @@ export interface StartFreshLaunchInput {
   images?: LaunchImage[]
   makeLaunchToken?: () => string
   now?: () => number
+}
+
+function streamRenderEnabled(): boolean {
+  try { return localStorage.getItem('berth-render-mode') === 'B' } catch { return false }
+}
+
+function buildLaunchQuery(launch: LaunchDrawerSession['launch'], renderStream: boolean): URLSearchParams {
+  const qs = new URLSearchParams({ new: '1', cli: launch.cli, cwd: launch.cwd, cols: '120', rows: '30' })
+  if (renderStream) qs.set('render', 'stream-json')
+  if (launch.launchToken) qs.set('launchToken', launch.launchToken)
+  if (launch.projectId) qs.set('projectId', launch.projectId)
+  if (launch.todoKey) qs.set('todoKey', launch.todoKey)
+  if (launch.prompt && !launch.images?.length) qs.set('prompt', launch.prompt)
+  if (launch.ctxProject === false) qs.set('ctxProject', '0')
+  if (launch.ctxTask === false) qs.set('ctxTask', '0')
+  for (const d of launch.addDirs ?? []) qs.append('addDirs', d)
+  return qs
+}
+
+function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (sessionId: string) => void): void {
+  if (typeof WebSocket === 'undefined' || typeof location === 'undefined') return
+  // Image-backed launches still need the visible terminal/chat socket to submit images after the CLI
+  // is ready. Prompt-only and empty launches can be spawned in the background immediately so closing
+  // the drawer cannot cancel the launch before the /pty WebSocket connects.
+  if (launch.images?.length) return
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+  const ws = new WebSocket(`${proto}://${location.host}/pty?${buildLaunchQuery(launch, streamRenderEnabled()).toString()}`)
+  const closeSoon = () => setTimeout(() => { try { ws.close() } catch {} }, 100)
+  ws.onmessage = (e) => {
+    if (typeof e.data !== 'string' || !e.data.startsWith('{"__berth"')) return
+    try {
+      const msg = JSON.parse(e.data)
+      if (msg.__berth === 'launched' && msg.sessionId) {
+        onLaunched?.(msg.sessionId)
+        closeSoon()
+      }
+    } catch {
+      /* ignore non-control frames */
+    }
+  }
+  ws.onerror = closeSoon
 }
 
 export function startFreshLaunch(input: StartFreshLaunchInput): string {
@@ -82,7 +124,7 @@ export function startFreshLaunch(input: StartFreshLaunchInput): string {
     createdAt,
   })
 
-  input.openDrawer({
+  const drawerSession: LaunchDrawerSession = {
     title: input.title,
     cli: input.cli,
     cwd: cwdLabel,
@@ -100,7 +142,10 @@ export function startFreshLaunch(input: StartFreshLaunchInput): string {
       ctxProject: d.ctxProject,
       ctxTask: input.dest === 'task' ? d.ctxTask : false,
     },
-  })
+  }
+
+  primeFreshLaunch(drawerSession.launch, (sessionId) => input.resolvePending?.(launchToken, sessionId))
+  input.openDrawer(drawerSession)
 
   return launchToken
 }

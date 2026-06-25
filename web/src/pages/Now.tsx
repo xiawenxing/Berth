@@ -40,14 +40,15 @@ export function Now() {
       pending
         .filter((p) => !p.surfaced)
         .map((p) => ({
-          sessionId: p.tempId,
+          sessionId: p.sessionId ?? p.tempId,
           cli: p.cli,
-          title: '创建中…',
+          title: p.sessionId ? '启动中…' : '创建中…',
           cwd: p.cwd,
           updatedAt: Math.floor(p.createdAt / 1000),
           projectId: p.projectId,
           project: projects.find((x) => x.id === p.projectId)?.name,
           __pending: true,
+          __pendingOpenable: !!p.sessionId,
         })),
     [pending, projects],
   )
@@ -166,21 +167,22 @@ function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void
   const live = useLive()
   const ship = live.shipStatus(s.sessionId, s.updatedAt)
   const pending = !!s.__pending
+  const pendingOpenable = pending && !!s.__pendingOpenable
 
   return (
     <div
       role="button"
-      tabIndex={pending ? -1 : 0}
-      onClick={() => !pending && onOpen(s)}
+      tabIndex={pending && !pendingOpenable ? -1 : 0}
+      onClick={() => (!pending || pendingOpenable) && onOpen(s)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          if (!pending) onOpen(s)
+          if (!pending || pendingOpenable) onOpen(s)
         }
       }}
       className={cn(
         'group flex h-[34px] items-center gap-2 rounded px-2 text-left',
-        pending ? 'cursor-default text-muted-foreground' : 'cursor-pointer hover:bg-sidebar-accent',
+        pending && !pendingOpenable ? 'cursor-default text-muted-foreground' : 'cursor-pointer hover:bg-sidebar-accent',
       )}
     >
       <ShipGlyph status={ship} />

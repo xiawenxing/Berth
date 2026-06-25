@@ -25,6 +25,7 @@ export interface PendingLaunch {
 // manual 同步. Placeholders also self-expire so a launch that never produces a session can't poll forever.
 const PENDING_POLL_MS = 2500
 const PENDING_TTL_MS = 120_000
+const LAUNCHED_PENDING_TTL_MS = 30 * 60_000
 const cwdKey = (c: string) => (c || '').replace(/\/+$/, '')
 
 // Does a surfaced session belong to this in-flight launch? Used for the codex fallback match (no
@@ -137,7 +138,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     let changed = false
     const next: PendingLaunch[] = []
     for (const p of pending) {
-      const expired = now - p.createdAt >= PENDING_TTL_MS
+      const ttl = p.sessionId ? LAUNCHED_PENDING_TTL_MS : PENDING_TTL_MS
+      const expired = now - p.createdAt >= ttl
       const surfaced = findSurfacedSession(sessions, p)
       if (surfaced) {
         if (!expired && needsTitleBackfill(p, surfaced)) {

@@ -140,8 +140,22 @@ function Row({
   // An in-flight launch placeholder: not yet a real, openable session — show 创建中… with a spinner
   // and no row actions. It's replaced by the real row the moment the session surfaces (data layer).
   if (s.pending) {
+    const openable = !!s.pendingOpenable && !!onOpen
     return (
-      <div className="group relative flex h-[34px] items-center gap-2.5 border-t border-border/55 px-3.5 first:border-t-border">
+      <div
+        role={openable ? 'button' : undefined}
+        tabIndex={openable ? 0 : undefined}
+        onClick={() => openable && onOpen?.(s)}
+        onKeyDown={(e) => {
+          if (!openable || (e.key !== 'Enter' && e.key !== ' ')) return
+          e.preventDefault()
+          onOpen?.(s)
+        }}
+        className={cn(
+          'group relative flex h-[34px] items-center gap-2.5 border-t border-border/55 px-3.5 first:border-t-border',
+          openable && 'cursor-pointer hover:bg-sidebar-accent',
+        )}
+      >
         <span className="flex w-3.5 flex-none items-center justify-center">
           <Loader2 size={12} className="animate-spin text-text-dim" />
         </span>
@@ -557,6 +571,7 @@ export function SessionModule({
                 count={pendingRows.length}
                 rows={pendingRows}
                 showCwd
+                onOpen={onOpen}
               />
             )}
             {pin.length > 0 && (

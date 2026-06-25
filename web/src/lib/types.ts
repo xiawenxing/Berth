@@ -39,6 +39,7 @@ export interface SessionRow {
   pinned?: boolean
   /** Optimistic in-flight launch placeholder (创建中…) — not yet a real, openable session. */
   pending?: boolean
+  pendingOpenable?: boolean
 }
 
 export interface CwdGroup {
