@@ -492,23 +492,15 @@ export function Terminal({
   return (
     <div ref={shellRef} className="berth-terminal-shell relative h-full w-full overflow-hidden bg-canvas py-2 pl-4 pr-2">
       <div ref={hostRef} className="berth-xterm h-full w-full" />
-      {showOverlay && (launch ? (
+      {showOverlay && (
+        // Same centered spinner for both modes. The resume overlay is HELD through the reconnect
+        // redraw (see scheduleResumeOverlayHide) so it covers the messy intermediate state — the
+        // spinner just needs to read as "loading", not stand in for the input box.
         <div className="absolute inset-0 flex items-center justify-center gap-3 bg-canvas/90 text-sm text-muted-foreground">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
-          正在启动会话，等待 agent 就绪…
+          {launch ? '正在启动会话，等待 agent 就绪…' : '正在恢复会话…'}
         </div>
-      ) : (
-        // Resume: cover the terminal while the replayed scrollback redraws, with a skeleton standing
-        // in for the agent's input box at the bottom — so the reconnect window reads as "loading"
-        // rather than leaking the half-drawn TUI / stray control sequences into view.
-        <div className="absolute inset-0 flex flex-col justify-end gap-3 bg-canvas/90 p-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
-            正在恢复会话…
-          </div>
-          <div className="h-12 w-full animate-pulse rounded-lg border border-border bg-muted-foreground/10" />
-        </div>
-      ))}
+      )}
     </div>
   )
 }
