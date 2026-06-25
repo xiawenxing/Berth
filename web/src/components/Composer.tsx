@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { Square } from 'lucide-react'
 import { PastedImageStrip, usePastedImages, type PastedImage } from './ImagePaste'
+import { draftKey, usePersistentDraft } from '@/lib/draft-storage'
 
 /**
  * Model B input: a chat composer that sends a user turn (Enter to send, Shift+Enter for newline). When
@@ -10,12 +11,16 @@ export function Composer({
   onSend,
   onInterrupt,
   busy,
+  draftScope = 'ephemeral',
 }: {
   onSend: (text: string, images?: PastedImage[]) => void
   onInterrupt: () => void
   busy: boolean
+  draftScope?: string
 }) {
-  const [text, setText] = useState('')
+  const draft = usePersistentDraft(draftKey(`composer:${draftScope}`))
+  const text = draft.value
+  const setText = draft.setValue
   const taRef = useRef<HTMLTextAreaElement>(null)
   const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
 
@@ -23,7 +28,7 @@ export function Composer({
     const t = text.trim()
     if (busy || (!t && images.length === 0)) return
     onSend(t, images)
-    setText('')
+    draft.clear()
     clearImages()
     if (taRef.current) taRef.current.style.height = 'auto'
   }

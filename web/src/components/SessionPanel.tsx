@@ -48,10 +48,11 @@ export function SessionPanel({
 
 function ChatPanel({ sessionId, launch, onLaunched }: { sessionId?: string; launch?: LaunchSpec; onLaunched?: (sessionId: string) => void }) {
   const chat = useChatSession({ sessionId, launch, onLaunched })
+  const draftScope = launch?.launchToken ? `launch:${launch.launchToken}` : sessionId ? `session:${sessionId}` : 'unknown'
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-canvas">
       <ChatTranscript turns={chat.turns} thinking={chat.thinking} loading={chat.historyLoading} error={chat.historyError} />
-      <Composer onSend={chat.send} onInterrupt={chat.interrupt} busy={chat.busy} />
+      <Composer onSend={chat.send} onInterrupt={chat.interrupt} busy={chat.busy} draftScope={draftScope} />
     </div>
   )
 }

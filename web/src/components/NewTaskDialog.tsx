@@ -6,6 +6,7 @@ import { LaunchConfigFields } from './LaunchConfigFields'
 import type { AgentCli, AgentConfig, ApiProject } from '@/lib/api'
 import { initCargo, type CargoState } from '@/lib/launch-cargo'
 import type { Task } from '@/lib/types'
+import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
 
 /**
  * 新建任务 — minimal immediate-create model: one big title textarea + two small
@@ -41,10 +42,11 @@ export function NewTaskDialog({
   const selectedAgent = enabledAgents.find((a) => a.cli === cli) ?? enabledAgents[0]
   const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
   const canRun = !run || (!!project?.id && !!selectedAgent)
+  const taskDraftKey = draftKey(`new-task:${project?.id ?? 'global'}`)
 
   useEffect(() => {
     if (open && !wasOpen.current) {
-      setText('')
+      setText(readDraft(taskDraftKey))
       setAi(true)
       setRun(false)
       setAdjust(false)
@@ -54,7 +56,7 @@ export function NewTaskDialog({
       setTimeout(() => ref.current?.focus(), 0)
     }
     wasOpen.current = open
-  }, [open, clearImages, enabledPaths, project?.lastCwd])
+  }, [open, clearImages, enabledPaths, project?.lastCwd, taskDraftKey])
 
   useEffect(() => {
     setCli((prev) => (enabledAgents.some((a) => a.cli === prev) ? prev : enabledAgents[0]?.cli ?? 'claude'))
@@ -79,11 +81,17 @@ export function NewTaskDialog({
       images: pastedImageDataUrls(images),
       launch: run && selectedAgent ? { cli: selectedAgent.cli, cargo } : undefined,
     })
+    clearDraft(taskDraftKey)
+    onClose()
+  }
+
+  const cancel = () => {
+    clearDraft(taskDraftKey)
     onClose()
   }
 
   return (
-    <Dialog open={open} onClose={onClose} width={run ? 560 : 460}>
+    <Dialog open={open} onClose={cancel} width={run ? 560 : 460}>
       <div className="border-b border-border px-4 py-3">
         <h3 className="text-[13px] font-semibold text-foreground">新建任务</h3>
         <p className="mt-0.5 text-[11px] text-muted-foreground">{run ? '创建后直接起航 · 配置会随任务一起生效' : '写个标题就走 · 港务助手在后台补全'}</p>
@@ -94,7 +102,10 @@ export function NewTaskDialog({
         <textarea
           ref={ref}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value)
+            writeDraft(taskDraftKey, e.target.value)
+          }}
           onPaste={onPasteImages}
           rows={4}
           placeholder="粗略写个标题，或贴一段描述/图片都行"
@@ -135,7 +146,7 @@ export function NewTaskDialog({
       </div>
 
       <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
-        <button onClick={onClose} className="rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
+        <button onClick={cancel} className="rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
           取消
         </button>
         <button onClick={create} disabled={!canRun} className="rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground disabled:opacity-50">

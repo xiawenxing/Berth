@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { api, type AgentCli } from '@/lib/api'
 import { initCargo, type CargoState } from '@/lib/launch-cargo'
 import { startFreshLaunch } from '@/lib/launch-runner'
+import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
 
 /**
  * 装载台 / 起航 — destination (任务 | 自由提问) + 货舱 (三级上下文开关 + 统一目录列表)。
@@ -33,13 +34,15 @@ export function LaunchDialog() {
   const enabledAgents = useMemo(() => agents.list.filter((a) => a.enabled), [agents.list])
   const selectedAgent = enabledAgents.find((a) => a.cli === cli) ?? enabledAgents[0]
   const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
+  const launchDraftKey = launch ? draftKey(`launch:${launch.projectId ?? 'none'}:${launch.todoKey ?? 'free'}`) : null
 
   useEffect(() => {
     if (launch && prevLaunch.current !== launch) {
       const hasTask = launch.taskTitle ? launch.dest === 'task' : false
       setDest(launch.taskTitle ? launch.dest : 'free')
-      setFreeText('')
-      setTaskNote('')
+      const saved = readDraft(draftKey(`launch:${launch.projectId ?? 'none'}:${launch.todoKey ?? 'free'}`))
+      setFreeText(launch.dest === 'free' ? saved : '')
+      setTaskNote(launch.dest === 'task' ? saved : '')
       clearImages()
       setAdjust(false)
       setExtraDir('')
@@ -75,6 +78,7 @@ export function LaunchDialog() {
 
   const sail = () => {
     if (!canSail || !selectedAgent) return
+    if (launchDraftKey) clearDraft(launchDraftKey)
     closeLaunch()
     startFreshLaunch({
       dest,
@@ -96,7 +100,14 @@ export function LaunchDialog() {
   }
 
   return (
-    <Dialog open onClose={closeLaunch} width={560}>
+    <Dialog
+      open
+      onClose={() => {
+        if (launchDraftKey) clearDraft(launchDraftKey)
+        closeLaunch()
+      }}
+      width={560}
+    >
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <Anchor size={15} className="text-brand" />
         <h3 className="text-[13px] font-semibold text-foreground">起航</h3>
@@ -117,7 +128,10 @@ export function LaunchDialog() {
           {dest === 'free' && (
             <textarea
               value={freeText}
-              onChange={(e) => setFreeText(e.target.value)}
+              onChange={(e) => {
+                setFreeText(e.target.value)
+                if (launchDraftKey) writeDraft(launchDraftKey, e.target.value)
+              }}
               onPaste={onPasteImages}
               rows={2}
               placeholder="想让 agent 做什么…（可粘贴图片）"
@@ -128,7 +142,10 @@ export function LaunchDialog() {
           {dest === 'task' && taskTitle && (
             <textarea
               value={taskNote}
-              onChange={(e) => setTaskNote(e.target.value)}
+              onChange={(e) => {
+                setTaskNote(e.target.value)
+                if (launchDraftKey) writeDraft(launchDraftKey, e.target.value)
+              }}
               rows={3}
               placeholder="补充本次会话的额外背景、范围或具体要求…"
               className="mt-2 w-full resize-none rounded-md border border-border bg-card px-2.5 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
@@ -154,7 +171,13 @@ export function LaunchDialog() {
 
       <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
         {!canSail && <span className="mr-auto text-[11px] text-warning">{enabledAgents.length === 0 ? '请先在设置页启用启动 Agent' : '无项目上下文，请从某个项目里起航'}</span>}
-        <button onClick={closeLaunch} className="rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
+        <button
+          onClick={() => {
+            if (launchDraftKey) clearDraft(launchDraftKey)
+            closeLaunch()
+          }}
+          className="rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent"
+        >
           取消
         </button>
         <button
