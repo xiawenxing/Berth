@@ -3,7 +3,8 @@ import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, Folder
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
 import { useLive } from '@/lib/live'
-import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
+import { useShowMore } from '@/lib/paging'
+import { ShowMoreToggle } from '@/components/ui/ShowMoreToggle'
 import { type SessionRow, type CwdGroup, type ShipStatus } from '@/lib/types'
 import { CliBadge } from './TaskCard'
 
@@ -370,10 +371,9 @@ function Section({
   onUnimportGroup?: (ids: string[]) => void // 取消导入整组
 }) {
   const [collapsed, setCollapsed] = useState(false)
-  const [shown, setShown] = useState(limit ?? rows.length)
+  const { visibleCount, hidden, expanded, toggle } = useShowMore(rows.length, limit ?? rows.length)
   const limited = limit != null && rows.length > limit
-  const visible = limited ? rows.slice(0, shown) : rows
-  const hidden = rows.length - visible.length
+  const visible = limited ? rows.slice(0, visibleCount) : rows
   const groupMenuBtnRef = useRef<HTMLSpanElement>(null)
   const [groupMenuOpen, setGroupMenuOpen] = useState(false)
   const hasGroupMenu = !!(onDetachGroup || onUnimportGroup)
@@ -472,16 +472,13 @@ function Section({
             />
           ))}
           {limited && (
-            <button
-              onClick={() => {
-                if (hidden > 0) setShown((v) => Math.min(v + SESSION_SHOW_MORE_PAGE, rows.length))
-                else setShown(limit)
-              }}
-              className="ml-[38px] flex items-center gap-1 py-1.5 text-left text-[11px] font-medium text-text-dim hover:text-muted-foreground"
-            >
-              <ChevronDown size={12} />
-              {hidden > 0 ? `Show more (${hidden})` : 'Show less'}
-            </button>
+            <ShowMoreToggle
+              hidden={hidden}
+              total={rows.length}
+              expanded={expanded}
+              onToggle={toggle}
+              className="ml-[38px] py-1.5"
+            />
           )}
         </div>
       )}

@@ -12,7 +12,8 @@ import { ImportDialog } from '@/components/ImportDialog'
 import { ImportChooser, type ImportChoice } from '@/components/ImportChooser'
 import { CliImportDialog } from '@/components/CliImportDialog'
 import { ImportByIdDialog } from '@/components/ImportByIdDialog'
-import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
+import { useShowMore } from '@/lib/paging'
+import { ShowMoreToggle } from '@/components/ui/ShowMoreToggle'
 import { type ShipStatus } from '@/lib/types'
 import type { ApiSession, ApiProject, PreviewSession } from '@/lib/api'
 
@@ -384,10 +385,9 @@ function SessionGroup({
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const LIMIT = 4
-  const [shown, setShown] = useState(LIMIT)
+  const { visibleCount, hidden, expanded, toggle } = useShowMore(sessions.length, LIMIT)
   if (sessions.length === 0) return null
-  const visible = sessions.slice(0, shown)
-  const hidden = sessions.length - visible.length
+  const visible = sessions.slice(0, visibleCount)
   return (
     <div>
       <button
@@ -416,15 +416,13 @@ function SessionGroup({
             />
           ))}
           {sessions.length > LIMIT && (
-            <button
-              onClick={() => {
-                if (hidden > 0) setShown((v) => Math.min(v + SESSION_SHOW_MORE_PAGE, sessions.length))
-                else setShown(LIMIT)
-              }}
-              className="px-3 py-1 pl-[34px] text-left text-[11px] font-medium text-text-dim hover:text-brand"
-            >
-              {hidden > 0 ? `展开更多 (${hidden})` : '收起'}
-            </button>
+            <ShowMoreToggle
+              hidden={hidden}
+              total={sessions.length}
+              expanded={expanded}
+              onToggle={toggle}
+              className="px-3 py-1 pl-[34px]"
+            />
           )}
         </div>
       )}
