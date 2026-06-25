@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, FolderInput, ChevronLeft, ChevronRight, MessagesSquare } from 'lucide-react'
+import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
 import { useData } from '@/lib/data'
@@ -19,7 +19,6 @@ export function Settings() {
   }
   const [proactive, setProactive] = useState(true)
   const [autoTitle, setAutoTitle] = useState(true)
-  const [dirs, setDirs] = useState(['~/Code/berth', '~/Code', '~/.config'])
   const { renderMode, setRenderMode } = useUI()
   // Switching render mode kills + respawns each session in the other mode (A↔B). Doing that to a
   // running session would interrupt its in-flight turn, so the toggle is locked while any session is
@@ -174,21 +173,15 @@ export function Settings() {
           )}
         </Card>
 
-        <Card icon={<FileText size={14} />} title="上下文与文档" hint="任务/项目的 md 与图片 · 会话导入目录">
+        <Card icon={<FileText size={14} />} title="上下文与文档" hint="任务/项目的 md 与图片">
           <Row label="上下文文档根目录">
             <code className="rounded bg-card px-2 py-1 font-mono text-[12px] text-foreground">~/.berth/docs</code>
             <button className="rounded-md border border-border px-2 py-1 text-[12px] hover:bg-accent">选择</button>
           </Row>
-          <div className="text-[11px] text-muted-foreground">会话导入目录</div>
-          {dirs.map((d) => (
-            <div key={d} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
-              <code className="flex-1 font-mono text-[12px] text-foreground">{d}</code>
-              <button onClick={() => setDirs((x) => x.filter((y) => y !== d))} className="text-text-dim hover:text-destructive"><X size={13} /></button>
-            </div>
-          ))}
-          <button className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground hover:border-brand hover:text-brand"><FolderInput size={13} /> 导入目录</button>
         </Card>
 
+        {/* 数据源 / 同步——暂时隐藏 */}
+        {false && (
         <Card icon={<RefreshCw size={14} />} title="数据源 / 同步" hint="任务/项目可双向同步到外部系统">
           <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
             <span className="text-[13px] text-foreground">Feishu 多维表格</span>
@@ -205,6 +198,7 @@ export function Settings() {
             <button className="flex items-center gap-1 text-[12px] text-brand hover:underline"><Plus size={12} /> 添加数据源</button>
           </div>
         </Card>
+        )}
 
         <Card icon={<ListChecks size={14} />} title="任务字段" hint="状态 = 看板列（按顺序）· 优先级按顺序高→低着色">
           <Row label="状态选项">
