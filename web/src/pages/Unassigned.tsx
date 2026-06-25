@@ -265,6 +265,7 @@ export function Unassigned() {
             setImportBusy(true)
             try {
               await api.importSessions(ids) // project-less import → surfaces under 无归属
+              live.markSeenMany(ids)        // imported sessions default to READ, not unread
               setImportDlg(null)
               doResync()
             } finally {
@@ -284,6 +285,7 @@ export function Unassigned() {
             setImportBusy(true)
             try {
               await api.importSessions(ids) // project-less import → surfaces under 无归属
+              live.markSeenMany(ids)        // imported sessions default to READ, not unread
               setCliDlg(null)
               doResync()
             } finally {
@@ -295,8 +297,19 @@ export function Unassigned() {
 
       {idDlgOpen && (
         <ImportByIdDialog
+          busy={importBusy}
           onCancel={() => setIdDlgOpen(false)}
-          onDone={() => { setIdDlgOpen(false); doResync() }}
+          onImport={async (ids) => {
+            setImportBusy(true)
+            try {
+              await api.importSessions(ids) // project-less import → surfaces under 无归属
+              live.markSeenMany(ids)        // imported sessions default to READ, not unread
+              setIdDlgOpen(false)
+              doResync()
+            } finally {
+              setImportBusy(false)
+            }
+          }}
         />
       )}
     </div>

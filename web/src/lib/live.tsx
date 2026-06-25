@@ -6,9 +6,9 @@ import { UNREAD_EPOCH_KEY, resolveShipStatus } from './unread'
 // lastSeen map. Ship status: running→在航(sail); settled & newer than lastSeen→靠岸·待查收(dock);
 // otherwise 已停泊(moored).
 
-type Activity = 'running' | 'settled'
+export type Activity = 'running' | 'settled'
 
-interface LiveState {
+export interface LiveState {
   activity: Map<string, Activity>
   /** newest real-message time per settled session (for the unread/dock decision) */
   updatedAt: Map<string, number>
@@ -17,6 +17,11 @@ interface LiveState {
    *  ref-backed and don't change `activity`'s reference, so they'd otherwise go stale. */
   rev: number
   markSeen: (sessionId: string) => void
+  /** Batch markSeen for many ids at once (one localStorage write + one bump). Used on import so a
+   *  freshly imported session defaults to READ — importing is an explicit acknowledgment, and a
+   *  historical session that happens to post-date the unread-epoch baseline shouldn't surface as
+   *  unread just because it was brought into Berth. */
+  markSeenMany: (sessionIds: string[]) => void
   /** Explicitly flag a session as unread (→ dock) regardless of activity, so 标为未读 works for any
    *  row — including settled/old sessions not in the activity map. Cleared by markSeen / opening. */
   markUnread: (sessionId: string) => void
@@ -125,6 +130,22 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
       try {
         localStorage.setItem(SEEN_KEY, JSON.stringify(seen.current))
+      } catch {
+        /* ignore quota */
+      }
+      bump()
+    },
+    markSeenMany: (sessionIds) => {
+      if (sessionIds.length === 0) return
+      const now = Math.floor(Date.now() / 1000)
+      let unreadChanged = false
+      for (const id of sessionIds) {
+        seen.current[id] = now
+        if (unread.current[id]) { delete unread.current[id]; unreadChanged = true }
+      }
+      try {
+        localStorage.setItem(SEEN_KEY, JSON.stringify(seen.current))
+        if (unreadChanged) localStorage.setItem(UNREAD_KEY, JSON.stringify(unread.current))
       } catch {
         /* ignore quota */
       }

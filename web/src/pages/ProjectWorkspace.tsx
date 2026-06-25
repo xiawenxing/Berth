@@ -575,7 +575,7 @@ export function ProjectWorkspace() {
             try {
               // §10.3: when imported from 「导入其他目录」 with the box checked, also register the dir.
               if (importDlg.allowRegister && alsoRegister) await api.addPath(id, importDlg.path, { enabled: true })
-              if (ids.length) await api.importSessions(ids, id)
+              if (ids.length) { await api.importSessions(ids, id); live.markSeenMany(ids) } // imported → READ
               setImportDlg(null)
               doResync()
             } finally {

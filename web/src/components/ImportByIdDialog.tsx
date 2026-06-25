@@ -12,19 +12,20 @@ export function parseIds(text: string): string[] {
 /**
  * Import-by-session-id dialog. Paste one or more ids → look them up across all CLI stores
  * (preview-by-ids) → confirm which found sessions to import, with a warning listing any not-found ids.
- * Import goes through importSessions (POST /session-import); pure-ish UI that calls back onDone.
+ * The actual import is delegated to the caller via `onImport` (which also marks them read + resyncs).
  */
-export function ImportByIdDialog({ onCancel, onDone }: { onCancel: () => void; onDone: () => void }) {
+export function ImportByIdDialog({ busy, onCancel, onImport }: { busy: boolean; onCancel: () => void; onImport: (ids: string[]) => Promise<void> }) {
   const [text, setText] = useState('')
   const [preview, setPreview] = useState<{ found: PreviewSession[]; notFound: string[] } | null>(null)
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
-  const [busy, setBusy] = useState(false)
+  const [looking, setLooking] = useState(false)
+  const lock = busy || looking
 
   const ids = parseIds(text)
 
   const doLookup = async () => {
-    if (busy || ids.length === 0) return
-    setBusy(true)
+    if (lock || ids.length === 0) return
+    setLooking(true)
     try {
       const res = await api.previewByIds(ids)
       setPreview(res)
@@ -32,7 +33,7 @@ export function ImportByIdDialog({ onCancel, onDone }: { onCancel: () => void; o
     } catch {
       setPreview({ found: [], notFound: ids })
     } finally {
-      setBusy(false)
+      setLooking(false)
     }
   }
 
@@ -44,20 +45,14 @@ export function ImportByIdDialog({ onCancel, onDone }: { onCancel: () => void; o
     })
 
   const doImport = async () => {
-    if (busy || checked.size === 0) return
-    setBusy(true)
-    try {
-      await api.importSessions([...checked])
-      onDone()
-    } finally {
-      setBusy(false)
-    }
+    if (lock || checked.size === 0) return
+    await onImport([...checked])
   }
 
   const n = checked.size
 
   return (
-    <Dialog open onClose={busy ? () => {} : onCancel} width={520}>
+    <Dialog open onClose={lock ? () => {} : onCancel} width={520}>
       <div className="flex flex-col">
         <div className="border-b border-border px-4 py-3">
           <div className="text-[13px] font-semibold text-foreground">按会话 ID 导入</div>
@@ -102,22 +97,22 @@ export function ImportByIdDialog({ onCancel, onDone }: { onCancel: () => void; o
 
         <div className="flex items-center gap-2 border-t border-border px-4 py-3">
           <span className="flex-1" />
-          <button className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50" onClick={onCancel} disabled={busy}>
+          <button className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50" onClick={onCancel} disabled={lock}>
             取消
           </button>
           {!preview ? (
             <button
               className="rounded-md bg-brand px-3 py-1.5 text-[12px] font-medium text-brand-foreground hover:bg-brand/90 disabled:opacity-50"
               onClick={doLookup}
-              disabled={busy || ids.length === 0}
+              disabled={lock || ids.length === 0}
             >
-              {busy ? '查找中…' : `查找 (${ids.length})`}
+              {looking ? '查找中…' : `查找 (${ids.length})`}
             </button>
           ) : (
             <button
               className="rounded-md bg-brand px-3 py-1.5 text-[12px] font-medium text-brand-foreground hover:bg-brand/90 disabled:opacity-50"
               onClick={doImport}
-              disabled={busy || n === 0}
+              disabled={lock || n === 0}
             >
               {busy ? '导入中…' : `导入选中 (${n})`}
             </button>
