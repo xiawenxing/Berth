@@ -12,9 +12,27 @@ class FakeWS {
   close() {}
 }
 
+function createMemoryStorage(): Storage {
+  const data = new Map<string, string>()
+  return {
+    get length() { return data.size },
+    clear: () => data.clear(),
+    getItem: (key) => data.get(key) ?? null,
+    key: (index) => Array.from(data.keys())[index] ?? null,
+    removeItem: (key) => { data.delete(key) },
+    setItem: (key, value) => { data.set(key, String(value)) },
+  }
+}
+
+function installMemoryStorage() {
+  const storage = createMemoryStorage()
+  Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true })
+  Object.defineProperty(window, 'localStorage', { value: storage, configurable: true })
+}
+
 beforeEach(() => {
   ;(globalThis as any).WebSocket = FakeWS
-  localStorage.clear()
+  installMemoryStorage()
 })
 afterEach(() => localStorage.clear())
 
