@@ -178,6 +178,10 @@ export function Terminal({
       // No smooth-scroll animation: animating every wheel tick over 80ms made scrollback feel laggy
       // and unresponsive (rapid ticks queue/restart the animation). Default 0 = instant, snappy scroll.
       smoothScrollDuration: 0,
+      // Lines moved per wheel notch. xterm's default is 1 (one line/tick), which reads as sluggish
+      // when skimming scrollback; 3 covers ground without overshooting. Alt-scroll uses the separate
+      // fastScrollSensitivity (default 5).
+      scrollSensitivity: 3,
       cursorBlink: true,
       cursorStyle: 'bar',
       convertEol: true,
