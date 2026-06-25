@@ -98,6 +98,8 @@ export function Settings() {
           </Row>
         </Card>
 
+        {/* 会话渲染模式——功能尚未开发完成，暂时隐藏 */}
+        {false && (
         <Card icon={<MessagesSquare size={14} />} title="会话渲染" hint="全局生效 · 决定会话面板用哪种方式呈现（claude / codex / coco 均支持对话模式）">
           <Row label="渲染模式">
             <div className={cn('flex items-center gap-1 rounded-md border border-border p-0.5', anyRunning && 'opacity-50')}>
@@ -113,6 +115,7 @@ export function Settings() {
             </span>
           </Row>
         </Card>
+        )}
 
         <Card icon={<Sparkles size={14} />} title="港务助手 (AI)" hint="用于：会话标题 · 任务进展 · 项目小结 · 关联建议">
           <Row label="管理模型">

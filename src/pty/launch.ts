@@ -60,10 +60,13 @@ export interface FreshOpts {
   addDirs?: string[]; cols?: number; rows?: number
 }
 
-// Only task/execution launches submit a positional first turn. The manifest now rides a silent
-// channel for every CLI (claude `--append-system-prompt-file`, codex + coco SessionStart hooks), so
-// the positional prompt carries only the user's actual first message — never the context. A taskless
-// "new session" stays idle (no positional) and still gets its context silently via the hook.
+// The manifest rides a silent channel for every CLI (claude `--append-system-prompt-file`, codex +
+// coco SessionStart hooks), so a positional prompt would only ever carry the user's actual first
+// message — never the context. NOTE: the live interactive (Model A) launch path no longer passes a
+// positional prompt at all — relying on the CLI to auto-submit a positional raced its startup and
+// dropped the turn under slow startup, so the server now types the first turn over the PTY after a
+// readiness signal (server/auto-submit-prompt.ts). freshArgv keeps positional support (still exercised
+// by tests / available to callers); handleFresh just stops feeding it `initialPrompt`.
 function positional(o: FreshOpts): string {
   return o.initialPrompt ?? ''
 }

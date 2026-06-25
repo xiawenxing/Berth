@@ -110,8 +110,13 @@ live-reloading SPA. `npm test` = unit; `*.live.test.ts` are gated behind `BERTH_
 - `pty/binaries.ts` — `resolveAgentBinary` (pins coco at `~/.local/bin/coco`, blacklists the Trae IDE
   launcher, `verifyCoco` identity check — **cached**, see gotchas).
 - `pty/launch.ts` — `resumeArgv`/`resumeSession` and `freshArgv`/`launchFresh`. Fresh launches add
-  **bypass-permissions** flags; only task/execution launches submit a positional first prompt.
-  claude/coco pre-mint `--session-id`. The manifest rides a silent channel per CLI (see gotcha #12).
+  **bypass-permissions** flags. claude/coco pre-mint `--session-id`. The manifest rides a silent
+  channel per CLI (see gotcha #12). The first user turn is **NOT** a positional argv on the live path
+  — `server/auto-submit-prompt.ts` types it over the PTY after a readiness signal (gotcha #15).
+- `server/auto-submit-prompt.ts` — `autoSubmitWhenReady(pty, prompt)`: robust first-turn submission
+  that waits for the CLI's bracketed-paste readiness marker (`\x1b[?2004h`) then types the prompt as a
+  bracketed paste + Enter (timeout fallback types anyway). Replaced relying on the CLI to auto-submit a
+  positional prompt, which raced startup and dropped the turn under slow CLI launch.
 - `pty/coco-hook.ts` — `ensureCocoBerthHook()` registers coco's silent `session_start` context hook
   in `~/.trae/traecli.yaml` (idempotent, no-clobber); `writeCocoContextPayload()` pre-encodes the
   manifest as the hook's JSON-envelope stdout.
@@ -368,6 +373,15 @@ is the session-grained model that replaced the old directory-grained one (where 
     never `bindIntent` → never surface (permanent deadlock). reconcile constrains candidates by intent
     cwd/cli/time internally, so the wider input is safe. Same trap applies if you ever re-narrow the
     surfacing filter: re-check that the codex bind path still sees the session.
+15. **The first turn is typed after readiness, NOT passed as a positional argv.** Relying on the CLI
+    to auto-submit a positional prompt (`claude … -- <prompt>`) races the CLI's interactive startup:
+    under slow startup (MCP loading, update check, transient startup screens) the positional turn was
+    silently dropped — the "概率性 query 不自动发送" bug. `server/auto-submit-prompt.ts`
+    `autoSubmitWhenReady` waits for the bracketed-paste readiness marker (`\x1b[?2004h`, the same gate
+    the browser image-paste path uses) then types the prompt+Enter into the PTY. `handleFresh`'s Model A
+    branch stops feeding `launchFresh` an `initialPrompt`; `freshArgv` keeps positional support for tests
+    only. Image launches are unaffected (their first turn rides the client prime socket; server
+    `initialPrompt` is undefined there, so no double-submission). Model B (stream) delivers its own turn.
 
 ---
 

@@ -7,6 +7,7 @@ import { berthHome } from '../paths'
 import { join } from 'node:path'
 import { getCache, getStore } from './store-singleton'
 import { launchFresh } from '../pty/launch'
+import { autoSubmitWhenReady } from './auto-submit-prompt'
 import { resolveAgentBinary, codexHookTrustSupportCached } from '../pty/binaries'
 import { hasLivePty, liveDriverMode, registerPty, registerSession, attachViewer, killPty } from './pty-registry'
 import { parsePtyReplayBytes } from './pty-spool'
@@ -488,11 +489,15 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     // >IDLE_MS) so a freshly-launched chat turn never falsely settles to 停泊 mid-turn.
     registerSession(launchKey, driver, { running: !!initialPrompt, holdRunning: () => driver.turnActive?.() ?? false, onExit })
   } else {
+    // The first turn is NOT passed as a positional argv: the CLI's positional auto-submit races its
+    // interactive startup and silently drops the turn under slow startup (MCP loading, update check,
+    // transient startup screens) — the reported "概率性 query 不自动发送" bug. Instead we spawn without
+    // the positional and type the prompt over the PTY once the CLI signals readiness
+    // (autoSubmitWhenReady), the same readiness gate the browser image-paste path already uses.
     const pty = launchFresh(cli, {
       cwd,
       sessionId: plan.sessionId ?? undefined,
       injectFile,
-      initialPrompt,
       model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
       addDirs: finalAddDirs,
       cols,
@@ -503,6 +508,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       holdRunning: cli === 'codex' ? codexHoldRunning(initialPrompt ? 'running' : 'unknown') : undefined,
       onExit,
     })
+    if (initialPrompt) autoSubmitWhenReady(pty, initialPrompt)
   }
   // Tell the client which session id this fresh launch maps to, so it can bind the drawer to the
   // live registry key. This MUST be after register*: 2.0 re-opens /pty?sessionId=… immediately on

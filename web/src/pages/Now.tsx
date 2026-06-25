@@ -60,9 +60,17 @@ export function Now() {
   const launchTask = (t: ApiTask) =>
     openLaunch({ dest: 'task', taskTitle: t.title, projectId: t.projectId ?? undefined, todoKey: t.id })
 
-  // 今日交付: tasks whose ddl is today's local date, across all projects.
+  // 今日交付: tasks due today, plus overdue (ddl before today) ones still undelivered —
+  // an overdue item needs shipping today as much as a today-due one. Overdue-but-done tasks
+  // drop off (already shipped). Overdue first (oldest ddl first), then today's.
   const today = todayISO()
-  const todayTasks = useMemo(() => tasks.filter((t) => t.ddl === today), [tasks, today])
+  const todayTasks = useMemo(
+    () =>
+      tasks
+        .filter((t) => t.ddl && (t.ddl === today || (t.ddl < today && !isDoneStatus(t.status))))
+        .sort((a, b) => (a.ddl ?? '').localeCompare(b.ddl ?? '')),
+    [tasks, today],
+  )
   const doneN = todayTasks.filter((t) => isDoneStatus(t.status)).length
 
   // Ship sections: real sessions across all projects, project-tagged.
@@ -105,6 +113,7 @@ export function Now() {
               <TaskRow
                 key={t.id}
                 t={t}
+                overdue={!!t.ddl && t.ddl < today}
                 resolve={(id) => byId.get(id)}
                 onOpen={openSession}
                 onLaunch={() => launchTask(t)}
@@ -316,11 +325,13 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
 
 function TaskRow({
   t,
+  overdue,
   resolve,
   onOpen,
   onLaunch,
 }: {
   t: ApiTask
+  overdue?: boolean
   resolve: (sessionId: string) => ApiSession | undefined
   onOpen: (s: ApiSession) => void
   onLaunch: () => void
@@ -340,6 +351,8 @@ function TaskRow({
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground" title={t.title}>{t.title}</span>
         {delivered ? (
           <span className="flex items-center gap-0.5 text-[10.5px] text-success"><Check size={11} /> 已交付</span>
+        ) : overdue ? (
+          <span className="flex items-center gap-0.5 rounded bg-destructive/15 px-1 py-0.5 text-[10.5px] text-destructive" title={`截止 ${t.ddl}`}><CalendarClock size={11} /> 逾期</span>
         ) : (
           <span className="flex items-center gap-0.5 rounded bg-warning/15 px-1 py-0.5 text-[10.5px] text-warning"><CalendarClock size={11} /> 今日</span>
         )}
