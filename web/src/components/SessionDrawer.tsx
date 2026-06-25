@@ -26,6 +26,14 @@ export function SessionDrawer() {
   useEffect(() => () => {
     if (optimisticTimer.current !== null) clearTimeout(optimisticTimer.current)
   }, [])
+  // Tell live which session is on screen so output landing on it stays read (see live.tsx act
+  // handler). Without this, a result that arrives while the drawer is open would surface as unread
+  // until the user closes & reopens the session.
+  const { setActiveSession } = live
+  useEffect(() => {
+    setActiveSession(drawer?.sessionId ?? null)
+    return () => setActiveSession(null)
+  }, [drawer?.sessionId, setActiveSession])
   useEffect(() => {
     const onRekey = (e: Event) => {
       const detail = (e as CustomEvent<{ from?: string; to?: string }>).detail

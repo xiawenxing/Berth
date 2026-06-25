@@ -6,10 +6,19 @@ import { LiveProvider, useLive, type LiveState } from './live'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 // jsdom has no WebSocket; LiveProvider opens one on mount. Stub a no-op so the provider mounts.
+// Records instances so tests can drive incoming /status frames via `FakeWS.last`.
 class FakeWS {
-  onmessage: ((e: unknown) => void) | null = null
+  static last: FakeWS | null = null
+  onmessage: ((e: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
+  constructor() {
+    FakeWS.last = this
+  }
   close() {}
+  /** simulate a server frame */
+  emit(msg: unknown) {
+    this.onmessage?.({ data: JSON.stringify(msg) })
+  }
 }
 
 function createMemoryStorage(): Storage {
@@ -86,6 +95,48 @@ describe('markSeenMany — imported sessions default to read', () => {
       expect(live().shipStatus('z', 0)).toBe('dock')
       act(() => live().markSeenMany(['z']))
       expect(live().shipStatus('z', 0)).toBe('moored')
+    } finally {
+      cleanup()
+    }
+  })
+})
+
+describe('setActiveSession — output that lands on the open session stays read', () => {
+  it('keeps the active session read when an act frame bumps its updatedAt', () => {
+    const { live, cleanup } = mountLive()
+    try {
+      // Open the session (mark read at open time, as the page does), then declare it active.
+      act(() => live().markSeen('open-1'))
+      act(() => live().setActiveSession('open-1'))
+      // A result lands while the drawer is open: settled with a newer updatedAt.
+      act(() => FakeWS.last!.emit({ t: 'act', sessionId: 'open-1', state: 'settled', updatedAt: 999999999 }))
+      expect(live().shipStatus('open-1')).toBe('moored') // still read — user is looking at it
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('still marks a non-active session unread when its updatedAt bumps', () => {
+    localStorage.setItem('berth-unread-epoch', '100') // baseline in the past so new output reads as unread
+    const { live, cleanup } = mountLive()
+    try {
+      act(() => live().markSeen('open-1'))
+      act(() => live().setActiveSession('open-1'))
+      // Output for a *different* session that isn't open → should become unread.
+      act(() => FakeWS.last!.emit({ t: 'act', sessionId: 'other', state: 'settled', updatedAt: 999999999 }))
+      expect(live().shipStatus('other')).toBe('dock')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('does not clobber an explicit 标为未读 on the open session', () => {
+    const { live, cleanup } = mountLive()
+    try {
+      act(() => live().setActiveSession('open-1'))
+      act(() => live().markUnread('open-1'))
+      act(() => FakeWS.last!.emit({ t: 'act', sessionId: 'open-1', state: 'settled', updatedAt: 999999999 }))
+      expect(live().shipStatus('open-1')).toBe('dock') // explicit unread sticks
     } finally {
       cleanup()
     }

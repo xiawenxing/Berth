@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ShipStatus } from './types'
 import { UNREAD_EPOCH_KEY, resolveShipStatus } from './unread'
 
@@ -25,6 +25,9 @@ export interface LiveState {
   /** Explicitly flag a session as unread (→ dock) regardless of activity, so 标为未读 works for any
    *  row — including settled/old sessions not in the activity map. Cleared by markSeen / opening. */
   markUnread: (sessionId: string) => void
+  /** Register the session currently open in the drawer (or null). While a session is active, output
+   *  that lands on it keeps its lastSeen in sync so it doesn't surface as unread under the user's nose. */
+  setActiveSession: (sessionId: string | null) => void
   shipStatus: (sessionId: string, fallbackUpdatedAt?: number) => ShipStatus
 }
 
@@ -59,8 +62,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const seen = useRef<Record<string, number>>(loadJson(SEEN_KEY, {}))
   const unread = useRef<Record<string, boolean>>(loadJson(UNREAD_KEY, {}))
   const unreadEpoch = useRef(loadUnreadEpoch())
+  const activeSession = useRef<string | null>(null)
   const [rev, setRev] = useState(0)
   const bump = () => setRev((n) => n + 1)
+  // Stable so the drawer can register/clear the active session from an effect without re-firing it.
+  const setActiveSession = useCallback((sessionId: string | null) => {
+    activeSession.current = sessionId
+  }, [])
 
   useEffect(() => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -86,7 +94,21 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             else next.set(m.sessionId, m.state)
             return next
           })
-          if (m.updatedAt) updatedAt.current.set(m.sessionId, m.updatedAt)
+          if (m.updatedAt) {
+            updatedAt.current.set(m.sessionId, m.updatedAt)
+            // If this session is open in the drawer, the user is looking at this very output — keep
+            // its lastSeen in sync so it doesn't flip to unread (dock) under them. We touch only
+            // lastSeen, not the explicit 标为未读 flag, so a manual mark-unread on the open session
+            // still sticks.
+            if (activeSession.current === m.sessionId) {
+              seen.current[m.sessionId] = Math.max(seen.current[m.sessionId] ?? 0, m.updatedAt)
+              try {
+                localStorage.setItem(SEEN_KEY, JSON.stringify(seen.current))
+              } catch {
+                /* ignore quota */
+              }
+            }
+          }
           bump()
         } else if (m.t === 'rekey') {
           setActivity((prev) => {
@@ -160,6 +182,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
       bump()
     },
+    setActiveSession,
     shipStatus: (sessionId, fallbackUpdatedAt) => {
       return resolveShipStatus({
         activity: activity.get(sessionId),
