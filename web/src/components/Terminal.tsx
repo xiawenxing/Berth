@@ -6,7 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
 import { RESUME_MIN_VISIBLE_MS, RESUME_STABLE_READY_MS, RESUME_OVERLAY_FALLBACK_MS } from '@/lib/loading-overlay'
-import { LAUNCH_READY_FALLBACK_MS, LAUNCH_STABLE_READY_MS, shouldMarkLaunchReady } from '@/lib/launch-readiness'
+import { LAUNCH_READY_FALLBACK_MS, LAUNCH_STABLE_READY_MS, LAUNCH_REVEAL_QUIET_MS, shouldMarkLaunchReady, shouldRevealLaunch } from '@/lib/launch-readiness'
 import type { LaunchSpec } from '@/lib/ui-store'
 import '@xterm/xterm/css/xterm.css'
 
@@ -141,17 +141,24 @@ export function Terminal({
   const hostRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
   const [historyBytes, setHistoryBytes] = useState(DEFAULT_PTY_HISTORY_BYTES)
-  // Resume mask is shown immediately and held through the reconnect redraw (consistent across CLIs).
-  // Fresh-launch overlay is also immediate and stays until the CLI is ready-ish, so slow first-time
-  // directory startup does not show a half-built TUI as if it were ready for input.
-  const [showOverlay, setShowOverlay] = useState(false)
+  // Three overlay states:
+  //  - 'opaque' — fresh-launch boot mask; hides the half-built TUI while it's actively streaming.
+  //  - 'veil'   — translucent, frosted, CLICK-THROUGH. Resume uses it the whole time (the terminal
+  //               is settling, not booting from nothing); launch switches to it the moment the CLI
+  //               pauses for the user, so a HITL prompt is visible and answerable, never trapped.
+  //  - 'off'    — hidden.
+  const [overlayMode, setOverlayMode] = useState<'off' | 'opaque' | 'veil'>('off')
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    setShowOverlay(true)
+    setOverlayMode(launch ? 'opaque' : 'veil')
     let firstDataSeen = false
     let launchReady = !launch
+    // Once revealed, the CLI is treated as awaiting the user: the mask drops to a click-through veil
+    // and keystrokes flow live (so a HITL answer reaches the CLI instead of being queued behind a
+    // readiness gate that can't clear until the CLI is answered).
+    let launchRevealed = false
     let recentLaunchOutput = ''
     let queuedLaunchInput = ''
     let lastLaunchDataAt = 0
@@ -159,6 +166,7 @@ export function Terminal({
     let ws: WebSocket | null = null
     let stableLaunchTimer: ReturnType<typeof setTimeout> | null = null
     let launchFallbackTimer: ReturnType<typeof setTimeout> | null = null
+    let revealTimer: ReturnType<typeof setTimeout> | null = null
     // Resume mask lifecycle: shown immediately (above), held for at least RESUME_MIN_VISIBLE_MS so a
     // warm/instant replay doesn't flicker, then kept up until the replayed stream goes quiet for
     // RESUME_STABLE_READY_MS — covering the reconnect redraw. A hard fallback cap drops it for a
@@ -176,7 +184,7 @@ export function Terminal({
       }
       if (resumeStableTimer) { clearTimeout(resumeStableTimer); resumeStableTimer = null }
       if (resumeFallbackTimer) { clearTimeout(resumeFallbackTimer); resumeFallbackTimer = null }
-      setShowOverlay(false)
+      setOverlayMode('off')
     }
     const scheduleResumeOverlayHide = () => {
       if (resumeStableTimer) clearTimeout(resumeStableTimer)
@@ -197,16 +205,26 @@ export function Terminal({
     const markLaunchReady = () => {
       if (launchReady) return
       launchReady = true
+      launchRevealed = true
       if (stableLaunchTimer) { clearTimeout(stableLaunchTimer); stableLaunchTimer = null }
       if (launchFallbackTimer) { clearTimeout(launchFallbackTimer); launchFallbackTimer = null }
-      setShowOverlay(false)
+      if (revealTimer) { clearTimeout(revealTimer); revealTimer = null }
+      setOverlayMode('off')
       flushQueuedLaunchInput()
+    }
+    // Reveal (but don't mark ready): the CLI paused for the user. Lift the opaque mask to a
+    // click-through veil and let NEW keystrokes flow live so an early HITL is answerable. We do NOT
+    // flush queuedLaunchInput here — any pre-pause typed text waits for true readiness, so it can't
+    // get injected into a HITL dialog as a bogus answer.
+    const revealLaunch = () => {
+      if (launchReady || launchRevealed) return
+      launchRevealed = true
+      setOverlayMode('veil')
     }
     const evaluateLaunchReady = () => {
       if (!launch || launchReady) return
       const now = Date.now()
       if (shouldMarkLaunchReady({
-        cli: launch.cli,
         recentOutput: recentLaunchOutput,
         sawData: firstDataSeen,
         quietMs: lastLaunchDataAt ? now - lastLaunchDataAt : 0,
@@ -219,6 +237,15 @@ export function Terminal({
       if (!launch || launchReady) return
       if (stableLaunchTimer) clearTimeout(stableLaunchTimer)
       stableLaunchTimer = setTimeout(evaluateLaunchReady, LAUNCH_STABLE_READY_MS)
+    }
+    const scheduleRevealCheck = () => {
+      if (!launch || launchReady || launchRevealed) return
+      if (revealTimer) clearTimeout(revealTimer)
+      revealTimer = setTimeout(() => {
+        if (shouldRevealLaunch({ sawData: firstDataSeen, quietMs: lastLaunchDataAt ? Date.now() - lastLaunchDataAt : 0 })) {
+          revealLaunch()
+        }
+      }, LAUNCH_REVEAL_QUIET_MS)
     }
     if (launch) {
       launchFallbackTimer = setTimeout(markLaunchReady, LAUNCH_READY_FALLBACK_MS)
@@ -326,7 +353,10 @@ export function Terminal({
     // Resume + auto-submit: when resuming a session with an initial message, send it once the
     // pty socket is open, followed by a carriage return so the agent receives + runs it.
     const sendInput = (d: string) => {
-      if (launch && !launchReady) {
+      // Queue keystrokes only while the launch is still actively booting (not yet revealed). Once
+      // revealed — the CLI paused for the user — input flows live so a HITL answer (y / Enter)
+      // reaches the CLI; otherwise the readiness gate deadlocks (CLI waits for input it never gets).
+      if (launch && !launchReady && !launchRevealed) {
         queuedLaunchInput += d
         return
       }
@@ -414,6 +444,7 @@ export function Terminal({
         lastLaunchDataAt = Date.now()
         evaluateLaunchReady()
         scheduleStableLaunchReady()
+        scheduleRevealCheck()
       } else {
         // Resume: each replayed byte refreshes the quiet timer; the mask drops once the redraw
         // settles (or the min-visible / fallback bounds), never on the first messy byte.
@@ -466,6 +497,7 @@ export function Terminal({
     return () => {
       if (stableLaunchTimer) clearTimeout(stableLaunchTimer)
       if (launchFallbackTimer) clearTimeout(launchFallbackTimer)
+      if (revealTimer) clearTimeout(revealTimer)
       if (resumeStableTimer) clearTimeout(resumeStableTimer)
       if (resumeFallbackTimer) clearTimeout(resumeFallbackTimer)
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
@@ -489,13 +521,22 @@ export function Terminal({
   return (
     <div ref={shellRef} className="berth-terminal-shell relative h-full w-full overflow-hidden bg-canvas py-2 pl-4 pr-2">
       <div ref={hostRef} className="berth-xterm h-full w-full" />
-      {showOverlay && (
-        // Launch: opaque, to hide the half-built TUI during startup. Resume: a lighter,
-        // frosted semi-transparent mask — the terminal is settling underneath, not booting from
-        // nothing, so we veil the reconnect redraw rather than black it out.
-        <div className={`absolute inset-0 flex items-center justify-center gap-3 text-sm text-muted-foreground ${launch ? 'bg-canvas/90' : 'bg-canvas/60 backdrop-blur-sm'}`}>
+      {overlayMode === 'opaque' && (
+        // Fresh-launch boot mask: opaque, to hide the half-built TUI while it actively streams.
+        <div className="absolute inset-0 flex items-center justify-center gap-3 bg-canvas/90 text-sm text-muted-foreground">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
-          {launch ? '正在启动会话，等待 agent 就绪…' : '正在恢复会话…'}
+          正在启动会话，等待 agent 就绪…
+        </div>
+      )}
+      {overlayMode === 'veil' && (
+        // Frosted, semi-transparent, CLICK-THROUGH veil. The terminal underneath is settling (resume)
+        // or paused for the user (a launch HITL): keep the screen center clear so a centered prompt
+        // stays readable/answerable, and pin the hint to the bottom.
+        <div className="pointer-events-none absolute inset-0 bg-canvas/55 backdrop-blur-sm">
+          <div className="absolute inset-x-0 bottom-3 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
+            {launch ? '等待 agent 就绪，可直接响应提示…' : '正在恢复会话…'}
+          </div>
         </div>
       )}
     </div>
