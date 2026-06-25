@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resolveAgentBinary, codexHookTrustSupportCached, codexSupportsHookTrust, warmCodexHookTrustSupport } from '../src/pty/binaries'
+import { resolveAgentBinary, codexHookTrustSupportCached, codexSupportsHookTrust, warmCodexHookTrustSupport, warmCliHelp, cliFlagSupportedCached, clearAgentBinaryCachesForTest } from '../src/pty/binaries'
 import { resumeArgv } from '../src/pty/launch'
 describe('binaries + argv', () => {
   it('pins coco to ~/.local/bin and never returns the trae IDE launcher', { timeout: 25000 }, () => {
@@ -45,5 +45,32 @@ describe('codexSupportsHookTrust', () => {
     expect(codexHookTrustSupportCached(bin)).toBeUndefined()
     await expect(warmCodexHookTrustSupport(bin)).resolves.toBe(true)
     expect(codexHookTrustSupportCached(bin)).toBe(true)
+  })
+})
+
+describe('generic --help capability cache', () => {
+  const fakeCli = (help: string): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'berth-fakecli-'))
+    const bin = join(dir, 'agent')
+    writeFileSync(bin, `#!/bin/sh\ncat <<'EOF'\n${help}\nEOF\n`)
+    chmodSync(bin, 0o755)
+    return bin
+  }
+
+  it('returns undefined before warm, then a definitive answer per flag after warm', async () => {
+    clearAgentBinaryCachesForTest()
+    const bin = fakeCli('Usage:\n  --model <m>\n  --add-dir <d>')
+    expect(cliFlagSupportedCached(bin, '--model')).toBeUndefined()   // not probed yet (warms in bg)
+    await warmCliHelp(bin)
+    expect(cliFlagSupportedCached(bin, '--model')).toBe(true)
+    expect(cliFlagSupportedCached(bin, '--add-dir')).toBe(true)
+    expect(cliFlagSupportedCached(bin, '--append-system-prompt-file')).toBe(false)  // absent
+  })
+
+  it('does not cache a probe that cannot run (retries next time)', async () => {
+    clearAgentBinaryCachesForTest()
+    const missing = join(tmpdir(), 'no-such-agent-binary-xyz')
+    await warmCliHelp(missing)
+    expect(cliFlagSupportedCached(missing, '--model')).toBeUndefined()  // still unknown, not false
   })
 })

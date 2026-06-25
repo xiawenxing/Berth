@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { resolveAgentBinary, codexHookTrustSupportOrWarm } from './binaries'
+import { gateArgvForBinary } from './flag-gate'
 import { ensureClaudeTrust, ensureCodexTrust } from './trust'
 import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
 import { berthHome } from '../paths'
@@ -40,6 +41,17 @@ export function resumeArgv(cli: AgentCli, id: string): string[] {
   }
 }
 
+/**
+ * Drop any version-sensitive flag the resolved binary doesn't support, so an older/newer CLI doesn't
+ * abort the launch on an "unexpected argument". Applied at EVERY spawn site (TUI + stream, fresh +
+ * resume + per-turn). Confirmed-unsupported flags only — see flag-gate.ts. Logs what it drops.
+ */
+function gated(cli: AgentCli, bin: string, argv: string[]): string[] {
+  const { argv: out, dropped } = gateArgvForBinary(cli, bin, argv)
+  if (dropped.length) console.warn(`[berth] ${cli}: dropped flag(s) not supported by this build: ${dropped.join(' ')}`)
+  return out
+}
+
 export interface LaunchOpts { cols?: number; rows?: number }
 
 export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
@@ -51,7 +63,7 @@ export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
   // unattended launch isn't blocked on it (the auto-submitted turn would otherwise never fire).
   if (cli === 'claude') ensureClaudeTrust(cwd)
   else if (cli === 'codex') ensureCodexTrust(cwd)
-  return spawn(bin, resumeArgv(cli, id), {
+  return spawn(bin, gated(cli, bin, resumeArgv(cli, id)), {
     name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: process.env as any,
   })
 }
@@ -161,7 +173,7 @@ export function launchFreshStream(o: FreshOpts): ChildProcess {
   const env = { ...(process.env as any) }
   // detached:true → the child leads its own process group, so the registry's process.kill(-pid)
   // reaps the whole tree (MCP/sub-procs). Verified (task smoke test C1).
-  return spawnChild(bin, freshArgvStream('claude', o), { cwd, env, detached: true, stdio: STREAM_STDIO })
+  return spawnChild(bin, gated('claude', bin, freshArgvStream('claude', o)), { cwd, env, detached: true, stdio: STREAM_STDIO })
 }
 
 export function resumeSessionStream(s: LogicalSession, o: { model?: string } = {}): ChildProcess {
@@ -171,7 +183,7 @@ export function resumeSessionStream(s: LogicalSession, o: { model?: string } = {
   const cwd = ensureLaunchCwd(s.cwd)
   const bin = resolveAgentBinary(cli)
   ensureClaudeTrust(cwd)
-  return spawnChild(bin, resumeArgvStream(cli, id, o), { cwd, env: { ...(process.env as any) }, detached: true, stdio: STREAM_STDIO })
+  return spawnChild(bin, gated(cli, bin, resumeArgvStream(cli, id, o)), { cwd, env: { ...(process.env as any) }, detached: true, stdio: STREAM_STDIO })
 }
 
 // ─── Model B per-turn spawn for codex + coco (single-turn-then-exit: each user turn is a fresh
@@ -202,7 +214,7 @@ export function spawnPerTurn(cli: AgentCli, o: PerTurnOpts): ChildProcess {
       : (() => { throw new Error(`per-turn stream not supported for ${cli}`) })()
   // stdin is 'ignore' (prompt rides argv) so codex never blocks on "Reading additional input from
   // stdin…"; detached:true makes the child a group leader for the registry's process.kill(-pid).
-  return spawnChild(bin, argv, { cwd, env: { ...(process.env as any) }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  return spawnChild(bin, gated(cli, bin, argv), { cwd, env: { ...(process.env as any) }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
 export function ensureCodexBerthHookProfile() {
@@ -242,7 +254,7 @@ export function launchFresh(cli: AgentCli, o: FreshOpts): IPty {
     ensureCocoBerthHook()                               // register the session_start context hook (idempotent)
     env.BERTH_CONTEXT_FILE = writeCocoContextPayload(opts.injectFile)   // coco hook cats a JSON envelope
   }
-  return spawn(bin, freshArgv(cli, opts), {
+  return spawn(bin, gated(cli, bin, freshArgv(cli, opts)), {
     name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env,
   })
 }

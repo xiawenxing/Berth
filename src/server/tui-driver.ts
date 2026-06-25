@@ -6,6 +6,7 @@ import { DEFAULT_PTY_REPLAY_BYTES, PtySpool } from './pty-spool'
 
 const MAX_BUFFER_BYTES = 2 * 1024 * 1024   // ~scrollback kept per session for replay on (re)attach
 const RESIZE_QUIET_MS = 500           // a resize triggers a full repaint — not a turn, so don't spin
+const FAST_FAIL_MS = 2500             // a process that exits this fast almost certainly failed to START
 
 /**
  * Model A driver: wraps a node-pty so the browser receives raw bytes and renders them in xterm. This
@@ -22,6 +23,9 @@ export class TuiDriver implements SessionDriver {
   private activityCb: () => void = () => {}
   private spool: PtySpool
 
+  private startedAt = Date.now()
+  private sawVisible = false
+
   constructor(private pty: IPty, key: string) {
     this.spool = new PtySpool(key)
     pty.onData((d) => {
@@ -32,13 +36,30 @@ export class TuiDriver implements SessionDriver {
       this.frameCb(d)
       // Count output as turn activity unless it's noise: an idle cursor-repaint (no visible content)
       // or the full repaint a Berth-initiated resize just triggered (within the quiet window).
-      if (hasVisibleOutput(d) && Date.now() >= this.quietUntil) this.activityCb()
+      if (hasVisibleOutput(d)) {
+        this.sawVisible = true
+        if (Date.now() >= this.quietUntil) this.activityCb()
+      }
     })
-    pty.onExit(() => {
-      try { this.frameCb('\r\n[berth] session ended.\r\n') } catch {}
+    pty.onExit((e) => {
+      try { this.frameCb(this.exitMessage(e?.exitCode ?? 0)) } catch {}
       this.spool.close()
       this.exitCb()
     })
+  }
+
+  // A process that dies within FAST_FAIL_MS of spawn never really started — almost always a startup
+  // failure (an unsupported CLI flag that the binary rejected, a version mismatch, a missing auth).
+  // Flag-gating (src/pty/flag-gate.ts) drops the flags we know are version-sensitive, so this is the
+  // backstop for everything else: surface a clear diagnostic instead of a bland "session ended" so a
+  // dead session isn't mistaken for one that simply finished. The CLI's own error text is in the
+  // output above (the arg parser prints to stderr, which the PTY merges) — we just frame it.
+  private exitMessage(exitCode: number): string {
+    const fast = Date.now() - this.startedAt < FAST_FAIL_MS
+    if (fast && (exitCode !== 0 || !this.sawVisible)) {
+      return `\r\n[berth] the agent exited during startup (code ${exitCode}). This usually means an unsupported CLI flag or a version/auth issue — check the output above, or update the CLI.\r\n`
+    }
+    return '\r\n[berth] session ended.\r\n'
   }
 
   get pid(): number | undefined { return this.pty.pid }

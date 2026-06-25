@@ -37,13 +37,48 @@ export function resolveAgentBinary(cli: AgentCli): string {
 }
 
 /** Warm slow CLI probes off the click-to-launch path. Fire-and-forget by design. */
-export function warmAgentBinaryCaches(clis: AgentCli[] = ['coco', 'codex']): void {
+export function warmAgentBinaryCaches(clis: AgentCli[] = ['claude', 'coco', 'codex']): void {
   for (const cli of clis) {
     const bin = firstUsableCandidate(cli)
     if (!bin) continue
     if (cli === 'coco') void verifyCocoAsync(bin)
-    if (cli === 'codex') void warmCodexHookTrustSupport(bin)
+    // Warm the `--help` text for EVERY cli so flag-gating (src/pty/flag-gate.ts) has a definitive
+    // answer by the time a human clicks launch — without it, the first launch can't tell whether a
+    // version-sensitive flag is supported and keeps it (optimistic), so warming closes that window.
+    void warmCliHelp(bin)
   }
+}
+
+// ── Generic per-binary `--help` capability cache ─────────────────────────────────────────────────
+// One `--help` probe per binary serves every flag-support question for that CLI (a binary's CLI
+// surface can't change within a process). Only a SUCCESSFUL probe is cached; a probe that can't run
+// (timeout/spawn error) is left uncached so a transient hiccup is retried on the next launch.
+const cliHelp = new Map<string, string>()
+const cliHelpInFlight = new Map<string, Promise<string | null>>()
+
+export function warmCliHelp(bin: string): Promise<string | null> {
+  const cached = cliHelp.get(bin)
+  if (cached !== undefined) return Promise.resolve(cached)
+  const existing = cliHelpInFlight.get(bin)
+  if (existing) return existing
+  const p = execHelp(bin, 20000)
+    .then((help) => { cliHelp.set(bin, help); return help }, () => null)
+    .finally(() => { if (cliHelpInFlight.get(bin) === p) cliHelpInFlight.delete(bin) })
+  cliHelpInFlight.set(bin, p)
+  return p
+}
+
+/**
+ * Is `flag` supported by the CLI at `bin`? Returns:
+ *   - true/false when `--help` has been probed (definitive),
+ *   - undefined when not yet probed (kicks off a background warm).
+ * Callers gate version-sensitive flags on `=== false` (drop it) and keep the flag on true/undefined,
+ * so a working setup is never degraded by a cold cache — only a CONFIRMED-missing flag is dropped.
+ */
+export function cliFlagSupportedCached(bin: string, flag: string): boolean | undefined {
+  const help = cliHelp.get(bin)
+  if (help === undefined) { void warmCliHelp(bin); return undefined }
+  return help.includes(flag)
 }
 
 // Cache successful identity checks: a binary's identity can't change within a process, and
@@ -84,51 +119,32 @@ export function verifyCoco(bin: string): boolean {
 }
 
 // Older codex builds predate `--dangerously-bypass-hook-trust` (the SessionStart-hook feature).
-// Passing it to such a build aborts the launch with "unexpected argument", so we probe `--help`
-// once per binary before relying on the flag. A definitive answer (flag present or absent) is
-// cached — a codex binary's CLI surface can't change within a process — but a probe that fails to
-// run at all (timeout/spawn error) is NOT cached, so a transient hiccup gets retried next launch.
-const codexHookTrust = new Map<string, boolean>()
-const codexHookTrustInFlight = new Map<string, Promise<boolean>>()
+// Passing it to such a build aborts the launch with "unexpected argument", so launchFresh gates the
+// flag on this probe. Thin wrappers over the shared `--help` cache above (one probe per binary), kept
+// as a named API because the codex-hook gate is conservative (drops context injection on UNKNOWN too,
+// since an unknown flag would abort the whole launch) — distinct from the generic keep-on-unknown.
+const HOOK_TRUST_FLAG = '--dangerously-bypass-hook-trust'
 
 export function codexHookTrustSupportCached(bin: string): boolean | undefined {
-  return codexHookTrust.get(bin)
+  return cliFlagSupportedCached(bin, HOOK_TRUST_FLAG)
 }
 
 export function warmCodexHookTrustSupport(bin: string): Promise<boolean> {
-  const cached = codexHookTrust.get(bin)
-  if (cached !== undefined) return Promise.resolve(cached)
-  const existing = codexHookTrustInFlight.get(bin)
-  if (existing) return existing
-  const p = execHelp(bin, 20000)
-    .then(help => {
-      const ok = help.includes('--dangerously-bypass-hook-trust')
-      codexHookTrust.set(bin, ok)
-      return ok
-    }, () => false)
-    .finally(() => {
-      if (codexHookTrustInFlight.get(bin) === p) codexHookTrustInFlight.delete(bin)
-    })
-  codexHookTrustInFlight.set(bin, p)
-  return p
+  return warmCliHelp(bin).then((help) => help != null && help.includes(HOOK_TRUST_FLAG))
 }
 
 export function codexHookTrustSupportOrWarm(bin: string): boolean | undefined {
-  const cached = codexHookTrust.get(bin)
-  if (cached !== undefined) return cached
-  void warmCodexHookTrustSupport(bin)
-  return undefined
+  return codexHookTrustSupportCached(bin)   // cliFlagSupportedCached already warms on a miss
 }
 
 export function codexSupportsHookTrust(bin: string): boolean {
-  const cached = codexHookTrust.get(bin)
+  const cached = codexHookTrustSupportCached(bin)
   if (cached !== undefined) return cached
   let help: string
   try { help = execFileSync(bin, ['--help'], { encoding: 'utf8', timeout: 20000 }) }
   catch { return false }   // probe couldn't run; degrade to no-hook for this launch, retry later
-  const ok = help.includes('--dangerously-bypass-hook-trust')
-  codexHookTrust.set(bin, ok)
-  return ok
+  cliHelp.set(bin, help)   // populate the shared cache so later flag checks reuse this probe
+  return help.includes(HOOK_TRUST_FLAG)
 }
 
 export function clearAgentBinaryCachesForTest(): void {
@@ -137,6 +153,6 @@ export function clearAgentBinaryCachesForTest(): void {
   }
   cocoVerified.clear()
   cocoVerifyInFlight.clear()
-  codexHookTrust.clear()
-  codexHookTrustInFlight.clear()
+  cliHelp.clear()
+  cliHelpInFlight.clear()
 }
