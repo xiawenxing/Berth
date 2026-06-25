@@ -367,10 +367,21 @@ export function titleInputFromTranscript(text: string): string {
   return fallback.slice(0, 5000)
 }
 
+function taskTitleFromBerthStartPrompt(text: string): string | null {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  const zh = normalized.match(/^请开始处理任务[：:]\s*「(.+?)」。?/)
+  if (zh?.[1]?.trim()) return zh[1].trim()
+  const en = normalized.match(/^Please start working on the task:\s*"(.+?)"\.?/)
+  if (en?.[1]?.trim()) return en[1].trim()
+  return null
+}
+
 export function deriveTitleFromTranscript(head: string): string | null {
   const sample = extractTitleContextSample(head)
   const firstUser = sample.users[0]
   if (!firstUser) return null
+  const berthTaskTitle = taskTitleFromBerthStartPrompt(firstUser)
+  if (berthTaskTitle) return berthTaskTitle
   const process = sample.tools[0] ?? sample.assistants[0] ?? ''
   if (!process) return firstUser
   return `${firstUser} / ${process}`

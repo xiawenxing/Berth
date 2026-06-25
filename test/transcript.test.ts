@@ -231,6 +231,39 @@ describe('extractTitleContext', () => {
 
     expect(deriveTitleFromTranscript(sessionHead)).toBe('Fix title generation / shell command: rg -n "extractTitleContext" src/agent')
   })
+
+  it('does not append process tool JSON to Berth task-launch titles', () => {
+    const sessionHead = [
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: '请开始处理任务：「❓ 移除会话会真的删除本地会话吗？」。' }] } }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'exec_command',
+          arguments: {
+            cmd: "sed -n '1,240p' /Users/bytedance/.agents/skills/berth-tasks/SKILL.md",
+            workdir: '/private/tmp/berth-clean/workspaces/9bc6f94a-c27e-457f-bca6-935e8da139ef',
+          },
+        },
+      }),
+    ].join('\n')
+
+    expect(deriveTitleFromTranscript(sessionHead)).toBe('❓ 移除会话会真的删除本地会话吗？')
+  })
+
+  it('derives the task title from Berth task-launch prompts with notes or English locale', () => {
+    const zh = [
+      JSON.stringify({ type: 'user', message: { role: 'user', content: '请开始处理任务：「修复起航标题」。\n\n本次会话补充说明：\n先只查原因' } }),
+      JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }] } }),
+    ].join('\n')
+    const en = [
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: 'Please start working on the task: "Fix launch title".' }] } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: { command: 'ls' } } }),
+    ].join('\n')
+
+    expect(deriveTitleFromTranscript(zh)).toBe('修复起航标题')
+    expect(deriveTitleFromTranscript(en)).toBe('Fix launch title')
+  })
 })
 
 describe('titleInputFromTranscript', () => {
