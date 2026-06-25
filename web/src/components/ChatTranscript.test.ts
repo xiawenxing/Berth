@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { prettyToolName, splitProcessAndAnswer, toolCallSummary } from './ChatTranscript'
+import { ChatTranscript } from './ChatTranscript'
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('prettyToolName', () => {
   it('maps codex snake_case item types to friendly labels', () => {
@@ -34,5 +39,29 @@ describe('splitProcessAndAnswer', () => {
       process: blocks.slice(0, 3),
       answer: blocks.slice(3),
     })
+  })
+})
+
+describe('ChatTranscript states', () => {
+  it('shows a loading state before the empty state while history is loading', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView
+    window.HTMLElement.prototype.scrollIntoView = () => {}
+
+    try {
+      await act(async () => {
+        root.render(createElement(ChatTranscript, { turns: [], loading: true }))
+      })
+      expect(host.textContent).toContain('正在加载会话历史')
+      expect(host.textContent).not.toContain('还没有对话')
+    } finally {
+      await act(async () => {
+        root.unmount()
+      })
+      host.remove()
+      window.HTMLElement.prototype.scrollIntoView = originalScrollIntoView
+    }
   })
 })

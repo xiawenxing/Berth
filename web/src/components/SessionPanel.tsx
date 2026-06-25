@@ -50,7 +50,7 @@ function ChatPanel({ sessionId, launch, onLaunched }: { sessionId?: string; laun
   const chat = useChatSession({ sessionId, launch, onLaunched })
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-canvas">
-      <ChatTranscript turns={chat.turns} thinking={chat.thinking} />
+      <ChatTranscript turns={chat.turns} thinking={chat.thinking} loading={chat.historyLoading} error={chat.historyError} />
       <Composer onSend={chat.send} onInterrupt={chat.interrupt} busy={chat.busy} />
     </div>
   )

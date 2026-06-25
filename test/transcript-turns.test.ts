@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseTranscriptTurns, resolveTranscriptPath } from '../src/server/transcript-turns'
+import { parseTranscriptChatTurns, parseTranscriptTurns, resolveTranscriptPath, transcriptTurnsToChatTurns } from '../src/server/transcript-turns'
 
 function tmpFile(name: string, content: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'berth-turns-'))
@@ -115,6 +115,31 @@ describe('parseTranscriptTurns - codex', () => {
     const turns = parseTranscriptTurns('codex', p)
     expect(turns).toHaveLength(1)
     expect(turns[0].text).toBe('真正的任务')
+  })
+})
+
+describe('transcriptTurnsToChatTurns', () => {
+  it('bridges simple transcript turns into Model B chat turns', () => {
+    const turns = transcriptTurnsToChatTurns([
+      { role: 'user', text: '打分任务' },
+      { role: 'agent', text: '我会先读说明' },
+      { role: 'tool', text: 'exec_command {"cmd":"ls"}', collapsed: true },
+    ])
+    expect(turns.map(t => t.role)).toEqual(['user', 'assistant', 'assistant'])
+    expect(turns[0].blocks[0]).toEqual({ kind: 'text', text: '打分任务' })
+    expect(turns[1].blocks[0]).toEqual({ kind: 'text', text: '我会先读说明' })
+    expect(turns[2].blocks[0]).toMatchObject({ kind: 'tool_call', name: '执行过程', status: 'done' })
+  })
+
+  it('replays codex history as ChatTurn[] for the Model B drawer', () => {
+    const p = tmpFile('rollout.jsonl', jl(
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '历史任务' }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '历史回复' }] } },
+    ))
+    const turns = parseTranscriptChatTurns('codex', p)
+    expect(turns).toHaveLength(2)
+    expect(turns[0]).toMatchObject({ role: 'user', blocks: [{ kind: 'text', text: '历史任务' }] })
+    expect(turns[1]).toMatchObject({ role: 'assistant', blocks: [{ kind: 'text', text: '历史回复' }] })
   })
 })
 

@@ -6,6 +6,8 @@ import { applyChatFrame, chatBusy, chatThinking, clearsAwaiting, makeUserTurn, t
 export interface ChatSession {
   turns: ChatTurn[]
   model?: string
+  historyLoading: boolean
+  historyError?: string
   /** a turn is in flight (submitted-and-awaiting OR an assistant turn streaming) → composer shows 停止 */
   busy: boolean
   /** submitted, but the agent hasn't produced its first frame yet — show a "thinking…" indicator */
@@ -38,6 +40,8 @@ export function useChatSession({
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [model, setModel] = useState<string | undefined>()
   const [connected, setConnected] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | undefined>()
   // True from a user submit until the agent's first assistant frame (or an error). Bridges the
   // thinking gap where neither the optimistic user turn nor any assistant turn is `streaming` yet,
   // so the composer/transcript still show "in flight" instead of looking idle.
@@ -51,13 +55,20 @@ export function useChatSession({
     setTurns([])
     setModel(undefined)
     setAwaiting(false)
+    setHistoryError(undefined)
+    setHistoryLoading(!!sessionId && !launch)
 
     // Resume: seed history from the durable jsonl before the live stream attaches (resume does NOT
     // re-stream prior turns — verified). Fresh launches have no history.
     if (sessionId && !launch) {
       api.chatHistory(sessionId)
-        .then((r) => { if (!disposed && r.turns?.length) setTurns((cur) => (cur.length ? cur : r.turns)) })
-        .catch(() => {})
+        .then((r) => {
+          if (disposed) return
+          if (r.turns?.length) setTurns((cur) => (cur.length ? cur : r.turns))
+          if (r.truncated && !r.turns?.length) setHistoryError('会话历史过大，已跳过历史加载。')
+        })
+        .catch(() => { if (!disposed) setHistoryError('会话历史加载失败。') })
+        .finally(() => { if (!disposed) setHistoryLoading(false) })
     }
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -114,6 +125,8 @@ export function useChatSession({
   return {
     turns,
     model,
+    historyLoading,
+    historyError,
     connected,
     busy: chatBusy(turns, awaiting),
     thinking: chatThinking(turns, awaiting),

@@ -9,7 +9,17 @@ import { Markdown } from './Markdown'
  * text and tool calls stay in one chronological flow; tool calls are muted text, final answers are
  * rendered with normal text weight/color. Pure presentational — it just renders ChatTurn[].
  */
-export function ChatTranscript({ turns, thinking = false }: { turns: ChatTurn[]; thinking?: boolean }) {
+export function ChatTranscript({
+  turns,
+  thinking = false,
+  loading = false,
+  error,
+}: {
+  turns: ChatTurn[]
+  thinking?: boolean
+  loading?: boolean
+  error?: string
+}) {
   const endRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -27,7 +37,16 @@ export function ChatTranscript({ turns, thinking = false }: { turns: ChatTurn[];
 
   return (
     <div ref={scrollRef} onScroll={onScroll} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
-      {turns.length === 0 && (
+      {turns.length === 0 && loading && (
+        <div className="m-auto flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
+          正在加载会话历史…
+        </div>
+      )}
+      {turns.length === 0 && !loading && error && (
+        <div className="m-auto text-sm text-destructive">{error}</div>
+      )}
+      {turns.length === 0 && !loading && !error && (
         <div className="m-auto text-sm text-muted-foreground">还没有对话。在下方输入开始。</div>
       )}
       {turns.map((t) => (t.role === 'user' ? <UserBubble key={t.id} turn={t} /> : <AssistantTurn key={t.id} turn={t} />))}

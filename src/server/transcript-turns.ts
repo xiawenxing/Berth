@@ -6,6 +6,7 @@ import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import type { AgentCli } from '../types'
 import { stripNoise, isInjectedText, extractContentText } from '../agent/transcript'
+import type { Block, ChatTurn } from '../agent/normalize/chat-model'
 
 export type TurnRole = 'user' | 'agent' | 'tool'
 export interface Turn { role: TurnRole; text: string; collapsed?: boolean }
@@ -281,4 +282,36 @@ export function parseTranscriptTurns(cli: AgentCli, contentSourcePath: string | 
   if (turns.length === 0) turns = fallbackTurns(text)
   // Coalesce adjacent tool turns into one "执行过程" row, then cap (preserving the opening prompt).
   return trimTurns(coalesceToolTurns(turns))
+}
+
+/**
+ * Lossy bridge from the legacy/simple transcript shape to the rich Model-B chat shape. Used for
+ * on-disk replay of CLIs that do not yet have a dedicated durable-jsonl reducer.
+ */
+export function transcriptTurnsToChatTurns(turns: Turn[]): ChatTurn[] {
+  return turns.map((turn, index) => {
+    const base = {
+      id: `replay_${index}`,
+      ts: 0,
+    }
+    if (turn.role === 'user') {
+      return { ...base, role: 'user' as const, blocks: [{ kind: 'text', text: turn.text }] }
+    }
+    if (turn.role === 'tool') {
+      const block: Block = {
+        kind: 'tool_call',
+        id: `replay_tool_${index}`,
+        name: '执行过程',
+        input: turn.text,
+        status: 'done',
+        result: { output: turn.text, ok: true },
+      }
+      return { ...base, role: 'assistant' as const, blocks: [block] }
+    }
+    return { ...base, role: 'assistant' as const, blocks: [{ kind: 'text', text: turn.text }] }
+  })
+}
+
+export function parseTranscriptChatTurns(cli: AgentCli, contentSourcePath: string | null | undefined): ChatTurn[] {
+  return transcriptTurnsToChatTurns(parseTranscriptTurns(cli, contentSourcePath))
 }
