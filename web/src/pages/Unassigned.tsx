@@ -253,7 +253,10 @@ export function Unassigned() {
                 reload()
               }}
             />
-            <div className="min-h-0 flex-1 overflow-hidden">
+            {/* flex flex-col so SessionPanel's flex-1 root fills the height (it's the only inline mount;
+                the drawer's wrapper is already flex-col). Without it the panel collapses to xterm's
+                24-row default → the terminal renders half-height. */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <SessionPanel key={sel.sessionId} cli={sel.cli} sessionId={sel.sessionId} />
             </div>
           </>
