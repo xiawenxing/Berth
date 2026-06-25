@@ -225,6 +225,7 @@ export function Terminal({
       if (!launch || launchReady) return
       const now = Date.now()
       if (shouldMarkLaunchReady({
+        cli: launch.cli,
         recentOutput: recentLaunchOutput,
         sawData: firstDataSeen,
         quietMs: lastLaunchDataAt ? now - lastLaunchDataAt : 0,
