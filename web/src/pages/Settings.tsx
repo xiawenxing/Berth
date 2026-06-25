@@ -75,7 +75,7 @@ export function Settings() {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <header className="sticky top-0 z-10 border-b border-border bg-background px-6 py-4">
+      <header className="elev-header sticky top-0 z-10 bg-background px-6 py-4">
         <h1 className="text-[17px] font-bold text-foreground">设置</h1>
       </header>
 
