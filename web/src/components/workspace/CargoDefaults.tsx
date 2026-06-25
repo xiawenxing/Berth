@@ -4,6 +4,8 @@ import { cn } from '@/lib/utils'
 import { api, type PreviewSession, type ApiPathMeta } from '@/lib/api'
 import { shortCwd } from '@/lib/format'
 import { ImportDialog } from '@/components/ImportDialog'
+import { useShowMore } from '@/lib/paging'
+import { ShowMoreToggle } from '@/components/ui/ShowMoreToggle'
 
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
   return (
@@ -60,6 +62,7 @@ export function CargoDefaults({
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [tasksOpen, setTasksOpen] = useState(false)
+  const taskPaging = useShowMore(tasks.length)
 
   const toggle = (cwd: string, enabled: boolean) => {
     if (!projectId) return
@@ -136,7 +139,7 @@ export function CargoDefaults({
               </button>
               {tasksOpen && (
                 <div className="mt-1 flex flex-col gap-1.5 pl-1.5">
-                  {tasks.map((t) => (
+                  {tasks.slice(0, taskPaging.visibleCount).map((t) => (
                     <button
                       key={t.id}
                       className="text-left"
@@ -145,6 +148,15 @@ export function CargoDefaults({
                       <RegRow icon={FileText} name={t.title} sub={`tasks/${t.id}/index.md`} />
                     </button>
                   ))}
+                  {taskPaging.paginated && (
+                    <ShowMoreToggle
+                      hidden={taskPaging.hidden}
+                      total={tasks.length}
+                      expanded={taskPaging.expanded}
+                      onToggle={taskPaging.toggle}
+                      className="px-1 py-0.5"
+                    />
+                  )}
                 </div>
               )}
             </div>

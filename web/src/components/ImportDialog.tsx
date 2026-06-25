@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
 import { Dialog } from '@/components/ui/Overlay'
 import { SessionPickRow } from '@/components/SessionPickRow'
-import { SESSION_SHOW_MORE_PAGE } from '@/lib/paging'
+import { useShowMore } from '@/lib/paging'
+import { ShowMoreToggle } from '@/components/ui/ShowMoreToggle'
 import type { PreviewSession } from '@/lib/api'
 
 /**
@@ -37,11 +37,10 @@ export function ImportDialog({
 }) {
   const [checked, setChecked] = useState<Set<string>>(() => new Set()) // default: none
   const [register, setRegister] = useState(false) // 同时登记为装载目录 (opt-in, §10.3)
-  const [shown, setShown] = useState(SESSION_SHOW_MORE_PAGE)
+  const { visibleCount, hidden, paginated, expanded, toggle } = useShowMore(sessions.length)
   const allIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions])
   const allOn = sessions.length > 0 && checked.size === sessions.length
-  const visible = sessions.slice(0, shown)
-  const hidden = sessions.length - visible.length
+  const visible = sessions.slice(0, visibleCount)
 
   const toggleOne = (id: string) =>
     setChecked((s) => {
@@ -103,13 +102,15 @@ export function ImportDialog({
                     onToggle={() => toggleOne(s.sessionId)}
                   />
                 ))}
-                {hidden > 0 && (
-                  <button
-                    onClick={() => setShown((v) => v + SESSION_SHOW_MORE_PAGE)}
-                    className="mt-1 flex items-center gap-1 px-1 py-1 text-left text-[11px] font-medium text-text-dim hover:text-brand"
-                  >
-                    <ChevronDown size={12} /> Show more（再展开 {Math.min(SESSION_SHOW_MORE_PAGE, hidden)} / 共 {sessions.length}）
-                  </button>
+                {paginated && (
+                  <ShowMoreToggle
+                    hidden={hidden}
+                    total={sessions.length}
+                    expanded={expanded}
+                    onToggle={toggle}
+                    showTotal
+                    className="mt-1 px-1 py-1"
+                  />
                 )}
               </div>
             </div>
