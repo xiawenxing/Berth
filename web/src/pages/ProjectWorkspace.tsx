@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Plus, Play, Sparkles, MoreHorizontal, Anchor, Pencil, Archive, ArchiveRestore, Trash2 } from 'lucide-react'
+import { Plus, Play, Sparkles, MoreHorizontal, Anchor, Route, Pencil, Archive, ArchiveRestore, Trash2 } from 'lucide-react'
 import { Spinner } from '@/components/ui/Spinner'
 import { Kanban } from '@/components/workspace/Kanban'
 import { SessionModule } from '@/components/workspace/SessionModule'
@@ -549,9 +549,12 @@ export function ProjectWorkspace() {
       <div className="flex flex-col gap-5 px-6 py-5">
         {/* 任务 — hero */}
         <section>
+          {/* hero module — same icon + title + tag structure as 会话/默认装载, but brand-toned (not
+              muted) so it reads as the primary section. */}
           <div className="mb-3 flex items-center gap-2">
+            <Route size={14} className="text-brand" />
             <h2 className="text-[13px] font-semibold text-brand">任务</h2>
-            <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[10.5px] font-medium text-brand">航线</span>
+            <span className="rounded-[10px] bg-brand/15 px-2 py-px text-[11px] font-medium tracking-wide text-brand">航线</span>
           </div>
           <Kanban
             tasks={boardTasks}
