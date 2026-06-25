@@ -22,6 +22,7 @@ export function LaunchDialog() {
   const [dest, setDest] = useState<'task' | 'free'>('task')
   const [cli, setCli] = useState<AgentCli>('claude')
   const [freeText, setFreeText] = useState('')
+  const [taskNote, setTaskNote] = useState('')
   const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
   const [cargo, setCargo] = useState<CargoState | null>(null)
   const [adjust, setAdjust] = useState(false)
@@ -38,6 +39,7 @@ export function LaunchDialog() {
       const hasTask = launch.taskTitle ? launch.dest === 'task' : false
       setDest(launch.taskTitle ? launch.dest : 'free')
       setFreeText('')
+      setTaskNote('')
       clearImages()
       setAdjust(false)
       setExtraDir('')
@@ -83,6 +85,7 @@ export function LaunchDialog() {
       projectId: launch.projectId,
       todoKey: launch.todoKey,
       taskTitle,
+      taskNote,
       freeText,
       images,
       sessions,
@@ -121,6 +124,15 @@ export function LaunchDialog() {
             />
           )}
           {dest === 'free' && <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />}
+          {dest === 'task' && taskTitle && (
+            <textarea
+              value={taskNote}
+              onChange={(e) => setTaskNote(e.target.value)}
+              rows={3}
+              placeholder="补充本次会话的额外背景、范围或具体要求…"
+              className="mt-2 w-full resize-none rounded-md border border-border bg-card px-2.5 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
+            />
+          )}
         </div>
 
         <LaunchConfigFields

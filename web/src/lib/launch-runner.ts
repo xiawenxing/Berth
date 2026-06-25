@@ -51,6 +51,7 @@ export interface StartFreshLaunchInput {
   projectId?: string | null
   todoKey?: string | null
   taskTitle?: string
+  taskNote?: string
   freeText?: string
   images?: LaunchImage[]
   makeLaunchToken?: () => string
@@ -93,7 +94,7 @@ export function startFreshLaunch(input: StartFreshLaunchInput): string {
       launchToken,
       projectId: input.projectId,
       todoKey: input.todoKey,
-      prompt: input.dest === 'free' ? input.freeText || undefined : undefined,
+      prompt: input.dest === 'free' ? input.freeText || undefined : input.taskNote?.trim() || undefined,
       images: input.dest === 'free' ? input.images : undefined,
       addDirs: d.addDirs,
       ctxProject: d.ctxProject,

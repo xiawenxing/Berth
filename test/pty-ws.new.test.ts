@@ -10,7 +10,7 @@ vi.mock('../src/data/tasks', () => ({
   updateTask: vi.fn(() => ({ ok: true })),
 }))
 
-import { planFreshLaunch, shouldAdvanceTodoOnLaunch, advanceTodoOnLaunch, buildTaskInitialPrompt } from '../src/server/pty-ws'
+import { planFreshLaunch, shouldAdvanceTodoOnLaunch, advanceTodoOnLaunch, buildTaskInitialPrompt, composeLaunchInitialPrompt } from '../src/server/pty-ws'
 import { codexActivityStateForSession } from '../src/server/resume-spawn'
 import { updateTask } from '../src/data/tasks'
 
@@ -149,6 +149,23 @@ describe('buildTaskInitialPrompt i18n', () => {
     expect(p).toContain('Please start working on the task: "fix the thing"')
     expect(p).not.toContain('Detail doc')
     expect(p).not.toContain('请开始处理任务')
+  })
+})
+
+describe('composeLaunchInitialPrompt', () => {
+  it('appends task launch notes without replacing the default task directive', () => {
+    const prompt = composeLaunchInitialPrompt('请开始处理任务："修弹窗"', '先只做任务补充输入框')
+    expect(prompt).toContain('请开始处理任务')
+    expect(prompt).toContain('本次会话补充说明')
+    expect(prompt).toContain('先只做任务补充输入框')
+  })
+
+  it('keeps project/free explicit prompts as the whole first turn', () => {
+    expect(composeLaunchInitialPrompt(null, '随便问一个问题')).toBe('随便问一个问题')
+  })
+
+  it('uses an English notes label for English launches', () => {
+    expect(composeLaunchInitialPrompt('Start task', 'Focus the dialog copy', 'en')).toContain('Additional notes for this session:')
   })
 })
 

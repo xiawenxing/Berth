@@ -104,6 +104,20 @@ export function buildTaskInitialPrompt(todo: Task, locale: Locale = DEFAULT_LOCA
   return promptStrings(locale).start(todo.title)
 }
 
+export function composeLaunchInitialPrompt(
+  plannedPrompt: string | null | undefined,
+  explicitPrompt: string | null | undefined,
+  locale: Locale = DEFAULT_LOCALE,
+): string | undefined {
+  const planned = plannedPrompt?.trim()
+  const explicit = explicitPrompt?.trim()
+  if (planned && explicit) {
+    const label = locale === 'en' ? 'Additional notes for this session:' : '本次会话补充说明：'
+    return `${planned}\n\n${label}\n${explicit}`
+  }
+  return explicit || planned || undefined
+}
+
 /**
  * Pure, testable launch decision: what session id (if any) to pre-mint, what intent/edge/attach
  * to record, and what manifest input to build. claude/coco pre-mint via `--session-id` (bound
@@ -421,9 +435,10 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     if (plan.bindNow.projectId) store.setAttach(plan.bindNow.sessionId, plan.bindNow.projectId, 'confirmed')
   }
 
-  // An explicit ?prompt= wins; otherwise a task launch auto-fires its directive so the agent
-  // starts working (and, by taking a real turn, writes a transcript and surfaces in the list).
-  const initialPrompt = explicitPrompt ?? plan.initialPrompt ?? undefined
+  // For task launches, an explicit ?prompt= is a per-session supplement to the default task
+  // directive, not a replacement. Project/free launches have no planned prompt, so explicit text
+  // remains the whole first turn.
+  const initialPrompt = composeLaunchInitialPrompt(plan.initialPrompt, explicitPrompt, locale)
 
   // codex injects context via a SessionStart hook gated on `--dangerously-bypass-hook-trust`. The
   // support probe is warmed off the launch path; read only the cache here so a warning never blocks
