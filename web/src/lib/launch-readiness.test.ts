@@ -40,13 +40,16 @@ describe('shouldMarkLaunchReady', () => {
     })).toBe(false)
   })
 
-  it('does NOT settle codex on a sub-second pause between boot-spinner ticks', () => {
-    // 900ms quiet would have torn the mask down mid-boot; codex needs >1s.
-    expect(shouldMarkLaunchReady({ cli: 'codex', recentOutput: 'Starting MCP servers', sawData: true, quietMs: 950, elapsedMs: 4000 })).toBe(false)
+  it('NEVER marks codex ready on output-quiet (deterministic frame drives it; model:loading pauses must not flash the boot)', () => {
+    // Even a long silence (codex loading the model) must not drop the mask — only the server
+    // turnStarted frame (or the fallback) does. quietMarksReady:false for codex.
+    expect(shouldMarkLaunchReady({ cli: 'codex', recentOutput: 'banner', sawData: true, quietMs: 950, elapsedMs: 4000 })).toBe(false)
+    expect(shouldMarkLaunchReady({ cli: 'codex', recentOutput: 'model: loading', sawData: true, quietMs: 6000, elapsedMs: 8000 })).toBe(false)
   })
 
-  it('marks codex ready once output is quiet past its threshold (a real post-boot pause)', () => {
-    expect(shouldMarkLaunchReady({ cli: 'codex', recentOutput: 'banner', sawData: true, quietMs: 1700, elapsedMs: 4000 })).toBe(true)
+  it('still marks coco ready on quiet (no deterministic frame), past its longer window', () => {
+    expect(shouldMarkLaunchReady({ cli: 'coco', recentOutput: 'banner', sawData: true, quietMs: 1700, elapsedMs: 4000 })).toBe(true)
+    expect(shouldMarkLaunchReady({ cli: 'coco', recentOutput: 'banner', sawData: true, quietMs: 950, elapsedMs: 4000 })).toBe(false)
   })
 
   it('marks a default/unknown CLI ready after the standard quiet window', () => {
@@ -63,12 +66,13 @@ describe('shouldRevealLaunch', () => {
     expect(shouldRevealLaunch({ cli: 'claude', sawData: true, quietMs: 400 })).toBe(true)
   })
 
-  it('does not reveal codex on a sub-second boot-spinner gap', () => {
+  it('does not reveal codex during normal boot pauses (model:loading clears under the window)', () => {
     expect(shouldRevealLaunch({ cli: 'codex', sawData: true, quietMs: 900 })).toBe(false)
+    expect(shouldRevealLaunch({ cli: 'codex', sawData: true, quietMs: 2000 })).toBe(false)
   })
 
-  it('reveals codex once it is quiet past its (longer) reveal window', () => {
-    expect(shouldRevealLaunch({ cli: 'codex', sawData: true, quietMs: 1300 })).toBe(true)
+  it('reveals codex only once quiet past its long window (a genuinely stuck pre-turn HITL)', () => {
+    expect(shouldRevealLaunch({ cli: 'codex', sawData: true, quietMs: 2600 })).toBe(true)
   })
 
   it('does not reveal before any output has arrived', () => {
