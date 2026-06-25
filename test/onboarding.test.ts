@@ -96,6 +96,15 @@ describe('onboarding seed', () => {
     expect(welcomeEn.doc).toContain('berth skill install')
   })
 
+  it('task 1 is a launch-to-explain task whose directive forbids running berth commands', () => {
+    const welcome = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-welcome')!
+    expect(welcome.title).toContain('告诉我什么是 Berth')
+    expect(welcome.doc).toMatch(/不要运行任何 `berth` 命令/)
+    const welcomeEn = onboardingContent('en').tasks.find(t => t.id === 'berth-guide-welcome')!
+    expect(welcomeEn.title).toContain('Tell me what Berth is')
+    expect(welcomeEn.doc).toMatch(/do not run any `berth` command/i)
+  })
+
   it('task 3 explains the three context layers and the import methods', () => {
     const ctx = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-import')!
     expect(ctx.doc).toMatch(/启动目录/)
