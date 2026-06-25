@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Terminal as Xterm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
 import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
@@ -193,6 +194,14 @@ export function Terminal({
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
+    // Make plain-text URLs clickable. xterm only linkifies OSC-8 escape-sequence links out of the box;
+    // most URLs a CLI prints (localhost dashboards, doc/PR links) are plain text and need this addon.
+    // Gate activation on ⌘/Ctrl so a normal click still reaches selection / the TUI's own mouse
+    // handling — matching native-terminal cmd-click muscle memory.
+    term.loadAddon(new WebLinksAddon((e, uri) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      window.open(uri, '_blank', 'noopener,noreferrer')
+    }))
     term.open(host)
     fit.fit()
 
