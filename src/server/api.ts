@@ -74,6 +74,27 @@ export interface ApiSession {
   titleGenerating?: boolean                // 港务助手 is generating this session's title right now
 }
 
+/**
+ * Collapse a session cwd that is really the project's Berth workspace dir — reached through a
+ * filesystem alias — back to the canonical workspace path the client groups on. claude resolves
+ * symlinks before recording its cwd (macOS: /tmp → /private/tmp), so a workspace launch ends up with
+ * `/private/tmp/.../workspaces/<id>` while `project.workspaceCwd` stays `/tmp/.../workspaces/<id>`. A
+ * raw string compare then splits it into its own "(real path)" group instead of 项目默认目录. We only
+ * rewrite when the cwd canonically equals the project's workspace dir, so real code dirs are untouched.
+ * `canon` is injected for testability (it's realpath-backed in production).
+ */
+export function normalizeWorkspaceCwd(
+  rawCwd: string | null,
+  projectId: string | null,
+  workspaceDirFor: (projectId: string) => string,
+  canon: (p: string) => string,
+): string | null {
+  if (!rawCwd || !projectId) return rawCwd
+  const ws = workspaceDirFor(projectId)
+  if (rawCwd === ws) return rawCwd                 // already canonical (coco form) — cheap path, no realpath
+  return canon(rawCwd) === canon(ws) ? ws : rawCwd // symlink-variant of the workspace dir → present canonically
+}
+
 function serialize(): ApiSession[] {
   const store = getStore()
   const pins = store.allPinnedSet()
@@ -94,17 +115,30 @@ function serialize(): ApiSession[] {
   // a fresh project launch surfaces with cwd=null and the client groups it under "(无目录)" instead of
   // the project default dir. We only fill when s.cwd is null, so a real recorded cwd always wins.
   const intentCwd = store.launchIntentCwdBySession()
-  return getCache().map(s => ({
-    sessionId: s.sessionId, cli: s.cli, cwd: s.cwd ?? intentCwd.get(s.sessionId) ?? null, title: overrides.get(s.sessionId) ?? s.title,
+  // Per-call memo so a /sessions poll realpaths each distinct workspace dir / cwd at most once.
+  const wsDirCache = new Map<string, string>()
+  const workspaceDirFor = (pid: string) => {
+    let v = wsDirCache.get(pid); if (v === undefined) { v = join(berthHome(), 'workspaces', pid); wsDirCache.set(pid, v) } return v
+  }
+  const canonCache = new Map<string, string>()
+  const canon = (p: string) => { let v = canonCache.get(p); if (v === undefined) { v = canonicalPathKey(p); canonCache.set(p, v) } return v }
+  return getCache().map(s => {
+    const projectId = attach.get(s.sessionId)?.projectId ?? null
+    // Fill an init-window null cwd from the launch intent, then collapse a symlink-variant of the
+    // project workspace dir back to its canonical form so it groups under 项目默认目录.
+    const cwd = normalizeWorkspaceCwd(s.cwd ?? intentCwd.get(s.sessionId) ?? null, projectId, workspaceDirFor, canon)
+    return {
+    sessionId: s.sessionId, cli: s.cli, cwd, title: overrides.get(s.sessionId) ?? s.title,
     updatedAt: s.updatedAt, deleted: s.deleted, copies: s.copies.length,
     pinned: pins.has(s.sessionId),
-    projectId: attach.get(s.sessionId)?.projectId ?? null,
-    project: projectNames.get(attach.get(s.sessionId)?.projectId ?? '') ?? null,
+    projectId,
+    project: projectNames.get(projectId ?? '') ?? null,
     attachState: attach.get(s.sessionId)?.state ?? 'unconfirmed',
     todoKey: reverseMap.get(s.sessionId) ?? null,
     activity: activityMap.get(s.sessionId) ?? null,
     titleGenerating: isGeneratingTitle(s.sessionId),   // drives the live spinner on the generate-title icon
-  })).sort((a, b) => b.updatedAt - a.updatedAt)
+    }
+  }).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export const api = Router()
