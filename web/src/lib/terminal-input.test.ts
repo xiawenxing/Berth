@@ -16,6 +16,11 @@ describe('stripTerminalGeneratedInput', () => {
     expect(stripTerminalGeneratedInput('\x1b[O')).toBe('')
   })
 
+  it('drops Cursor Position Reports (the resume garble `^[[1;1R^[[41;3R`)', () => {
+    expect(stripTerminalGeneratedInput('\x1b[1;1R\x1b[41;3R')).toBe('')
+    expect(stripTerminalGeneratedInput('\x1b[?1;1R')).toBe('')
+  })
+
   it('still strips OSC color reports', () => {
     expect(stripTerminalGeneratedInput('\x1b]11;rgb:0d0d/1212/2020\x07')).toBe('')
   })

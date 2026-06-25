@@ -12,10 +12,16 @@ const DEVICE_ATTRIBUTES_REPORT = /\x1b\[[?>][0-9;]*c/g
 // standalone TUI, but here Berth drives focus itself (refocus on mousedown) so they're pure noise to
 // the agent. Note: SS3 function keys are `ESC O x` (no `[`), so this won't eat real keystrokes.
 const FOCUS_EVENT_REPORT = /\x1b\[[IO]/g
+// Cursor Position Report: `CSI row;col R` (and the DEC `CSI ? row;col R` variant). Pure terminal→host
+// answers to a `CSI 6n` query — a user never types them. On resume the replayed scrollback re-fires
+// the agent's old cursor-position queries; xterm re-answers, and those answers echo into the live
+// agent's prompt as `^[[1;1R^[[41;3R`. `R` is CPR's only CSI use, so this can't eat a keystroke.
+const CURSOR_POSITION_REPORT = /\x1b\[\??[0-9]+;[0-9]+R/g
 
 export function stripTerminalGeneratedInput(data: string): string {
   return data
     .replace(OSC_COLOR_REPORT, '')
     .replace(DEVICE_ATTRIBUTES_REPORT, '')
     .replace(FOCUS_EVENT_REPORT, '')
+    .replace(CURSOR_POSITION_REPORT, '')
 }
