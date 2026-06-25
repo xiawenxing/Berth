@@ -4,34 +4,28 @@ import { initCargo, toggleDir, anchorDir, setCode, deriveLaunch } from '../web/s
 const paths = ['/a', '/b', '/c']
 
 describe('launch-cargo', () => {
-  it('inits all dirs loaded, leaves cwd on project default, task gate follows hasTask', () => {
+  it('inits all dirs loaded, lits sticky lastCwd, task gate follows hasTask', () => {
     const s = initCargo(paths, '/b', true)
     expect(s.dirs.every((d) => d.loaded)).toBe(true)
-    expect(s.litCwd).toBeNull()
+    expect(s.litCwd).toBe('/b')
     expect(s.ctxProject).toBe(true)
     expect(s.ctxTask).toBe(true)
     expect(s.codeOn).toBe(true)
   })
 
-  it('does not auto-lit first dir when lastCwd is not an enabled path; ctxTask off when no task', () => {
+  it('lits first dir when lastCwd is not an enabled path; ctxTask off when no task', () => {
     const s = initCargo(paths, '/zzz', false)
-    expect(s.litCwd).toBeNull()
+    expect(s.litCwd).toBe('/a')
     expect(s.ctxTask).toBe(false)
   })
 
-  it('derive: default cwd is empty, all loaded dirs are addDirs', () => {
+  it('derive: lit dir is cwd, other loaded dirs are addDirs', () => {
     const s = initCargo(paths, '/a', true)
-    expect(deriveLaunch(s)).toEqual({ cwd: '', addDirs: ['/a', '/b', '/c'], ctxProject: true, ctxTask: true })
-  })
-
-  it('derive: anchored dir is cwd, other loaded dirs are addDirs', () => {
-    const s = initCargo(paths, '/a', true)
-    expect(deriveLaunch(anchorDir(s, '/a'))).toEqual({ cwd: '/a', addDirs: ['/b', '/c'], ctxProject: true, ctxTask: true })
+    expect(deriveLaunch(s)).toEqual({ cwd: '/a', addDirs: ['/b', '/c'], ctxProject: true, ctxTask: true })
   })
 
   it('unchecking the lit dir falls back to 默认 (cwd="")', () => {
     let s = initCargo(paths, '/a', true)
-    s = anchorDir(s, '/a')
     s = toggleDir(s, '/a')
     expect(s.litCwd).toBeNull()
     expect(deriveLaunch(s).cwd).toBe('')
@@ -56,7 +50,6 @@ describe('launch-cargo', () => {
 
   it('anchor on an unchecked row is a no-op', () => {
     let s = initCargo(paths, '/a', true)
-    s = anchorDir(s, '/a')
     s = toggleDir(s, '/b') // uncheck /b
     s = anchorDir(s, '/b')
     expect(s.litCwd).toBe('/a')
@@ -64,7 +57,6 @@ describe('launch-cargo', () => {
 
   it('code context off → cwd="" and no addDirs', () => {
     let s = initCargo(paths, '/a', true)
-    s = anchorDir(s, '/a')
     s = setCode(s, false)
     expect(deriveLaunch(s)).toEqual({ cwd: '', addDirs: [], ctxProject: true, ctxTask: true })
   })

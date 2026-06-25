@@ -33,6 +33,7 @@ export interface SessionRow {
   title: string
   cwd: string
   time: string
+  updatedAt?: number
   status: ShipStatus | 'idle'
   linkedTask?: boolean
   taskId?: string | null

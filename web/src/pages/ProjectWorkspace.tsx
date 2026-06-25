@@ -18,6 +18,7 @@ import { isDoneStatus, statusKind } from '@/lib/status'
 import { useLive } from '@/lib/live'
 import { startFreshLaunch } from '@/lib/launch-runner'
 import { api, type PreviewSession } from '@/lib/api'
+import { sortSessionRows } from '@/lib/session-sort'
 import type { Task, SessionRow, CwdGroup, TaskStatus, LinkedSession } from '@/lib/types'
 
 /**
@@ -123,6 +124,7 @@ export function ProjectWorkspace() {
     title: s.title || '(未命名)',
     cwd: shortCwd(s.cwd),
     time: relTime(s.updatedAt),
+    updatedAt: s.updatedAt,
     status: live.shipStatus(s.sessionId, s.updatedAt),
     linkedTask: !!s.todoKey,
     taskId: s.todoKey ?? null,
@@ -177,7 +179,7 @@ export function ProjectWorkspace() {
       if (cwd === ws) {
         // rawCwd is the real (masked) workspace path — drives the import icon so sessions that ran
         // in the default workspace dir but weren't auto-curated can still be imported manually.
-        return { key: cwd, cwd: '项目默认目录', tag: 'Berth 工作区', shortTag: 'Berth 工作区', sessions: rows, kind: 'workspace' as const, rawCwd: cwd }
+        return { key: cwd, cwd: '项目默认目录', tag: 'Berth 工作区', shortTag: 'Berth 工作区', sessions: sortSessionRows(rows), kind: 'workspace' as const, rawCwd: cwd }
       }
       const isMain = cwd === mainCwd
       const n = isMain ? 0 : ++contextN // secondary code contexts count from 2 (主 is the 1st context)
@@ -186,7 +188,7 @@ export function ProjectWorkspace() {
         cwd: cwd === NO_CWD ? NO_CWD : shortCwd(cwd),
         tag: isMain ? '主上下文' : `代码目录 · 第 ${n} 上下文`,
         shortTag: isMain ? '主上下文' : `目录·${n}`,
-        sessions: rows,
+        sessions: sortSessionRows(rows),
         kind: 'cwd' as const,
         rawCwd: cwd === NO_CWD ? undefined : cwd,
       }
