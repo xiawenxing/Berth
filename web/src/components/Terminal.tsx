@@ -17,7 +17,41 @@ function cssToken(name: string, fallback: string) {
   return value || fallback
 }
 
+function isLightMode() {
+  return document.documentElement.classList.contains('light')
+}
+
+// CLI TUIs (claude / codex / coco) pick their ANSI colors assuming a DARK terminal — lots of light
+// grays, pastels, and a near-white "brightWhite". On Berth's light canvas those wash out (coco's dim
+// secondary text especially). In light mode we keep the light background (the user's choice) but swap
+// in a DARKER, saturated ANSI palette where "bright" means bolder/darker, not lighter; pair it with
+// xterm's minimumContrastRatio (set on the terminal) to catch dim/arbitrary colors the palette can't.
 function terminalTheme() {
+  if (isLightMode()) {
+    return {
+      background: cssToken('--color-canvas', '#eef1f6'),
+      foreground: cssToken('--color-foreground', '#1f2733'),
+      cursor: cssToken('--color-brand', '#2f6fed'),
+      cursorAccent: cssToken('--color-brand-foreground', '#ffffff'),
+      selectionBackground: 'rgba(47, 111, 237, 0.20)',
+      black: '#1f2733',
+      red: cssToken('--color-destructive', '#dc4338'),
+      green: cssToken('--color-success', '#2a9d63'),
+      yellow: cssToken('--color-warning', '#b9831b'),
+      blue: cssToken('--color-brand', '#2f6fed'),
+      magenta: cssToken('--color-purple', '#7a37b8'),
+      cyan: cssToken('--color-info', '#0e9aae'),
+      white: '#46505f',          // ANSI "white" on a light bg → a mid-dark gray (still visible)
+      brightBlack: '#6b7280',    // dim/gray text → a readable gray, not near-white
+      brightRed: '#c0392b',
+      brightGreen: '#1f7a4d',
+      brightYellow: '#8a5d0f',
+      brightBlue: '#1d4ed8',
+      brightMagenta: '#6d28a8',
+      brightCyan: '#0c7a89',
+      brightWhite: '#1f2733',    // emphasis → near-black, not near-white
+    }
+  }
   return {
     background: cssToken('--color-canvas', '#0d1220'),
     foreground: cssToken('--color-foreground', '#d7deef'),
@@ -141,6 +175,10 @@ export function Terminal({
       cursorStyle: 'bar',
       convertEol: true,
       theme: terminalTheme(),
+      // In light mode, force every foreground color to clear a contrast floor against the light
+      // background so coco's dim/gray output (which the static palette can't reach) stays readable.
+      // Off (1) in dark mode — the dark palette is already tuned and we don't want it re-tinted.
+      minimumContrastRatio: isLightMode() ? 4.5 : 1,
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
