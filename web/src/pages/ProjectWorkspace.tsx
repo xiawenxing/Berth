@@ -70,6 +70,7 @@ export function ProjectWorkspace() {
   const [groupConfirm, setGroupConfirm] = useState<SessionGroupConfirm | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false)
+  const [titleGeneratingIds, setTitleGeneratingIds] = useState<Set<string>>(() => new Set())
 
   const project = projects.find((p) => p.id === id)
   const projName = project?.name ?? id
@@ -328,6 +329,24 @@ export function ProjectWorkspace() {
       .then(() => reload())
       .catch(() => reload())
   }
+  const onGenerateTaskTitle = (taskId: string) => {
+    if (titleGeneratingIds.has(taskId)) return
+    setTitleGeneratingIds((ids) => new Set(ids).add(taskId))
+    api
+      .taskTitle(taskId)
+      .then(({ title }) => {
+        if (title) setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, title } : t)))
+        reload()
+      })
+      .catch(() => reload())
+      .finally(() => {
+        setTitleGeneratingIds((ids) => {
+          const next = new Set(ids)
+          next.delete(taskId)
+          return next
+        })
+      })
+  }
   const onDelete = (taskId: string) => {
     setTasks((ts) => ts.filter((t) => t.id !== taskId))
     api
@@ -539,6 +558,8 @@ export function ProjectWorkspace() {
             onSetPriority={onSetPriority}
             onSetDdl={onSetDdl}
             onRename={onRename}
+            onGenerateTitle={onGenerateTaskTitle}
+            titleGeneratingIds={titleGeneratingIds}
             onDelete={onDelete}
             onCreateTask={() => setNewTask(true)}
           />

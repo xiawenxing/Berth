@@ -7,6 +7,7 @@ import type { AgentCli } from '../types'
 import { canonicalPathKey } from '../path-normalize'
 import { listProjects, createProject, updateProject, deleteProject } from '../data/projects'
 import { listTasks, createTask, updateTask, deleteTask } from '../data/tasks'
+import { generateAndApplyTaskTitle } from '../data/task-title'
 import { triggerTaskSummary, isSummarizingTask } from '../data/task-summary'
 import { triggerProjectSummary, isSummarizingProject } from '../data/project-summary'
 import { getDocStore, getDocsRoot } from '../data/docstore'
@@ -595,6 +596,27 @@ api.post('/todos', async (req, res) => {
     res.json(result)
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
+  }
+})
+
+// Smart task title: regenerate from task context + linked session titles, then persist as the task
+// title. Manual editing remains PATCH /todos/:id from the inline double-click affordance.
+api.post('/todos/:id/title', async (req, res) => {
+  const store = getStore()
+  const task = listTasks(store).find(t => t.id === req.params.id)
+  if (!task) return res.status(404).json({ error: 'unknown task' })
+  const linkedIds = store.edgesByTodo().get(task.id) ?? []
+  const overrides = store.allTitleOverrides()
+  const cacheById = new Map(getCache().map(s => [s.sessionId, s]))
+  const sessions = linkedIds.map(id => {
+    const s = cacheById.get(id)
+    return { id, title: overrides.get(id) ?? s?.title ?? null }
+  })
+  try {
+    const result = await generateAndApplyTaskTitle(store, getDocStore(store), task.id, sessions, resolveBerthAgent(store))
+    res.json(result)
+  } catch (e: any) {
+    return sendAgentError(res, e, getLocale(store))
   }
 })
 

@@ -132,6 +132,7 @@ export const api = {
   createTask: (text: string, projectId?: string, images?: string[], autoTitle?: boolean) => send('POST', '/api/todos', { text, projectId, images, autoTitle }),
   patchTask: (id: string, patch: { status?: string; priority?: string; ddl?: string | null; title?: string }) =>
     send('PATCH', `/api/todos/${id}`, patch),
+  taskTitle: (id: string) => send('POST', `/api/todos/${id}/title`, {}) as Promise<{ title: string }>,
   deleteTask: (id: string) => send('DELETE', `/api/todos/${id}`),
   pin: (sessionId: string, on: boolean) => send('POST', '/api/pin', { sessionId, on }),
   // Assign a session to a project (manual attach → state 'confirmed' server-side).

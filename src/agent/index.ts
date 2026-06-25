@@ -132,14 +132,16 @@ export async function generateTitle(transcriptHead: string, agent?: BerthAgent):
   return out
 }
 
-/** Generate a concise task title from a rough task title/description. */
+/** Generate a concise task title from task clues (description/context/session titles). */
 export async function generateTaskTitle(input: string, agent?: BerthAgent): Promise<string> {
   const text = input.replace(/\s+/g, ' ').trim()
   if (!text) return ''
   const prompt =
-    `Below is a rough task title or task description. ` +
+    `Below are clues about a task: its current title or description, optional context notes, ` +
+    `and optional linked session titles. ` +
     `Rewrite it as ONLY a concise task title of at most 8 words, in the same language. ` +
-    `Keep the concrete object and action. Do not add details that are not present. ` +
+    `Prefer the task context and linked session titles when they make the task more specific. ` +
+    `Keep the concrete object and action. Do not add details that are not present in the clues. ` +
     `No surrounding quotes, no trailing punctuation.\n\n---\n` +
     text.slice(0, 4000)
   const cli = agent?.cli ?? 'claude'

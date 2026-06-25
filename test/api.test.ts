@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const mockExecFile = vi.hoisted(() => vi.fn())
+const mockGenerateTaskTitle = vi.hoisted(() => vi.fn(async (..._a: any[]) => '智能任务标题'))
 
 vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
@@ -80,16 +81,18 @@ const mockCreateTask = vi.fn(async (..._a: any[]) => ({
   status: 'created' as const,
   record: { id: 'r', title: 'test', project: 'Berth' },
 }))
+const mockUpdateTask = vi.fn((...a: any[]) => {
+  const patch = a[2]
+  const has = ['title', 'priority', 'status', 'progress'].some(k => patch?.[k] !== undefined)
+  if (!has) throw new Error('no editable fields in patch')
+  return { ok: true }
+})
 
 vi.mock('../src/data/tasks', () => ({
   listTasks: (...a: any[]) => mockListTasks(...a),
   createTask: (...a: any[]) => mockCreateTask(...a),
   // Mirror the real updateTask: it throws when the patch carries no editable TaskField.
-  updateTask: vi.fn((_store: any, _id: string, patch: any) => {
-    const has = ['title', 'priority', 'status', 'progress'].some(k => patch?.[k] !== undefined)
-    if (!has) throw new Error('no editable fields in patch')
-    return { ok: true }
-  }),
+  updateTask: (...a: any[]) => mockUpdateTask(...a),
   deleteTask: vi.fn(),
 }))
 
@@ -104,6 +107,8 @@ vi.mock('../src/data/projects', () => ({
 // ── Mock agent modules ────────────────────────────────────────────────────────
 vi.mock('../src/agent/index', () => ({
   generateTitle: vi.fn(async () => 'mocked title'),
+  generateTaskTitle: (...a: any[]) => mockGenerateTaskTitle(...a),
+  parseStructuredSummary: vi.fn((raw: string) => ({ headline: raw, progress: [], milestones: [] })),
 }))
 vi.mock('../src/agent/transcript', () => ({
   extractTitleContext: vi.fn(() => ''),
@@ -175,6 +180,8 @@ beforeEach(() => {
   mockGetCache.mockReturnValue([])
   mockListTasks.mockReturnValue([])
   mockCreateTask.mockResolvedValue({ status: 'created', record: { id: 'r', title: 'test', project: 'Berth' } })
+  mockUpdateTask.mockClear()
+  mockGenerateTaskTitle.mockReset().mockResolvedValue('智能任务标题')
   mockSetTitleOverride.mockClear()
   mockSettings.clear()
   mockImportDirs.clear()
@@ -665,6 +672,39 @@ describe('POST /api/todos', () => {
       expect.anything(), expect.anything(), 'x',
       expect.objectContaining({ projectId: 'P', confirm: true, createOption: false, autoTitle: true }),
     )
+  })
+})
+
+describe('POST /api/todos/:id/title', () => {
+  it('generates a task title from task clues and linked session titles, then persists it', async () => {
+    mockListTasks.mockReturnValue([
+      { id: 't1', title: '原始任务标题', status: '待办', priority: 'P1', projectId: 'p1', project: 'Berth', progress: '已有进展', detailDoc: null },
+    ])
+    mockEdgesByTodo.mockReturnValueOnce(new Map([['t1', ['s1', 's2']]]))
+    mockGetCache.mockReturnValue([
+      { sessionId: 's1', cli: 'claude', cwd: '/x', title: '修复任务菜单标题生成', updatedAt: 100, deleted: false, copies: [] },
+      { sessionId: 's2', cli: 'codex', cwd: '/x', title: '保留双击手动编辑', updatedAt: 90, deleted: false, copies: [] },
+    ])
+    const port = await listen()
+
+    const res = await fetch(`http://localhost:${port}/api/todos/t1/title`, { method: 'POST' })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ title: '智能任务标题' })
+    const input = String(mockGenerateTaskTitle.mock.calls[0][0])
+    expect(input).toContain('Current title: 原始任务标题')
+    expect(input).toContain('Progress summary: 已有进展')
+    expect(input).toContain('修复任务菜单标题生成')
+    expect(input).toContain('保留双击手动编辑')
+    expect(mockUpdateTask).toHaveBeenCalledWith(expect.anything(), 't1', { title: '智能任务标题' })
+  })
+
+  it('returns 404 for an unknown task', async () => {
+    mockListTasks.mockReturnValue([])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/missing/title`, { method: 'POST' })
+    expect(res.status).toBe(404)
+    expect(mockGenerateTaskTitle).not.toHaveBeenCalled()
   })
 })
 

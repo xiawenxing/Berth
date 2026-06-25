@@ -17,6 +17,8 @@ export function Kanban({
   onSetPriority,
   onSetDdl,
   onRename,
+  onGenerateTitle,
+  titleGeneratingIds,
   onDelete,
   onCreateTask,
 }: {
@@ -27,6 +29,8 @@ export function Kanban({
   onSetPriority?: (taskId: string, priority: Priority) => void
   onSetDdl?: (taskId: string, ddl: string | null) => void
   onRename?: (taskId: string, title: string) => void
+  onGenerateTitle?: (taskId: string) => void
+  titleGeneratingIds?: Set<string>
   onDelete?: (taskId: string) => void
   onCreateTask?: () => void
 }) {
@@ -117,6 +121,8 @@ export function Kanban({
                     onSetPriority={onSetPriority}
                     onSetDdl={onSetDdl}
                     onRename={onRename}
+                    onGenerateTitle={onGenerateTitle}
+                    titleGenerating={titleGeneratingIds?.has(t.id)}
                     onDelete={onDelete}
                   />
                 ))

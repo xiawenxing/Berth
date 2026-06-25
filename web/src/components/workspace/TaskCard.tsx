@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Trash2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/Menu'
 import { TaskSummaryPopover } from '@/components/AiPanels'
@@ -141,6 +141,8 @@ type MenuActions = {
   onSetPriority?: (taskId: string, priority: Priority) => void
   onSetDdl?: (taskId: string, ddl: string | null) => void
   onRename?: (taskId: string, title: string) => void
+  onGenerateTitle?: (taskId: string) => void
+  titleGenerating?: boolean
   onDelete?: (taskId: string) => void
 }
 
@@ -154,6 +156,8 @@ export function TaskCard({
   onSetPriority,
   onSetDdl,
   onRename,
+  onGenerateTitle,
+  titleGenerating,
   onDelete,
 }: {
   task: Task
@@ -283,8 +287,9 @@ export function TaskCard({
             className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
             onSetStatus={onSetStatus}
             onSetPriority={onSetPriority}
-            onRequestRename={startRename}
             onRename={onRename}
+            onGenerateTitle={onGenerateTitle}
+            titleGenerating={titleGenerating}
             onDelete={onDelete}
           />
         )}
@@ -308,8 +313,9 @@ export function TaskCard({
             className="rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
             onSetStatus={onSetStatus}
             onSetPriority={onSetPriority}
-            onRequestRename={startRename}
             onRename={onRename}
+            onGenerateTitle={onGenerateTitle}
+            titleGenerating={titleGenerating}
             onDelete={onDelete}
           />
         </div>
@@ -487,7 +493,7 @@ function PrioChip({ task, priorities, onSetPriority }: { task: Task; priorities:
 
 // ── the ⋯ overflow menu ──────────────────────────────────────────────────────
 
-function MoreMenu({ task, priorities, statuses, className, onRequestRename, ...actions }: { task: Task; priorities: string[]; statuses: string[]; className: string; onRequestRename: () => void } & MenuActions) {
+function MoreMenu({ task, priorities, statuses, className, ...actions }: { task: Task; priorities: string[]; statuses: string[]; className: string } & MenuActions) {
   const btnRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   return (
@@ -501,22 +507,23 @@ function MoreMenu({ task, priorities, statuses, className, onRequestRename, ...a
     >
       <MoreHorizontal size={13} />
       {open && (
-        <TaskMenu task={task} priorities={priorities} statuses={statuses} anchor={btnRef} onClose={() => setOpen(false)} onRequestRename={onRequestRename} {...actions} />
+        <TaskMenu task={task} priorities={priorities} statuses={statuses} anchor={btnRef} onClose={() => setOpen(false)} {...actions} />
       )}
     </button>
   )
 }
 
-/** Full task menu: 状态 / 优先级 / 重命名 / 删除. */
+/** Full task menu: 状态 / 优先级 / 智能标题 / 删除. */
 function TaskMenu({
   task,
   priorities,
   statuses,
   anchor,
   onClose,
-  onRequestRename,
   onSetStatus,
   onSetPriority,
+  onGenerateTitle,
+  titleGenerating,
   onDelete,
 }: {
   task: Task
@@ -524,7 +531,6 @@ function TaskMenu({
   statuses: string[]
   anchor: RefObject<HTMLButtonElement | null>
   onClose: () => void
-  onRequestRename: () => void
 } & MenuActions) {
   const pick = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -547,8 +553,9 @@ function TaskMenu({
       <div className="my-1 border-t border-border" />
       <PriorityList task={task} priorities={priorities} onSetPriority={onSetPriority} close={onClose} />
       <div className="my-1 border-t border-border" />
-      <MenuItem onClick={pick(onRequestRename)}>
-        <Pencil size={13} className="flex-none text-muted-foreground" /> 重命名
+      <MenuItem onClick={pick(() => onGenerateTitle?.(task.id))}>
+        {titleGenerating ? <Loader2 size={13} className="flex-none animate-spin text-brand" /> : <Sparkles size={13} className="flex-none text-muted-foreground" />}
+        {titleGenerating ? '标题生成中…' : '智能生成任务标题'}
       </MenuItem>
       <MenuItem danger onClick={pick(() => onDelete?.(task.id))}>
         <Trash2 size={13} className="flex-none" /> 删除
