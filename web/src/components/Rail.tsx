@@ -140,16 +140,19 @@ export function Rail() {
 
       <div className="mx-3 my-2.5 h-px bg-border" />
 
-      <button
-        onClick={() => setNewProj(true)}
-        className="mx-2.5 mb-1 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] text-brand transition-colors hover:bg-sidebar-accent"
-      >
-        <Plus size={14} /> 新建项目
-      </button>
-
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-2">
-        <div className="px-1 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          项目
+        {/* Section header owns the create-action: a quiet ＋ on the right, so 新建项目 reads as part of
+            this section instead of a loud brand button floating above it (which out-shouted the list). */}
+        <div className="flex items-center px-1 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <span>项目</span>
+          <button
+            type="button"
+            onClick={() => setNewProj(true)}
+            title="新建项目"
+            className="ml-auto flex items-center rounded p-0.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-brand"
+          >
+            <Plus size={14} />
+          </button>
         </div>
         {projects.map((p) => (
           <ProjectNavRow key={p.id} project={p} ship={bucketShip(byProject.get(p.id) ?? [], live)} />
