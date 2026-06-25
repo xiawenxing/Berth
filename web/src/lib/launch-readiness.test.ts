@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { BRACKETED_PASTE_READY, shouldMarkLaunchReady, shouldRevealLaunch } from './launch-readiness'
+import { BRACKETED_PASTE_READY, cliReadiness, shouldMarkLaunchReady, shouldRevealLaunch } from './launch-readiness'
+
+describe('cliReadiness', () => {
+  it('trusts bracketed paste for claude only', () => {
+    expect(cliReadiness('claude').trustBracketedPaste).toBe(true)
+    expect(cliReadiness('codex').trustBracketedPaste).toBe(false)
+    expect(cliReadiness('coco').trustBracketedPaste).toBe(false)
+  })
+
+  it('gives codex longer quiet thresholds than claude (to clear its ~1s boot spinner)', () => {
+    expect(cliReadiness('codex').revealQuietMs).toBeGreaterThan(cliReadiness('claude').revealQuietMs)
+    expect(cliReadiness('codex').stableReadyMs).toBeGreaterThan(cliReadiness('claude').stableReadyMs)
+    // Must clear a ~1s spinner tick with margin, or the mask tears down mid-boot.
+    expect(cliReadiness('codex').revealQuietMs).toBeGreaterThan(1000)
+    expect(cliReadiness('codex').stableReadyMs).toBeGreaterThan(1000)
+  })
+})
 
 describe('shouldMarkLaunchReady', () => {
   it('treats bracketed-paste enable as a readiness signal for claude', () => {
@@ -12,59 +28,48 @@ describe('shouldMarkLaunchReady', () => {
     })).toBe(true)
   })
 
-  it('does NOT trust the bracketed-paste marker for codex (it enables paste during its banner)', () => {
-    // Codex turns on paste mode while still printing its startup banner / update notice, long before
-    // the composer exists — trusting it there dropped the boot mask mid-startup.
+  it('does NOT trust the bracketed-paste marker for codex (it enables paste at byte 0)', () => {
     expect(shouldMarkLaunchReady({
       cli: 'codex',
       recentOutput: `early ${BRACKETED_PASTE_READY}`,
       sawData: true,
       quietMs: 100,
       elapsedMs: 100,
-      stableMs: 900,
     })).toBe(false)
   })
 
-  it('marks any launch ready after startup output goes quiet', () => {
-    expect(shouldMarkLaunchReady({
-      cli: 'codex',
-      recentOutput: 'startup banner',
-      sawData: true,
-      quietMs: 901,
-      elapsedMs: 1200,
-      stableMs: 900,
-    })).toBe(true)
+  it('does NOT settle codex on a sub-second pause between boot-spinner ticks', () => {
+    // 900ms quiet would have torn the mask down mid-boot; codex needs >1s.
+    expect(shouldMarkLaunchReady({ cli: 'codex', recentOutput: 'Starting MCP servers', sawData: true, quietMs: 950, elapsedMs: 4000 })).toBe(false)
+  })
+
+  it('marks codex ready once output is quiet past its threshold (a real post-boot pause)', () => {
+    expect(shouldMarkLaunchReady({ cli: 'codex', recentOutput: 'banner', sawData: true, quietMs: 1700, elapsedMs: 4000 })).toBe(true)
+  })
+
+  it('marks a default CLI ready after the standard quiet window', () => {
+    expect(shouldMarkLaunchReady({ cli: 'coco', recentOutput: 'startup banner', sawData: true, quietMs: 901, elapsedMs: 1200 })).toBe(true)
   })
 
   it('has a fallback for CLIs that never print a ready-ish signal', () => {
-    expect(shouldMarkLaunchReady({
-      cli: 'codex',
-      recentOutput: '',
-      sawData: false,
-      quietMs: 0,
-      elapsedMs: 30_000,
-      fallbackMs: 30_000,
-    })).toBe(true)
+    expect(shouldMarkLaunchReady({ cli: 'codex', recentOutput: '', sawData: false, quietMs: 0, elapsedMs: 30_000 })).toBe(true)
   })
 })
 
 describe('shouldRevealLaunch', () => {
-  it('reveals once output has been seen and then goes quiet briefly', () => {
-    expect(shouldRevealLaunch({ sawData: true, quietMs: 400 })).toBe(true)
-    expect(shouldRevealLaunch({ sawData: true, quietMs: 1000 })).toBe(true)
+  it('reveals claude on a brief quiet (early HITL surfaces fast)', () => {
+    expect(shouldRevealLaunch({ cli: 'claude', sawData: true, quietMs: 400 })).toBe(true)
   })
 
-  it('does not reveal while output is still streaming', () => {
-    expect(shouldRevealLaunch({ sawData: true, quietMs: 100 })).toBe(false)
+  it('does not reveal codex on a sub-second boot-spinner gap', () => {
+    expect(shouldRevealLaunch({ cli: 'codex', sawData: true, quietMs: 900 })).toBe(false)
+  })
+
+  it('reveals codex once it is quiet past its (longer) reveal window', () => {
+    expect(shouldRevealLaunch({ cli: 'codex', sawData: true, quietMs: 1300 })).toBe(true)
   })
 
   it('does not reveal before any output has arrived', () => {
-    expect(shouldRevealLaunch({ sawData: false, quietMs: 5000 })).toBe(false)
-  })
-
-  it('reveals well before the full ready threshold (900ms quiet)', () => {
-    // The whole point: surface a HITL fast, not after a near-second of silence.
-    expect(shouldRevealLaunch({ sawData: true, quietMs: 400 })).toBe(true)
-    expect(shouldMarkLaunchReady({ cli: 'codex', recentOutput: '', sawData: true, quietMs: 400, elapsedMs: 500 })).toBe(false)
+    expect(shouldRevealLaunch({ cli: 'claude', sawData: false, quietMs: 5000 })).toBe(false)
   })
 })

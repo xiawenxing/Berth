@@ -1,12 +1,39 @@
 export const BRACKETED_PASTE_READY = '\x1b[?2004h'
-export const LAUNCH_STABLE_READY_MS = 900
 export const LAUNCH_READY_FALLBACK_MS = 30_000
-// Output quiet for this much shorter window (well before full readiness) means the CLI has paused
-// for the user — a HITL prompt (trust-folder, permission, login, model picker) or simply an early
-// ready-for-input state. We use it to REVEAL: lift the opaque mask to a translucent veil AND let
-// keystrokes through, so the user is never stuck behind the mask unable to answer a prompt. Unlike
-// the bracketed-paste signal below, this is CLI-agnostic — it's how non-claude HITL surfaces.
-export const LAUNCH_REVEAL_QUIET_MS = 400
+
+// Per-CLI launch readiness. Each agent's TUI boots differently, so a single heuristic mis-fires —
+// this gives every CLI its own dedicated timing (verified against real PTY spools):
+//
+//  - claude: enables bracketed paste (\x1b[?2004h) exactly when its composer accepts input, so that
+//    marker is a reliable ready signal. Quick boot → short quiet thresholds.
+//  - codex:  enables bracketed paste at byte 0 (during the banner, long before the composer), so the
+//    marker is meaningless here — DON'T trust it. Its boot then shows a `Ns • esc to interrupt`
+//    spinner that reprints ~every second, so a sub-second quiet threshold fires BETWEEN ticks and
+//    tears the mask down mid-boot. Its quiet thresholds must clear the ~1s tick with margin.
+//  - coco / others: no verified paste signal; fall back to the standard quiet thresholds.
+export interface CliReadiness {
+  /** Trust `\x1b[?2004h` (bracketed-paste enable) as an immediate ready signal. */
+  trustBracketedPaste: boolean
+  /** Output quiet for this long → fully ready (drop the mask). */
+  stableReadyMs: number
+  /** Output quiet for this (shorter) long → reveal: un-mask to a click-through veil + ungate input,
+   *  so a HITL prompt is visible and answerable before full readiness. */
+  revealQuietMs: number
+  fallbackMs: number
+}
+
+export function cliReadiness(cli: string): CliReadiness {
+  switch (cli) {
+    case 'claude':
+      return { trustBracketedPaste: true, stableReadyMs: 900, revealQuietMs: 400, fallbackMs: LAUNCH_READY_FALLBACK_MS }
+    case 'codex':
+      // Thresholds sit above codex's ~1s `esc to interrupt` spinner tick so the boot stays masked;
+      // they fire on the first genuine post-boot pause (thinking gap / composer idle / HITL wait).
+      return { trustBracketedPaste: false, stableReadyMs: 1600, revealQuietMs: 1300, fallbackMs: LAUNCH_READY_FALLBACK_MS }
+    default:
+      return { trustBracketedPaste: false, stableReadyMs: 900, revealQuietMs: 400, fallbackMs: LAUNCH_READY_FALLBACK_MS }
+  }
+}
 
 export function shouldMarkLaunchReady({
   cli,
@@ -14,38 +41,30 @@ export function shouldMarkLaunchReady({
   sawData,
   quietMs,
   elapsedMs,
-  stableMs = LAUNCH_STABLE_READY_MS,
-  fallbackMs = LAUNCH_READY_FALLBACK_MS,
 }: {
   cli: string
   recentOutput: string
   sawData: boolean
   quietMs: number
   elapsedMs: number
-  stableMs?: number
-  fallbackMs?: number
 }): boolean {
-  // Bracketed-paste enable is a reliable "input is live" signal for claude only. NOT generalized to
-  // other CLIs: codex turns paste mode on during its startup BANNER (before the composer exists), so
-  // trusting it there drops the boot mask while codex is still printing update notices / loading the
-  // model. Non-claude CLIs reach readiness via the quiet + fallback signals below (and surface a HITL
-  // through the reveal path, which is CLI-agnostic).
-  if (cli === 'claude' && sawData && recentOutput.includes(BRACKETED_PASTE_READY)) return true
-  if (sawData && quietMs >= stableMs) return true
-  return elapsedMs >= fallbackMs
+  const r = cliReadiness(cli)
+  if (r.trustBracketedPaste && sawData && recentOutput.includes(BRACKETED_PASTE_READY)) return true
+  if (sawData && quietMs >= r.stableReadyMs) return true
+  return elapsedMs >= r.fallbackMs
 }
 
-// A quick "the CLI is waiting for the user" signal: output was seen, then went quiet briefly. Drives
-// the reveal step (un-mask + ungate input) so an early HITL is visible and answerable long before
-// the full readiness thresholds above would fire. CLI-agnostic by design.
+// A quick "the CLI is waiting for the user" signal: output was seen, then went quiet for the CLI's
+// reveal window. Drives the reveal step (un-mask + ungate input) so an early HITL surfaces before
+// the full ready threshold.
 export function shouldRevealLaunch({
+  cli,
   sawData,
   quietMs,
-  revealMs = LAUNCH_REVEAL_QUIET_MS,
 }: {
+  cli: string
   sawData: boolean
   quietMs: number
-  revealMs?: number
 }): boolean {
-  return sawData && quietMs >= revealMs
+  return sawData && quietMs >= cliReadiness(cli).revealQuietMs
 }

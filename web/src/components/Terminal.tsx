@@ -6,7 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
 import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
-import { LAUNCH_READY_FALLBACK_MS, LAUNCH_STABLE_READY_MS, LAUNCH_REVEAL_QUIET_MS, shouldMarkLaunchReady, shouldRevealLaunch } from '@/lib/launch-readiness'
+import { cliReadiness, shouldMarkLaunchReady, shouldRevealLaunch } from '@/lib/launch-readiness'
 import type { LaunchSpec } from '@/lib/ui-store'
 import '@xterm/xterm/css/xterm.css'
 
@@ -154,6 +154,9 @@ export function Terminal({
     if (!host) return
     // Launch masks immediately; resume does NOT — see the anti-flash timer below.
     setOverlayMode(launch ? 'opaque' : 'off')
+    // Per-CLI launch timing (claude trusts its paste marker; codex needs longer quiet to clear its
+    // ~1s boot spinner; coco/others use the standard thresholds).
+    const readiness = launch ? cliReadiness(launch.cli) : null
     let firstDataSeen = false
     let launchReady = !launch
     // Once revealed, the CLI is treated as awaiting the user: the mask drops to a click-through veil
@@ -221,21 +224,21 @@ export function Terminal({
       }
     }
     const scheduleStableLaunchReady = () => {
-      if (!launch || launchReady) return
+      if (!launch || launchReady || !readiness) return
       if (stableLaunchTimer) clearTimeout(stableLaunchTimer)
-      stableLaunchTimer = setTimeout(evaluateLaunchReady, LAUNCH_STABLE_READY_MS)
+      stableLaunchTimer = setTimeout(evaluateLaunchReady, readiness.stableReadyMs)
     }
     const scheduleRevealCheck = () => {
-      if (!launch || launchReady || launchRevealed) return
+      if (!launch || launchReady || launchRevealed || !readiness) return
       if (revealTimer) clearTimeout(revealTimer)
       revealTimer = setTimeout(() => {
-        if (shouldRevealLaunch({ sawData: firstDataSeen, quietMs: lastLaunchDataAt ? Date.now() - lastLaunchDataAt : 0 })) {
+        if (shouldRevealLaunch({ cli: launch.cli, sawData: firstDataSeen, quietMs: lastLaunchDataAt ? Date.now() - lastLaunchDataAt : 0 })) {
           revealLaunch()
         }
-      }, LAUNCH_REVEAL_QUIET_MS)
+      }, readiness.revealQuietMs)
     }
-    if (launch) {
-      launchFallbackTimer = setTimeout(markLaunchReady, LAUNCH_READY_FALLBACK_MS)
+    if (launch && readiness) {
+      launchFallbackTimer = setTimeout(markLaunchReady, readiness.fallbackMs)
     }
     const markDataSeen = () => {
       if (firstDataSeen) return
