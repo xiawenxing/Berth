@@ -7,7 +7,7 @@ describe('resolveSessionPanelConnection', () => {
     expect(resolveSessionPanelConnection('sess-1')).toEqual({ sessionId: 'sess-1' })
   })
 
-  it('keeps a fresh launch mounted even after the real session id is known', () => {
+  it('switches to resume mode once the real session id is known', () => {
     const launch: LaunchSpec = {
       cli: 'codex',
       cwd: '/repo',
@@ -15,6 +15,6 @@ describe('resolveSessionPanelConnection', () => {
       prompt: 'hello',
     }
 
-    expect(resolveSessionPanelConnection('sess-1', launch)).toEqual({ launch })
+    expect(resolveSessionPanelConnection('sess-1', launch)).toEqual({ sessionId: 'sess-1' })
   })
 })

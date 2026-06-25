@@ -41,7 +41,10 @@ export function SessionDrawer() {
     setOptimisticLiveId(sessionId)
     if (optimisticTimer.current !== null) clearTimeout(optimisticTimer.current)
     optimisticTimer.current = window.setTimeout(() => setOptimisticLiveId((id) => (id === sessionId ? null : id)), 8000)
-    if (drawer) openDrawer({ ...drawer, sessionId, status: 'sail' })
+    if (drawer) {
+      const { launch: _launch, ...rest } = drawer
+      openDrawer({ ...rest, sessionId, status: 'sail' })
+    }
   }
 
   const currentSession = drawer?.sessionId ? sessions.find((s) => s.sessionId === drawer.sessionId) : undefined
@@ -82,10 +85,10 @@ export function SessionDrawer() {
 
           {/* body: terminal (Model A) or stream-json chat (Model B), chosen by the in-panel toggle.
               Both attach to the same persistent process via /pty; the backend respawns on a mode switch. */}
-          {drawer.launch ? (
-            <SessionPanel key={`launch:${drawer.launch.launchToken ?? 'pending'}`} cli={drawer.cli} launch={drawer.launch} onLaunched={resyncAfterLaunch} />
-          ) : drawer.sessionId ? (
+          {drawer.sessionId ? (
             <SessionPanel key={drawer.sessionId} cli={drawer.cli} sessionId={drawer.sessionId} />
+          ) : drawer.launch ? (
+            <SessionPanel key={`launch:${drawer.launch.launchToken ?? 'pending'}`} cli={drawer.cli} launch={drawer.launch} onLaunched={resyncAfterLaunch} />
           ) : null}
         </>
       )}
