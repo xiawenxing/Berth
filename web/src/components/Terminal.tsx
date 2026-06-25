@@ -5,7 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
-import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
+import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS, RESUME_STABLE_READY_MS, RESUME_OVERLAY_FALLBACK_MS } from '@/lib/loading-overlay'
 import { LAUNCH_READY_FALLBACK_MS, LAUNCH_STABLE_READY_MS, shouldMarkLaunchReady } from '@/lib/launch-readiness'
 import type { LaunchSpec } from '@/lib/ui-store'
 import '@xterm/xterm/css/xterm.css'
@@ -159,8 +159,28 @@ export function Terminal({
     let ws: WebSocket | null = null
     let stableLaunchTimer: ReturnType<typeof setTimeout> | null = null
     let launchFallbackTimer: ReturnType<typeof setTimeout> | null = null
+    // Resume overlay lifecycle: shown after a short delay if no data yet (cold open), then HELD
+    // through the reconnect redraw and torn down only once the replayed stream settles (or a hard
+    // cap fires). This is what stops the user from seeing the messy intermediate redraw on resume.
+    let resumeOverlayShown = false
+    let resumeStableTimer: ReturnType<typeof setTimeout> | null = null
+    let resumeFallbackTimer: ReturnType<typeof setTimeout> | null = null
+    const hideResumeOverlay = () => {
+      if (resumeStableTimer) { clearTimeout(resumeStableTimer); resumeStableTimer = null }
+      if (resumeFallbackTimer) { clearTimeout(resumeFallbackTimer); resumeFallbackTimer = null }
+      setShowOverlay(false)
+    }
+    const scheduleResumeOverlayHide = () => {
+      if (!resumeOverlayShown) return
+      if (resumeStableTimer) clearTimeout(resumeStableTimer)
+      resumeStableTimer = setTimeout(hideResumeOverlay, RESUME_STABLE_READY_MS)
+    }
     let overlayTimer: ReturnType<typeof setTimeout> | null = launch ? null : setTimeout(() => {
-      setShowOverlay(shouldShowLoadingOverlay({ hasData: firstDataSeen, elapsedMs: LOADING_OVERLAY_DELAY_MS }))
+      overlayTimer = null
+      if (!shouldShowLoadingOverlay({ hasData: firstDataSeen, elapsedMs: LOADING_OVERLAY_DELAY_MS })) return
+      resumeOverlayShown = true
+      setShowOverlay(true)
+      resumeFallbackTimer = setTimeout(hideResumeOverlay, RESUME_OVERLAY_FALLBACK_MS)
     }, LOADING_OVERLAY_DELAY_MS)
     const sendInputNow = (d: string) => {
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d }))
@@ -204,8 +224,11 @@ export function Terminal({
       if (firstDataSeen) return
       firstDataSeen = true
       if (!launch) {
+        // Warm resume (data beat the show-delay): cancel the pending overlay so it never flashes.
+        // Cold resume (overlay already up): keep it; scheduleResumeOverlayHide drains it once the
+        // replayed redraw goes quiet, so the garbled intermediate state stays hidden behind it.
         if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null }
-        setShowOverlay(false)
+        if (!resumeOverlayShown) setShowOverlay(false)
       }
     }
 
@@ -395,6 +418,8 @@ export function Terminal({
         lastLaunchDataAt = Date.now()
         evaluateLaunchReady()
         scheduleStableLaunchReady()
+      } else if (resumeOverlayShown) {
+        scheduleResumeOverlayHide()
       }
       term.write(data, () => {
         if (!replayPositionRestored && !launch && historyBytes > DEFAULT_PTY_HISTORY_BYTES) {
@@ -444,6 +469,8 @@ export function Terminal({
       if (overlayTimer) clearTimeout(overlayTimer)
       if (stableLaunchTimer) clearTimeout(stableLaunchTimer)
       if (launchFallbackTimer) clearTimeout(launchFallbackTimer)
+      if (resumeStableTimer) clearTimeout(resumeStableTimer)
+      if (resumeFallbackTimer) clearTimeout(resumeFallbackTimer)
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
       resizeObserver?.disconnect()
       window.removeEventListener('resize', onResize)
@@ -465,12 +492,23 @@ export function Terminal({
   return (
     <div ref={shellRef} className="berth-terminal-shell relative h-full w-full overflow-hidden bg-canvas py-2 pl-4 pr-2">
       <div ref={hostRef} className="berth-xterm h-full w-full" />
-      {showOverlay && (
+      {showOverlay && (launch ? (
         <div className="absolute inset-0 flex items-center justify-center gap-3 bg-canvas/90 text-sm text-muted-foreground">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
-          {launch ? '正在启动会话，等待 agent 就绪…' : '正在恢复会话…'}
+          正在启动会话，等待 agent 就绪…
         </div>
-      )}
+      ) : (
+        // Resume: cover the terminal while the replayed scrollback redraws, with a skeleton standing
+        // in for the agent's input box at the bottom — so the reconnect window reads as "loading"
+        // rather than leaking the half-drawn TUI / stray control sequences into view.
+        <div className="absolute inset-0 flex flex-col justify-end gap-3 bg-canvas/90 p-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
+            正在恢复会话…
+          </div>
+          <div className="h-12 w-full animate-pulse rounded-lg border border-border bg-muted-foreground/10" />
+        </div>
+      ))}
     </div>
   )
 }
