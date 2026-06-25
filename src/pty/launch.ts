@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { resolveAgentBinary, codexHookTrustSupportOrWarm } from './binaries'
-import { ensureClaudeTrust } from './trust'
+import { ensureClaudeTrust, ensureCodexTrust } from './trust'
 import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
 import { berthHome } from '../paths'
 import type { AgentCli, LogicalSession } from '../types'
@@ -47,7 +47,10 @@ export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
   const { cli, id } = s.resume
   const cwd = ensureLaunchCwd(s.cwd)
   const bin = resolveAgentBinary(cli)
-  if (cli === 'claude') ensureClaudeTrust(cwd)   // interactive PTY → trust dialog isn't auto-skipped
+  // interactive PTY → neither CLI auto-skips its workspace-trust dialog; seed trust so the
+  // unattended launch isn't blocked on it (the auto-submitted turn would otherwise never fire).
+  if (cli === 'claude') ensureClaudeTrust(cwd)
+  else if (cli === 'codex') ensureCodexTrust(cwd)
   return spawn(bin, resumeArgv(cli, id), {
     name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: process.env as any,
   })
@@ -193,6 +196,7 @@ export interface PerTurnOpts { cwd: string; sessionId?: string; model?: string; 
 export function spawnPerTurn(cli: AgentCli, o: PerTurnOpts): ChildProcess {
   const cwd = ensureLaunchCwd(o.cwd)
   const bin = resolveAgentBinary(cli)
+  if (cli === 'codex') ensureCodexTrust(cwd)   // `codex exec` also refuses an untrusted dir
   const argv = cli === 'codex' ? codexTurnArgv(o.prompt, o.resumeId, { model: o.model })
     : cli === 'coco' ? cocoTurnArgv(o.prompt, o.resumeId, o.sessionId ?? '')
       : (() => { throw new Error(`per-turn stream not supported for ${cli}`) })()
@@ -220,6 +224,7 @@ export function launchFresh(cli: AgentCli, o: FreshOpts): IPty {
   const cwd = ensureLaunchCwd(o.cwd)
   const bin = resolveAgentBinary(cli)
   if (cli === 'claude') ensureClaudeTrust(cwd)   // interactive PTY → trust dialog isn't auto-skipped
+  else if (cli === 'codex') ensureCodexTrust(cwd) // ditto: codex's dir-trust dialog blocks the unattended turn
   // codex's context hook rides `--dangerously-bypass-hook-trust`; on builds that lack the flag,
   // passing it aborts the launch. The flag probe can be slow (`codex --help`), so launch uses only
   // the warmed cache: if support is still unknown, start immediately without injection and keep the
