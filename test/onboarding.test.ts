@@ -22,7 +22,7 @@ describe('onboarding seed', () => {
     const name = onboardingContent('zh-CN').projectName
     expect(projects.map(p => p.name)).toContain(name)
     const tasks = db.allTasks()
-    expect(tasks.length).toBe(4)
+    expect(tasks.length).toBe(11)
     const pid = projects.find(p => p.name === name)!.id
     expect(tasks.every(t => t.projectId === pid)).toBe(true)
   })
@@ -44,7 +44,7 @@ describe('onboarding seed', () => {
     const { db, docs } = fixtures()
     expect(seedOnboarding(db, docs, 'zh-CN', () => 1000)).toBe(true)
     expect(seedOnboarding(db, docs, 'zh-CN', () => 1000)).toBe(false)
-    expect(db.allTasks().length).toBe(4)
+    expect(db.allTasks().length).toBe(11)
     expect(db.allProjects().length).toBe(1)
   })
 
@@ -80,14 +80,6 @@ describe('onboarding seed', () => {
     expect(onboardingContent('en').projectName).not.toBe(onboardingContent('zh-CN').projectName)
   })
 
-  it('the launch task doc carries an explicit directive for the launched agent', () => {
-    const launch = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-launch')!
-    expect(launch.doc).toMatch(/自我介绍|复述/)
-    expect(launch.priority).toBe('P1')
-    const launchEn = onboardingContent('en').tasks.find(t => t.id === 'berth-guide-launch')!
-    expect(launchEn.doc).toMatch(/introduce|repeat/i)
-  })
-
   it('task 1 teaches the project-first philosophy and the skill-install step', () => {
     const welcome = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-welcome')!
     expect(welcome.doc).toContain('berth skill install')
@@ -105,11 +97,27 @@ describe('onboarding seed', () => {
     expect(welcomeEn.doc).toMatch(/do not run any `berth` command/i)
   })
 
-  it('task 3 explains the three context layers and the import methods', () => {
-    const ctx = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-import')!
-    expect(ctx.doc).toMatch(/启动目录/)
-    expect(ctx.doc).toMatch(/导入其他目录/)
-    expect(ctx.doc).toMatch(/无归属/)
+  it('the import question covers the three import methods', () => {
+    const q = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-import')!
+    expect(q.title).toContain('如何导入已有会话')
+    expect(q.doc).toMatch(/导入其他目录/)
+    expect(q.doc).toMatch(/无归属/)
+  })
+
+  it('the cargo question explains the launch directory', () => {
+    const q = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-cargo')!
+    expect(q.doc).toMatch(/启动目录/)
+  })
+
+  it('the remove question answers the data-safety question accurately and forbids berth commands', () => {
+    const q = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-remove')!
+    // Must NOT mislead: removing a session does not delete the local CLI session file.
+    expect(q.doc).toMatch(/不会/)
+    expect(q.doc).toMatch(/只读/)
+    expect(q.doc).toMatch(/不要运行任何 `berth` 命令/)
+    const en = onboardingContent('en').tasks.find(t => t.id === 'berth-guide-remove')!
+    expect(en.doc).toMatch(/read-only/i)
+    expect(en.doc).toMatch(/do not run any `berth` command/i)
   })
 
   it('seeds tasks with varied status/priority to exercise the board', () => {
