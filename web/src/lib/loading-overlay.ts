@@ -5,13 +5,15 @@
 
 export const LOADING_OVERLAY_DELAY_MS = 150
 
-// Once the resume overlay IS showing (cold open), don't tear it down on the first replayed byte —
-// that first burst is exactly the messy reconnect redraw (scrollback replay + the agent re-answering
-// startup queries). Hold the overlay until the stream goes quiet for this long, then reveal a
-// settled terminal. Warm resumes never reach this path (data arrives before the show-delay).
-export const RESUME_STABLE_READY_MS = 300
-// Hard cap so a chatty session that never goes quiet (periodic redraws) can't pin the overlay up.
-export const RESUME_OVERLAY_FALLBACK_MS = 6_000
+// Resume mask: shown immediately on EVERY resume, so it's consistent across CLIs — the old
+// "only show if no data by 150ms" anti-flash gap made it appear for some sessions and skip others
+// (a fast-replaying codex resume never tripped it). To avoid a flicker on warm/instant replays it
+// stays up for at least RESUME_MIN_VISIBLE_MS; past that it's held until the replayed stream goes
+// quiet for RESUME_STABLE_READY_MS (covering the reconnect redraw). RESUME_OVERLAY_FALLBACK_MS is a
+// hard cap for a session that never produces replay data or never settles.
+export const RESUME_MIN_VISIBLE_MS = 280
+export const RESUME_STABLE_READY_MS = 260
+export const RESUME_OVERLAY_FALLBACK_MS = 5_000
 
 export function shouldShowLoadingOverlay(
   { hasData, elapsedMs, delayMs = LOADING_OVERLAY_DELAY_MS }:

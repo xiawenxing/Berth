@@ -5,7 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
-import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS, RESUME_STABLE_READY_MS, RESUME_OVERLAY_FALLBACK_MS } from '@/lib/loading-overlay'
+import { RESUME_MIN_VISIBLE_MS, RESUME_STABLE_READY_MS, RESUME_OVERLAY_FALLBACK_MS } from '@/lib/loading-overlay'
 import { LAUNCH_READY_FALLBACK_MS, LAUNCH_STABLE_READY_MS, shouldMarkLaunchReady } from '@/lib/launch-readiness'
 import type { LaunchSpec } from '@/lib/ui-store'
 import '@xterm/xterm/css/xterm.css'
@@ -141,15 +141,15 @@ export function Terminal({
   const hostRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
   const [historyBytes, setHistoryBytes] = useState(DEFAULT_PTY_HISTORY_BYTES)
-  // Resume overlay is delayed and hidden on first output. Fresh-launch overlay is immediate and
-  // stays until the CLI is ready-ish, so slow first-time directory startup does not show a half-built
-  // TUI as if it were ready for input.
+  // Resume mask is shown immediately and held through the reconnect redraw (consistent across CLIs).
+  // Fresh-launch overlay is also immediate and stays until the CLI is ready-ish, so slow first-time
+  // directory startup does not show a half-built TUI as if it were ready for input.
   const [showOverlay, setShowOverlay] = useState(false)
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    setShowOverlay(!!launch)
+    setShowOverlay(true)
     let firstDataSeen = false
     let launchReady = !launch
     let recentLaunchOutput = ''
@@ -159,29 +159,32 @@ export function Terminal({
     let ws: WebSocket | null = null
     let stableLaunchTimer: ReturnType<typeof setTimeout> | null = null
     let launchFallbackTimer: ReturnType<typeof setTimeout> | null = null
-    // Resume overlay lifecycle: shown after a short delay if no data yet (cold open), then HELD
-    // through the reconnect redraw and torn down only once the replayed stream settles (or a hard
-    // cap fires). This is what stops the user from seeing the messy intermediate redraw on resume.
-    let resumeOverlayShown = false
+    // Resume mask lifecycle: shown immediately (above), held for at least RESUME_MIN_VISIBLE_MS so a
+    // warm/instant replay doesn't flicker, then kept up until the replayed stream goes quiet for
+    // RESUME_STABLE_READY_MS — covering the reconnect redraw. A hard fallback cap drops it for a
+    // session that never produces replay data or never settles. The quiet timer is armed only once
+    // the first byte arrives (in onmessage), so a cold resume stays masked until data shows up.
+    const resumeShownAt = Date.now()
     let resumeStableTimer: ReturnType<typeof setTimeout> | null = null
     let resumeFallbackTimer: ReturnType<typeof setTimeout> | null = null
     const hideResumeOverlay = () => {
+      const waited = Date.now() - resumeShownAt
+      if (waited < RESUME_MIN_VISIBLE_MS) {
+        if (resumeStableTimer) clearTimeout(resumeStableTimer)
+        resumeStableTimer = setTimeout(hideResumeOverlay, RESUME_MIN_VISIBLE_MS - waited)
+        return
+      }
       if (resumeStableTimer) { clearTimeout(resumeStableTimer); resumeStableTimer = null }
       if (resumeFallbackTimer) { clearTimeout(resumeFallbackTimer); resumeFallbackTimer = null }
       setShowOverlay(false)
     }
     const scheduleResumeOverlayHide = () => {
-      if (!resumeOverlayShown) return
       if (resumeStableTimer) clearTimeout(resumeStableTimer)
       resumeStableTimer = setTimeout(hideResumeOverlay, RESUME_STABLE_READY_MS)
     }
-    let overlayTimer: ReturnType<typeof setTimeout> | null = launch ? null : setTimeout(() => {
-      overlayTimer = null
-      if (!shouldShowLoadingOverlay({ hasData: firstDataSeen, elapsedMs: LOADING_OVERLAY_DELAY_MS })) return
-      resumeOverlayShown = true
-      setShowOverlay(true)
+    if (!launch) {
       resumeFallbackTimer = setTimeout(hideResumeOverlay, RESUME_OVERLAY_FALLBACK_MS)
-    }, LOADING_OVERLAY_DELAY_MS)
+    }
     const sendInputNow = (d: string) => {
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d }))
     }
@@ -223,13 +226,6 @@ export function Terminal({
     const markDataSeen = () => {
       if (firstDataSeen) return
       firstDataSeen = true
-      if (!launch) {
-        // Warm resume (data beat the show-delay): cancel the pending overlay so it never flashes.
-        // Cold resume (overlay already up): keep it; scheduleResumeOverlayHide drains it once the
-        // replayed redraw goes quiet, so the garbled intermediate state stays hidden behind it.
-        if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null }
-        if (!resumeOverlayShown) setShowOverlay(false)
-      }
     }
 
     const term = new Xterm({
@@ -418,7 +414,9 @@ export function Terminal({
         lastLaunchDataAt = Date.now()
         evaluateLaunchReady()
         scheduleStableLaunchReady()
-      } else if (resumeOverlayShown) {
+      } else {
+        // Resume: each replayed byte refreshes the quiet timer; the mask drops once the redraw
+        // settles (or the min-visible / fallback bounds), never on the first messy byte.
         scheduleResumeOverlayHide()
       }
       term.write(data, () => {
@@ -466,7 +464,6 @@ export function Terminal({
     })
 
     return () => {
-      if (overlayTimer) clearTimeout(overlayTimer)
       if (stableLaunchTimer) clearTimeout(stableLaunchTimer)
       if (launchFallbackTimer) clearTimeout(launchFallbackTimer)
       if (resumeStableTimer) clearTimeout(resumeStableTimer)
@@ -493,10 +490,10 @@ export function Terminal({
     <div ref={shellRef} className="berth-terminal-shell relative h-full w-full overflow-hidden bg-canvas py-2 pl-4 pr-2">
       <div ref={hostRef} className="berth-xterm h-full w-full" />
       {showOverlay && (
-        // Same centered spinner for both modes. The resume overlay is HELD through the reconnect
-        // redraw (see scheduleResumeOverlayHide) so it covers the messy intermediate state — the
-        // spinner just needs to read as "loading", not stand in for the input box.
-        <div className="absolute inset-0 flex items-center justify-center gap-3 bg-canvas/90 text-sm text-muted-foreground">
+        // Launch: opaque, to hide the half-built TUI during startup. Resume: a lighter,
+        // frosted semi-transparent mask — the terminal is settling underneath, not booting from
+        // nothing, so we veil the reconnect redraw rather than black it out.
+        <div className={`absolute inset-0 flex items-center justify-center gap-3 text-sm text-muted-foreground ${launch ? 'bg-canvas/90' : 'bg-canvas/60 backdrop-blur-sm'}`}>
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
           {launch ? '正在启动会话，等待 agent 就绪…' : '正在恢复会话…'}
         </div>
