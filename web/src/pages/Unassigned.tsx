@@ -83,6 +83,7 @@ export function Unassigned() {
     }
   }
   const [pinOverrides, setPinOverrides] = useState<Map<string, boolean>>(new Map())
+  const [hiddenOverrides, setHiddenOverrides] = useState<Set<string>>(new Set())
   const activeProjects = useMemo(() => projects.filter((p) => !p.archived), [projects])
   const isPinned = (s: ApiSession) => pinOverrides.get(s.sessionId) ?? !!s.pinned
 
@@ -123,20 +124,32 @@ export function Unassigned() {
       .catch(() => reload())
   }
   const unimport = (sessionId: string) => {
+    setHiddenOverrides((prev) => new Set(prev).add(sessionId))
+    if (selId === sessionId) setSelId(null)
     api
       .unimportSessions([sessionId])
-      .then(() => reload())
-      .catch(() => reload())
+      .then(() => {
+        reload()
+      })
+      .catch(() => {
+        setHiddenOverrides((prev) => {
+          const next = new Set(prev)
+          next.delete(sessionId)
+          return next
+        })
+        reload()
+      })
   }
 
   // Unassigned = sessions with no projectId. Pinned sessions get a dedicated section above cwd groups.
+  const visibleSessions = useMemo(() => sessions.filter((s) => !hiddenOverrides.has(s.sessionId)), [sessions, hiddenOverrides])
   const pinSessions = useMemo(
-    () => sessions.filter((s) => !s.projectId && isPinned(s)).sort((a, b) => b.updatedAt - a.updatedAt),
-    [sessions, pinOverrides],
+    () => visibleSessions.filter((s) => !s.projectId && isPinned(s)).sort((a, b) => b.updatedAt - a.updatedAt),
+    [visibleSessions, pinOverrides],
   )
   const groups = useMemo(() => {
     const m = new Map<string, ApiSession[]>()
-    for (const s of sessions) {
+    for (const s of visibleSessions) {
       if (s.projectId) continue
       if (isPinned(s)) continue
       const key = s.cwd || ''
@@ -148,7 +161,7 @@ export function Unassigned() {
       cwd,
       sessions: list.slice().sort((a, b) => b.updatedAt - a.updatedAt),
     }))
-  }, [sessions, pinOverrides])
+  }, [visibleSessions, pinOverrides])
 
   const allUnassigned = useMemo(() => [...pinSessions, ...groups.flatMap((g) => g.sessions)], [pinSessions, groups])
   // First real unassigned session selected by default; fall back if selection vanished.
@@ -276,6 +289,11 @@ export function Unassigned() {
             setImportBusy(true)
             try {
               await api.importSessions(ids) // project-less import → surfaces under 无归属
+              setHiddenOverrides((prev) => {
+                const next = new Set(prev)
+                for (const id of ids) next.delete(id)
+                return next
+              })
               live.markSeenMany(ids)        // imported sessions default to READ, not unread
               setImportDlg(null)
               doResync()
@@ -296,6 +314,11 @@ export function Unassigned() {
             setImportBusy(true)
             try {
               await api.importSessions(ids) // project-less import → surfaces under 无归属
+              setHiddenOverrides((prev) => {
+                const next = new Set(prev)
+                for (const id of ids) next.delete(id)
+                return next
+              })
               live.markSeenMany(ids)        // imported sessions default to READ, not unread
               setCliDlg(null)
               doResync()
@@ -314,6 +337,11 @@ export function Unassigned() {
             setImportBusy(true)
             try {
               await api.importSessions(ids) // project-less import → surfaces under 无归属
+              setHiddenOverrides((prev) => {
+                const next = new Set(prev)
+                for (const id of ids) next.delete(id)
+                return next
+              })
               live.markSeenMany(ids)        // imported sessions default to READ, not unread
               setIdDlgOpen(false)
               doResync()
