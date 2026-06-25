@@ -104,8 +104,8 @@ export function registerSession(key: string, driver: SessionDriver, opts?: { run
  * Back-compat shim: register a node-pty (Model A) by wrapping it in a TuiDriver. Existing callers and
  * tests pass an IPty here; new Model B callers use registerSession with a StreamJsonDriver.
  */
-export function registerPty(key: string, pty: IPty, opts?: { running?: boolean; holdRunning?: HoldRunning; onExit?: () => void }): void {
-  registerSession(key, new TuiDriver(pty, key), opts)
+export function registerPty(key: string, pty: IPty, opts?: { running?: boolean; holdRunning?: HoldRunning; onExit?: () => void; respawn?: () => IPty | null }): void {
+  registerSession(key, new TuiDriver(pty, key, { respawn: opts?.respawn }), opts)
 }
 
 /**

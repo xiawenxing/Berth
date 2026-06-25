@@ -76,3 +76,12 @@ export function gateArgv(cli: AgentCli, argv: string[], isSupported: FlagSupport
 export function gateArgvForBinary(cli: AgentCli, bin: string, argv: string[]): { argv: string[]; dropped: string[] } {
   return gateArgv(cli, argv, (flag) => cliFlagSupportedCached(bin, flag))
 }
+
+/**
+ * Force-drop EVERY degradable flag, regardless of probe state. The most-compatible arg set, used as
+ * the reactive last resort: if a launch fast-fails despite proactive gating (e.g. the probe was cold
+ * or wrong), the retry strips all enhancements to maximize the chance the bare session starts.
+ */
+export function stripAllDegradable(cli: AgentCli, argv: string[]): { argv: string[]; dropped: string[] } {
+  return gateArgv(cli, argv, () => false)
+}

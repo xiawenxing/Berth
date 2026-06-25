@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { resolveAgentBinary, codexHookTrustSupportOrWarm } from './binaries'
-import { gateArgvForBinary } from './flag-gate'
+import { gateArgvForBinary, stripAllDegradable } from './flag-gate'
 import { ensureClaudeTrust, ensureCodexTrust } from './trust'
 import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
 import { berthHome } from '../paths'
@@ -232,7 +232,7 @@ statusMessage = "Loading Berth context"
 `)
 }
 
-export function launchFresh(cli: AgentCli, o: FreshOpts): IPty {
+export function launchFresh(cli: AgentCli, o: FreshOpts, flags: { minimal?: boolean } = {}): IPty {
   const cwd = ensureLaunchCwd(o.cwd)
   const bin = resolveAgentBinary(cli)
   if (cli === 'claude') ensureClaudeTrust(cwd)   // interactive PTY → trust dialog isn't auto-skipped
@@ -241,9 +241,11 @@ export function launchFresh(cli: AgentCli, o: FreshOpts): IPty {
   // passing it aborts the launch. The flag probe can be slow (`codex --help`), so launch uses only
   // the warmed cache: if support is still unknown, start immediately without injection and keep the
   // probe warming in the background for the next launch.
-  let opts = o
-  if (cli === 'codex' && o.injectFile && codexHookTrustSupportOrWarm(bin) !== true) {
-    opts = { ...o, injectFile: undefined }
+  // `minimal` is the reactive last-resort retry (see TuiDriver respawn): drop context injection too,
+  // and force-strip every degradable flag below — bare bones to maximize the chance the session starts.
+  let opts = flags.minimal ? { ...o, injectFile: undefined } : o
+  if (cli === 'codex' && opts.injectFile && codexHookTrustSupportOrWarm(bin) !== true) {
+    opts = { ...opts, injectFile: undefined }
   }
   const env = { ...(process.env as any) }
   if (cli === 'codex' && opts.injectFile) {
@@ -254,7 +256,8 @@ export function launchFresh(cli: AgentCli, o: FreshOpts): IPty {
     ensureCocoBerthHook()                               // register the session_start context hook (idempotent)
     env.BERTH_CONTEXT_FILE = writeCocoContextPayload(opts.injectFile)   // coco hook cats a JSON envelope
   }
-  return spawn(bin, gated(cli, bin, freshArgv(cli, opts)), {
+  const argv = flags.minimal ? stripAllDegradable(cli, freshArgv(cli, opts)).argv : gated(cli, bin, freshArgv(cli, opts))
+  return spawn(bin, argv, {
     name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env,
   })
 }

@@ -25,9 +25,24 @@ export class TuiDriver implements SessionDriver {
 
   private startedAt = Date.now()
   private sawVisible = false
+  private retried = false
+  private respawn?: () => IPty | null
 
-  constructor(private pty: IPty, key: string) {
+  // `respawn` (TUI fresh launch only) is the reactive last-resort retry: if the process fast-fails,
+  // we re-spawn ONCE with a minimal/most-compatible arg set (see launchFresh minimal) and keep going
+  // on the SAME driver, so the registry and attached viewers never see a dead session — they just see
+  // a brief retry notice then the bare session. One retry max (`retried`) so a genuinely-broken
+  // binary can't loop. After a successful retry, normal fast-fail no longer applies.
+  constructor(private pty: IPty, key: string, opts?: { respawn?: () => IPty | null }) {
     this.spool = new PtySpool(key)
+    this.respawn = opts?.respawn
+    this.bindPty(pty)
+  }
+
+  private bindPty(pty: IPty): void {
+    this.pty = pty
+    this.startedAt = Date.now()
+    this.sawVisible = false
     pty.onData((d) => {
       this.spool.append(d)
       this.chunks.push(d)
@@ -42,10 +57,27 @@ export class TuiDriver implements SessionDriver {
       }
     })
     pty.onExit((e) => {
-      try { this.frameCb(this.exitMessage(e?.exitCode ?? 0)) } catch {}
+      const code = e?.exitCode ?? 0
+      if (this.shouldRetry(code)) {
+        this.retried = true
+        let next: IPty | null = null
+        try { next = this.respawn!() } catch { next = null }
+        if (next) {
+          try { this.frameCb('\r\n[berth] startup failed — retrying without advanced options…\r\n') } catch {}
+          this.bindPty(next)
+          return
+        }
+      }
+      try { this.frameCb(this.exitMessage(code)) } catch {}
       this.spool.close()
       this.exitCb()
     })
+  }
+
+  private shouldRetry(exitCode: number): boolean {
+    if (this.retried || !this.respawn) return false
+    // Same signal as the diagnostic: died fast, and either nonzero or never showed real output.
+    return Date.now() - this.startedAt < FAST_FAIL_MS && (exitCode !== 0 || !this.sawVisible)
   }
 
   // A process that dies within FAST_FAIL_MS of spawn never really started — almost always a startup

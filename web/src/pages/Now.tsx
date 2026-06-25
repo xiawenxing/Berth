@@ -11,17 +11,9 @@ import { api } from '@/lib/api'
 import { priorityColors, priorityRank } from '@/lib/priority'
 import { isDoneStatus } from '@/lib/status'
 import { useLive } from '@/lib/live'
+import { deliveryTasks, localTodayISO } from '@/lib/delivery'
 import type { ShipStatus } from '@/lib/types'
 import type { ApiSession, ApiTask } from '@/lib/api'
-
-
-/** Local YYYY-MM-DD for "today" — matches the backend ddl format. */
-function todayISO(): string {
-  const d = new Date()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${m}-${day}`
-}
 
 export function Now() {
   const { openDrawer, openLaunch } = useUI()
@@ -63,12 +55,9 @@ export function Now() {
   // 今日交付: tasks due today, plus overdue (ddl before today) ones still undelivered —
   // an overdue item needs shipping today as much as a today-due one. Overdue-but-done tasks
   // drop off (already shipped). Overdue first (oldest ddl first), then today's.
-  const today = todayISO()
+  const today = localTodayISO()
   const todayTasks = useMemo(
-    () =>
-      tasks
-        .filter((t) => t.ddl && (t.ddl === today || (t.ddl < today && !isDoneStatus(t.status))))
-        .sort((a, b) => (a.ddl ?? '').localeCompare(b.ddl ?? '')),
+    () => deliveryTasks(tasks, today),
     [tasks, today],
   )
   const doneN = todayTasks.filter((t) => isDoneStatus(t.status)).length

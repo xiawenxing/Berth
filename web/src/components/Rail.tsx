@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Anchor, Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight } from 'lucide-react'
+import { Anchor, Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight, CalendarClock } from 'lucide-react'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
@@ -8,11 +8,13 @@ import { useData } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api, type ApiSession } from '@/lib/api'
 import { toggleMode } from '@/lib/theme'
+import { deliveryStats } from '@/lib/delivery'
 
 interface ProjRow {
   id: string
   name: string
   meta: string
+  deliveryCount?: number
   archived?: boolean
 }
 
@@ -29,11 +31,17 @@ function bucketShip(sessions: ApiSession[], live: ReturnType<typeof useLive>): '
 }
 
 /** The little nav-row status dot, same visual language as Now/Unassigned/TaskCard ShipGlyph. */
-function ShipDot({ kind }: { kind: 'sail' | 'dock' | null }) {
+function ShipDot({ kind, count }: { kind: 'sail' | 'dock' | 'delivery' | null; count?: number }) {
   if (!kind) return null
   // sail=运行中(蓝色 loading), dock=未读(红点) — mirrors the session-list lamp.
   if (kind === 'sail') return <Spinner size={11} className="text-brand" label="有会话在跑" />
-  return <span title="有未读会话" className="h-1.5 w-1.5 flex-none rounded-full bg-destructive" />
+  if (kind === 'dock') return <span title="有未读会话" className="h-1.5 w-1.5 flex-none rounded-full bg-destructive" />
+  return (
+    <span title={`今日交付 ${count ?? 0}`} className="inline-flex h-4 min-w-4 flex-none items-center justify-center rounded-full bg-warning/15 px-1 text-[10px] font-semibold text-warning">
+      <CalendarClock size={10} />
+      {(count ?? 0) > 1 && <span className="ml-0.5">{count}</span>}
+    </span>
+  )
 }
 
 function ThemeToggle() {
@@ -81,9 +89,10 @@ export function Rail() {
   }, [sessions])
 
   const rowForProject = (p: (typeof apiProjects)[number]): ProjRow => {
-    const tN = tasks.filter((t) => t.projectId === p.id).length
+    const projectTasks = tasks.filter((t) => t.projectId === p.id)
+    const tN = projectTasks.length
     const sN = sessions.filter((s) => s.projectId === p.id).length
-    return { id: p.id, name: p.name, meta: `${tN} 任务 · ${sN} 会话`, archived: p.archived }
+    return { id: p.id, name: p.name, meta: `${tN} 任务 · ${sN} 会话`, deliveryCount: deliveryStats(projectTasks).total, archived: p.archived }
   }
 
   // Real active projects + optimistic newly-created rows.
@@ -103,7 +112,7 @@ export function Rail() {
 
   // Optimistic row + persist via POST /projects/create, then reload real data.
   const addProject = (name: string, desc = '', aiContext = true, images: string[] = []) => {
-    setExtra((p) => [...p, { id: name, name, meta: '0 任务 · 0 会话' }])
+    setExtra((p) => [...p, { id: name, name, meta: '0 任务 · 0 会话', deliveryCount: 0 }])
     api
       .createProject(name)
       .then((created: { id?: string; name?: string }) => {
@@ -191,6 +200,7 @@ export function Rail() {
 }
 
 function ProjectNavRow({ project, ship }: { project: ProjRow; ship: 'sail' | 'dock' | null }) {
+  const signal = ship ?? ((project.deliveryCount ?? 0) > 0 ? 'delivery' : null)
   return (
     <NavLink
       to={`/project/${encodeURIComponent(project.id)}`}
@@ -206,7 +216,7 @@ function ProjectNavRow({ project, ship }: { project: ProjRow; ship: 'sail' | 'do
       <span className="flex items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-accent-foreground" title={project.name}>{project.name}</span>
         {project.archived && <Archive size={11} className="flex-none text-muted-foreground" />}
-        <ShipDot kind={ship} />
+        <ShipDot kind={signal} count={project.deliveryCount} />
       </span>
       <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{project.meta}</span>
     </NavLink>

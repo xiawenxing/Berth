@@ -17,6 +17,7 @@ import { relTime, shortCwd, normPriority } from '@/lib/format'
 import { isDoneStatus, statusKind } from '@/lib/status'
 import { useLive } from '@/lib/live'
 import { startFreshLaunch } from '@/lib/launch-runner'
+import { deliveryStats } from '@/lib/delivery'
 import { api, type PreviewSession } from '@/lib/api'
 import { sortSessionRows } from '@/lib/session-sort'
 import type { Task, SessionRow, CwdGroup, TaskStatus, LinkedSession } from '@/lib/types'
@@ -203,12 +204,7 @@ export function ProjectWorkspace() {
   // 港湾概览 + 最近活动, derived from real sessions/tasks.
   const sailN = projSessions.filter((s) => live.shipStatus(s.sessionId, s.updatedAt) === 'sail').length
   const dockN = projSessions.filter((s) => live.shipStatus(s.sessionId, s.updatedAt) === 'dock').length
-  const todayISO = (() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })()
-  const todayTasks = apiTasks.filter((t) => t.projectId === id && t.ddl === todayISO)
-  const todayDone = todayTasks.filter((t) => isDoneStatus(t.status)).length
+  const todayDelivery = useMemo(() => deliveryStats(apiTasks.filter((t) => t.projectId === id)), [apiTasks, id])
   const lastActivity = projSessions.length ? relTime(Math.max(...projSessions.map((s) => s.updatedAt))) : '—'
 
   // taskId === '' → free launch (header / session-module button); otherwise resolve the task by id
@@ -542,7 +538,7 @@ export function ProjectWorkspace() {
           <span className="text-[12px] font-semibold text-foreground">港湾概览</span>
           <Pill tone="brand" loading>在跑 {sailN}</Pill>
           <Pill tone="destructive">靠岸·待查收 {dockN}</Pill>
-          <Pill tone="warning">今日交付 {todayDone}/{todayTasks.length}</Pill>
+          <Pill tone="warning">今日交付 {todayDelivery.done}/{todayDelivery.total}</Pill>
         </div>
       </header>
 

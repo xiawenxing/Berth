@@ -499,7 +499,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     // pty/trust.ts so the positional reaches it. CAVEAT: claude's interactive auto-submit still has a
     // rare slow-startup miss (probe: ~3/4); the only race-free delivery is Model B (stream-json, turn
     // via stdin) — see gotcha #15.
-    const pty = launchFresh(cli, {
+    const freshOpts = {
       cwd,
       sessionId: plan.sessionId ?? undefined,
       injectFile,
@@ -508,7 +508,8 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       addDirs: finalAddDirs,
       cols,
       rows,
-    })
+    }
+    const pty = launchFresh(cli, freshOpts)
     registerPty(launchKey, pty, {
       running: !!initialPrompt,
       // codex polls its rollout turn-state; coco has no such file, so a boot-grace guard stops the
@@ -517,6 +518,9 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
         : cli === 'coco' && initialPrompt ? bootGraceHold(COCO_BOOT_HOLD_MS)
         : undefined,
       onExit,
+      // Reactive last resort: if the fresh pty fast-fails (a flag this build rejects that proactive
+      // gating didn't catch), the driver re-spawns once with the minimal/most-compatible arg set.
+      respawn: () => { try { return launchFresh(cli, freshOpts, { minimal: true }) } catch { return null } },
     })
     // codex's deterministic "first turn started" signal (rollout task_started) is the precise moment
     // to drop the launch mask — far better than the boot-output quiet heuristic, which codex's
