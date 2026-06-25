@@ -64,14 +64,13 @@ setTaskSessionDigestProvider((s, taskId, budget) => {
  * Both steps are guarded internally, so repeat calls are no-ops.
  */
 export async function initData(): Promise<void> {
-  // Capture first-run BEFORE bootstrap flips the flag: the onboarding guide project is seeded only on
-  // a genuinely fresh install, so an existing instance never gets it injected on upgrade.
-  const firstRun = !store.getSetting('bootstrapped')
   ensureBootstrap(store)
-  if (firstRun) {
-    try { seedOnboarding(store, getDocStore(store), getLocale(store)) }
-    catch { /* onboarding is best-effort; never block server startup */ }
-  }
+  // Seed the onboarding guide for anyone who has not been SHOWN it yet — including existing installs
+  // upgrading into this version (there are few old users, so a one-time backfill is fine). seedOnboarding
+  // self-guards on the `onboarding-seeded` flag, which is set the moment it seeds, so once a user has
+  // seen the guide it never returns — not even if they manually delete the project (deletion ≠ unshown).
+  try { seedOnboarding(store, getDocStore(store), getLocale(store)) }
+  catch { /* onboarding is best-effort; never block server startup */ }
   await migrateIdentitiesOnce(store, { docsRoot: getDocsRoot(store) })
   migrateAttachmentsOnce(store, { docsRoot: getDocsRoot(store) })
   migrateSessionDirsOnce(store)

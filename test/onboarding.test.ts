@@ -48,6 +48,20 @@ describe('onboarding seed', () => {
     expect(db.allProjects().length).toBe(1)
   })
 
+  it('does not resurrect the guide once shown, even after the user deletes it', () => {
+    const { db, docs } = fixtures()
+    expect(seedOnboarding(db, docs, 'zh-CN', () => 1000)).toBe(true)
+    // User manually deletes the guide project + its tasks.
+    for (const t of db.allTasks()) db.softDeleteTask(t.id, 2000)
+    const p = db.allProjects()[0]
+    if (p) db.deleteProject(p.id, 2000)
+    expect(db.allTasks().length).toBe(0)
+    // A later boot must NOT bring it back — the shown flag persists.
+    expect(seedOnboarding(db, docs, 'zh-CN', () => 3000)).toBe(false)
+    expect(db.allTasks().length).toBe(0)
+    expect(db.allProjects().length).toBe(0)
+  })
+
   it('respects locale for the guide project name', () => {
     const { db, docs } = fixtures()
     seedOnboarding(db, docs, 'en', () => 1000)
