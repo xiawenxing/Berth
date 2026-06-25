@@ -108,9 +108,15 @@ export function clearsAwaiting(frame: ChatFrame): boolean {
   return frame.type === 'error' || (frame.type === 'turn' && frame.turn.role === 'assistant')
 }
 
-/** Apply one chat frame to the turn list: snapshot replaces, turn upserts by id (order preserved). */
+/** Apply one chat frame to the turn list: non-empty snapshot replaces, turn upserts by id. */
 export function applyChatFrame(turns: ChatTurn[], frame: ChatFrame): ChatTurn[] {
-  if (frame.type === 'snapshot') return frame.turns
+  if (frame.type === 'snapshot') {
+    // Resume in Model B seeds durable history via REST, then attaches /pty. For codex/coco resume
+    // the live per-turn driver starts empty until the user sends another turn; that empty snapshot
+    // must not erase the already-loaded transcript.
+    if (frame.turns.length === 0 && turns.length > 0) return turns
+    return frame.turns
+  }
   if (frame.type === 'turn') {
     const i = turns.findIndex((t) => t.id === frame.turn.id)
     if (i < 0) return [...turns, frame.turn]

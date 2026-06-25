@@ -11,6 +11,15 @@ describe('applyChatFrame', () => {
     expect(next.map((t) => t.id)).toEqual(['x', 'y'])
   })
 
+  it('does not let an empty live snapshot erase REST-loaded history', () => {
+    const prev = [turn('replay_0', 'user', '历史问题'), turn('replay_1', 'assistant', '历史回复')]
+    expect(applyChatFrame(prev, { type: 'snapshot', turns: [] })).toBe(prev)
+  })
+
+  it('keeps an empty snapshot empty when there is no REST-loaded history', () => {
+    expect(applyChatFrame([], { type: 'snapshot', turns: [] })).toEqual([])
+  })
+
   it('a turn frame appends a new turn', () => {
     const next = applyChatFrame([turn('a', 'user', 'q')], { type: 'turn', turn: turn('b', 'assistant', 'a') })
     expect(next.map((t) => t.id)).toEqual(['a', 'b'])
