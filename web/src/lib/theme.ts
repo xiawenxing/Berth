@@ -66,6 +66,54 @@ const DARK: Scheme[] = [
       '--color-brand-foreground': '#06070a',
     },
   },
+  {
+    id: 'github-dark', name: 'GitHub 深', mode: 'dark',
+    vars: {
+      '--color-background': '#0d1117', '--color-foreground': '#c9d1d9', '--color-card': '#161b22', '--color-card-foreground': '#e6edf3',
+      '--color-popover': '#1c2128', '--color-popover-foreground': '#e6edf3', '--color-muted': '#21262d', '--color-muted-foreground': '#8b949e',
+      '--color-secondary': '#21262d', '--color-accent': '#21262d', '--color-accent-foreground': '#e6edf3', '--color-border': '#30363d',
+      '--color-input': '#30363d', '--color-ring': '#58a6ff', '--color-sidebar': '#010409', '--color-sidebar-accent': '#161b22',
+      '--color-canvas': '#010409', '--color-brand': '#58a6ff', '--color-success': '#3fb950', '--color-warning': '#d29922',
+      '--color-priority': '#db6d28', '--color-purple': '#bc8cff', '--color-destructive': '#f85149', '--color-text-dim': '#6e7681',
+      '--color-brand-foreground': '#0d1117',
+    },
+  },
+  {
+    id: 'vscode-dark', name: 'VSCode 暗', mode: 'dark',
+    vars: {
+      '--color-background': '#1e1e1e', '--color-foreground': '#cccccc', '--color-card': '#252526', '--color-card-foreground': '#d4d4d4',
+      '--color-popover': '#2d2d30', '--color-popover-foreground': '#d4d4d4', '--color-muted': '#2d2d2d', '--color-muted-foreground': '#9d9d9d',
+      '--color-secondary': '#2d2d2d', '--color-accent': '#37373d', '--color-accent-foreground': '#e0e0e0', '--color-border': '#3c3c3c',
+      '--color-input': '#3c3c3c', '--color-ring': '#569cd6', '--color-sidebar': '#181818', '--color-sidebar-accent': '#252526',
+      '--color-canvas': '#141414', '--color-brand': '#569cd6', '--color-success': '#89d185', '--color-warning': '#cca700',
+      '--color-priority': '#d18616', '--color-purple': '#c586c0', '--color-destructive': '#f14c4c', '--color-text-dim': '#6e6e6e',
+      '--color-brand-foreground': '#ffffff',
+    },
+  },
+  {
+    id: 'vangogh', name: '梵高星空', mode: 'dark',
+    vars: {
+      '--color-background': '#0f1a33', '--color-foreground': '#cdd6e8', '--color-card': '#16243f', '--color-card-foreground': '#dde4f0',
+      '--color-popover': '#1d2d4d', '--color-popover-foreground': '#dde4f0', '--color-muted': '#21314f', '--color-muted-foreground': '#8491ab',
+      '--color-secondary': '#21314f', '--color-accent': '#283a5c', '--color-accent-foreground': '#e4ebf5', '--color-border': '#324569',
+      '--color-input': '#324569', '--color-ring': '#f0c04a', '--color-sidebar': '#0b1428', '--color-sidebar-accent': '#16243f',
+      '--color-canvas': '#0a1124', '--color-brand': '#f0c04a', '--color-success': '#7bb88f', '--color-warning': '#e6a23c',
+      '--color-priority': '#e09a4a', '--color-purple': '#9b8cf0', '--color-destructive': '#e8736f', '--color-text-dim': '#5f6c85',
+      '--color-brand-foreground': '#1a1530',
+    },
+  },
+  {
+    id: 'codex', name: '墨绿 · Codex', mode: 'dark',
+    vars: {
+      '--color-background': '#131715', '--color-foreground': '#c9cfcb', '--color-card': '#1b201d', '--color-card-foreground': '#dbe0dc',
+      '--color-popover': '#232825', '--color-popover-foreground': '#dbe0dc', '--color-muted': '#232825', '--color-muted-foreground': '#899389',
+      '--color-secondary': '#232825', '--color-accent': '#2a302c', '--color-accent-foreground': '#e3e8e4', '--color-border': '#333b36',
+      '--color-input': '#333b36', '--color-ring': '#19c37d', '--color-sidebar': '#0e1210', '--color-sidebar-accent': '#1b201d',
+      '--color-canvas': '#0b0f0d', '--color-brand': '#19c37d', '--color-success': '#5fb87a', '--color-warning': '#e0b056',
+      '--color-priority': '#d89a55', '--color-purple': '#a98cf0', '--color-destructive': '#ec6a5e', '--color-text-dim': '#6a736d',
+      '--color-brand-foreground': '#07120c',
+    },
+  },
 ]
 
 // ── Light schemes ──────────────────────────────────────────────────────────
@@ -106,6 +154,54 @@ const LIGHT: Scheme[] = [
       '--color-brand-foreground': '#ffffff',
     },
   },
+  {
+    id: 'github-light', name: 'GitHub 浅', mode: 'light',
+    vars: {
+      '--color-background': '#ffffff', '--color-foreground': '#1f2328', '--color-card': '#ffffff', '--color-card-foreground': '#1f2328',
+      '--color-popover': '#ffffff', '--color-popover-foreground': '#1f2328', '--color-muted': '#f6f8fa', '--color-muted-foreground': '#59636e',
+      '--color-secondary': '#f6f8fa', '--color-accent': '#eaeef2', '--color-accent-foreground': '#1f2328', '--color-border': '#d1d9e0',
+      '--color-input': '#d1d9e0', '--color-ring': '#0969da', '--color-sidebar': '#f6f8fa', '--color-sidebar-accent': '#eaeef2',
+      '--color-canvas': '#f6f8fa', '--color-brand': '#0969da', '--color-success': '#1a7f37', '--color-warning': '#9a6700',
+      '--color-priority': '#bc4c00', '--color-purple': '#8250df', '--color-destructive': '#cf222e', '--color-text-dim': '#818b98',
+      '--color-brand-foreground': '#ffffff',
+    },
+  },
+  {
+    id: 'claude-clay', name: '暖陶 · Claude', mode: 'light',
+    vars: {
+      '--color-background': '#f5f1eb', '--color-foreground': '#3d3a34', '--color-card': '#fbf8f3', '--color-card-foreground': '#3d3a34',
+      '--color-popover': '#fbf8f3', '--color-popover-foreground': '#3d3a34', '--color-muted': '#ece6dd', '--color-muted-foreground': '#7a7468',
+      '--color-secondary': '#ece6dd', '--color-accent': '#e6dfd3', '--color-accent-foreground': '#3d3a34', '--color-border': '#ddd5c8',
+      '--color-input': '#ddd5c8', '--color-ring': '#c15f3c', '--color-sidebar': '#efe9e0', '--color-sidebar-accent': '#e6dfd3',
+      '--color-canvas': '#efe9e0', '--color-brand': '#c15f3c', '--color-success': '#5a9216', '--color-warning': '#b9831b',
+      '--color-priority': '#c2730a', '--color-purple': '#8a5cc4', '--color-destructive': '#cf4032', '--color-text-dim': '#a89f90',
+      '--color-brand-foreground': '#ffffff',
+    },
+  },
+  {
+    id: 'monet', name: '莫奈睡莲', mode: 'light',
+    vars: {
+      '--color-background': '#e9efe9', '--color-foreground': '#34403c', '--color-card': '#f5f8f3', '--color-card-foreground': '#34403c',
+      '--color-popover': '#f5f8f3', '--color-popover-foreground': '#34403c', '--color-muted': '#dde7df', '--color-muted-foreground': '#61716a',
+      '--color-secondary': '#dde7df', '--color-accent': '#d6e3da', '--color-accent-foreground': '#34403c', '--color-border': '#cad9ce',
+      '--color-input': '#cad9ce', '--color-ring': '#4f8a8b', '--color-sidebar': '#e1eae1', '--color-sidebar-accent': '#d6e3da',
+      '--color-canvas': '#e1eae1', '--color-brand': '#4f8a8b', '--color-success': '#5e9a5a', '--color-warning': '#c79a3e',
+      '--color-priority': '#c2730a', '--color-purple': '#8268a8', '--color-destructive': '#cf5a52', '--color-text-dim': '#93a298',
+      '--color-brand-foreground': '#ffffff',
+    },
+  },
+  {
+    id: 'hokusai', name: '北斋 · 神奈川', mode: 'light',
+    vars: {
+      '--color-background': '#f0ebe0', '--color-foreground': '#1f2d3d', '--color-card': '#f8f4ea', '--color-card-foreground': '#1f2d3d',
+      '--color-popover': '#f8f4ea', '--color-popover-foreground': '#1f2d3d', '--color-muted': '#e6dfce', '--color-muted-foreground': '#6a6253',
+      '--color-secondary': '#e6dfce', '--color-accent': '#dcd4c0', '--color-accent-foreground': '#1f2d3d', '--color-border': '#d2c9b3',
+      '--color-input': '#d2c9b3', '--color-ring': '#1b4f72', '--color-sidebar': '#ebe5d6', '--color-sidebar-accent': '#dcd4c0',
+      '--color-canvas': '#ebe5d6', '--color-brand': '#1b4f72', '--color-success': '#4f7a3a', '--color-warning': '#b07d1a',
+      '--color-priority': '#b5651d', '--color-purple': '#5d4a7a', '--color-destructive': '#b23a2e', '--color-text-dim': '#a89e88',
+      '--color-brand-foreground': '#ffffff',
+    },
+  },
 ]
 
 export const SCHEMES: Scheme[] = [...LIGHT, ...DARK]
@@ -113,7 +209,7 @@ export const LIGHT_SCHEMES = LIGHT
 export const DARK_SCHEMES = DARK
 
 const SCHEME_KEY = 'berth-scheme'
-const DEFAULT_LIGHT = 'daylight'
+const DEFAULT_LIGHT = 'mist'
 const DEFAULT_DARK = 'midnight'
 
 export function getScheme(): Scheme {
