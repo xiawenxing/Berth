@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
-import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd, firstTurnDelivery } from '../src/pty/launch'
+import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd } from '../src/pty/launch'
 
 describe('ensureLaunchCwd', () => {
   it('creates a Berth workspace cwd on demand (never falls back to homedir)', () => {
@@ -31,18 +31,11 @@ describe('ensureLaunchCwd', () => {
   })
 })
 
-// First-turn delivery is per-CLI. claude types the turn after its bracketed-paste readiness marker
-// (its positional `-- <prompt>` raced startup and got dropped). codex/coco use their NATIVE positional
-// `[PROMPT]`: codex enables bracketed paste ~150ms into startup — before its composer accepts input —
-// so a marker-gated paste lands in a not-yet-ready startup screen and is silently dropped (the reported
-// "从任务启动 codex 不自动发送 query" bug); the native positional is queued and auto-submitted by the CLI.
-describe('firstTurnDelivery', () => {
-  it('claude → typed-paste-after-readiness; codex/coco → native positional prompt', () => {
-    expect(firstTurnDelivery('claude')).toBe('typed-paste')
-    expect(firstTurnDelivery('codex')).toBe('positional')
-    expect(firstTurnDelivery('coco')).toBe('positional')
-  })
-})
+// First-turn delivery is uniform: all three CLIs receive the first turn as their native positional
+// `[PROMPT]`, which each CLI queues and auto-submits once ITS OWN composer is ready (verified live for
+// claude/codex/coco — robust to slow startup). A previous claude-only "type after the bracketed-paste
+// readiness marker" path was reverted: claude emits that marker ~0.4s in during its welcome banner,
+// before the composer accepts input, so typing then raced startup and dropped the turn.
 
 // Fresh launches run in bypass-permissions mode (Berth-launched, unattended):
 //   claude --dangerously-skip-permissions · coco --yolo · codex --dangerously-bypass-approvals-and-sandbox

@@ -40,29 +40,6 @@ export function resumeArgv(cli: AgentCli, id: string): string[] {
   }
 }
 
-export type FirstTurnDelivery = 'typed-paste' | 'positional'
-
-/**
- * How a fresh interactive (Model A / PTY) launch delivers its first user turn — the CLI's bracketed-
- * paste readiness marker is a CLAUDE-calibrated signal, so the strategy is per-CLI:
- *
- * - **claude → 'typed-paste':** spawn WITHOUT a positional prompt, then type the turn over the PTY once
- *   claude enables bracketed paste (`server/auto-submit-prompt.ts`). claude's positional `-- <prompt>`
- *   raced its interactive startup and was silently dropped (the "概率性 query 不自动发送" bug); claude
- *   emits the bracketed-paste marker only when its composer is genuinely ready, so the marker is a
- *   reliable readiness gate for it.
- * - **codex/coco → 'positional':** pass the turn as the CLI's native `[PROMPT]`. codex enables
- *   bracketed paste ~150ms into startup — long BEFORE its composer accepts input — so the same marker-
- *   gated paste lands in a not-yet-ready startup screen (update/loading) and is discarded (verified:
- *   the reported "从任务启动 codex 不自动发送 query" bug). The native positional is queued by the CLI and
- *   auto-submitted once IT is ready (codex's documented `[PROMPT]` behavior), delegating the timing to
- *   the authority on it. The manifest still rides the silent hook channel, so the positional carries
- *   only the user's first message.
- */
-export function firstTurnDelivery(cli: AgentCli): FirstTurnDelivery {
-  return cli === 'claude' ? 'typed-paste' : 'positional'
-}
-
 export interface LaunchOpts { cols?: number; rows?: number }
 
 export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
@@ -84,11 +61,15 @@ export interface FreshOpts {
 }
 
 // The manifest rides a silent channel for every CLI (claude `--append-system-prompt-file`, codex +
-// coco SessionStart hooks), so a positional prompt would only ever carry the user's actual first
-// message — never the context. NOTE: Model A first-turn delivery is per-CLI (see `firstTurnDelivery`):
-// codex/coco take the positional (their native auto-submitted `[PROMPT]`), while claude is spawned
-// WITHOUT a positional and is typed the turn after a readiness signal (server/auto-submit-prompt.ts) —
-// claude's positional raced its startup and dropped the turn.
+// coco SessionStart hooks), so the positional prompt only ever carries the user's actual first message
+// — never the context. Model A first-turn delivery is UNIFORM: all three CLIs take the native positional
+// `[PROMPT]`, which each CLI queues and auto-submits once ITS OWN composer is ready. This is the most
+// reliable Model-A option (PTY-probed) — far better than the reverted claude-only "type the turn after
+// the bracketed-paste readiness marker" path: claude emits that marker ~0.4s in during its welcome
+// banner, long before the composer accepts input, so typing then dropped the turn (the "概率性 query 不
+// 自动发送" bug). claude's trust dialog — the original reason its positional sometimes vanished — is
+// pre-seeded (pty/trust.ts). CAVEAT: claude's interactive auto-submit still has a rare slow-startup miss
+// (probe ~3/4); the only race-free delivery is Model B (stream-json), where the turn rides stdin NDJSON.
 function positional(o: FreshOpts): string {
   return o.initialPrompt ?? ''
 }
