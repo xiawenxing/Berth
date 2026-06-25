@@ -77,6 +77,21 @@ describe('onboarding seed', () => {
     expect(launchEn.doc).toMatch(/introduce|repeat/i)
   })
 
+  it('task 1 teaches the project-first philosophy and the skill-install step', () => {
+    const welcome = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-welcome')!
+    expect(welcome.doc).toContain('berth skill install')
+    expect(welcome.doc).toMatch(/用完即弃/)
+    const welcomeEn = onboardingContent('en').tasks.find(t => t.id === 'berth-guide-welcome')!
+    expect(welcomeEn.doc).toContain('berth skill install')
+  })
+
+  it('task 3 explains the three context layers and the import methods', () => {
+    const ctx = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-import')!
+    expect(ctx.doc).toMatch(/启动目录/)
+    expect(ctx.doc).toMatch(/导入其他目录/)
+    expect(ctx.doc).toMatch(/无归属/)
+  })
+
   it('seeds tasks with varied status/priority to exercise the board', () => {
     const c = onboardingContent('zh-CN')
     expect(new Set(c.tasks.map(t => t.status)).size).toBeGreaterThan(1)
