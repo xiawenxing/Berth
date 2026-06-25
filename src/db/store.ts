@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS session_import_dir ( cwd TEXT PRIMARY KEY );
 -- Session-grained import: a session is explicitly in Berth's visible set. The new canonical way to
 -- surface a session — registering a 货舱 cwd (project_path) no longer surfaces all its sessions.
 CREATE TABLE IF NOT EXISTS session_import ( session_id TEXT PRIMARY KEY );
+CREATE TABLE IF NOT EXISTS session_hidden ( session_id TEXT PRIMARY KEY );
 `
 
 function cols(db: Database.Database, table: string): Set<string> {
@@ -242,6 +243,9 @@ export function openStore(path: string) {
     bindIntent(id: string, sessionId: string) {
       db.prepare('UPDATE launch_intent SET session_id=?, bound=1 WHERE id=?').run(sessionId, id)
     },
+    removeLaunchIntentsForSession(sessionId: string) {
+      db.prepare('DELETE FROM launch_intent WHERE session_id=? OR id=?').run(sessionId, sessionId)
+    },
     /** Distinct cwds of every launch intent (bound or not) — implicit session-import roots so any
      *  Berth-launched session surfaces even if its cwd was never explicitly imported. */
     allLaunchIntentCwds(): string[] {
@@ -260,12 +264,22 @@ export function openStore(path: string) {
     // ── Session-grained import (the new canonical surfacing signal) ──
     addSessionImport(sessionId: string) {
       db.prepare('INSERT OR IGNORE INTO session_import (session_id) VALUES (?)').run(sessionId)
+      db.prepare('DELETE FROM session_hidden WHERE session_id=?').run(sessionId)
     },
     removeSessionImport(sessionId: string) {
       db.prepare('DELETE FROM session_import WHERE session_id=?').run(sessionId)
     },
     allSessionImportSet(): Set<string> {
       return new Set((db.prepare('SELECT session_id FROM session_import').all() as any[]).map(r => r.session_id))
+    },
+    hideSession(sessionId: string) {
+      db.prepare('INSERT OR IGNORE INTO session_hidden (session_id) VALUES (?)').run(sessionId)
+    },
+    unhideSession(sessionId: string) {
+      db.prepare('DELETE FROM session_hidden WHERE session_id=?').run(sessionId)
+    },
+    allHiddenSessionSet(): Set<string> {
+      return new Set((db.prepare('SELECT session_id FROM session_hidden').all() as any[]).map(r => r.session_id))
     },
     /** Session ids of bound launch intents — Berth-launched sessions surface per-session via this
      *  (replacing launch_intent.cwd as a directory-wide import root). */

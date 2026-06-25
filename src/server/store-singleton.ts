@@ -120,7 +120,7 @@ export function storeRoots(): { claudeRoot: string; codexRoot: string; cocoRoot:
  */
 export function refresh(): LogicalSession[] {
   const all = collectLogicalSessions(storeRoots())
-  cache = filterImportedSessions(all, importRoots(), curatedSessionIds())
+  cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet())
   store.upsertSessions(cache)
   // Reconcile over the UNFILTERED scan, not `cache`: a fresh codex launch is bound=0 / unattached /
   // not yet session-imported, and its cwd is no longer an import root — so it's absent from `cache`.
@@ -129,7 +129,7 @@ export function refresh(): LogicalSession[] {
   // once bound it enters allBoundLaunchSessionIds → curated → surfaces on the next refresh.
   const bound = reconcileLaunchIntents(store, all)
   if (bound > 0) {
-    cache = filterImportedSessions(all, importRoots(), curatedSessionIds())
+    cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet())
     store.upsertSessions(cache)
   }
   // Auto-pull sources configured for it (default is manual → no-op). Fire-and-forget; never blocks.

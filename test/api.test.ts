@@ -18,12 +18,15 @@ const mockTodoKeyForSession = vi.fn((_id: string) => null as string | null)
 const mockRemoveEdgesForSession = vi.fn((..._a: any[]) => {})
 const mockAddEdge = vi.fn((..._a: any[]) => {})
 const mockSetAttach = vi.fn((..._a: any[]) => {})
+const mockSetPin = vi.fn((..._a: any[]) => {})
 const mockSetTitleOverride = vi.fn((..._a: any[]) => {})
 const mockAddProjectPath = vi.fn((..._a: any[]) => {})
 const mockSetPathEnabled = vi.fn((..._a: any[]) => {})
 const mockRemoveProjectPath = vi.fn((..._a: any[]) => {})
 const mockAddSessionImport = vi.fn((..._a: any[]) => {})
 const mockRemoveSessionImport = vi.fn((..._a: any[]) => {})
+const mockRemoveLaunchIntentsForSession = vi.fn((..._a: any[]) => {})
+const mockHideSession = vi.fn((..._a: any[]) => {})
 const mockUpdateTaskFields = vi.fn((..._a: any[]) => {})
 const mockSetTaskDdl = vi.fn((..._a: any[]) => {})
 const mockTaskDdls = new Map<string, string>()
@@ -31,7 +34,7 @@ const mockGetStore = vi.fn((..._a: any[]) => ({
   allPinnedSet: () => new Set<string>(),
   allAttachMap: () => new Map(),
   allTitleOverrides: () => new Map(),
-  setPin: vi.fn(),
+  setPin: mockSetPin,
   setAttach: mockSetAttach,
   setTitleOverride: mockSetTitleOverride,
   edgesByTodo: mockEdgesByTodo,
@@ -46,7 +49,11 @@ const mockGetStore = vi.fn((..._a: any[]) => ({
   removeProjectPath: mockRemoveProjectPath,
   addSessionImport: mockAddSessionImport,
   removeSessionImport: mockRemoveSessionImport,
+  removeLaunchIntentsForSession: mockRemoveLaunchIntentsForSession,
   allSessionImportSet: () => new Set<string>(),
+  hideSession: mockHideSession,
+  unhideSession: vi.fn(),
+  allHiddenSessionSet: () => new Set<string>(),
   allBoundLaunchSessionIds: () => new Set<string>(),
   updateTaskFields: mockUpdateTaskFields,
   setTaskDdl: mockSetTaskDdl,
@@ -313,16 +320,23 @@ describe('货舱 path + session-import API', () => {
 
 describe('session removal API (detach / un-import)', () => {
   beforeEach(() => {
-    mockSetAttach.mockClear(); mockRemoveSessionImport.mockClear()
+    mockSetAttach.mockClear()
+    mockRemoveSessionImport.mockClear()
+    mockRemoveEdgesForSession.mockClear()
+    mockSetPin.mockClear()
+    mockRemoveLaunchIntentsForSession.mockClear()
+    mockHideSession.mockClear()
   })
   const J = { 'Content-Type': 'application/json' }
 
-  it('detaches sessions from their project (attach → null)', async () => {
+  it('detaches sessions from their project and task (attach → null, edge cleared)', async () => {
     const port = await listen()
     const r = await fetch(`http://localhost:${port}/api/sessions/detach`, {
       method: 'POST', headers: J, body: JSON.stringify({ ids: ['s1', 's2'] }),
     })
     expect(r.status).toBe(200)
+    expect(mockRemoveEdgesForSession).toHaveBeenCalledWith('s1')
+    expect(mockRemoveEdgesForSession).toHaveBeenCalledWith('s2')
     expect(mockSetAttach).toHaveBeenCalledWith('s1', null, 'confirmed')
     expect(mockSetAttach).toHaveBeenCalledWith('s2', null, 'confirmed')
     expect(mockRemoveSessionImport).not.toHaveBeenCalled()
@@ -336,14 +350,18 @@ describe('session removal API (detach / un-import)', () => {
     expect(r.status).toBe(400)
   })
 
-  it('un-imports sessions (removeSessionImport + detach)', async () => {
+  it('un-imports sessions (remove visible/organized signals + detach)', async () => {
     const port = await listen()
     const r = await fetch(`http://localhost:${port}/api/session-import/remove`, {
       method: 'POST', headers: J, body: JSON.stringify({ ids: ['s1'] }),
     })
     expect(r.status).toBe(200)
     expect(mockRemoveSessionImport).toHaveBeenCalledWith('s1')
+    expect(mockRemoveEdgesForSession).toHaveBeenCalledWith('s1')
+    expect(mockSetPin).toHaveBeenCalledWith('s1', false)
     expect(mockSetAttach).toHaveBeenCalledWith('s1', null, 'confirmed')
+    expect(mockRemoveLaunchIntentsForSession).toHaveBeenCalledWith('s1')
+    expect(mockHideSession).toHaveBeenCalledWith('s1')
   })
 
   it('rejects un-import with no ids', async () => {

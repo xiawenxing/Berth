@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon, RefreshCw, Sparkles, Loader2 } from 'lucide-react'
+import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon, RefreshCw, Sparkles, Loader2, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { SessionPanel } from '@/components/SessionPanel'
@@ -122,6 +122,12 @@ export function Unassigned() {
       .then(() => reload())
       .catch(() => reload())
   }
+  const unimport = (sessionId: string) => {
+    api
+      .unimportSessions([sessionId])
+      .then(() => reload())
+      .catch(() => reload())
+  }
 
   // Unassigned = sessions with no projectId. Pinned sessions get a dedicated section above cwd groups.
   const pinSessions = useMemo(
@@ -202,6 +208,7 @@ export function Unassigned() {
                   onTogglePin={togglePin}
                   projects={activeProjects}
                   onAttach={attach}
+                  onUnimport={unimport}
                   showCwd
                 />
               )}
@@ -217,6 +224,7 @@ export function Unassigned() {
                   onTogglePin={togglePin}
                   projects={activeProjects}
                   onAttach={attach}
+                  onUnimport={unimport}
                 />
               ))}
             </>
@@ -327,6 +335,7 @@ function SessionGroup({
   onTogglePin,
   projects,
   onAttach,
+  onUnimport,
   showCwd,
 }: {
   label: string
@@ -339,6 +348,7 @@ function SessionGroup({
   onTogglePin: (id: string, nextOn: boolean) => void
   projects: ApiProject[]
   onAttach: (sessionId: string, projectId: string) => void
+  onUnimport: (sessionId: string) => void
   showCwd?: boolean
 }) {
   const [collapsed, setCollapsed] = useState(false)
@@ -370,6 +380,7 @@ function SessionGroup({
               onTogglePin={onTogglePin}
               projects={projects}
               onAttach={onAttach}
+              onUnimport={onUnimport}
               showCwd={showCwd}
             />
           ))}
@@ -399,6 +410,7 @@ function SessionListRow({
   onTogglePin,
   projects,
   onAttach,
+  onUnimport,
   showCwd,
 }: {
   s: ApiSession
@@ -408,6 +420,7 @@ function SessionListRow({
   onTogglePin: (id: string, nextOn: boolean) => void
   projects: ApiProject[]
   onAttach: (sessionId: string, projectId: string) => void
+  onUnimport: (sessionId: string) => void
   showCwd?: boolean
 }) {
   const live = useLive()
@@ -520,6 +533,15 @@ function SessionListRow({
           )}
         >
           <FolderInputIcon size={13} />
+        </button>
+        <button
+          type="button"
+          title="取消导入"
+          aria-label="取消导入"
+          onClick={() => onUnimport(s.sessionId)}
+          className="flex-none rounded p-1 text-text-dim opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        >
+          <Trash2 size={13} />
         </button>
         {menuOpen && (
           <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-52 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">

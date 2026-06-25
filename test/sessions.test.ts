@@ -115,6 +115,16 @@ describe('filterImportedSessions', () => {
     expect(kept).toEqual(['c', 'e'])
   })
 
+  it('hidden sessions are excluded even if imported by root or curated', () => {
+    const kept = filterImportedSessions(
+      sessions,
+      ['/Users/me/proj-a'],
+      new Set(['c']),
+      new Set(['a', 'c']),
+    ).map(s => s.sessionId)
+    expect(kept).toEqual([])
+  })
+
   it('null-cwd sessions are never matched by a root (only via the curated net)', () => {
     const kept = filterImportedSessions([mk('x', null)], ['/Users/me'], empty)
     expect(kept).toEqual([])

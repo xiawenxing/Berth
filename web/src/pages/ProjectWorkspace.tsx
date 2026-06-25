@@ -28,7 +28,6 @@ let taskSeq = 100
 
 type SessionGroupConfirm =
   | { kind: 'detach'; ids: string[]; rawCwd?: string }
-  | { kind: 'unimport'; ids: string[]; rawCwd?: string; workspaceNote: boolean }
 
 export function ProjectWorkspace() {
   const { id = '' } = useParams()
@@ -259,7 +258,7 @@ export function ProjectWorkspace() {
       .then(() => reload())
       .catch(() => reload())
 
-  // ── 会话移除（移出项目 / 取消导入）+ 装载目录联动 (§10.2) ──
+  // ── 会话移出项目 + 装载目录联动 (§10.2) ──
   const norm = (p: string) => p.replace(/\/+$/, '')
   // The registered 装载目录 cwd matching `cwd` (trailing-slash tolerant), or null.
   const registeredPath = (cwd: string) =>
@@ -281,19 +280,9 @@ export function ProjectWorkspace() {
     const cwds = cwdsOf([sid])
     api.detachSessions([sid]).then(() => { reload(); offerRemoveCargo([sid], cwds) }).catch(() => reload())
   }
-  const onUnimport = (sid: string) => {
-    const cwds = cwdsOf([sid])
-    api.unimportSessions([sid]).then(() => { reload(); offerRemoveCargo([sid], cwds) }).catch(() => reload())
-  }
   const onDetachGroup = (ids: string[], rawCwd?: string) => {
     if (!ids.length) return
     setGroupConfirm({ kind: 'detach', ids, rawCwd })
-  }
-  const onUnimportGroup = (ids: string[], rawCwd?: string) => {
-    if (!ids.length) return
-    // §6.3: the masked workspace-default group holds bound-launch sessions that un-import won't hide.
-    const isWs = !!(rawCwd && project?.workspaceCwd && norm(rawCwd) === norm(project.workspaceCwd))
-    setGroupConfirm({ kind: 'unimport', ids, rawCwd, workspaceNote: isWs })
   }
   const confirmGroupAction = async () => {
     if (!groupConfirm || confirmBusy) return
@@ -301,8 +290,7 @@ export function ProjectWorkspace() {
     const cwds = rawCwd ? [rawCwd] : cwdsOf(ids)
     setConfirmBusy(true)
     try {
-      if (groupConfirm.kind === 'detach') await api.detachSessions(ids)
-      else await api.unimportSessions(ids)
+      await api.detachSessions(ids)
       setGroupConfirm(null)
       reload()
       offerRemoveCargo(ids, cwds)
@@ -571,9 +559,7 @@ export function ProjectWorkspace() {
           onGenerateTitle={onGenerateSessionTitle}
           onLinkTask={onLinkSessionTask}
           onDetach={onDetach}
-          onUnimport={onUnimport}
           onDetachGroup={onDetachGroup}
-          onUnimportGroup={onUnimportGroup}
         />
         <CargoDefaults paths={project?.pathsMeta ?? []} tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
       </div>
@@ -681,23 +667,15 @@ function SessionGroupConfirmDialog({
   onCancel: () => void
   onConfirm: () => void
 }) {
-  const isDetach = action.kind === 'detach'
   return (
     <Dialog open onClose={busy ? () => {} : onCancel} width={460}>
       <div className="flex flex-col">
         <div className="border-b border-border px-4 py-3">
-          <div className="text-[13px] font-semibold text-foreground">{isDetach ? '移出整组会话' : '取消导入整组'}</div>
+          <div className="text-[13px] font-semibold text-foreground">移出整组会话</div>
           <div className="mt-0.5 text-[11px] text-text-dim">共 {action.ids.length} 个会话</div>
         </div>
         <div className="space-y-2 px-4 py-3 text-[12px] text-muted-foreground">
-          {isDetach ? (
-            <p>将该目录下的会话移出本项目。会话仍保留在 Berth，可在「无归属」重新归类。</p>
-          ) : (
-            <>
-              <p>从 Berth 会话列表移除该目录下的会话。不会删除磁盘上的转录文件。</p>
-              {action.workspaceNote && <p className="text-warning">部分由 Berth 起的会话可能仍会显示，它们属于本项目的活跃会话。</p>}
-            </>
-          )}
+          <p>将该目录下的会话移出本项目，并清除任务关联。会话仍保留在 Berth，可在「无归属」重新归类。</p>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
           <button
@@ -712,7 +690,7 @@ function SessionGroupConfirmDialog({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? '处理中…' : isDetach ? '移出整组' : '取消导入'}
+            {busy ? '处理中…' : '移出整组'}
           </button>
         </div>
       </div>
