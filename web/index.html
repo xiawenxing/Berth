@@ -4,11 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Berth</title>
-    <!-- Default day (light) theme; honor a saved preference before first paint. -->
+    <!-- Default day (light) theme; honor the saved scheme's mode before first paint. -->
     <script>
       try {
-        var t = localStorage.getItem('berth-theme')
-        document.documentElement.classList.add(t === 'dark' ? 'dark' : 'light')
+        var m = localStorage.getItem('berth-mode')
+        document.documentElement.classList.add(m === 'dark' ? 'dark' : 'light')
       } catch (e) {
         document.documentElement.classList.add('light')
       }

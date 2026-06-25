@@ -209,6 +209,9 @@ export const LIGHT_SCHEMES = LIGHT
 export const DARK_SCHEMES = DARK
 
 const SCHEME_KEY = 'berth-scheme'
+// Mirrors the chosen scheme's mode so the pre-paint script in index.html can pick
+// the light/dark class without loading the scheme map (avoids a wrong-mode flash).
+const MODE_KEY = 'berth-mode'
 const DEFAULT_LIGHT = 'mist'
 const DEFAULT_DARK = 'midnight'
 
@@ -232,6 +235,7 @@ export function applyScheme(scheme: Scheme) {
   for (const [k, v] of Object.entries({ ...SHARED, ...scheme.vars })) html.style.setProperty(k, v)
   try {
     localStorage.setItem(SCHEME_KEY, scheme.id)
+    localStorage.setItem(MODE_KEY, scheme.mode)
   } catch {
     /* ignore */
   }
