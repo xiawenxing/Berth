@@ -10,15 +10,14 @@ export interface CargoState {
 
 export interface CargoLaunch { cwd: string; addDirs: string[]; ctxProject: boolean; ctxTask: boolean }
 
-/** 默认：上下文全开，所有已登记目录装载，点亮 sticky lastCwd（否则第一个）。ctxTask 仅任务启动为真。 */
+/** 默认：上下文全开，所有已登记目录装载，但不自动指定启动 cwd。ctxTask 仅任务启动为真。 */
 export function initCargo(enabledPaths: string[], lastCwd: string | null, hasTask: boolean): CargoState {
-  const litCwd = lastCwd && enabledPaths.includes(lastCwd) ? lastCwd : (enabledPaths[0] ?? null)
   return {
     ctxProject: true,
     ctxTask: hasTask,
     codeOn: true,
     dirs: enabledPaths.map((cwd) => ({ cwd, loaded: true })),
-    litCwd,
+    litCwd: null,
   }
 }
 
