@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Anchor, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, usePastedImages } from './ImagePaste'
@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { api, type AgentCli } from '@/lib/api'
 import { initCargo, type CargoState } from '@/lib/launch-cargo'
 import { startFreshLaunch } from '@/lib/launch-runner'
+import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
 import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
 
 /**
@@ -21,7 +22,7 @@ export function LaunchDialog() {
   const { launch, closeLaunch, openDrawer } = useUI()
   const { projects, agents, sessions, addPending, resolvePending, reload } = useData()
   const [dest, setDest] = useState<'task' | 'free'>('task')
-  const [cli, setCli] = useState<AgentCli>('claude')
+  const [cli, setCli] = useState<AgentCli>(() => loadLastAgent() ?? 'claude')
   const [freeText, setFreeText] = useState('')
   const [taskNote, setTaskNote] = useState('')
   const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
@@ -54,6 +55,12 @@ export function LaunchDialog() {
   useEffect(() => {
     setCli((prev) => (enabledAgents.some((a) => a.cli === prev) ? prev : enabledAgents[0]?.cli ?? 'claude'))
   }, [enabledAgents])
+
+  // Persist the user's pick globally (most-recent-wins) so the next launch — in any project — defaults to it.
+  const selectCli = useCallback((c: AgentCli) => {
+    setCli(c)
+    saveLastAgent(c)
+  }, [])
 
   if (!launch) return null
   const taskTitle = launch.taskTitle
@@ -159,7 +166,7 @@ export function LaunchDialog() {
           setCargo={setCargo}
           enabledAgents={enabledAgents}
           selectedCli={selectedAgent?.cli ?? cli}
-          onSelectCli={setCli}
+          onSelectCli={selectCli}
           enabledPaths={enabledPaths}
           adjust={adjust}
           setAdjust={setAdjust}

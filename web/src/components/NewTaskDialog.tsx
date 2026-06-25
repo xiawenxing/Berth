@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Sparkles, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, pastedImageDataUrls, usePastedImages, type PastedImage } from './ImagePaste'
@@ -7,6 +7,7 @@ import type { AgentCli, AgentConfig, ApiProject } from '@/lib/api'
 import { initCargo, type CargoState } from '@/lib/launch-cargo'
 import type { Task } from '@/lib/types'
 import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
+import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
 
 /**
  * 新建任务 — minimal immediate-create model: one big title textarea + two small
@@ -31,7 +32,7 @@ export function NewTaskDialog({
   const [text, setText] = useState('')
   const [ai, setAi] = useState(true)
   const [run, setRun] = useState(false)
-  const [cli, setCli] = useState<AgentCli>('claude')
+  const [cli, setCli] = useState<AgentCli>(() => loadLastAgent() ?? 'claude')
   const [cargo, setCargo] = useState<CargoState | null>(null)
   const [adjust, setAdjust] = useState(false)
   const [extraDir, setExtraDir] = useState('')
@@ -61,6 +62,12 @@ export function NewTaskDialog({
   useEffect(() => {
     setCli((prev) => (enabledAgents.some((a) => a.cli === prev) ? prev : enabledAgents[0]?.cli ?? 'claude'))
   }, [enabledAgents])
+
+  // Persist the user's pick globally (most-recent-wins) so the next launch — in any project — defaults to it.
+  const selectCli = useCallback((c: AgentCli) => {
+    setCli(c)
+    saveLastAgent(c)
+  }, [])
 
   const addExtraDir = async () => {
     const cwd = extraDir.trim()
@@ -128,7 +135,7 @@ export function NewTaskDialog({
               setCargo={setCargo}
               enabledAgents={enabledAgents}
               selectedCli={selectedAgent?.cli ?? cli}
-              onSelectCli={setCli}
+              onSelectCli={selectCli}
               enabledPaths={enabledPaths}
               adjust={adjust}
               setAdjust={setAdjust}
