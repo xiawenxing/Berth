@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
-import { Pin, Play, ChevronDown, CalendarClock, Check, Sparkles, Loader2 } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { Pin, Play, ChevronDown, CalendarClock, Check, Sparkles, Loader2, MoreHorizontal, CircleDot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
+import { AnchoredPopover, MenuItem } from '@/components/ui/Menu'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
 import { shortCwd } from '@/lib/format'
@@ -163,12 +164,46 @@ function ShipSection({
 
 function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void }) {
   const live = useLive()
+  const ship = live.shipStatus(s.sessionId, s.updatedAt)
+  const pending = !!s.__pending
+
+  return (
+    <div
+      role="button"
+      tabIndex={pending ? -1 : 0}
+      onClick={() => !pending && onOpen(s)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          if (!pending) onOpen(s)
+        }
+      }}
+      className={cn(
+        'group flex h-[34px] items-center gap-2 rounded px-2 text-left',
+        pending ? 'cursor-default text-muted-foreground' : 'cursor-pointer hover:bg-sidebar-accent',
+      )}
+    >
+      <ShipGlyph status={ship} />
+      <ProjTag proj={s.project} />
+      <CliBadge cli={s.cli} />
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground" title={s.title || s.sessionId}>
+        {s.title || s.sessionId}
+      </span>
+      <SessionActions s={s} ship={ship} pending={pending} />
+    </div>
+  )
+}
+
+function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus; pending?: boolean }) {
+  const live = useLive()
   const { reload } = useData()
+  const moreBtnRef = useRef<HTMLButtonElement>(null)
   const [generating, setGenerating] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const generateTitle = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (generating) return
+    if (generating || pending) return
     setGenerating(true)
     try {
       await api.sessionTitle(s.sessionId)
@@ -180,25 +215,39 @@ function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void
     }
   }
 
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpen(s)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onOpen(s)
-        }
-      }}
-      className="group flex h-[34px] cursor-pointer items-center gap-2 rounded px-2 text-left hover:bg-sidebar-accent"
-    >
-      <ShipGlyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
-      <ProjTag proj={s.project} />
-      <CliBadge cli={s.cli} />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground" title={s.title || s.sessionId}>
-        {s.title || s.sessionId}
+  const togglePin = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (pending) return
+    try {
+      await api.pin(s.sessionId, !s.pinned)
+      reload()
+    } catch {
+      reload()
+    }
+  }
+
+  const markRead = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen(false)
+    live.markSeen(s.sessionId)
+  }
+
+  const markUnread = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen(false)
+    live.markUnread(s.sessionId)
+  }
+
+  if (pending) {
+    return (
+      <span className="inline-flex flex-none items-center rounded bg-muted-foreground/15 px-1.5 py-px text-[10.5px] font-semibold text-muted-foreground">
+        创建中
       </span>
+    )
+  }
+
+  return (
+    <div className="flex flex-none items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
         onClick={generateTitle}
@@ -206,12 +255,50 @@ function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void
         title="智能生成标题"
         aria-label="智能生成标题"
         className={cn(
-          'flex-none rounded p-1 text-text-dim opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100 disabled:opacity-50',
-          generating && 'text-brand opacity-100',
+          'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim transition-opacity hover:bg-secondary hover:text-foreground disabled:opacity-50',
+          generating ? 'text-brand opacity-100' : 'opacity-0 group-hover:opacity-100',
         )}
       >
-        <Sparkles className={cn('h-3.5 w-3.5', generating && 'animate-pulse')} />
+        <Sparkles size={12} className={cn(generating && 'animate-pulse')} />
       </button>
+      <button
+        type="button"
+        onClick={togglePin}
+        title={s.pinned ? '取消 Pin' : 'Pin 此会话'}
+        aria-label={s.pinned ? '取消 Pin' : 'Pin 此会话'}
+        className={cn(
+          'flex h-[22px] w-[22px] items-center justify-center rounded transition-opacity hover:bg-secondary',
+          s.pinned ? 'text-priority opacity-100' : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100',
+        )}
+      >
+        <Pin size={12} />
+      </button>
+      <button
+        ref={moreBtnRef}
+        type="button"
+        title="更多"
+        aria-label="更多"
+        onClick={() => setMenuOpen((v) => !v)}
+        className={cn(
+          'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim transition-opacity hover:bg-secondary hover:text-foreground',
+          menuOpen ? 'bg-secondary text-foreground opacity-100' : 'opacity-0 group-hover:opacity-100',
+        )}
+      >
+        <MoreHorizontal size={13} />
+      </button>
+      {menuOpen && (
+        <AnchoredPopover anchor={moreBtnRef} width={184} onClose={() => setMenuOpen(false)}>
+          {ship === 'dock' ? (
+            <MenuItem onClick={markRead}>
+              <Check size={13} className="flex-none text-muted-foreground" /> 标为已读
+            </MenuItem>
+          ) : (
+            <MenuItem onClick={markUnread}>
+              <CircleDot size={13} className="flex-none text-muted-foreground" /> 标为未读
+            </MenuItem>
+          )}
+        </AnchoredPopover>
+      )}
     </div>
   )
 }
@@ -256,11 +343,24 @@ function TaskRow({
           {linked.length > 0 ? (
             <div className="mt-2 flex flex-col gap-1">
               {linked.map((s) => (
-                <button key={s.sessionId} onClick={() => onOpen(s)} className="flex items-center gap-2 rounded border border-border bg-card px-2 py-1 text-left hover:border-muted-foreground">
+                <div
+                  key={s.sessionId}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpen(s)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onOpen(s)
+                    }
+                  }}
+                  className="group flex items-center gap-2 rounded border border-border bg-card px-2 py-1 text-left hover:border-muted-foreground"
+                >
                   <ShipGlyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
                   <CliBadge cli={s.cli} />
-                  <span className="truncate text-[12px] text-foreground" title={s.title || s.sessionId}>{s.title || s.sessionId}</span>
-                </button>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-foreground" title={s.title || s.sessionId}>{s.title || s.sessionId}</span>
+                  <SessionActions s={s} ship={live.shipStatus(s.sessionId, s.updatedAt)} />
+                </div>
               ))}
             </div>
           ) : (
