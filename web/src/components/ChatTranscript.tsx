@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronRight } from 'lucide-react'
 import { turnHasVisibleContent, type Block, type ChatTurn } from '@/lib/chat'
 import { cn } from '@/lib/utils'
 import { Markdown } from './Markdown'
@@ -88,13 +89,16 @@ function UserBubble({ turn }: { turn: ChatTurn }) {
 function AssistantTurn({ turn }: { turn: ChatTurn }) {
   const visible = turnHasVisibleContent(turn)
   if (!visible && turn.streaming) return null
+  const { process, answer } = splitProcessAndAnswer(turn.blocks)
+  const hasProcess = process.length > 0
 
   return (
     <div className="flex flex-col items-start gap-1.5">
       <div className="w-full max-w-[88%] space-y-2 text-sm leading-relaxed text-foreground">
         {visible ? (
           <>
-            {turn.blocks.map((b, i) => (
+            {hasProcess && <ProcessFold turn={turn} blocks={process} />}
+            {answer.map((b, i) => (
               <FlowBlock key={i} block={b} />
             ))}
             {turn.streaming && <span className="inline-block h-3 w-1.5 animate-pulse rounded-sm bg-muted-foreground align-middle" />}
@@ -103,9 +107,59 @@ function AssistantTurn({ turn }: { turn: ChatTurn }) {
           <span className="text-muted-foreground">没有可显示的回复。</span>
         )}
       </div>
-      {turn.result && <TurnFooter turn={turn} />}
+      {!hasProcess && turn.result && <TurnFooter turn={turn} />}
     </div>
   )
+}
+
+export function splitProcessAndAnswer(blocks: Block[]): { process: Block[]; answer: Block[] } {
+  let i = blocks.length
+  while (i > 0 && blocks[i - 1].kind === 'text') i--
+  return { process: blocks.slice(0, i), answer: blocks.slice(i) }
+}
+
+function ProcessFold({ turn, blocks }: { turn: ChatTurn; blocks: Block[] }) {
+  const [override, setOverride] = useState<boolean | null>(null)
+  const open = override ?? !!turn.streaming
+  const label = processLabel(turn, blocks)
+  return (
+    <div className="text-sm">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOverride(!open)}
+        className="flex max-w-full items-center gap-2 text-left text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight size={14} className={cn('flex-none transition-transform', open && 'rotate-90')} />
+        <span className="truncate">{label}</span>
+        {turn.result?.usage?.output != null && <span className="shrink-0 opacity-70">· {turn.result.usage.output} tok</span>}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2 border-l border-border/60 pl-4">
+          {blocks.map((b, i) => (
+            <FlowBlock key={i} block={b} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function processLabel(turn: ChatTurn, blocks: Block[]): string {
+  const steps = blocks.filter((b) => b.kind === 'tool_call').length
+  const r = turn.result
+  if (r?.isError) return `已中断${r.errorSubtype ? ` (${r.errorSubtype})` : ''}`
+  if (turn.streaming) return steps ? `工作中… · ${steps} 步` : '工作中…'
+  const duration = r?.durationMs ? `Worked for ${formatDuration(r.durationMs)}` : '过程'
+  return steps ? `${duration} · ${steps} 步` : duration
+}
+
+function formatDuration(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const rest = seconds % 60
+  return rest ? `${minutes}m ${rest}s` : `${minutes}m`
 }
 
 function FlowBlock({ block }: { block: Block }) {
