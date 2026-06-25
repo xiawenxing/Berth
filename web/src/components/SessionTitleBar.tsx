@@ -147,14 +147,14 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
           type="button"
           onClick={generateTitle}
           disabled={generating || saving || editing}
-          title="智能生成标题"
+          title={generating ? '正在智能生成标题…' : '智能生成标题'}
           aria-label="智能生成标题"
           className={cn(
             'flex-none rounded p-1 text-text-dim transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50',
             generating && 'text-brand',
           )}
         >
-          <Sparkles className={cn('h-3.5 w-3.5', generating && 'animate-pulse')} />
+          {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
         </button>
       )}
       <ShipPill status={status} task={task} />

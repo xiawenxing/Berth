@@ -199,17 +199,22 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
   const { reload } = useData()
   const moreBtnRef = useRef<HTMLButtonElement>(null)
   const [generating, setGenerating] = useState(false)
+  const [failed, setFailed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
 
   const generateTitle = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (generating || pending) return
     setGenerating(true)
+    setFailed(false)
     try {
       await api.sessionTitle(s.sessionId)
       reload()
     } catch {
-      /* surfaced in the drawer; row stays quiet */
+      // Surface failure on the row itself (the agent can error / time out) — otherwise a non-update
+      // looks identical to "still working". Flash red briefly.
+      setFailed(true)
+      window.setTimeout(() => setFailed(false), 2500)
     } finally {
       setGenerating(false)
     }
@@ -252,14 +257,14 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
         type="button"
         onClick={generateTitle}
         disabled={generating}
-        title="智能生成标题"
+        title={generating ? '正在智能生成标题…' : failed ? '生成失败，点击重试' : '智能生成标题'}
         aria-label="智能生成标题"
         className={cn(
           'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim transition-opacity hover:bg-secondary hover:text-foreground disabled:opacity-50',
-          generating ? 'text-brand opacity-100' : 'opacity-0 group-hover:opacity-100',
+          generating ? 'text-brand opacity-100' : failed ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
         )}
       >
-        <Sparkles size={12} className={cn(generating && 'animate-pulse')} />
+        {generating ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
       </button>
       <button
         type="button"

@@ -348,6 +348,7 @@ function SessionListRow({
   const { reload } = useData()
   const [menuOpen, setMenuOpen] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [failed, setFailed] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -369,11 +370,14 @@ function SessionListRow({
   const generateTitle = async () => {
     if (generating) return
     setGenerating(true)
+    setFailed(false)
     try {
       await api.sessionTitle(s.sessionId)
       reload()
     } catch {
-      reload()
+      // The agent can error / time out — flash red so a non-update isn't silent.
+      setFailed(true)
+      window.setTimeout(() => setFailed(false), 2500)
     } finally {
       setGenerating(false)
     }
@@ -427,16 +431,16 @@ function SessionListRow({
         </span>
         <button
           type="button"
-          title="智能生成标题"
+          title={generating ? '正在智能生成标题…' : failed ? '生成失败，点击重试' : '智能生成标题'}
           aria-label="智能生成标题"
           disabled={generating}
           onClick={generateTitle}
           className={cn(
             'flex-none rounded p-1 text-text-dim transition-opacity hover:bg-secondary hover:text-foreground',
-            generating ? 'text-brand opacity-100' : 'opacity-0 group-hover:opacity-100',
+            generating ? 'text-brand opacity-100' : failed ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
           )}
         >
-          <Sparkles size={13} className={cn(generating && 'animate-pulse')} />
+          {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
         </button>
         <button
           title="归属到项目"
