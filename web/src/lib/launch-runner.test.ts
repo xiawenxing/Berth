@@ -24,6 +24,18 @@ class FakeWS {
 
 const BRACKETED_PASTE_READY = '\x1b[?2004h'
 
+function fakeLocalStorage(): Storage {
+  const values = new Map<string, string>()
+  return {
+    get length() { return values.size },
+    clear: vi.fn(() => values.clear()),
+    getItem: vi.fn((key: string) => values.get(key) ?? null),
+    key: vi.fn((index: number) => Array.from(values.keys())[index] ?? null),
+    removeItem: vi.fn((key: string) => { values.delete(key) }),
+    setItem: vi.fn((key: string, value: string) => { values.set(key, String(value)) }),
+  }
+}
+
 function baseInput(overrides: Partial<StartFreshLaunchInput>): StartFreshLaunchInput {
   return {
     dest: 'free',
@@ -44,6 +56,7 @@ function baseInput(overrides: Partial<StartFreshLaunchInput>): StartFreshLaunchI
 beforeEach(() => {
   FakeWS.instances = []
   vi.stubGlobal('WebSocket', FakeWS as unknown as typeof WebSocket)
+  vi.stubGlobal('localStorage', fakeLocalStorage())
   localStorage.clear()
 })
 afterEach(() => {

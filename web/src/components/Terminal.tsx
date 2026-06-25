@@ -6,6 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
 import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
+import { LAUNCH_READY_FALLBACK_MS, LAUNCH_STABLE_READY_MS, shouldMarkLaunchReady } from '@/lib/launch-readiness'
 import type { LaunchSpec } from '@/lib/ui-store'
 import '@xterm/xterm/css/xterm.css'
 
@@ -140,24 +141,72 @@ export function Terminal({
   const hostRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
   const [historyBytes, setHistoryBytes] = useState(DEFAULT_PTY_HISTORY_BYTES)
-  // Loading overlay: shown only after a short delay with no pty output yet (a cold `--resume` takes
-  // 2-5s, where a blank terminal reads as broken), hidden on the first byte (a warm/live open
-  // replays in ~50ms and never flashes the spinner). See lib/loading-overlay.ts.
+  // Resume overlay is delayed and hidden on first output. Fresh-launch overlay is immediate and
+  // stays until the CLI is ready-ish, so slow first-time directory startup does not show a half-built
+  // TUI as if it were ready for input.
   const [showOverlay, setShowOverlay] = useState(false)
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    setShowOverlay(false)
+    setShowOverlay(!!launch)
     let firstDataSeen = false
-    let overlayTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    let launchReady = !launch
+    let recentLaunchOutput = ''
+    let queuedLaunchInput = ''
+    let lastLaunchDataAt = 0
+    const launchedAt = Date.now()
+    let ws: WebSocket | null = null
+    let stableLaunchTimer: ReturnType<typeof setTimeout> | null = null
+    let launchFallbackTimer: ReturnType<typeof setTimeout> | null = null
+    let overlayTimer: ReturnType<typeof setTimeout> | null = launch ? null : setTimeout(() => {
       setShowOverlay(shouldShowLoadingOverlay({ hasData: firstDataSeen, elapsedMs: LOADING_OVERLAY_DELAY_MS }))
     }, LOADING_OVERLAY_DELAY_MS)
+    const sendInputNow = (d: string) => {
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d }))
+    }
+    const flushQueuedLaunchInput = () => {
+      if (!queuedLaunchInput) return
+      const d = queuedLaunchInput
+      queuedLaunchInput = ''
+      sendInputNow(d)
+    }
+    const markLaunchReady = () => {
+      if (launchReady) return
+      launchReady = true
+      if (stableLaunchTimer) { clearTimeout(stableLaunchTimer); stableLaunchTimer = null }
+      if (launchFallbackTimer) { clearTimeout(launchFallbackTimer); launchFallbackTimer = null }
+      setShowOverlay(false)
+      flushQueuedLaunchInput()
+    }
+    const evaluateLaunchReady = () => {
+      if (!launch || launchReady) return
+      const now = Date.now()
+      if (shouldMarkLaunchReady({
+        cli: launch.cli,
+        recentOutput: recentLaunchOutput,
+        sawData: firstDataSeen,
+        quietMs: lastLaunchDataAt ? now - lastLaunchDataAt : 0,
+        elapsedMs: now - launchedAt,
+      })) {
+        markLaunchReady()
+      }
+    }
+    const scheduleStableLaunchReady = () => {
+      if (!launch || launchReady) return
+      if (stableLaunchTimer) clearTimeout(stableLaunchTimer)
+      stableLaunchTimer = setTimeout(evaluateLaunchReady, LAUNCH_STABLE_READY_MS)
+    }
+    if (launch) {
+      launchFallbackTimer = setTimeout(markLaunchReady, LAUNCH_READY_FALLBACK_MS)
+    }
     const markDataSeen = () => {
       if (firstDataSeen) return
       firstDataSeen = true
-      if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null }
-      setShowOverlay(false)
+      if (!launch) {
+        if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null }
+        setShowOverlay(false)
+      }
     }
 
     const term = new Xterm({
@@ -245,7 +294,7 @@ export function Terminal({
       qs.set('sessionId', sessionId)
       qs.set('historyBytes', String(historyBytes))
     }
-    const ws = new WebSocket(`${proto}://${location.host}/pty?${qs.toString()}`)
+    ws = new WebSocket(`${proto}://${location.host}/pty?${qs.toString()}`)
     ws.binaryType = 'arraybuffer'
 
     const pasteIsForThisTerminal = (e: Event) => {
@@ -258,14 +307,18 @@ export function Terminal({
     // Resume + auto-submit: when resuming a session with an initial message, send it once the
     // pty socket is open, followed by a carriage return so the agent receives + runs it.
     const sendInput = (d: string) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d }))
+      if (launch && !launchReady) {
+        queuedLaunchInput += d
+        return
+      }
+      sendInputNow(d)
     }
     const sendResize = () => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'r', c: term.cols, r: term.rows }))
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'r', c: term.cols, r: term.rows }))
     }
     const sentImageDataUrls = new Set<string>()
     const sendImageData = (image: { name: string; dataUrl: string }) => {
-      if (ws.readyState !== WebSocket.OPEN || !image.dataUrl) return false
+      if (ws?.readyState !== WebSocket.OPEN || !image.dataUrl) return false
       if (sentImageDataUrls.has(image.dataUrl)) return false
       sentImageDataUrls.add(image.dataUrl)
       ws.send(JSON.stringify({
@@ -278,7 +331,7 @@ export function Terminal({
     const sendImage = (file: File) => {
       const reader = new FileReader()
       reader.onload = () => {
-        if (ws.readyState !== WebSocket.OPEN || typeof reader.result !== 'string') return
+        if (ws?.readyState !== WebSocket.OPEN || typeof reader.result !== 'string') return
         sendImageData({ name: file.name || 'paste', dataUrl: reader.result })
       }
       reader.readAsDataURL(file)
@@ -336,7 +389,13 @@ export function Terminal({
           // with that text, or a split chunk) — fall through and render it.
         }
       }
-      markDataSeen()   // first real pty output → drop the loading overlay
+      markDataSeen()
+      if (launch) {
+        recentLaunchOutput = (recentLaunchOutput + data).slice(-4096)
+        lastLaunchDataAt = Date.now()
+        evaluateLaunchReady()
+        scheduleStableLaunchReady()
+      }
       term.write(data, () => {
         if (!replayPositionRestored && !launch && historyBytes > DEFAULT_PTY_HISTORY_BYTES) {
           replayPositionRestored = true
@@ -383,6 +442,8 @@ export function Terminal({
 
     return () => {
       if (overlayTimer) clearTimeout(overlayTimer)
+      if (stableLaunchTimer) clearTimeout(stableLaunchTimer)
+      if (launchFallbackTimer) clearTimeout(launchFallbackTimer)
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
       resizeObserver?.disconnect()
       window.removeEventListener('resize', onResize)
@@ -392,7 +453,7 @@ export function Terminal({
       disp.dispose()
       scrollDisp.dispose()
       disposeIme?.()
-      ws.close()
+      ws?.close()
       webgl?.dispose()
       term.dispose()
     }
@@ -405,9 +466,9 @@ export function Terminal({
     <div ref={shellRef} className="berth-terminal-shell relative h-full w-full overflow-hidden bg-canvas py-2 pl-4 pr-2">
       <div ref={hostRef} className="berth-xterm h-full w-full" />
       {showOverlay && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-3 bg-canvas/80 text-sm text-muted-foreground">
+        <div className="absolute inset-0 flex items-center justify-center gap-3 bg-canvas/90 text-sm text-muted-foreground">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
-          {launch ? '正在启动会话…' : '正在恢复会话…'}
+          {launch ? '正在启动会话，等待 agent 就绪…' : '正在恢复会话…'}
         </div>
       )}
     </div>
