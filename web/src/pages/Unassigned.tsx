@@ -506,10 +506,10 @@ function SessionListRow({
           onClick={generateTitle}
           className={cn(
             'flex-none rounded p-1 text-text-dim transition-opacity hover:bg-secondary hover:text-foreground',
-            generating ? 'text-brand opacity-100' : failed ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
+            generating ? 'opacity-100' : failed ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
           )}
         >
-          {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+          <Sparkles size={13} className={cn(generating && 'spk-twinkle', failed && 'text-destructive')} />
         </button>
         <button
           title="归属到项目"

@@ -118,6 +118,7 @@ export function ProjectWorkspace() {
     linkedTask: !!s.todoKey,
     taskId: s.todoKey ?? null,
     pinned,
+    titleGenerating: s.titleGenerating,
   })
   const pin: SessionRow[] = useMemo(
     () => projSessions.filter((s) => s.pinned).map((s) => toRow(s, true)),

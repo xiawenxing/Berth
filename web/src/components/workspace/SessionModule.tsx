@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, Loader2, LogOut, Trash2, Check, CircleDot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
@@ -134,7 +134,9 @@ function Row({
   const ship: ShipStatus = s.status === 'idle' ? 'moored' : s.status
   const moreBtnRef = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [generating, setGenerating] = useState(false)
+  const [kicked, setKicked] = useState(false) // instant feedback until titleGenerating takes over
+  const generating = kicked || !!s.titleGenerating
+  useEffect(() => { if (s.titleGenerating) setKicked(false) }, [s.titleGenerating])
   // ⋯ menu now holds 标为已读/未读 (always) + 移出项目/取消导入 (when provided). Task-linking moved to TaskTag.
 
   // An in-flight launch placeholder: not yet a real, openable session — show 创建中… with a spinner
@@ -178,11 +180,13 @@ function Row({
   const generateTitle = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (generating || !onGenerateTitle) return
-    setGenerating(true)
+    setKicked(true)
     try {
+      // Detached: kick + (parent) reload so titleGenerating shows, shared with the drawer's icon.
       await onGenerateTitle(s.id)
-    } finally {
-      setGenerating(false)
+      window.setTimeout(() => setKicked(false), 8000)
+    } catch {
+      setKicked(false)
     }
   }
 
@@ -244,10 +248,10 @@ function Row({
             onClick={generateTitle}
             className={cn(
               'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim transition-opacity hover:bg-secondary hover:text-foreground',
-              generating ? 'text-brand opacity-100' : 'opacity-0 group-hover:opacity-100',
+              generating ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
             )}
           >
-            <Sparkles size={12} className={cn(generating && 'animate-pulse')} />
+            <Sparkles size={12} className={cn(generating && 'spk-twinkle')} />
           </button>
         )}
         <button

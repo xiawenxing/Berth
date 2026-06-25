@@ -266,10 +266,10 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
         aria-label="智能生成标题"
         className={cn(
           'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim transition-opacity hover:bg-secondary hover:text-foreground disabled:opacity-50',
-          generating ? 'text-brand opacity-100' : failed ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
+          generating ? 'opacity-100' : failed ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
         )}
       >
-        {generating ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+        <Sparkles size={12} className={cn(generating && 'spk-twinkle', failed && 'text-destructive')} />
       </button>
       <button
         type="button"
