@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal as Xterm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
 import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
@@ -33,7 +34,7 @@ function terminalTheme() {
       foreground: cssToken('--color-foreground', '#1f2733'),
       cursor: cssToken('--color-brand', '#2f6fed'),
       cursorAccent: cssToken('--color-brand-foreground', '#ffffff'),
-      selectionBackground: 'rgba(47, 111, 237, 0.20)',
+      selectionBackground: 'rgba(47, 111, 237, 0.24)',
       black: '#1f2733',
       red: cssToken('--color-destructive', '#dc4338'),
       green: cssToken('--color-success', '#2a9d63'),
@@ -57,7 +58,7 @@ function terminalTheme() {
     foreground: cssToken('--color-foreground', '#d7deef'),
     cursor: cssToken('--color-brand', '#56b6ff'),
     cursorAccent: cssToken('--color-brand-foreground', '#0d1220'),
-    selectionBackground: 'rgba(86, 182, 255, 0.22)',
+    selectionBackground: 'rgba(86, 182, 255, 0.24)',
     black: '#101526',
     red: cssToken('--color-destructive', '#f0707f'),
     green: cssToken('--color-success', '#7ed4a6'),
@@ -163,11 +164,12 @@ export function Terminal({
       fontSize: 13,
       lineHeight: 1.35,
       letterSpacing: 0,
-      // Deep scrollback so a long claude/codex session keeps far more history reachable by scrolling
-      // up. A TUI byte stream can't paginate older history on demand (once bytes leave the buffer
-      // they're gone) — the full transcript lives in the chat (Model B) view; this just widens how
-      // much the terminal itself retains. Paired with the server ring buffer (replayed on resume).
-      scrollback: 50000,
+      // Scrollback the terminal retains for scroll-up. A TUI byte stream can't paginate older history
+      // on demand (once bytes leave the buffer they're gone) — the full transcript lives in the chat
+      // (Model B) view; this just widens how much the terminal itself retains. Paired with the server
+      // ring buffer (replayed on resume). Kept moderate: a huge buffer inflates per-session memory and
+      // makes the renderer do more work on scroll; 10k lines is ample for in-terminal scrollback.
+      scrollback: 10000,
       // No smooth-scroll animation: animating every wheel tick over 80ms made scrollback feel laggy
       // and unresponsive (rapid ticks queue/restart the animation). Default 0 = instant, snappy scroll.
       smoothScrollDuration: 0,
@@ -184,6 +186,25 @@ export function Terminal({
     term.loadAddon(fit)
     term.open(host)
     fit.fit()
+
+    // GPU renderer. Without it xterm falls back to the DOM renderer, which is markedly slower at the
+    // two things this drawer does most — scrolling long scrollback and dragging a text selection
+    // (it rebuilds selection/​row DOM on every frame). WebGL draws to a canvas instead, so both stay
+    // smooth. Guard it: WebGL can be unavailable (headless, blocklisted GPU) or lose its context at
+    // runtime — on either, dispose the addon and let xterm fall back to the DOM renderer rather than
+    // render nothing.
+    let webgl: WebglAddon | null = null
+    try {
+      webgl = new WebglAddon()
+      webgl.onContextLoss(() => {
+        webgl?.dispose()
+        webgl = null
+      })
+      term.loadAddon(webgl)
+    } catch {
+      webgl?.dispose()
+      webgl = null
+    }
     // Focus so keyboard input (arrow keys, Ctrl-C, …) goes to the pty, not the page.
     term.focus()
     const refocus = () => term.focus()
@@ -354,6 +375,7 @@ export function Terminal({
       scrollDisp.dispose()
       disposeIme?.()
       ws.close()
+      webgl?.dispose()
       term.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -33,7 +33,10 @@ export function ChatTranscript({
   }
   useEffect(() => {
     if (pinnedRef.current) endRef.current?.scrollIntoView({ block: 'end' })
-  })
+    // Depend on the content that can change the scroll height (turns upsert a fresh array ref per
+    // streaming frame; thinking toggles the indicator). Without a dep array this fired a layout-
+    // forcing scrollIntoView on *every* render.
+  }, [turns, thinking])
 
   return (
     <div ref={scrollRef} onScroll={onScroll} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
@@ -76,7 +79,7 @@ function UserBubble({ turn }: { turn: ChatTurn }) {
   const text = turn.blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('')
   const hasImages = images.length > 0
   return (
-    <div className="flex justify-end">
+    <div className="berth-chat-turn flex justify-end">
       <div className="flex max-w-[78%] flex-col items-end gap-2">
         {hasImages && (
           <div className="flex max-w-full flex-wrap justify-end gap-2">
@@ -112,7 +115,7 @@ function AssistantTurn({ turn }: { turn: ChatTurn }) {
   const hasProcess = process.length > 0
 
   return (
-    <div className="flex flex-col items-start gap-1.5">
+    <div className="berth-chat-turn flex flex-col items-start gap-1.5">
       <div className="w-full max-w-[88%] space-y-2 text-sm leading-relaxed text-foreground">
         {visible ? (
           <>
