@@ -5,11 +5,13 @@ import { openStore } from '../db/store'
 import { collectLogicalSessions, filterImportedSessions, curatedSessionIds as computeCuratedIds } from '../sessions'
 import { reconcileLaunchIntents } from './reconcile'
 import { ensureBootstrap } from '../data/bootstrap'
+import { seedOnboarding } from '../data/onboarding'
 import { migrateIdentitiesOnce } from '../data/migrate'
 import { migrateAttachmentsOnce } from '../data/migrate-assets'
 import { migrateSessionDirsOnce } from '../data/migrate-session-dirs'
 import { migrateSessionImportOnce } from '../data/migrate-session-import'
-import { getDocsRoot, setDocStoreStore } from '../data/docstore'
+import { getDocsRoot, getDocStore, setDocStoreStore } from '../data/docstore'
+import { getLocale } from '../i18n'
 import { getContextConfig } from '../data/context-config'
 import { setDocGitEnabled } from '../data/doc-git'
 import { syncSource } from '../data/sync/engine'
@@ -62,7 +64,14 @@ setTaskSessionDigestProvider((s, taskId, budget) => {
  * Both steps are guarded internally, so repeat calls are no-ops.
  */
 export async function initData(): Promise<void> {
+  // Capture first-run BEFORE bootstrap flips the flag: the onboarding guide project is seeded only on
+  // a genuinely fresh install, so an existing instance never gets it injected on upgrade.
+  const firstRun = !store.getSetting('bootstrapped')
   ensureBootstrap(store)
+  if (firstRun) {
+    try { seedOnboarding(store, getDocStore(store), getLocale(store)) }
+    catch { /* onboarding is best-effort; never block server startup */ }
+  }
   await migrateIdentitiesOnce(store, { docsRoot: getDocsRoot(store) })
   migrateAttachmentsOnce(store, { docsRoot: getDocsRoot(store) })
   migrateSessionDirsOnce(store)
