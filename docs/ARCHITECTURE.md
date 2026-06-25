@@ -22,8 +22,12 @@ two-way-sync to an external system (e.g. a Feishu base) via a pluggable adapter.
 Stack: Node 20, TypeScript ESM, `express` + `ws`, `node-pty`, `better-sqlite3`, `@xterm/xterm`,
 `marked`. Tests: `vitest`. macOS-only in places (native folder dialog via `osascript`).
 
-Run: `npm start` (vendors xterm+marked, then `tsx bin/berth-serve.ts`) → http://localhost:7777
-(`PORT` env overrides). `npm test` = unit; `*.live.test.ts` are gated behind `BERTH_LIVE=1`.
+Run (prod, one command): `npm run prod` (full build — vendor + esbuild core + `web build` — then
+`berth start`), serving the 2.0 SPA at `/app` from a single process; root `/` 302-redirects to `/app`
+(**1.0 entry is deprecated** — `public/` files stay served, e.g. `/index.html`, but nothing routes
+there). Run (dev): `npm start` (vendors xterm+marked, then `tsx bin/berth-serve.ts`) is the **backend
+only** → http://localhost:7777 (`PORT` overrides); pair with `cd web && npm run dev` for the
+live-reloading SPA. `npm test` = unit; `*.live.test.ts` are gated behind `BERTH_LIVE=1`.
 
 ---
 
