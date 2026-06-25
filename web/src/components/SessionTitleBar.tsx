@@ -176,7 +176,7 @@ function ShipPill({ status, task }: { status: ShipStatus; task?: string }) {
       {status === 'sail' && <Spinner size={11} />}
       {SHIP_LABEL[status]}
       {routeLabel && (
-        <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 hidden max-w-[420px] -translate-y-1/2 truncate rounded-md border border-border bg-popover px-2 py-1 text-[11px] font-normal text-popover-foreground shadow-lg group-hover:block">
+        <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 hidden max-w-[420px] -translate-y-1/2 truncate rounded-md border border-border bg-popover px-2 py-1 text-[11px] font-normal text-popover-foreground elev-3 group-hover:block">
           {routeLabel}
         </span>
       )}

@@ -562,7 +562,7 @@ export function SessionModule({
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
+      <div className="elev-1 overflow-hidden rounded-md border border-border bg-card">
         {empty ? (
           <div className="px-4 py-6 text-center text-[12px] text-text-dim">还没有会话 — 点「起会话」开一个</div>
         ) : (

@@ -26,11 +26,11 @@ export function Dialog({
   if (!open) return null
   return (
     <div
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50"
+      className="anim-fade fixed inset-0 z-[140] flex items-center justify-center bg-black/50 backdrop-blur-[2px]"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="max-h-[88vh] overflow-y-auto rounded-lg border border-border bg-popover shadow-2xl"
+        className="anim-zoom elev-4 max-h-[88vh] overflow-y-auto rounded-lg border border-border bg-popover"
         style={{ width: `min(${width}px, 92vw)` }}
       >
         {children}
@@ -54,12 +54,12 @@ export function Drawer({
   useEsc(onClose)
   return (
     <div
-      className={cn('fixed inset-0 z-[140] bg-black/42 transition-opacity', open ? 'opacity-100' : 'pointer-events-none opacity-0')}
+      className={cn('fixed inset-0 z-[140] bg-black/42 backdrop-blur-[2px] transition-opacity duration-[260ms]', open ? 'opacity-100' : 'pointer-events-none opacity-0')}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
         className={cn(
-          'absolute right-0 top-0 flex h-full flex-col border-l border-border bg-canvas shadow-2xl transition-transform duration-300',
+          'elev-4 absolute right-0 top-0 flex h-full flex-col border-l border-border bg-canvas transition-transform duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
           open ? 'translate-x-0' : 'translate-x-full',
         )}
         style={{ width, minWidth: 560, maxWidth: '100vw' }}

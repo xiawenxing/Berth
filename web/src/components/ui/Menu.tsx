@@ -60,7 +60,7 @@ export function AnchoredPopover({
       ref={ref}
       onClick={(e) => e.stopPropagation()}
       style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width, visibility: pos ? 'visible' : 'hidden' }}
-      className="fixed z-50 rounded-md border border-border bg-popover p-1 shadow-lg"
+      className="anim-pop elev-3 fixed z-50 rounded-md border border-border bg-popover p-1"
     >
       {children}
     </div>,
@@ -77,7 +77,7 @@ export const MenuItem = ({ children, onClick, danger, disabled }: { children: Re
     disabled={disabled}
     onClick={onClick}
     className={cn(
-      'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] hover:bg-accent disabled:pointer-events-none disabled:opacity-55',
+      'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] transition-colors duration-[120ms] hover:bg-accent disabled:pointer-events-none disabled:opacity-55',
       danger ? 'text-destructive hover:bg-destructive/10' : 'text-foreground',
     )}
   >

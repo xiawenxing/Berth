@@ -575,7 +575,7 @@ function SessionListRow({
           <Trash2 size={13} />
         </button>
         {menuOpen && (
-          <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-52 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
+          <div className="anim-pop elev-3 absolute right-0 top-full z-20 mt-1 max-h-64 w-52 overflow-y-auto rounded-md border border-border bg-popover p-1">
             <div className="px-2 pb-0.5 pt-1 text-[10px] font-bold uppercase tracking-wide text-text-dim">归属到项目</div>
             {projects.length === 0 ? (
               <div className="px-2 py-1.5 text-[12px] text-muted-foreground">没有可用项目</div>
