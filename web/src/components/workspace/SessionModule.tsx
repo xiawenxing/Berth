@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, Loader2, LogOut, Trash2, Check, CircleDot } from 'lucide-react'
+import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, LogOut, Trash2, Check, CircleDot } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Spinner } from '@/components/ui/Spinner'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
 import { useLive } from '@/lib/live'
 import { useShowMore } from '@/lib/paging'
@@ -16,7 +17,7 @@ export interface SessionTaskOption {
 // One lamp carries the whole status (no redundant text pill): sail=运行中(蓝色 loading), dock=未读(红点),
 // moored=已读/idle(无标记，仅保留占位). The word lives in the tooltip; the title's weight/dim reinforces it.
 function Glyph({ status }: { status: ShipStatus }) {
-  if (status === 'sail') return <Loader2 size={13} className="flex-none animate-spin text-brand" aria-label="在航" />
+  if (status === 'sail') return <Spinner size={12} className="text-brand" label="在航" />
   if (status === 'dock') return <span className="h-2 w-2 flex-none rounded-full bg-destructive ring-2 ring-destructive/25" title="待查收 · 有未读" />
   // moored=已读/idle: no glyph — the fixed-width slot keeps rows aligned without an empty hollow dot.
   return null
@@ -160,7 +161,7 @@ function Row({
         )}
       >
         <span className="flex w-3.5 flex-none items-center justify-center">
-          <Loader2 size={12} className="animate-spin text-text-dim" />
+          <Spinner size={12} className="text-text-dim" />
         </span>
         <CliBadge cli={s.cli} />
         <span className="min-w-0 flex-[1_1_auto] truncate text-[13px] font-medium text-muted-foreground" title={s.title}>{s.title}</span>
@@ -567,7 +568,7 @@ export function SessionModule({
           <>
             {pendingRows.length > 0 && (
               <Section
-                icon={<Loader2 size={12} className="flex-none animate-spin text-text-dim" />}
+                icon={<Spinner size={12} className="text-text-dim" />}
                 label="创建中"
                 count={pendingRows.length}
                 rows={pendingRows}

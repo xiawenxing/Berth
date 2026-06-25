@@ -1,5 +1,6 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Trash2, Loader2, FileText } from 'lucide-react'
+import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Trash2, FileText } from 'lucide-react'
+import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/Menu'
 import { TaskSummaryPopover } from '@/components/AiPanels'
@@ -14,7 +15,7 @@ const REFINING = '港务助手正在总结进展摘要…'
 function ShipGlyph({ status }: { status: ShipStatus }) {
   if (status === 'moored') return null
   // sail=运行中(蓝色 loading), dock=未读(红点) — mirrors the session-list lamp.
-  if (status === 'sail') return <Loader2 size={11} className="flex-none animate-spin text-brand" aria-label="在航" />
+  if (status === 'sail') return <Spinner size={11} className="text-brand" label="在航" />
   return <span className="h-1.5 w-1.5 flex-none rounded-full bg-destructive" title="有未读" />
 }
 
@@ -259,7 +260,7 @@ export function TaskCard({
         )}
         {titleGenerating && (
           <span className="inline-flex flex-none items-center gap-1 text-[10.5px] text-brand">
-            <Loader2 size={11} className="animate-spin" /> 标题生成中…
+            <Spinner size={11} /> 标题生成中…
           </span>
         )}
         {/* compact (inactive-column) live cards: ddl-if-set + priority chip ride in the head (single-row, dense) */}
@@ -609,7 +610,7 @@ function TaskMenu({
       <PriorityList task={task} priorities={priorities} onSetPriority={onSetPriority} close={onClose} />
       <div className="my-1 border-t border-border" />
       <MenuItem disabled={titleGenerating} onClick={pick(() => onGenerateTitle?.(task.id))}>
-        {titleGenerating ? <Loader2 size={13} className="flex-none animate-spin text-brand" /> : <Sparkles size={13} className="flex-none text-muted-foreground" />}
+        {titleGenerating ? <Spinner size={13} className="text-brand" /> : <Sparkles size={13} className="flex-none text-muted-foreground" />}
         {titleGenerating ? '标题生成中…' : '智能生成任务标题'}
       </MenuItem>
       <MenuItem danger onClick={pick(() => onDelete?.(task.id))}>

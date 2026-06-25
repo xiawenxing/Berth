@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon, RefreshCw, Sparkles, Loader2, Trash2 } from 'lucide-react'
+import { Search, FolderInput, ChevronDown, ChevronRight, Pin, FolderInput as FolderInputIcon, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import { SessionPanel } from '@/components/SessionPanel'
@@ -18,7 +19,7 @@ import { type ShipStatus } from '@/lib/types'
 import type { ApiSession, ApiProject, PreviewSession } from '@/lib/api'
 
 function Glyph({ status }: { status: ShipStatus }) {
-  if (status === 'sail') return <Loader2 size={11} className="flex-none animate-spin text-brand" aria-label="在航" />
+  if (status === 'sail') return <Spinner size={11} className="text-brand" label="在航" />
   if (status === 'dock') return <span className="h-1.5 w-1.5 flex-none rounded-full bg-destructive" title="有未读" />
   return <span className="h-1.5 w-1.5 flex-none" />
 }

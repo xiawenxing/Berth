@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Plus, Play, Sparkles, MoreHorizontal, Anchor, Pencil, Archive, ArchiveRestore, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Play, Sparkles, MoreHorizontal, Anchor, Pencil, Archive, ArchiveRestore, Trash2 } from 'lucide-react'
+import { Spinner } from '@/components/ui/Spinner'
 import { Kanban } from '@/components/workspace/Kanban'
 import { SessionModule } from '@/components/workspace/SessionModule'
 import { CargoDefaults } from '@/components/workspace/CargoDefaults'
@@ -469,7 +470,7 @@ export function ProjectWorkspace() {
             <HBtn icon={<Play size={13} />} onClick={() => launch('')}>起会话</HBtn>
             <HBtn
               btnRef={summaryBtnRef}
-              icon={project?.summarizing ? <Loader2 size={13} className="animate-spin text-brand" /> : <Sparkles size={13} />}
+              icon={project?.summarizing ? <Spinner size={13} className="text-brand" /> : <Sparkles size={13} />}
               onClick={() => setSummaryOpen((v) => !v)}
             >
               小结
@@ -890,7 +891,7 @@ function Pill({ children, tone, loading }: { children: ReactNode; tone: 'brand' 
   const ink = tone === 'brand' ? 'text-brand' : tone === 'destructive' ? 'text-destructive' : 'text-warning'
   return (
     <span className="flex items-center gap-1.5 rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
-      {loading ? <Loader2 size={10} className={`animate-spin ${ink}`} /> : <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />}
+      {loading ? <Spinner size={10} className={ink} /> : <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />}
       {children}
     </span>
   )

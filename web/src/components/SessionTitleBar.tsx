@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles, Loader2 } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
+import { Spinner } from './ui/Spinner'
 import { CliBadge } from './workspace/TaskCard'
 import { SHIP_LABEL, type ShipStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -172,7 +173,7 @@ function ShipPill({ status, task }: { status: ShipStatus; task?: string }) {
         status === 'moored' && 'bg-muted text-muted-foreground',
       )}
     >
-      {status === 'sail' && <Loader2 size={11} className="flex-none animate-spin" />}
+      {status === 'sail' && <Spinner size={11} />}
       {SHIP_LABEL[status]}
       {routeLabel && (
         <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 hidden max-w-[420px] -translate-y-1/2 truncate rounded-md border border-border bg-popover px-2 py-1 text-[11px] font-normal text-popover-foreground shadow-lg group-hover:block">

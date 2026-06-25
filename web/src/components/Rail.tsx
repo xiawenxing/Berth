@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Anchor, Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Loader2, Archive, ChevronRight } from 'lucide-react'
+import { Anchor, Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight } from 'lucide-react'
+import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
 import { useData } from '@/lib/data'
@@ -31,7 +32,7 @@ function bucketShip(sessions: ApiSession[], live: ReturnType<typeof useLive>): '
 function ShipDot({ kind }: { kind: 'sail' | 'dock' | null }) {
   if (!kind) return null
   // sail=运行中(蓝色 loading), dock=未读(红点) — mirrors the session-list lamp.
-  if (kind === 'sail') return <Loader2 size={11} className="flex-none animate-spin text-brand" aria-label="有会话在跑" />
+  if (kind === 'sail') return <Spinner size={11} className="text-brand" label="有会话在跑" />
   return <span title="有未读会话" className="h-1.5 w-1.5 flex-none rounded-full bg-destructive" />
 }
 
