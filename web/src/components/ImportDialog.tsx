@@ -37,7 +37,7 @@ export function ImportDialog({
 }) {
   const [checked, setChecked] = useState<Set<string>>(() => new Set()) // default: none
   const [register, setRegister] = useState(false) // 同时登记为装载目录 (opt-in, §10.3)
-  const { visibleCount, hidden, paginated, expanded, toggle } = useShowMore(sessions.length)
+  const { visibleCount, hidden, paginated, canCollapse, loadMore, collapse } = useShowMore(sessions.length)
   const allIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions])
   const allOn = sessions.length > 0 && checked.size === sessions.length
   const visible = sessions.slice(0, visibleCount)
@@ -106,8 +106,9 @@ export function ImportDialog({
                   <ShowMoreToggle
                     hidden={hidden}
                     total={sessions.length}
-                    expanded={expanded}
-                    onToggle={toggle}
+                    canCollapse={canCollapse}
+                    onMore={loadMore}
+                    onCollapse={collapse}
                     showTotal
                     className="mt-1 px-1 py-1"
                   />

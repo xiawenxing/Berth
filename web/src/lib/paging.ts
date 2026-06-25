@@ -4,12 +4,18 @@ export const SESSION_SHOW_MORE_PAGE = 8
 
 /**
  * Client-side "show more / show less" pagination over a flat list of length `total`.
- * `initial` is the collapsed cap (defaults to one page). "more" reveals one more `page`
- * (capped at `total`); once nothing is hidden, the same action ("less") resets to `initial`.
+ * `initial` is the collapsed cap (defaults to one page). `loadMore` reveals one more `page`
+ * (capped at `total`); `collapse` snaps straight back to `initial`.
  *
- *   const { visibleCount, hidden, paginated, expanded, toggle } = useShowMore(rows.length)
+ * `canCollapse` is true as soon as the list is shown beyond `initial` — so 收起 is offered
+ * the moment you expand at all, NOT only once everything is visible. For a long list a partial
+ * expansion therefore offers BOTH 展开更多 (hidden > 0) and 收起 (canCollapse) at once.
+ *
+ *   const { visibleCount, hidden, paginated, canCollapse, loadMore, collapse } = useShowMore(rows.length)
  *   rows.slice(0, visibleCount)
- *   {paginated && <ShowMoreToggle hidden={hidden} total={rows.length} expanded={expanded} onToggle={toggle} />}
+ *   {paginated && (
+ *     <ShowMoreToggle hidden={hidden} total={rows.length} canCollapse={canCollapse} onMore={loadMore} onCollapse={collapse} />
+ *   )}
  */
 export function useShowMore(
   total: number,
@@ -20,7 +26,8 @@ export function useShowMore(
   const visibleCount = Math.min(shown, total)
   const hidden = total - visibleCount
   const paginated = total > initial
-  const expanded = hidden === 0 && shown > initial
-  const toggle = () => setShown((v) => (total - Math.min(v, total) > 0 ? Math.min(v + page, total) : initial))
-  return { visibleCount, hidden, paginated, expanded, toggle }
+  const canCollapse = visibleCount > initial
+  const loadMore = () => setShown((v) => Math.min(v + page, total))
+  const collapse = () => setShown(initial)
+  return { visibleCount, hidden, paginated, canCollapse, loadMore, collapse }
 }

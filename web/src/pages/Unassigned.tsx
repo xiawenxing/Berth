@@ -386,7 +386,7 @@ function SessionGroup({
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const LIMIT = 4
-  const { visibleCount, hidden, expanded, toggle } = useShowMore(sessions.length, LIMIT)
+  const { visibleCount, hidden, canCollapse, loadMore, collapse } = useShowMore(sessions.length, LIMIT)
   if (sessions.length === 0) return null
   const visible = sessions.slice(0, visibleCount)
   return (
@@ -420,8 +420,9 @@ function SessionGroup({
             <ShowMoreToggle
               hidden={hidden}
               total={sessions.length}
-              expanded={expanded}
-              onToggle={toggle}
+              canCollapse={canCollapse}
+              onMore={loadMore}
+              onCollapse={collapse}
               className="px-3 py-1 pl-[34px]"
             />
           )}

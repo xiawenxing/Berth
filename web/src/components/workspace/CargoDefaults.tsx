@@ -152,8 +152,9 @@ export function CargoDefaults({
                     <ShowMoreToggle
                       hidden={taskPaging.hidden}
                       total={tasks.length}
-                      expanded={taskPaging.expanded}
-                      onToggle={taskPaging.toggle}
+                      canCollapse={taskPaging.canCollapse}
+                      onMore={taskPaging.loadMore}
+                      onCollapse={taskPaging.collapse}
                       className="px-1 py-0.5"
                     />
                   )}

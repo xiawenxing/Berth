@@ -372,7 +372,7 @@ function Section({
   onUnimportGroup?: (ids: string[]) => void // 取消导入整组
 }) {
   const [collapsed, setCollapsed] = useState(false)
-  const { visibleCount, hidden, expanded, toggle } = useShowMore(rows.length, limit ?? rows.length)
+  const { visibleCount, hidden, canCollapse, loadMore, collapse } = useShowMore(rows.length, limit ?? rows.length)
   const limited = limit != null && rows.length > limit
   const visible = limited ? rows.slice(0, visibleCount) : rows
   const groupMenuBtnRef = useRef<HTMLSpanElement>(null)
@@ -476,8 +476,9 @@ function Section({
             <ShowMoreToggle
               hidden={hidden}
               total={rows.length}
-              expanded={expanded}
-              onToggle={toggle}
+              canCollapse={canCollapse}
+              onMore={loadMore}
+              onCollapse={collapse}
               className="ml-[38px] py-1.5"
             />
           )}
