@@ -426,6 +426,10 @@ export function Terminal({
             // images+prompt, so closing the drawer mid-launch can't drop them. This viewer only binds
             // the drawer to the real session id.
             onLaunched?.(ctl.sessionId)
+          } else if (ctl.__berth === 'turnStarted' && launch) {
+            // codex's DETERMINISTIC boot-complete signal (server read its rollout task_started). Drop
+            // the launch mask exactly when the first turn begins — no output-quiet guessing.
+            markLaunchReady()
           }
           return // a well-formed control frame is not terminal output
         } catch {

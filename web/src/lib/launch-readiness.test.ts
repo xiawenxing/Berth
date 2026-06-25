@@ -8,12 +8,14 @@ describe('cliReadiness', () => {
     expect(cliReadiness('coco').trustBracketedPaste).toBe(false)
   })
 
-  it('gives codex longer quiet thresholds than claude (to clear its ~1s boot spinner)', () => {
-    expect(cliReadiness('codex').revealQuietMs).toBeGreaterThan(cliReadiness('claude').revealQuietMs)
-    expect(cliReadiness('codex').stableReadyMs).toBeGreaterThan(cliReadiness('claude').stableReadyMs)
-    // Must clear a ~1s spinner tick with margin, or the mask tears down mid-boot.
-    expect(cliReadiness('codex').revealQuietMs).toBeGreaterThan(1000)
-    expect(cliReadiness('codex').stableReadyMs).toBeGreaterThan(1000)
+  it('gives codex AND coco longer quiet thresholds than claude (to clear their ~1s boot spinner)', () => {
+    for (const cli of ['codex', 'coco']) {
+      expect(cliReadiness(cli).revealQuietMs, cli).toBeGreaterThan(cliReadiness('claude').revealQuietMs)
+      expect(cliReadiness(cli).stableReadyMs, cli).toBeGreaterThan(cliReadiness('claude').stableReadyMs)
+      // Must clear a ~1s spinner tick with margin, or the mask tears down mid-boot.
+      expect(cliReadiness(cli).revealQuietMs, cli).toBeGreaterThan(1000)
+      expect(cliReadiness(cli).stableReadyMs, cli).toBeGreaterThan(1000)
+    }
   })
 })
 
@@ -47,8 +49,8 @@ describe('shouldMarkLaunchReady', () => {
     expect(shouldMarkLaunchReady({ cli: 'codex', recentOutput: 'banner', sawData: true, quietMs: 1700, elapsedMs: 4000 })).toBe(true)
   })
 
-  it('marks a default CLI ready after the standard quiet window', () => {
-    expect(shouldMarkLaunchReady({ cli: 'coco', recentOutput: 'startup banner', sawData: true, quietMs: 901, elapsedMs: 1200 })).toBe(true)
+  it('marks a default/unknown CLI ready after the standard quiet window', () => {
+    expect(shouldMarkLaunchReady({ cli: 'gemini', recentOutput: 'startup banner', sawData: true, quietMs: 901, elapsedMs: 1200 })).toBe(true)
   })
 
   it('has a fallback for CLIs that never print a ready-ish signal', () => {

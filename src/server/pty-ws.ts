@@ -5,10 +5,11 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { berthHome } from '../paths'
 import { join } from 'node:path'
-import { getCache, getStore } from './store-singleton'
+import { getCache, getStore, refresh } from './store-singleton'
 import { launchFresh } from '../pty/launch'
 import { resolveAgentBinary, codexHookTrustSupportCached } from '../pty/binaries'
-import { hasLivePty, liveDriverMode, registerPty, registerSession, attachViewer, killPty } from './pty-registry'
+import { hasLivePty, liveDriverMode, registerPty, registerSession, attachViewer, killPty, broadcastControl } from './pty-registry'
+import { bootGraceHold, COCO_BOOT_HOLD_MS, watchCodexFirstTurn } from './launch-ready'
 import { parsePtyReplayBytes } from './pty-spool'
 import { makeFreshStreamDriver } from './stream-driver-factory'
 import { spawnAndRegister, spawnAndRegisterStream, codexHoldRunning } from './resume-spawn'
@@ -510,9 +511,26 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     })
     registerPty(launchKey, pty, {
       running: !!initialPrompt,
-      holdRunning: cli === 'codex' ? codexHoldRunning(initialPrompt ? 'running' : 'unknown') : undefined,
+      // codex polls its rollout turn-state; coco has no such file, so a boot-grace guard stops the
+      // activity FSM from a false 已停泊 during coco's boot gap (see launch-ready.ts).
+      holdRunning: cli === 'codex' ? codexHoldRunning(initialPrompt ? 'running' : 'unknown')
+        : cli === 'coco' && initialPrompt ? bootGraceHold(COCO_BOOT_HOLD_MS)
+        : undefined,
       onExit,
     })
+    // codex's deterministic "first turn started" signal (rollout task_started) is the precise moment
+    // to drop the launch mask — far better than the boot-output quiet heuristic, which codex's
+    // mid-boot confirmation / MCP-startup pauses fool. Watch for it and push a {turnStarted} frame.
+    if (cli === 'codex' && initialPrompt) {
+      const intentId = plan.intent.id
+      watchCodexFirstTurn({
+        refresh,
+        boundSessionId: () => getStore().boundSessionForIntent(intentId),
+        pathFor: (sid) => getCache().find(s => s.sessionId === sid)?.contentSourcePath ?? null,
+        alive: (sid) => hasLivePty(sid),
+        emit: (sid) => broadcastControl(sid, { __berth: 'turnStarted', sessionId: sid }),
+      })
+    }
   }
   // Tell the client which session id this fresh launch maps to, so it can bind the drawer to the
   // live registry key. This MUST be after register*: 2.0 re-opens /pty?sessionId=… immediately on

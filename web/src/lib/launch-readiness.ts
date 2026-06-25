@@ -29,6 +29,11 @@ export function cliReadiness(cli: string): CliReadiness {
     case 'codex':
       // Thresholds sit above codex's ~1s `esc to interrupt` spinner tick so the boot stays masked;
       // they fire on the first genuine post-boot pause (thinking gap / composer idle / HITL wait).
+      // (codex also gets a deterministic server `turnStarted` frame; this is the fallback.)
+      return { trustBracketedPaste: false, stableReadyMs: 1600, revealQuietMs: 1300, fallbackMs: LAUNCH_READY_FALLBACK_MS }
+    case 'coco':
+      // coco boots like codex (banner + MCP startup, bracketed-paste at byte 0) but has no rollout /
+      // deterministic signal — so it relies on these codex-like longer quiet windows.
       return { trustBracketedPaste: false, stableReadyMs: 1600, revealQuietMs: 1300, fallbackMs: LAUNCH_READY_FALLBACK_MS }
     default:
       return { trustBracketedPaste: false, stableReadyMs: 900, revealQuietMs: 400, fallbackMs: LAUNCH_READY_FALLBACK_MS }

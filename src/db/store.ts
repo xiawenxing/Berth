@@ -243,6 +243,12 @@ export function openStore(path: string) {
     bindIntent(id: string, sessionId: string) {
       db.prepare('UPDATE launch_intent SET session_id=?, bound=1 WHERE id=?').run(sessionId, id)
     },
+    /** The real session id a (codex) launch intent was reconciled to, once bound — else null. Lets a
+     *  launch watcher resolve the intent's rollout file to read its deterministic turn-start signal. */
+    boundSessionForIntent(id: string): string | null {
+      const r = db.prepare('SELECT session_id FROM launch_intent WHERE id=? AND bound=1').get(id) as any
+      return r?.session_id ?? null
+    },
     removeLaunchIntentsForSession(sessionId: string) {
       db.prepare('DELETE FROM launch_intent WHERE session_id=? OR id=?').run(sessionId, sessionId)
     },

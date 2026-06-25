@@ -132,6 +132,16 @@ export function attachViewer(key: string, ws: WebSocket, opts?: { replayBytes?: 
   return true
 }
 
+/** Send a one-off control frame (a JSON object) to every viewer currently attached to `key`. Used to
+ *  push a deterministic "boot complete / first turn started" signal to the launch viewer, out-of-band
+ *  from the pty byte stream. No-op if nothing is attached. */
+export function broadcastControl(key: string, obj: unknown): void {
+  const entry = registry.get(key)
+  if (!entry) return
+  const s = JSON.stringify(obj)
+  for (const ws of entry.attached) { try { ws.send(s) } catch {} }
+}
+
 /** Explicitly end a session: kill the process and drop it (closing any viewers). */
 export function killPty(key: string): void {
   const entry = registry.get(key)
