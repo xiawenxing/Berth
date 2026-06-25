@@ -1,4 +1,4 @@
-import type { Block, ChatTurn, Clock } from './chat-model'
+import { markTurnInterrupted, type Block, type ChatTurn, type Clock } from './chat-model'
 
 /**
  * Reduces codex `exec --json` events into ChatTurn[]. Unlike claude, codex does NOT stream tokens:
@@ -101,6 +101,14 @@ export class CodexReducer {
     const t: ChatTurn = { id: id ?? `u${this.turns.length}_${this.clock()}`, role: 'user', ts: this.clock(), blocks: [{ kind: 'text', text }] }
     this.turns.push(t)
     return t
+  }
+
+  interruptCurrent(): ChatTurn | null {
+    const t = this.current
+    if (!t) return null
+    this.current = undefined
+    this.toolByItemId.clear()
+    return markTurnInterrupted(t)
   }
 
   snapshot(): ChatTurn[] {

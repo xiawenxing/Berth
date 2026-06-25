@@ -60,5 +60,18 @@ export interface ChatReducer {
   readonly model?: string
   ingest(line: any): ChatTurn | null
   addUserTurn(text: string, id?: string): ChatTurn
+  interruptCurrent(): ChatTurn | null
   snapshot(): ChatTurn[]
+}
+
+export function markTurnInterrupted(turn: ChatTurn): ChatTurn {
+  turn.streaming = false
+  turn.result = turn.result ?? { isError: true, errorSubtype: 'interrupted' }
+  for (const block of turn.blocks) {
+    if (block.kind === 'tool_call' && block.status === 'running') {
+      block.status = 'error'
+      block.result = block.result ?? { output: 'interrupted', ok: false }
+    }
+  }
+  return turn
 }

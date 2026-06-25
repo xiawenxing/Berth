@@ -162,6 +162,17 @@ describe('PerTurnStreamDriver', () => {
     expect(f.killSpy).toHaveBeenCalled()
   })
 
+  it('interrupt settles a started streaming turn immediately', () => {
+    const f = fakeChild()
+    const d = new PerTurnStreamDriver(new CodexReducer(clock), () => f.child, { initialPrompt: 'q' })
+    const sent: string[] = []
+    d.onFrame((s) => sent.push(s))
+    f.emit(JSON.stringify({ type: 'turn.started' }) + '\n')
+    d.send({ t: 'interrupt' })
+    const last = frames(sent).filter((x) => x.type === 'turn').pop() as Extract<ChatFrame, { type: 'turn' }>
+    expect(last.turn).toMatchObject({ role: 'assistant', streaming: false, result: { isError: true, errorSubtype: 'interrupted' } })
+  })
+
   it('kill forwards to the active child', () => {
     const f = fakeChild()
     const d = new PerTurnStreamDriver(new CodexReducer(clock), () => f.child, { initialPrompt: 'q' })

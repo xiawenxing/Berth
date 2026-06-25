@@ -1,4 +1,4 @@
-import type { Block, ChatTurn, Clock } from './chat-model'
+import { markTurnInterrupted, type Block, type ChatTurn, type Clock } from './chat-model'
 
 /**
  * Reduces the claude stream-json WIRE stream into ChatTurn[]. One instance per live session; the
@@ -156,6 +156,15 @@ export class ClaudeReducer {
     const t: ChatTurn = { id: id ?? this.turnId(), role: 'user', ts: this.clock(), blocks: [{ kind: 'text', text }] }
     this.turns.push(t)
     return t
+  }
+
+  interruptCurrent(): ChatTurn | null {
+    const t = this.current
+    if (!t) return null
+    this.current = undefined
+    this.toolJson.clear()
+    this.blockAt.clear()
+    return markTurnInterrupted(t)
   }
 
   snapshot(): ChatTurn[] {

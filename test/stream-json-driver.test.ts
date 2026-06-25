@@ -143,6 +143,22 @@ describe('StreamJsonDriver', () => {
     expect(typeof obj.request_id).toBe('string')
   })
 
+  it('send interrupt settles the current streaming turn immediately', () => {
+    const f = fakeChild()
+    const d = new StreamJsonDriver(f.child, { clock })
+    const sent: string[] = []
+    d.onFrame((s) => sent.push(s))
+    d.send({ t: 'turn', text: 'go', clientTurnId: 'c1' })
+    f.emit(JSON.stringify({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm1' } } }) + '\n')
+    expect(d.turnActive()).toBe(true)
+
+    d.send({ t: 'interrupt' })
+
+    expect(d.turnActive()).toBe(false)
+    const last = parseFrames(sent).filter((x) => x.type === 'turn').pop() as Extract<ChatFrame, { type: 'turn' }>
+    expect(last.turn).toMatchObject({ role: 'assistant', streaming: false, result: { isError: true, errorSubtype: 'interrupted' } })
+  })
+
   it('initialPrompt is sent as the first user turn on construction', () => {
     const f = fakeChild()
     new StreamJsonDriver(f.child, { clock, initialPrompt: 'kick off' })

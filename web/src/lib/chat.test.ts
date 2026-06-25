@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyChatFrame, chatBusy, chatThinking, clearsAwaiting, makeUserTurn, turnHasVisibleContent, type ChatTurn } from './chat'
+import { applyChatFrame, chatBusy, chatThinking, clearsAwaiting, makeUserTurn, stopInFlightTurns, turnHasVisibleContent, type ChatTurn } from './chat'
 
 const turn = (id: string, role: 'user' | 'assistant', text: string, extra: Partial<ChatTurn> = {}): ChatTurn =>
   ({ id, role, ts: 1, blocks: [{ kind: 'text', text }], ...extra })
@@ -72,6 +72,26 @@ describe('chatThinking', () => {
 
   it('clears thinking once the streaming assistant has renderable content', () => {
     expect(chatThinking([turn('b', 'assistant', 'hello', { streaming: true })], false)).toBe(false)
+  })
+})
+
+describe('stopInFlightTurns', () => {
+  it('removes an empty streaming assistant shell so thinking can clear immediately', () => {
+    const empty: ChatTurn = { id: 'b', role: 'assistant', ts: 1, blocks: [], streaming: true }
+    expect(stopInFlightTurns([turn('a', 'user', 'q'), empty])).toEqual([turn('a', 'user', 'q')])
+  })
+
+  it('settles a visible streaming assistant turn and marks running tools interrupted', () => {
+    const streaming: ChatTurn = {
+      id: 'b',
+      role: 'assistant',
+      ts: 1,
+      streaming: true,
+      blocks: [{ kind: 'tool_call', id: 'x', name: 'Bash', input: {}, status: 'running' }],
+    }
+    const [stopped] = stopInFlightTurns([streaming])
+    expect(stopped).toMatchObject({ streaming: false, result: { isError: true, errorSubtype: 'interrupted' } })
+    expect(stopped.blocks[0]).toMatchObject({ kind: 'tool_call', status: 'error', result: { ok: false } })
   })
 })
 

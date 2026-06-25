@@ -78,6 +78,30 @@ export function chatThinking(turns: ChatTurn[], awaiting: boolean): boolean {
   return turns.some((t) => t.role === 'assistant' && !!t.streaming && !turnHasVisibleContent(t))
 }
 
+/**
+ * Optimistically settle the visible in-flight assistant turn after the user hits Stop. The backend
+ * also receives an interrupt, but some CLIs do not immediately send a closing result frame.
+ */
+export function stopInFlightTurns(turns: ChatTurn[]): ChatTurn[] {
+  let changed = false
+  const next: ChatTurn[] = []
+  for (const turn of turns) {
+    if (turn.role !== 'assistant' || !turn.streaming) {
+      next.push(turn)
+      continue
+    }
+    changed = true
+    const stopped: ChatTurn = {
+      ...turn,
+      streaming: false,
+      blocks: turn.blocks.map(stopRunningBlock),
+      result: turn.result ?? { isError: true, errorSubtype: 'interrupted' },
+    }
+    if (turnHasVisibleContent(stopped)) next.push(stopped)
+  }
+  return changed ? next : turns
+}
+
 /** Does this frame end the `awaiting` gap? The agent's first assistant turn (it has begun
  *  responding) or an error (the turn failed to start). The echoed user turn / session frame do not. */
 export function clearsAwaiting(frame: ChatFrame): boolean {
@@ -122,6 +146,11 @@ function mergeTurnUpdate(prev: ChatTurn, incoming: ChatTurn): ChatTurn {
     })
     .filter((b): b is Block => !!b)
   return { ...incoming, blocks: [...prevImages, ...blocks] }
+}
+
+function stopRunningBlock(block: Block): Block {
+  if (block.kind !== 'tool_call' || block.status !== 'running') return block
+  return { ...block, status: 'error', result: block.result ?? { output: '已中断', ok: false } }
 }
 
 function stripAttachmentLabel(text: string): string {

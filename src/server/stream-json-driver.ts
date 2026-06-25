@@ -110,6 +110,10 @@ export class StreamJsonDriver implements SessionDriver {
   private sendInterrupt(): void {
     const req = JSON.stringify({ type: 'control_request', request_id: `req_${++this.interruptSeq}_${randomUUID()}`, request: { subtype: 'interrupt' } })
     try { this.child.stdin?.write(req + '\n') } catch {}
+    this.inFlight = false
+    const turn = this.reducer.interruptCurrent()
+    if (turn) this.emit({ type: 'turn', turn })
+    this.activityCb()
   }
 
   private emit(frame: ChatFrame): void { this.frameCb(this.serialize(frame)) }

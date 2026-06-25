@@ -51,7 +51,13 @@ export class PerTurnStreamDriver implements SessionDriver {
       const images = Array.isArray(msg.images) ? msg.images.filter((image: any): image is TurnImage => !!image && typeof image.dataUrl === 'string') : undefined
       this.startTurn(msg.text, typeof msg.clientTurnId === 'string' ? msg.clientTurnId : undefined, images)
     }
-    else if (msg.t === 'interrupt') { try { this.active?.kill('SIGTERM') } catch {} }
+    else if (msg.t === 'interrupt') {
+      try { this.active?.kill('SIGTERM') } catch {}
+      this.pending = null
+      const turn = this.reducer.interruptCurrent()
+      if (turn) this.emit({ type: 'turn', turn })
+      this.activityCb()
+    }
   }
 
   private startTurn(prompt: string, clientTurnId?: string, images?: TurnImage[]): void {

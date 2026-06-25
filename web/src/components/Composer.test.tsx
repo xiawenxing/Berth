@@ -7,6 +7,34 @@ import type { PastedImage } from './ImagePaste'
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('Composer', () => {
+  it('renders an icon-only stop button while busy', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    let interrupted = false
+
+    try {
+      await act(async () => {
+        root.render(<Composer onSend={() => {}} onInterrupt={() => { interrupted = true }} busy={true} />)
+      })
+
+      const button = host.querySelector('button[aria-label="停止当前回合"]')
+      expect(button).not.toBeNull()
+      expect(button?.textContent).toBe('')
+      expect(button?.querySelector('svg')).not.toBeNull()
+
+      await act(async () => {
+        button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(interrupted).toBe(true)
+    } finally {
+      await act(async () => {
+        root.unmount()
+      })
+      host.remove()
+    }
+  })
+
   it('accepts pasted images and sends an image-only turn', async () => {
     const host = document.createElement('div')
     document.body.appendChild(host)

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Square } from 'lucide-react'
 import { PastedImageStrip, usePastedImages, type PastedImage } from './ImagePaste'
 
 /**
@@ -51,11 +52,13 @@ export function Composer({
         />
         {busy ? (
           <button
+            type="button"
             onClick={onInterrupt}
-            className="h-[38px] shrink-0 rounded-md border border-border px-3 text-sm text-muted-foreground hover:text-foreground"
+            className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground"
+            aria-label="停止当前回合"
             title="中断当前回合"
           >
-            停止
+            <Square size={13} className="fill-current" />
           </button>
         ) : (
           <button

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import type { LaunchSpec } from './ui-store'
 import { api } from './api'
-import { applyChatFrame, chatBusy, chatThinking, clearsAwaiting, makeUserTurn, type ChatFrame, type ChatTurn } from './chat'
+import { applyChatFrame, chatBusy, chatThinking, clearsAwaiting, makeUserTurn, stopInFlightTurns, type ChatFrame, type ChatTurn } from './chat'
 
 export interface ChatSession {
   turns: ChatTurn[]
@@ -143,7 +143,11 @@ export function useChatSession({
       setAwaiting(true)   // waiting on the agent's first frame — keeps the composer/transcript "in flight"
       ws.send(JSON.stringify({ t: 'turn', text: t, images: validImages, clientTurnId }))
     },
-    interrupt: () => sendRaw({ t: 'interrupt' }),
+    interrupt: () => {
+      sendRaw({ t: 'interrupt' })
+      setAwaiting(false)
+      setTurns((cur) => stopInFlightTurns(cur))
+    },
   }
 }
 
