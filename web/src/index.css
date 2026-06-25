@@ -66,6 +66,17 @@
   /* Sticky-header separation: a crisp hairline + a tight downward penumbra, so a pinned header reads
      as floating above the scrolling board instead of being divided from it by a bare 1px line. */
   --elev-header: 0 1px 0 var(--color-border), 0 8px 16px -10px rgb(0 0 0 / 0.5);
+
+  /* ── Surface elevation ramp ──────────────────────────────────────────────────────────────────
+     Tone tracks height: any surface that casts a shadow (claims to be higher) is never DARKER than
+     the surface beneath it. Same ordering in light & dark ("light from above"). Rungs map to the
+     existing tokens — verified monotonic (canvas < background < card < popover) across all 8 schemes:
+       e0 sunken   → --color-canvas / --color-sidebar   board column trays, terminal, drawer, sidebar
+       e1 base     → --color-background                  the page / content plane
+       e2 raised   → --color-card        + elev-1/2      panels, kanban cards, session/cargo boxes
+       e3 overlay  → --color-popover     + elev-3        menus, popovers, dialogs
+       e4 modal    → --color-popover     + elev-4        (highest)
+     Keep new surfaces on a rung: pick the token whose tone matches its height, never a darker one. */
 }
 
 /* Light (day) theme — DEFAULT. The @theme above is 午夜靛蓝 (dark), reached via html.dark.
@@ -186,22 +197,23 @@ html.light {
 .btn-primary:active { transform: translateY(0.5px); box-shadow: var(--elev-1); }
 .btn-primary:disabled { opacity: 0.5; box-shadow: none; transform: none; pointer-events: none; }
 
-/* Kanban card surface — a RAISED card (secondary, lighter than the bg-card column in dark mode)
-   that now carries real elevation: elev-1 at rest, lifting to elev-2 with a 1px translate on hover.
-   The box-shadow/transform/background all transition on the fast motion token so the lift feels
-   physical rather than a flat color swap. */
+/* Kanban card — an e2 RAISED tile (--color-card: white in light, the lightest panel in dark) sitting
+   in an e0 sunken column tray, so tone agrees with the elev-1 shadow (both say "I'm above the tray").
+   Hover lifts by elevation only: more shadow + a 1px rise, and a touch lighter (toward white) — never
+   darker, which would read as pressed/lower. In light mode the card is already white so the shadow
+   carries the lift; in dark the lightening reinforces it. */
 .kanban-card {
-  background: var(--color-secondary);
+  background: var(--color-card);
   box-shadow: var(--elev-1);
   transition: box-shadow var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out),
     background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
 }
 .kanban-card:hover {
-  background: color-mix(in oklab, var(--color-secondary) 88%, var(--color-foreground) 12%);
+  background: color-mix(in oklab, var(--color-card) 92%, #ffffff 8%);
   box-shadow: var(--elev-2);
   transform: translateY(-1px);
 }
-.kanban-card:active { transform: translateY(0); }
+.kanban-card:active { transform: translateY(0); box-shadow: var(--elev-1); }
 
 /* Markdown rendered inside Model B chat bubbles. Compact, bubble-friendly spacing (no typography
    plugin) — first/last child margins collapse so a bubble hugs its content. */
