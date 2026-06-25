@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, FileText, Folder, Plus, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileText, Folder, Package, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api, type PreviewSession, type ApiPathMeta } from '@/lib/api'
 import { shortCwd } from '@/lib/format'
@@ -105,14 +105,20 @@ export function CargoDefaults({
   }
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center gap-2">
-        <h2 className="text-[13px] font-semibold text-foreground">默认装载</h2>
-        <span className="ml-auto text-[11px] text-text-dim">开关 = 起航默认装载该目录（cwd 候选）</span>
+    <section className="mt-4">
+      {/* secondary "tool" module — mirrors the 会话 module: dimmed title + neutral tag outside the
+          surface, content in an elev-1 card, so the three peer sections share one elevation level. */}
+      <div className="mb-3 flex items-center gap-2">
+        <Package size={14} className="text-muted-foreground" />
+        <h2 className="text-[13px] font-semibold text-muted-foreground">默认装载</h2>
+        <span className="rounded-[10px] bg-muted px-2 py-px text-[11px] font-medium tracking-wide text-muted-foreground">货舱</span>
+        <span className="flex-1" />
+        <span className="text-[11px] text-text-dim">开关 = 起航默认装载该目录（cwd 候选）</span>
       </div>
 
+      <div className="elev-1 rounded-md border border-border bg-card p-4">
       {/* 上下文文档 */}
-      <div className="mt-3">
+      <div>
         <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">上下文文档</div>
         <div className="flex flex-col gap-1.5">
           <button
@@ -197,6 +203,7 @@ export function CargoDefaults({
             <Plus size={13} /> {picking ? '选择目录…' : '添加目录'}
           </button>
         </div>
+      </div>
       </div>
 
       {dialog && (
