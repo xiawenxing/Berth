@@ -160,7 +160,12 @@ export function Terminal({
     }
 
     const term = new Xterm({
-      fontFamily: 'var(--font-mono)',
+      // Resolve --font-mono to a literal font stack. xterm hands fontFamily straight to the Canvas2D
+      // glyph rasterizer the WebGL/canvas renderers use, and Canvas `ctx.font` does NOT resolve CSS
+      // `var()` — passing 'var(--font-mono)' makes it fall back to a proportional default whose advance
+      // width != the monospace cell, spacing every glyph out. (The DOM renderer hid this because it
+      // sets font-family on real DOM, where the browser resolves the variable.)
+      fontFamily: cssToken('--font-mono', 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'),
       fontSize: 13,
       lineHeight: 1.35,
       letterSpacing: 0,
