@@ -29,6 +29,9 @@ export interface OnboardingContent {
   tasks: OnboardingTask[]
 }
 
+/** Sort the guide project last (sort ASC) so it never steals an existing user's default landing. */
+const GUIDE_SORT = 1_000_000
+
 /** Stable task ids — deterministic so the seed is idempotent and the docs land at known paths. */
 const ID_WELCOME = 'berth-guide-welcome'
 const ID_IMPORT = 'berth-guide-import'
@@ -279,6 +282,10 @@ export function seedOnboarding(store: Store, docStore: DocStore, locale: Locale,
   const content = onboardingContent(locale)
   const cfg = getTaskFieldConfig(store)
   const project = store.upsertProject({ name: content.projectName })
+  // Sort the guide LAST: a fresh user (guide is their only project) still lands on it via the
+  // Home redirect, but an existing install getting the backfill keeps its own default-landing
+  // project — the guide sits quietly at the bottom of the rail instead of hijacking the entry.
+  if (project.id) store.setProjectSort(project.id, GUIDE_SORT)
 
   const projectAbs = docStore.resolveDocPath(docStore.projectDocRef(content.projectName))
   if (projectAbs) { try { docStore.writeDoc(projectAbs, content.projectDoc) } catch { /* best-effort */ } }

@@ -62,6 +62,17 @@ describe('onboarding seed', () => {
     expect(db.allProjects().length).toBe(0)
   })
 
+  it('sorts the guide project last so it never steals an existing project\'s landing', () => {
+    const { db, docs } = fixtures()
+    // A pre-existing real project whose name sorts AFTER the ⚓ guide by byte order — without an
+    // explicit sort the guide would jump ahead of it and hijack the default-landing redirect.
+    db.upsertProject({ name: '我的真实项目' })
+    seedOnboarding(db, docs, 'zh-CN', () => 1000)
+    const names = db.allProjects().map(p => p.name)
+    expect(names[0]).toBe('我的真实项目')
+    expect(names[names.length - 1]).toBe(onboardingContent('zh-CN').projectName)
+  })
+
   it('respects locale for the guide project name', () => {
     const { db, docs } = fixtures()
     seedOnboarding(db, docs, 'en', () => 1000)
