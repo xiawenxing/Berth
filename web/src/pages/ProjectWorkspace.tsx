@@ -26,6 +26,10 @@ import type { Task, SessionRow, CwdGroup, TaskStatus, LinkedSession } from '@/li
  */
 let taskSeq = 100
 
+type SessionGroupConfirm =
+  | { kind: 'detach'; ids: string[]; rawCwd?: string }
+  | { kind: 'unimport'; ids: string[]; rawCwd?: string; workspaceNote: boolean }
+
 export function ProjectWorkspace() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
@@ -63,6 +67,10 @@ export function ProjectWorkspace() {
   }
   // §10.1 移除装载目录 (parent-owned so it can offer 「一并移出会话」 with a real session count).
   const [removeCargo, setRemoveCargo] = useState<{ cwd: string } | null>(null)
+  const [emptyCargo, setEmptyCargo] = useState<{ cwd: string; registeredCwd: string } | null>(null)
+  const [groupConfirm, setGroupConfirm] = useState<SessionGroupConfirm | null>(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
+  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false)
 
   const project = projects.find((p) => p.id === id)
   const projName = project?.name ?? id
@@ -265,27 +273,44 @@ export function ProjectWorkspace() {
       const reg = registeredPath(cwd)
       if (!reg) continue
       const remaining = projSessions.filter((s) => s.cwd && norm(s.cwd) === norm(cwd) && !removedIds.includes(s.sessionId))
-      if (remaining.length === 0 && window.confirm(`目录「${shortCwd(cwd)}」已无会话，是否同时移除装载目录登记？`)) {
-        api.removePath(id, reg).then(() => reload()).catch(() => reload())
-      }
+      if (remaining.length === 0) setEmptyCargo({ cwd, registeredCwd: reg })
+      return
     }
   }
-  const onDetach = (sid: string) =>
-    api.detachSessions([sid]).then(() => { reload(); offerRemoveCargo([sid], cwdsOf([sid])) }).catch(() => reload())
-  const onUnimport = (sid: string) =>
-    api.unimportSessions([sid]).then(() => { reload(); offerRemoveCargo([sid], cwdsOf([sid])) }).catch(() => reload())
+  const onDetach = (sid: string) => {
+    const cwds = cwdsOf([sid])
+    api.detachSessions([sid]).then(() => { reload(); offerRemoveCargo([sid], cwds) }).catch(() => reload())
+  }
+  const onUnimport = (sid: string) => {
+    const cwds = cwdsOf([sid])
+    api.unimportSessions([sid]).then(() => { reload(); offerRemoveCargo([sid], cwds) }).catch(() => reload())
+  }
   const onDetachGroup = (ids: string[], rawCwd?: string) => {
     if (!ids.length) return
-    if (!window.confirm(`将该目录下的 ${ids.length} 个会话移出本项目（仍保留在 Berth，可在「无归属」重新归类）？`)) return
-    api.detachSessions(ids).then(() => { reload(); offerRemoveCargo(ids, rawCwd ? [rawCwd] : cwdsOf(ids)) }).catch(() => reload())
+    setGroupConfirm({ kind: 'detach', ids, rawCwd })
   }
   const onUnimportGroup = (ids: string[], rawCwd?: string) => {
     if (!ids.length) return
     // §6.3: the masked workspace-default group holds bound-launch sessions that un-import won't hide.
     const isWs = !!(rawCwd && project?.workspaceCwd && norm(rawCwd) === norm(project.workspaceCwd))
-    const note = isWs ? '\n（部分由 Berth 起的会话可能仍会显示——它们属于本项目的活跃会话。）' : ''
-    if (!window.confirm(`从 Berth 会话列表移除该目录下的 ${ids.length} 个会话？不会删除磁盘上的转录文件。${note}`)) return
-    api.unimportSessions(ids).then(() => { reload(); offerRemoveCargo(ids, rawCwd ? [rawCwd] : cwdsOf(ids)) }).catch(() => reload())
+    setGroupConfirm({ kind: 'unimport', ids, rawCwd, workspaceNote: isWs })
+  }
+  const confirmGroupAction = async () => {
+    if (!groupConfirm || confirmBusy) return
+    const { ids, rawCwd } = groupConfirm
+    const cwds = rawCwd ? [rawCwd] : cwdsOf(ids)
+    setConfirmBusy(true)
+    try {
+      if (groupConfirm.kind === 'detach') await api.detachSessions(ids)
+      else await api.unimportSessions(ids)
+      setGroupConfirm(null)
+      reload()
+      offerRemoveCargo(ids, cwds)
+    } catch {
+      reload()
+    } finally {
+      setConfirmBusy(false)
+    }
   }
   // §10.1 sessions under a to-be-removed 装载目录 (for the 「一并移出会话」 count + detach).
   const removeCargoIds = useMemo(
@@ -383,14 +408,21 @@ export function ProjectWorkspace() {
   }
   const deleteProject = () => {
     if (!project) return
-    if (!window.confirm(`确定删除项目「${project.name}」？项目下的任务会一起删除，此操作不可撤销。`)) return
-    api
-      .deleteProject(project.id)
-      .then(() => {
-        reload()
-        navigate('/now')
-      })
-      .catch(() => reload())
+    setDeleteProjectOpen(true)
+  }
+  const confirmDeleteProject = async () => {
+    if (!project || confirmBusy) return
+    setConfirmBusy(true)
+    try {
+      await api.deleteProject(project.id)
+      setDeleteProjectOpen(false)
+      reload()
+      navigate('/now')
+    } catch {
+      reload()
+    } finally {
+      setConfirmBusy(false)
+    }
   }
 
   return (
@@ -598,7 +630,177 @@ export function ProjectWorkspace() {
           }}
         />
       )}
+      {groupConfirm && (
+        <SessionGroupConfirmDialog
+          action={groupConfirm}
+          busy={confirmBusy}
+          onCancel={() => setGroupConfirm(null)}
+          onConfirm={confirmGroupAction}
+        />
+      )}
+      {emptyCargo && (
+        <EmptyCargoDialog
+          cwd={emptyCargo.cwd}
+          busy={confirmBusy}
+          onCancel={() => setEmptyCargo(null)}
+          onConfirm={async () => {
+            if (confirmBusy) return
+            setConfirmBusy(true)
+            try {
+              await api.removePath(id, emptyCargo.registeredCwd)
+              setEmptyCargo(null)
+              reload()
+            } catch {
+              reload()
+            } finally {
+              setConfirmBusy(false)
+            }
+          }}
+        />
+      )}
+      {deleteProjectOpen && project && (
+        <DeleteProjectDialog
+          projectName={project.name}
+          busy={confirmBusy}
+          onCancel={() => setDeleteProjectOpen(false)}
+          onConfirm={confirmDeleteProject}
+        />
+      )}
     </div>
+  )
+}
+
+function SessionGroupConfirmDialog({
+  action,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  action: SessionGroupConfirm
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const isDetach = action.kind === 'detach'
+  return (
+    <Dialog open onClose={busy ? () => {} : onCancel} width={460}>
+      <div className="flex flex-col">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-[13px] font-semibold text-foreground">{isDetach ? '移出整组会话' : '取消导入整组'}</div>
+          <div className="mt-0.5 text-[11px] text-text-dim">共 {action.ids.length} 个会话</div>
+        </div>
+        <div className="space-y-2 px-4 py-3 text-[12px] text-muted-foreground">
+          {isDetach ? (
+            <p>将该目录下的会话移出本项目。会话仍保留在 Berth，可在「无归属」重新归类。</p>
+          ) : (
+            <>
+              <p>从 Berth 会话列表移除该目录下的会话。不会删除磁盘上的转录文件。</p>
+              {action.workspaceNote && <p className="text-warning">部分由 Berth 起的会话可能仍会显示，它们属于本项目的活跃会话。</p>}
+            </>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            取消
+          </button>
+          <button
+            className="rounded-md bg-destructive px-3 py-1.5 text-[12px] font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? '处理中…' : isDetach ? '移出整组' : '取消导入'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+function EmptyCargoDialog({
+  cwd,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  cwd: string
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <Dialog open onClose={busy ? () => {} : onCancel} width={440}>
+      <div className="flex flex-col">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-[13px] font-semibold text-foreground">移除空装载目录</div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-text-dim">{shortCwd(cwd)}</div>
+        </div>
+        <div className="px-4 py-3 text-[12px] text-muted-foreground">
+          该目录已没有项目会话。是否同时移除装载目录登记？
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            保留
+          </button>
+          <button
+            className="rounded-md bg-destructive px-3 py-1.5 text-[12px] font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? '移除中…' : '移除登记'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+function DeleteProjectDialog({
+  projectName,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  projectName: string
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <Dialog open onClose={busy ? () => {} : onCancel} width={440}>
+      <div className="flex flex-col">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-[13px] font-semibold text-foreground">删除项目</div>
+          <div className="mt-0.5 truncate text-[11px] text-text-dim">{projectName}</div>
+        </div>
+        <div className="px-4 py-3 text-[12px] text-muted-foreground">
+          项目下的任务会一起删除，此操作不可撤销。
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            取消
+          </button>
+          <button
+            className="rounded-md bg-destructive px-3 py-1.5 text-[12px] font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? '删除中…' : '删除项目'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
   )
 }
 
