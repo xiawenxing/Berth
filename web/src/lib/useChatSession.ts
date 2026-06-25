@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MutableRefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { LaunchSpec } from './ui-store'
 import { api } from './api'
 import { applyChatFrame, chatBusy, chatThinking, clearsAwaiting, makeUserTurn, stopInFlightTurns, type ChatFrame, type ChatTurn } from './chat'
@@ -48,7 +48,6 @@ export function useChatSession({
   const [awaiting, setAwaiting] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const turnSeqRef = useRef(0)
-  const launchTurnSentRef = useRef<string | null>(null)
 
   useEffect(() => {
     let disposed = false
@@ -97,8 +96,9 @@ export function useChatSession({
       try { msg = JSON.parse(e.data) } catch { return }   // stream mode is all-JSON; ignore stray bytes
       if (msg.__berth === 'launched') {
         if (msg.sessionId) onLaunched?.(msg.sessionId)
-        if (launch?.images?.length) sendLaunchTurn(ws, launch, launchTurnSentRef)
-        // A launch that auto-fires a first turn (manual images here, or a server-side ?prompt=) is
+        // The drawer-independent prime socket (lib/launch-runner) submits the launch's first turn
+        // (images + prompt), so closing the drawer mid-launch can't drop it; this view just attaches.
+        // A launch that auto-fires a first turn (images here, or a server-side ?prompt=) is
         // immediately awaiting the agent — show the thinking indicator from the handshake on.
         if (launch?.prompt?.trim() || launch?.images?.length) setAwaiting(true)
         return
@@ -149,16 +149,4 @@ export function useChatSession({
       setTurns((cur) => stopInFlightTurns(cur))
     },
   }
-}
-
-function sendLaunchTurn(ws: WebSocket, launch: LaunchSpec, sentRef: MutableRefObject<string | null>): void {
-  const key = launch.launchToken ?? `${launch.cli}:${launch.cwd}:${launch.prompt ?? ''}`
-  if (sentRef.current === key) return
-  if (ws.readyState !== WebSocket.OPEN) return
-  sentRef.current = key
-  const text = launch.prompt?.trim() ?? ''
-  const imageCount = launch.images?.length ?? 0
-  if (!text && imageCount === 0) return
-  const clientTurnId = `launch_${key}`
-  ws.send(JSON.stringify({ t: 'turn', text, images: launch.images ?? [], clientTurnId }))
 }

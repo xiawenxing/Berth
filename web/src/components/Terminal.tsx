@@ -206,29 +206,8 @@ export function Terminal({
       }
       reader.readAsDataURL(file)
     }
-    let launchImagesSent = false
-    let launchedSessionId: string | null = null
-    let recentOutput = ''
     let replayPositionRestored = false
     let suppressHistoryLoadUntil = 0
-    const sendLaunchImagesAndPrompt = (): boolean => {
-      const images = launch?.images?.filter((image) => image.dataUrl) ?? []
-      if (!launch || launchImagesSent || !images.length) return false
-      launchImagesSent = true
-      for (const image of images) sendImageData(image)
-      const prompt = launch.prompt?.trim()
-      if (prompt) sendInput(`\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~\r`)
-      else sendInput('\r')
-      if (launchedSessionId) onLaunched?.(launchedSessionId)
-      return true
-    }
-    const maybeSendLaunchImagesAndPrompt = () => {
-      if (!launch?.images?.length || !launchedSessionId) return
-      // Wait until the CLI has enabled bracketed paste mode. Sending image paths before this point
-      // makes Codex/Claude echo the escape markers as literal text during startup.
-      if (!recentOutput.includes('\x1b[?2004h')) return
-      sendLaunchImagesAndPrompt()
-    }
     let imagePasteHandledAt = 0
     const onPaste = (e: ClipboardEvent) => {
       if (!pasteIsForThisTerminal(e)) return
@@ -269,11 +248,10 @@ export function Terminal({
         try {
           const ctl = JSON.parse(data)
           if (ctl.__berth === 'launched' && ctl.sessionId) {
-            launchedSessionId = ctl.sessionId
-            // Image-backed launches can't put the prompt in the URL. Keep this fresh-launch socket
-            // mounted until the CLI announces bracketed-paste readiness and the payload is submitted.
-            if (!launch?.images?.length) onLaunched?.(ctl.sessionId)
-            else maybeSendLaunchImagesAndPrompt()
+            // The drawer-independent prime socket (lib/launch-runner) owns submitting the launch's
+            // images+prompt, so closing the drawer mid-launch can't drop them. This viewer only binds
+            // the drawer to the real session id.
+            onLaunched?.(ctl.sessionId)
           }
           return // a well-formed control frame is not terminal output
         } catch {
@@ -282,8 +260,6 @@ export function Terminal({
         }
       }
       markDataSeen()   // first real pty output → drop the loading overlay
-      recentOutput = (recentOutput + data).slice(-4096)
-      maybeSendLaunchImagesAndPrompt()
       term.write(data, () => {
         if (!replayPositionRestored && !launch && historyBytes > DEFAULT_PTY_HISTORY_BYTES) {
           replayPositionRestored = true
