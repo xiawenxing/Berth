@@ -1,5 +1,4 @@
 import { Router } from 'express'
-import { openSync, readSync, closeSync, fstatSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { getStore, getCache, refresh, storeRoots } from './store-singleton'
 import { collectLogicalSessions } from '../sessions'
@@ -21,10 +20,10 @@ import { lastLogEntries } from '../data/context-log'
 import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
-import { generateTitle, parseStructuredSummary } from '../agent/index'
+import { parseStructuredSummary } from '../agent/index'
 import { summarizeCompactedContext } from '../agent/context-compact'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
-import { titleInputFromTranscript } from '../agent/transcript'
+import { isGeneratingTitle, triggerSessionTitle, titleGist } from './title-service'
 import type { Locale } from '../i18n'
 import { readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -65,39 +64,13 @@ function sendAgentError(res: import('express').Response, error: unknown, locale:
   return res.status(502).json(contextAgentError(error))
 }
 
-function readTitleTranscriptSample(path: string): string {
-  const fd = openSync(path, 'r')
-  try {
-    const size = fstatSync(fd).size
-    const maxBytes = 1024 * 1024
-    if (size <= maxBytes) {
-      const b = Buffer.alloc(size)
-      const n = readSync(fd, b, 0, size, 0)
-      return b.toString('utf8', 0, n)
-    }
-
-    const headBytes = 256 * 1024
-    const tailBytes = maxBytes - headBytes
-    const head = Buffer.alloc(headBytes)
-    const hn = readSync(fd, head, 0, headBytes, 0)
-    const tailStart = Math.max(0, size - tailBytes)
-    const tail = Buffer.alloc(size - tailStart)
-    const tn = readSync(fd, tail, 0, tail.length, tailStart)
-    let tailText = tail.toString('utf8', 0, tn)
-    const firstNewline = tailText.indexOf('\n')
-    if (tailStart > 0 && firstNewline >= 0) tailText = tailText.slice(firstNewline + 1)
-    return head.toString('utf8', 0, hn) + '\n' + tailText
-  } finally {
-    closeSync(fd)
-  }
-}
-
 export interface ApiSession {
   sessionId: string; cli: string; cwd: string | null; title: string | null
   updatedAt: number; deleted: boolean; copies: number
   pinned: boolean; projectId: string | null; project: string | null; attachState: string
   todoKey?: string | null
   activity: 'running' | 'settled' | null   // live PTY status (null = no live process / external session)
+  titleGenerating?: boolean                // 港务助手 is generating this session's title right now
 }
 
 function serialize(): ApiSession[] {
@@ -124,6 +97,7 @@ function serialize(): ApiSession[] {
     attachState: attach.get(s.sessionId)?.state ?? 'unconfirmed',
     todoKey: reverseMap.get(s.sessionId) ?? null,
     activity: activityMap.get(s.sessionId) ?? null,
+    titleGenerating: isGeneratingTitle(s.sessionId),   // drives the live spinner on the generate-title icon
   })).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
@@ -204,6 +178,7 @@ api.get('/projects', (_req, res) => {
       pathsMeta: pathMap.get(p.id)?.meta ?? [],        // {cwd,enabled}[] — drives the 货舱 toggle UI
       workspaceCwd: join(berthHome(), 'workspaces', p.id), // Berth-assigned default cwd (masked in UI)
       lastCwd: store.getSetting(`project_last_cwd:${p.id}`), // sticky 主 cwd for the launch auto-pick
+      summarizing: isSummarizingProject(p.id),             // drives the 小结 button spinner (popup-independent)
     })),
   })
 })
@@ -777,19 +752,15 @@ api.post('/settings', (req, res) => {
   res.json({ ok: true, docsRoot: getDocsRoot(store), locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
 })
 
-api.post('/sessions/:id/title', async (req, res) => {
+// Kick a detached title (re)generation and return immediately — it runs decoupled from this request,
+// so closing the drawer never stops it. Fails fast (422) when the session has no usable content; the
+// client polls /api/sessions (titleGenerating + the eventual title) for progress.
+api.post('/sessions/:id/title', (req, res) => {
   const s = getCache().find(x => x.sessionId === req.params.id)
   if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
-  let sample = ''
-  try { sample = readTitleTranscriptSample(s.contentSourcePath) } catch {}
-  const gist = titleInputFromTranscript(sample)
-  if (!gist) return res.status(422).json({ error: 'no usable session content for title' })
-  try {
-    const title = await generateTitle(gist, resolveBerthAgent(getStore()))
-    if (!title) return res.status(502).json({ error: 'agent returned empty title' })
-    getStore().setTitleOverride(s.sessionId, title)
-    res.json({ title })
-  } catch (e: any) { sendAgentError(res, e, getLocale(getStore())) }
+  if (!titleGist(s.sessionId)) return res.status(422).json({ error: 'no usable session content for title' })
+  triggerSessionTitle(s.sessionId)
+  res.json({ generating: true })
 })
 
 api.patch('/sessions/:id/title', (req, res) => {

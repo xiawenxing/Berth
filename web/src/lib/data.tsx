@@ -210,6 +210,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(iv)
   }, [anySummarizing])
 
+  // Same pattern for detached session-title generation: poll sessions while any title is being
+  // generated, so the spinner clears and the new title appears even if the run was kicked elsewhere
+  // (or the drawer was closed mid-run).
+  const anyTitleGenerating = sessions.some((s) => s.titleGenerating)
+  useEffect(() => {
+    if (!anyTitleGenerating) return
+    const iv = setInterval(() => {
+      api.sessions().then((s) => setSessions((s ?? []).filter((x) => !x.deleted))).catch(() => {})
+    }, 2000)
+    return () => clearInterval(iv)
+  }, [anyTitleGenerating])
+
+  // And for detached 项目小结 generation: poll projects while any project's 小结 is regenerating, so the
+  // 小结 button spinner reflects it even with the popover closed.
+  const anyProjSummarizing = projects.some((p) => p.summarizing)
+  useEffect(() => {
+    if (!anyProjSummarizing) return
+    const iv = setInterval(() => {
+      api.projects().then((p) => setProjects(p.projects ?? [])).catch(() => {})
+    }, 2000)
+    return () => clearInterval(iv)
+  }, [anyProjSummarizing])
+
   const value = useMemo<DataState>(
     () => ({
       projects,

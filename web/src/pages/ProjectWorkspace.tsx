@@ -162,7 +162,7 @@ export function ProjectWorkspace() {
       if (b[0] === mainCwd) return 1
       return b[1].length - a[1].length
     })
-    let worktreeN = 1
+    let contextN = 1
     return sorted.map(([cwd, rows]) => {
       if (cwd === ws) {
         // rawCwd is the real (masked) workspace path — drives the import icon so sessions that ran
@@ -170,12 +170,12 @@ export function ProjectWorkspace() {
         return { key: cwd, cwd: '项目默认目录', tag: 'Berth 工作区', shortTag: 'Berth 工作区', sessions: rows, kind: 'workspace' as const, rawCwd: cwd }
       }
       const isMain = cwd === mainCwd
-      const n = isMain ? 0 : ++worktreeN // worktrees count from 2 (主 is the 1st context)
+      const n = isMain ? 0 : ++contextN // secondary code contexts count from 2 (主 is the 1st context)
       return {
         key: cwd,
         cwd: cwd === NO_CWD ? NO_CWD : shortCwd(cwd),
-        tag: isMain ? '主上下文' : `worktree · 第 ${n} 上下文`,
-        shortTag: isMain ? '主上下文' : `worktree·${n}`,
+        tag: isMain ? '主上下文' : `代码目录 · 第 ${n} 上下文`,
+        shortTag: isMain ? '主上下文' : `目录·${n}`,
         sessions: rows,
         kind: 'cwd' as const,
         rawCwd: cwd === NO_CWD ? undefined : cwd,
@@ -427,9 +427,15 @@ export function ProjectWorkspace() {
               <Plus size={14} /> 新建任务
             </button>
             <HBtn icon={<Play size={13} />} onClick={() => launch('')}>起会话</HBtn>
-            <HBtn btnRef={summaryBtnRef} icon={<Sparkles size={13} />} onClick={() => setSummaryOpen((v) => !v)}>小结</HBtn>
+            <HBtn
+              btnRef={summaryBtnRef}
+              icon={project?.summarizing ? <Loader2 size={13} className="animate-spin text-brand" /> : <Sparkles size={13} />}
+              onClick={() => setSummaryOpen((v) => !v)}
+            >
+              小结
+            </HBtn>
             {summaryOpen && (
-              <ProjectSummaryPopover anchor={summaryBtnRef} projectId={id} onClose={() => setSummaryOpen(false)} />
+              <ProjectSummaryPopover anchor={summaryBtnRef} projectId={id} onClose={() => setSummaryOpen(false)} onGenerated={reload} />
             )}
             <button
               ref={moreBtnRef}

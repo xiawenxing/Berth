@@ -65,6 +65,7 @@ export function SessionDrawer() {
             status={currentStatus ?? drawer.status}
             task={drawer.task}
             editable={!!drawer.sessionId}
+            generating={!!currentSession?.titleGenerating}
             onRename={async (title) => {
               if (!drawer.sessionId) return
               await api.renameSessionTitle(drawer.sessionId, title)
@@ -74,10 +75,10 @@ export function SessionDrawer() {
             onGenerate={
               drawer.sessionId
                 ? async () => {
-                    const { title } = await api.sessionTitle(drawer.sessionId!)
-                    if (title) openDrawer({ ...drawer, title })
+                    // Detached: kick + reload so the spinner (titleGenerating) shows; the new title
+                    // streams in via the sessions poll even if the drawer is closed.
+                    await api.sessionTitle(drawer.sessionId!)
                     reload()
-                    return title
                   }
                 : undefined
             }

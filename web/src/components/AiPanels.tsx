@@ -18,8 +18,9 @@ interface SummaryLabels {
 }
 const DEFAULT_LABELS: SummaryLabels = { headline: '一句话总结', progress: '进度要点', milestones: '重要里程碑' }
 
-/** 项目小结 — anchored popover over the project context doc. */
-export function ProjectSummaryPopover({ anchor, projectId, onClose }: { anchor: RefObject<HTMLElement | null>; projectId: string; onClose: () => void }) {
+/** 项目小结 — anchored popover over the project context doc. `onGenerated` lets the parent reload
+ *  projects so the 小结 button spinner reflects the in-flight run even with the popover closed. */
+export function ProjectSummaryPopover({ anchor, projectId, onClose, onGenerated }: { anchor: RefObject<HTMLElement | null>; projectId: string; onClose: () => void; onGenerated?: () => void }) {
   return (
     <StructuredSummaryPopover
       anchor={anchor}
@@ -27,6 +28,7 @@ export function ProjectSummaryPopover({ anchor, projectId, onClose }: { anchor: 
       onClose={onClose}
       load={() => api.getProjectSummary(projectId)}
       generate={() => api.projectSummary(projectId)}
+      onGenerated={onGenerated}
     />
   )
 }

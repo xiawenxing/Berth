@@ -234,14 +234,15 @@ export function Unassigned() {
               cwd={shortCwd(sel.cwd)}
               status={live.shipStatus(sel.sessionId, sel.updatedAt)}
               editable
+              generating={!!sel.titleGenerating}
               onRename={async (title) => {
                 await api.renameSessionTitle(sel.sessionId, title)
                 reload()
               }}
               onGenerate={async () => {
-                const { title } = await api.sessionTitle(sel.sessionId)
+                // Detached: kick + reload; the new title arrives via the sessions poll.
+                await api.sessionTitle(sel.sessionId)
                 reload()
-                return title
               }}
             />
             <div className="min-h-0 flex-1 overflow-hidden">
@@ -399,9 +400,11 @@ function SessionListRow({
   const live = useLive()
   const { reload } = useData()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [generating, setGenerating] = useState(false)
+  const [kicked, setKicked] = useState(false) // instant feedback until titleGenerating takes over
   const [failed, setFailed] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const generating = kicked || !!s.titleGenerating
+  useEffect(() => { if (s.titleGenerating) setKicked(false) }, [s.titleGenerating])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -421,17 +424,18 @@ function SessionListRow({
 
   const generateTitle = async () => {
     if (generating) return
-    setGenerating(true)
     setFailed(false)
+    setKicked(true)
     try {
+      // Detached: kick + reload so titleGenerating shows; the title streams in via the sessions poll.
       await api.sessionTitle(s.sessionId)
       reload()
+      window.setTimeout(() => setKicked(false), 8000)
     } catch {
-      // The agent can error / time out — flash red so a non-update isn't silent.
+      // 404/422 (e.g. empty session) — flash red so a non-update isn't silent.
+      setKicked(false)
       setFailed(true)
       window.setTimeout(() => setFailed(false), 2500)
-    } finally {
-      setGenerating(false)
     }
   }
 

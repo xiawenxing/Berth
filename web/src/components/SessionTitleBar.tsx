@@ -12,19 +12,24 @@ interface SessionTitleBarProps {
   task?: string
   editable?: boolean
   onRename?: (title: string) => Promise<void> | void
-  // AI-generate a title from the session transcript. Returns the new title (persisted server-side).
-  onGenerate?: () => Promise<string>
+  // Kick a detached title (re)generation. The run continues server-side regardless; `generating`
+  // (driven by the session's titleGenerating) is the source of truth for the spinner.
+  onGenerate?: () => Promise<void> | void
+  generating?: boolean
 }
 
-export function SessionTitleBar({ cli, title, cwd, status, task, editable = false, onRename, onGenerate }: SessionTitleBarProps) {
+export function SessionTitleBar({ cli, title, cwd, status, task, editable = false, onRename, onGenerate, generating = false }: SessionTitleBarProps) {
   const [localTitle, setLocalTitle] = useState(title)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(title)
   const [saving, setSaving] = useState(false)
-  const [generating, setGenerating] = useState(false)
+  const [kicked, setKicked] = useState(false) // instant local feedback until the server flag takes over
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const skipBlurCommit = useRef(false)
+  const busy = kicked || generating
+  // Hand off from the optimistic local flag once the server confirms it's generating.
+  useEffect(() => { if (generating) setKicked(false) }, [generating])
 
   useEffect(() => {
     if (!editing) {
@@ -57,19 +62,15 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
   }
 
   const generateTitle = async () => {
-    if (!onGenerate || generating || saving || editing) return
-    setGenerating(true)
+    if (!onGenerate || busy || saving || editing) return
     setError(null)
+    setKicked(true)
     try {
-      const next = (await onGenerate())?.trim()
-      if (next) {
-        setLocalTitle(next)
-        setDraft(next)
-      }
+      await onGenerate() // detached: just kicks the run; the new title arrives via prop on the next poll
+      window.setTimeout(() => setKicked(false), 8000) // safety: clear if the server flag never shows
     } catch {
       setError('标题生成失败')
-    } finally {
-      setGenerating(false)
+      setKicked(false)
     }
   }
 
@@ -146,15 +147,15 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
         <button
           type="button"
           onClick={generateTitle}
-          disabled={generating || saving || editing}
-          title={generating ? '正在智能生成标题…' : '智能生成标题'}
+          disabled={busy || saving || editing}
+          title={busy ? '正在智能生成标题…' : '智能生成标题'}
           aria-label="智能生成标题"
           className={cn(
             'flex-none rounded p-1 text-text-dim transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50',
-            generating && 'text-brand',
+            busy && 'text-brand',
           )}
         >
-          {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
         </button>
       )}
       <ShipPill status={status} task={task} />

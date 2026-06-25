@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pin, Play, ChevronDown, CalendarClock, Check, Sparkles, Loader2, MoreHorizontal, CircleDot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
@@ -200,25 +200,28 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
   const live = useLive()
   const { reload } = useData()
   const moreBtnRef = useRef<HTMLButtonElement>(null)
-  const [generating, setGenerating] = useState(false)
+  const [kicked, setKicked] = useState(false) // instant feedback until titleGenerating takes over
   const [failed, setFailed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const generating = kicked || !!s.titleGenerating
+  useEffect(() => { if (s.titleGenerating) setKicked(false) }, [s.titleGenerating])
 
   const generateTitle = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (generating || pending) return
-    setGenerating(true)
     setFailed(false)
+    setKicked(true)
     try {
+      // Detached: kick + reload so titleGenerating shows; the title streams in via the sessions poll
+      // even if this row scrolls off / the page changes.
       await api.sessionTitle(s.sessionId)
       reload()
+      window.setTimeout(() => setKicked(false), 8000)
     } catch {
-      // Surface failure on the row itself (the agent can error / time out) — otherwise a non-update
-      // looks identical to "still working". Flash red briefly.
+      // 404/422 (e.g. empty session) — flash red so a non-update isn't silent.
+      setKicked(false)
       setFailed(true)
       window.setTimeout(() => setFailed(false), 2500)
-    } finally {
-      setGenerating(false)
     }
   }
 

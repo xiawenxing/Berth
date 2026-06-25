@@ -15,6 +15,7 @@ export interface ApiProject {
   pathsMeta?: ApiPathMeta[] // {cwd,enabled}[] — drives the 货舱 toggle UI
   workspaceCwd?: string // Berth-assigned default cwd (~/.berth/workspaces/<id>); masked in UI
   lastCwd?: string | null // sticky 主 cwd for the launch auto-pick
+  summarizing?: boolean // server is (re)generating this project's 小结 right now (drives the 小结 spinner)
 }
 
 export interface ApiTask {
@@ -50,6 +51,7 @@ export interface ApiSession {
   todoKey?: string | null
   activity?: string | null
   deleted?: boolean
+  titleGenerating?: boolean // server is generating this session's title right now (drives the spinner)
   /** Client-only: an optimistic in-flight launch placeholder (创建中…), never sent by the server. */
   __pending?: boolean
   __pendingOpenable?: boolean
@@ -188,7 +190,9 @@ export const api = {
     getJSON<{ summary: StructuredSummary | null; generatedAt?: number; summarizing?: boolean }>(`/api/todos/${id}/summary-detail`),
   taskSummaryDetail: (id: string) =>
     send('POST', `/api/todos/${id}/summary-detail`, {}) as Promise<{ summarizing?: boolean; error?: string }>,
-  sessionTitle: (id: string) => send('POST', `/api/sessions/${id}/title`, {}) as Promise<{ title: string }>,
+  // Kick a detached title (re)generation; returns immediately. Poll /api/sessions (titleGenerating +
+  // the eventual title) for the result — the run continues even if the drawer/page is closed.
+  sessionTitle: (id: string) => send('POST', `/api/sessions/${id}/title`, {}) as Promise<{ generating?: boolean }>,
   renameSessionTitle: (id: string, title: string) =>
     send('PATCH', `/api/sessions/${id}/title`, { title }) as Promise<{ title: string }>,
   // Context doc read/write (docstore-relative `path`/ref; POST guards on baseMtime).

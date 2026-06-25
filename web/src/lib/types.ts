@@ -45,8 +45,8 @@ export interface SessionRow {
 export interface CwdGroup {
   key: string // stable React key — the RAW cwd (cwd is the shortened display form, can collide)
   cwd: string // display form (shortCwd) — for kind:'workspace' this is the masked label, not a path
-  tag: string // full tag for the right-side pill: 主上下文 / worktree · 第 2 上下文
-  shortTag: string // compact inline label suffix: 主上下文 / worktree·2
+  tag: string // full tag for the right-side pill: 主上下文 / 代码目录 · 第 2 上下文
+  shortTag: string // compact inline label suffix: 主上下文 / 目录·2
   sessions: SessionRow[]
   kind?: 'workspace' | 'cwd' // 'workspace' = Berth-assigned default dir (masked label)
   rawCwd?: string // the real absolute cwd, for the import-icon's previewDir (present on every group)
