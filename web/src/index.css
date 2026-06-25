@@ -37,6 +37,17 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  /* Type scale — semantic, non-colliding names (Tailwind keeps its own xs/sm/base). The app today
+     hand-codes text-[10px]..text-[13px] per site; these tokens give those sizes a name + a paired
+     line-height so new/refactored UI can reach for a rung instead of a magic number. Adopt gradually;
+     spacing stays hand-tuned against the v7 mockup, so this does NOT sweep existing layout sizes. */
+  --text-micro: 0.625rem;  --text-micro--line-height: 1.4;   /* 10px — uppercase labels, chips */
+  --text-mini: 0.6875rem;  --text-mini--line-height: 1.45;   /* 11px — meta, secondary chips */
+  --text-meta: 0.75rem;    --text-meta--line-height: 1.5;    /* 12px — secondary body */
+  --text-body: 0.8125rem;  --text-body--line-height: 1.5;    /* 13px — base body / titles */
+  --text-title: 0.875rem;  --text-title--line-height: 1.35;  /* 14px — card / section titles */
+  --text-head: 1.0625rem;  --text-head--line-height: 1.3;    /* 17px — page / panel headers */
+
   /* Motion system — one easing curve + three speeds. Hover/press = fast(1), expand/popover = mid(2),
      drawer/large transforms = slow(3). The curve is a snappy ease-out (accel fast, settle soft) that
      reads as "app", not "default browser linear". */
@@ -107,9 +118,26 @@ html.light {
     font-size: 13px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
+
+  /* Brand-tinted text selection — replaces the browser's default blue highlight, one of the louder
+     "raw HTML" tells. Alpha keeps the selected glyphs readable across all 8 schemes. */
+  ::selection { background: color-mix(in oklab, var(--color-brand) 28%, transparent); }
+
+  /* One unified keyboard-focus ring for interactive elements. Many controls strip the default outline
+     (outline-none) without a replacement, so keyboard users get nothing; others show the raw browser
+     ring. :focus-visible (keyboard only, never on mouse click) gives a single branded ring. Controls
+     that opt into their own focus (outline-none + focus:border-ring) keep it — the Tailwind utility
+     layer wins over this base rule, so inputs are unaffected. */
+  a:focus-visible, button:focus-visible, select:focus-visible, [tabindex]:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 1px;
+  }
 }
 
 /* Reusable elevation + enter-motion utilities. Use these instead of Tailwind's flat shadow-*
