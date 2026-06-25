@@ -71,12 +71,14 @@
      Tone tracks height: any surface that casts a shadow (claims to be higher) is never DARKER than
      the surface beneath it. Same ordering in light & dark ("light from above"). Rungs map to the
      existing tokens — verified monotonic (canvas < background < card < popover) across all 8 schemes:
-       e0 sunken   → --color-canvas / --color-sidebar   board column trays, terminal, drawer, sidebar
-       e1 base     → --color-background                  the page / content plane
+       e0 sunken   → --color-canvas / --color-sidebar   terminal, drawer, sidebar
+       e1 base     → --color-background                  the page plane (kanban lanes sit here, no fill)
        e2 raised   → --color-card        + elev-1/2      panels, kanban cards, session/cargo boxes
        e3 overlay  → --color-popover     + elev-3        menus, popovers, dialogs
        e4 modal    → --color-popover     + elev-4        (highest)
-     Keep new surfaces on a rung: pick the token whose tone matches its height, never a darker one. */
+     Keep new surfaces on a rung: pick the token whose tone matches its height, never a darker one.
+     Prefer raising the foreground element over recessing its container — a sunken tray reads as a
+     hole; floating cards on the page plane reads as depth. */
 }
 
 /* Light (day) theme — DEFAULT. The @theme above is 午夜靛蓝 (dark), reached via html.dark.
@@ -197,11 +199,11 @@ html.light {
 .btn-primary:active { transform: translateY(0.5px); box-shadow: var(--elev-1); }
 .btn-primary:disabled { opacity: 0.5; box-shadow: none; transform: none; pointer-events: none; }
 
-/* Kanban card — an e2 RAISED tile (--color-card: white in light, the lightest panel in dark) sitting
-   in an e0 sunken column tray, so tone agrees with the elev-1 shadow (both say "I'm above the tray").
-   Hover lifts by elevation only: more shadow + a 1px rise, and a touch lighter (toward white) — never
-   darker, which would read as pressed/lower. In light mode the card is already white so the shadow
-   carries the lift; in dark the lightening reinforces it. */
+/* Kanban card — an e2 RAISED tile (--color-card: white in light, the lightest panel in dark) floating
+   on the e1 page plane (the lane has no fill), so tone agrees with the elev-1 shadow without recessing
+   the column into a sunken block. Hover lifts by elevation only: more shadow + a 1px rise, and a touch
+   lighter (toward white) — never darker, which would read as pressed/lower. In light mode the card is
+   already white so the shadow carries the lift; in dark the lightening reinforces it. */
 .kanban-card {
   background: var(--color-card);
   box-shadow: var(--elev-1);

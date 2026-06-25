@@ -92,16 +92,17 @@ export function Kanban({
             }}
             className={cn(
               // overflow-hidden clips the header's square top corners to the column's rounded-md.
-              // bg-canvas = e0 sunken tray: the column recesses so its e2 (white) cards float above it
-              // (tone agrees with the cards' shadow). Same ordering in light & dark — see index.css ramp.
-              'flex min-h-0 min-w-0 max-h-[700px] flex-col overflow-hidden rounded-md border border-border bg-canvas transition-[flex-grow] duration-300',
+              // The lane sits at the page plane (transparent fill, just a border outline) — NOT a
+              // filled tray. Only the cards are raised (e2 white + shadow), so nothing reads as a
+              // sunken block while tone still agrees with elevation. See index.css ramp.
+              'flex min-h-0 min-w-0 max-h-[700px] flex-col overflow-hidden rounded-md border border-border bg-transparent transition-[flex-grow] duration-300',
               isActive ? 'flex-[2.2]' : 'flex-1',
               isDropOver && 'border-brand ring-2 ring-brand/60',
             )}
           >
             <button
               onClick={() => setActive(status)}
-              className="flex shrink-0 items-center gap-1.5 border-b border-border bg-canvas px-2.5 py-2 text-[12px] font-semibold hover:bg-accent"
+              className="flex shrink-0 items-center gap-1.5 border-b border-border bg-transparent px-2.5 py-2 text-[12px] font-semibold hover:bg-accent"
             >
               <span className="h-2 w-2 flex-none rounded-full" style={{ background: 'var(--col-accent)' }} />
               <span className="truncate tracking-[0.3px]" style={{ color: 'var(--col-accent)' }}>{status}</span>
