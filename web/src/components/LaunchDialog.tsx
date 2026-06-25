@@ -190,7 +190,7 @@ export function LaunchDialog() {
         <button
           onClick={sail}
           disabled={!canSail}
-          className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground disabled:opacity-50"
+          className="btn-primary flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-semibold"
         >
           <Play size={13} /> 起航
         </button>

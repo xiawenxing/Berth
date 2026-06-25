@@ -156,7 +156,7 @@ export function NewTaskDialog({
         <button onClick={cancel} className="rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
           取消
         </button>
-        <button onClick={create} disabled={!canRun} className="rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground disabled:opacity-50">
+        <button onClick={create} disabled={!canRun} className="btn-primary rounded-md px-3 py-1.5 text-[13px] font-semibold">
           创建
         </button>
       </div>

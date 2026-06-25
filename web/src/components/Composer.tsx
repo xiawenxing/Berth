@@ -69,7 +69,7 @@ export function Composer({
           <button
             onClick={submit}
             disabled={!canSend}
-            className="h-[38px] shrink-0 rounded-md bg-brand px-4 text-sm text-brand-foreground disabled:opacity-40"
+            className="btn-primary h-[38px] shrink-0 rounded-md px-4 text-sm"
           >
             发送
           </button>

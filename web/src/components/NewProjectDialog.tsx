@@ -81,7 +81,7 @@ export function NewProjectDialog({
         <button onClick={onClose} className="rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
           取消
         </button>
-        <button onClick={create} className="rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-foreground">
+        <button onClick={create} className="btn-primary rounded-md px-3 py-1.5 text-[13px] font-semibold">
           创建
         </button>
       </div>

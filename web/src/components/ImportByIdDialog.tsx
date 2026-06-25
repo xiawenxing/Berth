@@ -102,7 +102,7 @@ export function ImportByIdDialog({ busy, onCancel, onImport }: { busy: boolean; 
           </button>
           {!preview ? (
             <button
-              className="rounded-md bg-brand px-3 py-1.5 text-[12px] font-medium text-brand-foreground hover:bg-brand/90 disabled:opacity-50"
+              className="btn-primary rounded-md px-3 py-1.5 text-[12px] font-medium"
               onClick={doLookup}
               disabled={lock || ids.length === 0}
             >
@@ -110,7 +110,7 @@ export function ImportByIdDialog({ busy, onCancel, onImport }: { busy: boolean; 
             </button>
           ) : (
             <button
-              className="rounded-md bg-brand px-3 py-1.5 text-[12px] font-medium text-brand-foreground hover:bg-brand/90 disabled:opacity-50"
+              className="btn-primary rounded-md px-3 py-1.5 text-[12px] font-medium"
               onClick={doImport}
               disabled={lock || n === 0}
             >

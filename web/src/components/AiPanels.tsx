@@ -342,7 +342,7 @@ export function ContextDocDrawer({ target, onClose }: { target: ContextDocTarget
               <button
                 onClick={aiMerge}
                 disabled={busy || (!input.trim() && images.length === 0)}
-                className="flex flex-none items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-[12px] font-semibold text-brand-foreground disabled:opacity-50"
+                className="btn-primary flex flex-none items-center gap-1 rounded-md px-3 py-1.5 text-[12px] font-semibold"
               >
                 <Sparkles size={12} className={busy ? 'spk-twinkle' : ''} /> {busy ? '整理中…' : '让 AI 整理更新'}
               </button>

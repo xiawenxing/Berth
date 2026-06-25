@@ -140,7 +140,7 @@ export function ImportDialog({
             取消
           </button>
           <button
-            className="rounded-md bg-brand px-3 py-1.5 text-[12px] font-medium text-brand-foreground hover:bg-brand/90 disabled:opacity-50"
+            className="btn-primary rounded-md px-3 py-1.5 text-[12px] font-medium"
             onClick={() => onConfirm([...checked], register)}
             disabled={confirmDisabled}
           >
