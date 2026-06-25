@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
-import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd } from '../src/pty/launch'
+import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd, firstTurnDelivery } from '../src/pty/launch'
 
 describe('ensureLaunchCwd', () => {
   it('creates a Berth workspace cwd on demand (never falls back to homedir)', () => {
@@ -28,6 +28,19 @@ describe('ensureLaunchCwd', () => {
     } finally {
       rmSync(real, { recursive: true, force: true })
     }
+  })
+})
+
+// First-turn delivery is per-CLI. claude types the turn after its bracketed-paste readiness marker
+// (its positional `-- <prompt>` raced startup and got dropped). codex/coco use their NATIVE positional
+// `[PROMPT]`: codex enables bracketed paste ~150ms into startup — before its composer accepts input —
+// so a marker-gated paste lands in a not-yet-ready startup screen and is silently dropped (the reported
+// "从任务启动 codex 不自动发送 query" bug); the native positional is queued and auto-submitted by the CLI.
+describe('firstTurnDelivery', () => {
+  it('claude → typed-paste-after-readiness; codex/coco → native positional prompt', () => {
+    expect(firstTurnDelivery('claude')).toBe('typed-paste')
+    expect(firstTurnDelivery('codex')).toBe('positional')
+    expect(firstTurnDelivery('coco')).toBe('positional')
   })
 })
 

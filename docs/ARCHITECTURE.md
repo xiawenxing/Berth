@@ -111,12 +111,14 @@ live-reloading SPA. `npm test` = unit; `*.live.test.ts` are gated behind `BERTH_
   launcher, `verifyCoco` identity check — **cached**, see gotchas).
 - `pty/launch.ts` — `resumeArgv`/`resumeSession` and `freshArgv`/`launchFresh`. Fresh launches add
   **bypass-permissions** flags. claude/coco pre-mint `--session-id`. The manifest rides a silent
-  channel per CLI (see gotcha #12). The first user turn is **NOT** a positional argv on the live path
-  — `server/auto-submit-prompt.ts` types it over the PTY after a readiness signal (gotcha #15).
-- `server/auto-submit-prompt.ts` — `autoSubmitWhenReady(pty, prompt)`: robust first-turn submission
-  that waits for the CLI's bracketed-paste readiness marker (`\x1b[?2004h`) then types the prompt as a
-  bracketed paste + Enter (timeout fallback types anyway). Replaced relying on the CLI to auto-submit a
-  positional prompt, which raced startup and dropped the turn under slow CLI launch.
+  channel per CLI (see gotcha #12). First-turn delivery is **per-CLI** (`firstTurnDelivery`): claude is
+  typed the turn after a readiness signal (`server/auto-submit-prompt.ts`); codex/coco take their native
+  positional `[PROMPT]` (gotcha #15).
+- `server/auto-submit-prompt.ts` — `autoSubmitWhenReady(pty, prompt)`: robust **claude** first-turn
+  submission that waits for the bracketed-paste readiness marker (`\x1b[?2004h`) then types the prompt as a
+  bracketed paste + Enter (timeout fallback types anyway). Replaced relying on claude to auto-submit a
+  positional prompt, which raced startup and dropped the turn. NOT used for codex/coco — their marker
+  fires before the composer is ready (gotcha #15).
 - `pty/coco-hook.ts` — `ensureCocoBerthHook()` registers coco's silent `session_start` context hook
   in `~/.trae/traecli.yaml` (idempotent, no-clobber); `writeCocoContextPayload()` pre-encodes the
   manifest as the hook's JSON-envelope stdout.
@@ -373,15 +375,22 @@ is the session-grained model that replaced the old directory-grained one (where 
     never `bindIntent` → never surface (permanent deadlock). reconcile constrains candidates by intent
     cwd/cli/time internally, so the wider input is safe. Same trap applies if you ever re-narrow the
     surfacing filter: re-check that the codex bind path still sees the session.
-15. **The first turn is typed after readiness, NOT passed as a positional argv.** Relying on the CLI
-    to auto-submit a positional prompt (`claude … -- <prompt>`) races the CLI's interactive startup:
-    under slow startup (MCP loading, update check, transient startup screens) the positional turn was
-    silently dropped — the "概率性 query 不自动发送" bug. `server/auto-submit-prompt.ts`
-    `autoSubmitWhenReady` waits for the bracketed-paste readiness marker (`\x1b[?2004h`, the same gate
-    the browser image-paste path uses) then types the prompt+Enter into the PTY. `handleFresh`'s Model A
-    branch stops feeding `launchFresh` an `initialPrompt`; `freshArgv` keeps positional support for tests
-    only. Image launches are unaffected (their first turn rides the client prime socket; server
-    `initialPrompt` is undefined there, so no double-submission). Model B (stream) delivers its own turn.
+15. **First-turn delivery is per-CLI — the bracketed-paste marker is a CLAUDE-calibrated readiness
+    signal, not a universal one** (`pty/launch.ts` `firstTurnDelivery`).
+    - **claude → typed-paste after readiness.** claude's positional `-- <prompt>` raced its interactive
+      startup (MCP loading, update check, transient screens) and was silently dropped — the "概率性 query
+      不自动发送" bug. `server/auto-submit-prompt.ts` `autoSubmitWhenReady` waits for the marker
+      (`\x1b[?2004h`, the same gate the browser image-paste path uses) THEN types the prompt+Enter. So
+      `handleFresh` spawns claude WITHOUT a positional and types the turn.
+    - **codex/coco → native positional `[PROMPT]`.** codex enables bracketed paste **~150ms into
+      startup — long before its composer accepts input** (verified by PTY probe: a paste sent right after
+      the marker lands in the update/loading screen and is discarded). So the SAME marker-gated paste
+      that fixes claude *breaks* codex — the reported "从任务启动 codex 不自动发送 query" bug. Codex's
+      documented positional prompt is queued and auto-submitted by the CLI once IT is ready, so
+      `handleFresh` passes `initialPrompt` to `launchFresh` for codex/coco and does NOT call
+      `autoSubmitWhenReady`. (Restores pre-`0cbc27d` behavior for these two.)
+    - Image launches are unaffected (their first turn rides the client prime socket; server
+      `initialPrompt` is undefined there, so no double-submission). Model B (stream) delivers its own turn.
 
 ---
 
