@@ -88,13 +88,15 @@ describe('onboarding seed', () => {
     expect(welcomeEn.doc).toContain('berth skill install')
   })
 
-  it('task 1 is a launch-to-explain task whose directive forbids running berth commands', () => {
+  it('task 1 directs the agent to actually run berth skill install and complete the task', () => {
     const welcome = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-welcome')!
     expect(welcome.title).toContain('告诉我什么是 Berth')
-    expect(welcome.doc).toMatch(/不要运行任何 `berth` 命令/)
+    expect(welcome.doc).toContain('berth skill install')   // really run the init step
+    expect(welcome.doc).toMatch(/berth task done/)          // demo the lifecycle by completing it
     const welcomeEn = onboardingContent('en').tasks.find(t => t.id === 'berth-guide-welcome')!
     expect(welcomeEn.title).toContain('Tell me what Berth is')
-    expect(welcomeEn.doc).toMatch(/do not run any `berth` command/i)
+    expect(welcomeEn.doc).toContain('berth skill install')
+    expect(welcomeEn.doc).toMatch(/berth task done/)
   })
 
   it('the import question covers the three import methods', () => {
@@ -109,15 +111,15 @@ describe('onboarding seed', () => {
     expect(q.doc).toMatch(/启动目录/)
   })
 
-  it('the remove question answers the data-safety question accurately and forbids berth commands', () => {
+  it('the remove question answers the data-safety question accurately and demonstrates the lifecycle', () => {
     const q = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-remove')!
     // Must NOT mislead: removing a session does not delete the local CLI session file.
     expect(q.doc).toMatch(/不会/)
     expect(q.doc).toMatch(/只读/)
-    expect(q.doc).toMatch(/不要运行任何 `berth` 命令/)
+    expect(q.doc).toMatch(/berth task done/)   // completing the task is itself a feature demo
     const en = onboardingContent('en').tasks.find(t => t.id === 'berth-guide-remove')!
     expect(en.doc).toMatch(/read-only/i)
-    expect(en.doc).toMatch(/do not run any `berth` command/i)
+    expect(en.doc).toMatch(/berth task done/)
   })
 
   it('seeds tasks with varied status/priority to exercise the board', () => {

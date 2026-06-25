@@ -4,9 +4,10 @@
 //
 // Scope/framing (decided with the owner): Berth manages PROJECTS, not sessions — the task is the
 // goal, a session is just one disposable voyage. The guide is a launch-to-learn FAQ: task 1 explains
-// Berth, then a set of question-tasks each answer one thing when launched (every question task's
-// detail doc carries the full answer + a directive: explain it, do NOT run berth commands / close the
-// task), and an archive closer. Tasks are sorted on the board by updated_at DESC, so the seed
+// Berth, then a set of question-tasks each answer one thing when launched. The launched agent is told
+// to DEMONSTRATE Berth by actually using it — task 1 really runs `berth skill install`, and every
+// task marks itself complete with `berth task done` so the user watches the status flow to 已完成
+// (that lifecycle is itself the feature demo). Tasks sort on the board by updated_at DESC, so the seed
 // staggers updated_at by index to keep them in this top-to-bottom order.
 import type { DocStore } from './docstore'
 import { getTaskFieldConfig } from './task-config'
@@ -65,9 +66,10 @@ function questionDocZh(q: string, answer: string[]): string {
     '### 给被启动的 agent 的指令',
     `> 你是被 Berth 从一条引导任务启动的。请基于上面「背景」里的内容，面向第一次用 Berth 的新人，用你自己的话把「${q}」讲清楚。`,
     '>',
-    '> 回答完就停下等用户。请**不要运行任何 `berth` 命令**、不要修改或关闭这条任务、也不要自行展开其它工作。', '',
+    '> 回答完后，用 `berth task done` 把这条任务标记完成（已安装 berth-tasks skill 的话直接用它即可），让用户亲眼看到任务状态流转到「已完成」——这本身就是 Berth 的功能展示。然后停下等用户。', '',
     '## 计划 / TODO', '<!-- 活跃：- [ ] 复选框，完成后勾选 -->',
-    '- [ ] 启航这条任务，听 agent 回答这个问题', '',
+    '- [ ] 启航这条任务，听 agent 回答这个问题',
+    '- [ ] 看 agent 把这条任务标记完成（状态流转演示）', '',
     '## 决策 / 风险', '<!-- 活跃 -->', '',
     '## 进展日志', '<!-- 追加型：- YYYY-MM-DD: … -->', '',
   ].join('\n') + '\n'
@@ -83,9 +85,10 @@ function questionDocEn(q: string, answer: string[]): string {
     '### Directive for the launched agent',
     `> You were launched by Berth from an onboarding task. Based on the "Background" above, explain "${q}" to a first-time Berth user in your own words.`,
     '>',
-    '> When done, stop and wait for the user. Please **do not run any `berth` commands**, do not modify or close this task, and do not go off and do other work.', '',
+    '> When done, run `berth task done` to mark this task complete (or use the berth-tasks skill if installed), so the user watches the status flow to "done" — that lifecycle is itself a Berth feature demo. Then stop and wait for the user.', '',
     '## Plan / TODO', '<!-- active: - [ ] checkboxes, tick when done -->',
-    '- [ ] Launch this task and hear the agent answer the question', '',
+    '- [ ] Launch this task and hear the agent answer the question',
+    '- [ ] Watch the agent mark the task complete (status-flow demo)', '',
     '## Decisions / Risks', '<!-- active -->', '',
     '## Progress log', '<!-- append-only: - YYYY-MM-DD: … -->', '',
   ].join('\n') + '\n'
@@ -241,15 +244,16 @@ function welcomeTask(locale: Locale): OnboardingTask {
           '- **会话只是一次航行**：装上上下文出航、带回交付物，任务完成后即可弃用（**用完即弃**）。所以你不必珍藏会话——沉淀下来的项目、任务和上下文才是资产。', '',
           '三步初始化（把主循环跑通）：①在终端跑 `berth skill install` 把 berth-tasks skill 装进各个 agent；②创建一个 Berth 项目（一切的容器）；③在项目下新建任务并从任务「启航」一个会话。', '',
           '### 给被启动的 agent 的指令',
-          '> 你是被 Berth 从一条引导任务里启动的。请直接用你自己的话、面向一个第一次用 Berth 的新人，把「什么是 Berth」讲清楚：',
-          '> 1. 核心理念：Berth 管的是**项目**不是会话；**任务是最终目的**，**会话只是一次用完即弃的航行**（装上下文出航、带回交付物）。',
-          '> 2. 三步初始化：`berth skill install` → 创建一个项目 → 新建任务并启航会话。',
+          '> 你是被 Berth 从一条引导任务里启动的。请做三件事，既讲清 Berth 也顺手演示它：',
+          '> 1. 用你自己的话、面向第一次用 Berth 的新人，讲清「什么是 Berth」：核心理念（管项目不管会话、任务是目的、会话用完即弃）+ 三步初始化。',
+          '> 2. **实际执行初始化第一步**：在终端运行 `berth skill install`，把 berth-tasks skill 装好（装好后，以后会话里的 agent 就能直接用 `berth task` / `berth project`）。若 `berth` 命令不存在，就提示用户先安装 Berth 的 CLI。',
+          '> 3. 收尾时用 `berth task done` 把这条任务标记完成，让用户看到状态从「进行中」变「已完成」——这本身就是 Berth 的功能展示。',
           '>',
-          '> 讲完就停下等用户。请**不要运行任何 `berth` 命令**、不要修改或关闭这条任务、也不要自行展开其它工作——这一条只是让用户听你讲清楚 Berth。', '',
+          '> 做完就停下等用户，不要自行展开其它无关工作。', '',
           '## 计划 / TODO', '<!-- 活跃：- [ ] 复选框，完成后勾选 -->',
-          '- [ ] 点这条任务的「启航」，听 agent 讲什么是 Berth',
+          '- [ ] 点这条任务的「启航」，看 agent 讲 Berth、装好 skill、并把任务标记完成',
           '- [ ] 理解「项目为主、会话用完即弃」的理念',
-          '- [ ] 跑一次 `berth skill install`、建一个属于你自己的项目',
+          '- [ ] 建一个属于你自己的项目',
           '- [ ] 往下走，启航后面几条「❓问题」任务，让 agent 一条条答给你听', '',
           '## 决策 / 风险', '<!-- 活跃 -->', '',
           '## 进展日志', '<!-- 追加型：- YYYY-MM-DD: … -->', '',
@@ -264,15 +268,16 @@ function welcomeTask(locale: Locale): OnboardingTask {
           '- **A session is just one voyage**: sail out loaded with context, bring back the deliverable, and discard it once the task is done (**use it and toss it**). So you never hoard sessions — the projects, tasks, and context that accumulate are the real assets.', '',
           'Three-step setup (run the main loop): (1) run `berth skill install` in a terminal to install the berth-tasks skill into your agents; (2) create a Berth project (the container for everything); (3) create a task under it and "Launch" a session from the task.', '',
           '### Directive for the launched agent',
-          '> You were launched by Berth from an onboarding task. In your own words, speaking to someone using Berth for the first time, explain "what is Berth":',
-          '> 1. Core idea: Berth manages **projects**, not sessions; **the task is the goal**, **a session is just one disposable voyage** (sail out with context, bring back the deliverable).',
-          '> 2. Three-step setup: `berth skill install` → create a project → create a task and launch a session.',
+          '> You were launched by Berth from an onboarding task. Do three things — explain Berth and demonstrate it:',
+          '> 1. In your own words, to a first-time Berth user, explain "what is Berth": the core idea (manages projects not sessions, the task is the goal, a session is disposable) plus the three-step setup.',
+          '> 2. **Actually run the first setup step**: run `berth skill install` in the terminal to install the berth-tasks skill (after that, agents in your sessions can use `berth task` / `berth project` directly). If the `berth` command is not found, tell the user to install the Berth CLI first.',
+          '> 3. Finish by running `berth task done` to mark this task complete, so the user sees the status go from "in progress" to "done" — that itself shows off Berth.',
           '>',
-          '> Then stop and wait for the user. Please **do not run any `berth` commands**, do not modify or close this task, and do not go off and do other work — this one is only about explaining Berth to the user out loud.', '',
+          '> Then stop and wait for the user; do not go off and do unrelated work.', '',
           '## Plan / TODO', '<!-- active: - [ ] checkboxes, tick when done -->',
-          '- [ ] Click "Launch" on this task and let the agent explain Berth',
+          '- [ ] Click "Launch" and watch the agent explain Berth, install the skill, and complete the task',
           '- [ ] Grasp the "projects first, sessions are disposable" idea',
-          '- [ ] Run `berth skill install` and create a project of your own',
+          '- [ ] Create a project of your own',
           '- [ ] Move on and launch the "❓ question" tasks below to hear the agent answer them one by one', '',
           '## Decisions / Risks', '<!-- active -->', '',
           '## Progress log', '<!-- append-only: - YYYY-MM-DD: … -->', '',
