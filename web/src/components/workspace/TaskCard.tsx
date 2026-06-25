@@ -332,20 +332,35 @@ export function TaskCard({
       {/* expanded: summary + linked sessions — full-bleed block with a top border (design .kcard-exp) */}
       {open && (
         <div className="border-t border-border bg-brand/[0.04] px-[13px] py-2.5">
-          {onOpenContext && !task.summary && !task.summarizing && (
-            <div className="mb-1.5 flex">
+          {!task.summary && !task.summarizing && (isLive || onOpenContext) && (
+            <div className="mb-1.5 flex items-center gap-2">
+              {isLive && (
+                // No 进展摘要 yet — let the user trigger the (merged) generation directly.
+                <button
+                  ref={moreBtnRef}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setDetailOpen((v) => !v)
+                  }}
+                  className="inline-flex items-center gap-1 text-[11.5px] font-medium text-brand hover:underline"
+                >
+                  <Sparkles size={12} /> 生成进展小结
+                </button>
+              )}
               <span className="flex-1" />
-              <button
-                type="button"
-                title="打开任务上下文"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onOpenContext(task)
-                }}
-                className="flex-none rounded p-0.5 text-text-dim hover:bg-secondary hover:text-brand"
-              >
-                <FileText size={13} />
-              </button>
+              {onOpenContext && (
+                <button
+                  type="button"
+                  title="打开任务上下文"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onOpenContext(task)
+                  }}
+                  className="flex-none rounded p-0.5 text-text-dim hover:bg-secondary hover:text-brand"
+                >
+                  <FileText size={13} />
+                </button>
+              )}
             </div>
           )}
           {task.summarizing ? (
@@ -402,18 +417,6 @@ export function TaskCard({
                 更多 <ChevronRight size={11} />
               </button>
             </>
-          ) : isLive ? (
-            // No 进展摘要 yet — let the user trigger the (merged) generation directly.
-            <button
-              ref={moreBtnRef}
-              onClick={(e) => {
-                e.stopPropagation()
-                setDetailOpen((v) => !v)
-              }}
-              className="inline-flex items-center gap-1 text-[11.5px] font-medium text-brand hover:underline"
-            >
-              <Sparkles size={12} /> 生成进展小结
-            </button>
           ) : null}
           {detailOpen && (
             <TaskSummaryPopover anchor={moreBtnRef} taskId={task.id} onClose={() => setDetailOpen(false)} onGenerated={reload} />

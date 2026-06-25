@@ -472,7 +472,7 @@ export function ProjectWorkspace() {
             <HBtn icon={<Play size={13} />} onClick={() => launch('')}>起会话</HBtn>
             <HBtn
               btnRef={summaryBtnRef}
-              icon={project?.summarizing ? <Spinner size={13} className="text-brand" /> : <Sparkles size={13} />}
+              icon={<Sparkles size={13} className={project?.summarizing ? 'spk-twinkle' : undefined} />}
               onClick={() => setSummaryOpen((v) => !v)}
             >
               小结
