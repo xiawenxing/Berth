@@ -35,6 +35,7 @@ const mockGetStore = vi.fn((..._a: any[]) => ({
   allPinnedSet: () => new Set<string>(),
   allAttachMap: () => new Map(),
   allTitleOverrides: () => new Map(),
+  launchIntentCwdBySession: () => new Map<string, string>(),
   setPin: mockSetPin,
   setAttach: mockSetAttach,
   setTitleOverride: mockSetTitleOverride,

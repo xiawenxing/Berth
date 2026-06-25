@@ -561,6 +561,9 @@ export function ProjectWorkspace() {
             onGenerateTitle={onGenerateTaskTitle}
             titleGeneratingIds={titleGeneratingIds}
             onDelete={onDelete}
+            onOpenContext={(t) =>
+              setCtxDoc({ kind: 'task', key: t.id, path: `tasks/${t.id}/index.md`, title: `任务上下文 · ${t.title}` })
+            }
             onCreateTask={() => setNewTask(true)}
           />
         </section>

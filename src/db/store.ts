@@ -251,6 +251,16 @@ export function openStore(path: string) {
     allLaunchIntentCwds(): string[] {
       return (db.prepare('SELECT DISTINCT cwd FROM launch_intent WHERE cwd IS NOT NULL').all() as any[]).map(r => r.cwd)
     },
+    /** sessionId → resolved launch cwd, for intents whose sessionId is already known (claude/coco at
+     *  launch, codex post-reconcile). Used to backfill a session's cwd for grouping while the CLI's
+     *  transcript has not yet recorded one — so a Berth launch lands under its project default dir
+     *  from the first render instead of falling into the phantom "(无目录)" group. */
+    launchIntentCwdBySession(): Map<string, string> {
+      const m = new Map<string, string>()
+      for (const r of db.prepare('SELECT session_id, cwd FROM launch_intent WHERE session_id IS NOT NULL AND cwd IS NOT NULL').all() as any[])
+        m.set(r.session_id, r.cwd)
+      return m
+    },
     // ── Session import directories (the 无归属 import roots) ──
     addSessionImportDir(cwd: string) {
       db.prepare('INSERT OR IGNORE INTO session_import_dir (cwd) VALUES (?)').run(canonicalPathKey(cwd))

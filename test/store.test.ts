@@ -140,6 +140,16 @@ describe('launch_intent', () => {
     s.addLaunchIntent({ id: 'i3', cli: 'coco', cwd: '/y', projectId: null, todoKey: null, sessionId: null, createdAt: 3, bound: false })
     expect(s.allLaunchIntentCwds().sort()).toEqual(['/x', '/y'])
   })
+  it('maps known session ids to their launch cwd (backfill source for grouping)', () => {
+    const s = openStore(':memory:')
+    // claude/coco intents carry the real sessionId + resolved cwd at launch; codex (sessionId null) does not yet.
+    s.addLaunchIntent({ id: 'i1', cli: 'coco', cwd: '/ws/proj', projectId: 'proj', todoKey: null, sessionId: 'sess-coco', createdAt: 1, bound: true })
+    s.addLaunchIntent({ id: 'i2', cli: 'codex', cwd: '/x', projectId: null, todoKey: null, sessionId: null, createdAt: 2, bound: false })
+    const map = s.launchIntentCwdBySession()
+    expect(map.get('sess-coco')).toBe('/ws/proj')
+    expect(map.has('i2')).toBe(false)   // codex intent has no sessionId yet → not mapped
+    expect(map.size).toBe(1)
+  })
 })
 
 describe('session_import_dir', () => {

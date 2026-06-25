@@ -20,6 +20,7 @@ export function Kanban({
   onGenerateTitle,
   titleGeneratingIds,
   onDelete,
+  onOpenContext,
   onCreateTask,
 }: {
   tasks: Task[]
@@ -32,6 +33,7 @@ export function Kanban({
   onGenerateTitle?: (taskId: string) => void
   titleGeneratingIds?: Set<string>
   onDelete?: (taskId: string) => void
+  onOpenContext?: (task: Task) => void
   onCreateTask?: () => void
 }) {
   const { statuses } = useData()
@@ -124,6 +126,7 @@ export function Kanban({
                     onGenerateTitle={onGenerateTitle}
                     titleGenerating={titleGeneratingIds?.has(t.id)}
                     onDelete={onDelete}
+                    onOpenContext={onOpenContext}
                   />
                 ))
               )}

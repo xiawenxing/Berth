@@ -89,8 +89,13 @@ function serialize(): ApiSession[] {
   }
   // Live activity snapshot from the pty-registry (built once; O(1) lookup per session).
   const activityMap = new Map(snapshotActivity().map(a => [a.sessionId, a.state]))
+  // Backfill cwd for Berth launches whose CLI transcript hasn't recorded one yet (init window): the
+  // launch intent already knows the resolved cwd (incl. the project workspace fallback). Without this
+  // a fresh project launch surfaces with cwd=null and the client groups it under "(无目录)" instead of
+  // the project default dir. We only fill when s.cwd is null, so a real recorded cwd always wins.
+  const intentCwd = store.launchIntentCwdBySession()
   return getCache().map(s => ({
-    sessionId: s.sessionId, cli: s.cli, cwd: s.cwd, title: overrides.get(s.sessionId) ?? s.title,
+    sessionId: s.sessionId, cli: s.cli, cwd: s.cwd ?? intentCwd.get(s.sessionId) ?? null, title: overrides.get(s.sessionId) ?? s.title,
     updatedAt: s.updatedAt, deleted: s.deleted, copies: s.copies.length,
     pinned: pins.has(s.sessionId),
     projectId: attach.get(s.sessionId)?.projectId ?? null,

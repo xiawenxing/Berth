@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Trash2, Loader2 } from 'lucide-react'
+import { Play, ChevronDown, ChevronRight, Link2, MoreHorizontal, CalendarClock, Sparkles, Trash2, Loader2, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/Menu'
 import { TaskSummaryPopover } from '@/components/AiPanels'
@@ -144,6 +144,7 @@ type MenuActions = {
   onGenerateTitle?: (taskId: string) => void
   titleGenerating?: boolean
   onDelete?: (taskId: string) => void
+  onOpenContext?: (task: Task) => void
 }
 
 export function TaskCard({
@@ -159,6 +160,7 @@ export function TaskCard({
   onGenerateTitle,
   titleGenerating,
   onDelete,
+  onOpenContext,
 }: {
   task: Task
   active: boolean
@@ -329,16 +331,64 @@ export function TaskCard({
       {/* expanded: summary + linked sessions — full-bleed block with a top border (design .kcard-exp) */}
       {open && (
         <div className="border-t border-border bg-brand/[0.04] px-[13px] py-2.5">
+          {onOpenContext && !task.summary && !task.summarizing && (
+            <div className="mb-1.5 flex">
+              <span className="flex-1" />
+              <button
+                type="button"
+                title="打开任务上下文"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenContext(task)
+                }}
+                className="flex-none rounded p-0.5 text-text-dim hover:bg-secondary hover:text-brand"
+              >
+                <FileText size={13} />
+              </button>
+            </div>
+          )}
           {task.summarizing ? (
             <>
-              <ExpLabel>进展摘要</ExpLabel>
+              <div className="mb-1 flex items-center gap-2">
+                <ExpLabel className="mb-0">进展摘要</ExpLabel>
+                <span className="flex-1" />
+                {onOpenContext && (
+                  <button
+                    type="button"
+                    title="打开任务上下文"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onOpenContext(task)
+                    }}
+                    className="flex-none rounded p-0.5 text-text-dim hover:bg-secondary hover:text-brand"
+                  >
+                    <FileText size={13} />
+                  </button>
+                )}
+              </div>
               <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
                 <Sparkles size={12} className="spk-twinkle" /> 港务助手生成中…
               </p>
             </>
           ) : task.summary ? (
             <>
-              <ExpLabel>进展摘要</ExpLabel>
+              <div className="mb-1 flex items-center gap-2">
+                <ExpLabel className="mb-0">进展摘要</ExpLabel>
+                <span className="flex-1" />
+                {onOpenContext && (
+                  <button
+                    type="button"
+                    title="打开任务上下文"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onOpenContext(task)
+                    }}
+                    className="flex-none rounded p-0.5 text-text-dim hover:bg-secondary hover:text-brand"
+                  >
+                    <FileText size={13} />
+                  </button>
+                )}
+              </div>
               <p className="text-[12px] leading-relaxed text-muted-foreground">{task.summary}</p>
               <button
                 ref={moreBtnRef}
