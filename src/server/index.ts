@@ -37,15 +37,19 @@ export function attachWebSockets(server: Server) {
   })
 }
 
-export function createApp() {
+export function createApp(webDist: string | null = WEB_DIST) {
   const app = express()
   app.use(express.json({ limit: '30mb' }))   // pasted images (base64) can be a few MB
   app.use('/api', api)
   // Berth 2.0 React SPA at /app (when built). HashRouter, so static serving + an
   // index.html fallback for the bare /app path is all that's needed.
-  if (WEB_DIST) {
-    app.use('/app', express.static(WEB_DIST))
-    app.get('/app', (_req, res) => res.sendFile(join(WEB_DIST, 'index.html')))
+  if (webDist) {
+    // 1.0 entry is deprecated: route the bare root to the 2.0 SPA. The legacy public/ UI stays
+    // statically served below (still reachable at /index.html for an old client), but / no longer
+    // lands on it. Registered before express.static(PUBLIC) so it wins.
+    app.get('/', (_req, res) => res.redirect(302, '/app/'))
+    app.use('/app', express.static(webDist))
+    app.get('/app', (_req, res) => res.sendFile(join(webDist, 'index.html')))
   }
   app.use(express.static(PUBLIC))
   return app
@@ -76,14 +80,16 @@ export async function start(
   installShutdownCleanup()
   const server = createServer(createApp())
   attachWebSockets(server)   // /pty terminals + /status live-activity broadcast, one upgrade router
-  return new Promise<{ port: number }>((resolve) => {
+  const hasWeb = !!WEB_DIST   // 2.0 SPA built and served at /app → callers open /app/ directly
+  return new Promise<{ port: number; hasWeb: boolean }>((resolve) => {
     server.listen(port, host, () => {
       const shown = host === '0.0.0.0' || host === '::' ? 'localhost' : host
-      console.log(`Berth: ${getCache().length} sessions | http://${shown}:${(server.address() as any)?.port ?? port}`)
+      const realPort = (server.address() as any)?.port ?? port
+      console.log(`Berth: ${getCache().length} sessions | http://${shown}:${realPort}${hasWeb ? '/app/' : ''}`)
       // Pre-spawn the top-K sessions off the request path so their first open is instant. Detached:
       // warming must never delay the listen, and a warm failure must never crash startup.
       void warmSessionPool().catch(() => {})
-      resolve({ port: (server.address() as any)?.port ?? port })
+      resolve({ port: realPort, hasWeb })
     })
   })
 }

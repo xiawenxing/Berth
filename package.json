@@ -36,6 +36,7 @@
     "build:web": "cd web && npm ci && npm run build",
     "prepublishOnly": "npm run build",
     "start": "npm run vendor && tsx bin/berth-serve.ts",
+    "prod": "npm run build && node bin/berth.mjs start",
     "dev:clean": "PORT=\"${PORT:-7788}\" BERTH_HOME=\"${BERTH_HOME:-/tmp/berth-clean}\" npm start",
     "serve": "tsx bin/berth-serve.ts",
     "vendor": "node scripts/vendor.mjs",

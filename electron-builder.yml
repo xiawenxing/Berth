@@ -11,6 +11,7 @@ files:
   - electron/**
   - dist/**
   - public/**
+  - web/dist/**   # Berth 2.0 React SPA — served at /app; without this the packaged app ships only 1.0
   - package.json
 # .node binaries + node-pty's spawn-helper cannot run from inside an asar archive — unpack them.
 asarUnpack:

@@ -1,0 +1,3 @@
+# Intentionally minimal. Its mere presence makes `npm pack` ignore web/.gitignore (which lists `dist`),
+# so the built 2.0 SPA in web/dist/ — whitelisted via the root package.json "files" array — actually
+# ships in the published tarball. The "files" allowlist still keeps web/node_modules etc. out.

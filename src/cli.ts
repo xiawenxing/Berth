@@ -135,7 +135,9 @@ export async function runCli(argv: string[], version: string): Promise<void> {
 
   const { start } = await import('./server/index')
   const host = args.host ?? process.env.HOST ?? '127.0.0.1'
-  const { port } = await start(args.port, host)
-  const url = `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
+  const { port, hasWeb } = await start(args.port, host)
+  const base = `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
+  // 2.0 SPA lives at /app (1.0 entry deprecated); open it directly when built to skip the redirect hop.
+  const url = hasWeb ? `${base}/app/` : base
   if (args.open) openBrowser(url)
 }
