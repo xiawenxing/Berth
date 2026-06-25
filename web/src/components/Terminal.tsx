@@ -5,7 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
-import { RESUME_MIN_VISIBLE_MS, RESUME_STABLE_READY_MS, RESUME_OVERLAY_FALLBACK_MS } from '@/lib/loading-overlay'
+import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
 import { LAUNCH_READY_FALLBACK_MS, LAUNCH_STABLE_READY_MS, LAUNCH_REVEAL_QUIET_MS, shouldMarkLaunchReady, shouldRevealLaunch } from '@/lib/launch-readiness'
 import type { LaunchSpec } from '@/lib/ui-store'
 import '@xterm/xterm/css/xterm.css'
@@ -143,16 +143,17 @@ export function Terminal({
   const [historyBytes, setHistoryBytes] = useState(DEFAULT_PTY_HISTORY_BYTES)
   // Three overlay states:
   //  - 'opaque' — fresh-launch boot mask; hides the half-built TUI while it's actively streaming.
-  //  - 'veil'   — translucent, frosted, CLICK-THROUGH. Resume uses it the whole time (the terminal
-  //               is settling, not booting from nothing); launch switches to it the moment the CLI
-  //               pauses for the user, so a HITL prompt is visible and answerable, never trapped.
+  //  - 'veil'   — translucent, frosted, CLICK-THROUGH. Shown for a genuinely cold resume (nothing
+  //               rendered yet), and for a launch the moment the CLI pauses for the user, so a HITL
+  //               prompt is visible and answerable, never trapped.
   //  - 'off'    — hidden.
   const [overlayMode, setOverlayMode] = useState<'off' | 'opaque' | 'veil'>('off')
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    setOverlayMode(launch ? 'opaque' : 'veil')
+    // Launch masks immediately; resume does NOT — see the anti-flash timer below.
+    setOverlayMode(launch ? 'opaque' : 'off')
     let firstDataSeen = false
     let launchReady = !launch
     // Once revealed, the CLI is treated as awaiting the user: the mask drops to a click-through veil
@@ -167,32 +168,17 @@ export function Terminal({
     let stableLaunchTimer: ReturnType<typeof setTimeout> | null = null
     let launchFallbackTimer: ReturnType<typeof setTimeout> | null = null
     let revealTimer: ReturnType<typeof setTimeout> | null = null
-    // Resume mask lifecycle: shown immediately (above), held for at least RESUME_MIN_VISIBLE_MS so a
-    // warm/instant replay doesn't flicker, then kept up until the replayed stream goes quiet for
-    // RESUME_STABLE_READY_MS — covering the reconnect redraw. A hard fallback cap drops it for a
-    // session that never produces replay data or never settles. The quiet timer is armed only once
-    // the first byte arrives (in onmessage), so a cold resume stays masked until data shows up.
-    const resumeShownAt = Date.now()
-    let resumeStableTimer: ReturnType<typeof setTimeout> | null = null
-    let resumeFallbackTimer: ReturnType<typeof setTimeout> | null = null
-    const hideResumeOverlay = () => {
-      const waited = Date.now() - resumeShownAt
-      if (waited < RESUME_MIN_VISIBLE_MS) {
-        if (resumeStableTimer) clearTimeout(resumeStableTimer)
-        resumeStableTimer = setTimeout(hideResumeOverlay, RESUME_MIN_VISIBLE_MS - waited)
-        return
+    // Resume mask is ANTI-FLASH: a warm / already-loaded session replays its scrollback in a few ms,
+    // so masking it would just flash a veil over content that's already there. Show the veil ONLY if
+    // nothing has rendered yet after a short delay (a genuinely cold `--resume` that takes seconds),
+    // and drop it the instant the first bytes arrive. The garble it used to hide is now stripped at
+    // the source (lib/terminal-input), so there's no reason to cover a session that's already loaded.
+    let resumeOverlayTimer: ReturnType<typeof setTimeout> | null = launch ? null : setTimeout(() => {
+      resumeOverlayTimer = null
+      if (shouldShowLoadingOverlay({ hasData: firstDataSeen, elapsedMs: LOADING_OVERLAY_DELAY_MS })) {
+        setOverlayMode('veil')
       }
-      if (resumeStableTimer) { clearTimeout(resumeStableTimer); resumeStableTimer = null }
-      if (resumeFallbackTimer) { clearTimeout(resumeFallbackTimer); resumeFallbackTimer = null }
-      setOverlayMode('off')
-    }
-    const scheduleResumeOverlayHide = () => {
-      if (resumeStableTimer) clearTimeout(resumeStableTimer)
-      resumeStableTimer = setTimeout(hideResumeOverlay, RESUME_STABLE_READY_MS)
-    }
-    if (!launch) {
-      resumeFallbackTimer = setTimeout(hideResumeOverlay, RESUME_OVERLAY_FALLBACK_MS)
-    }
+    }, LOADING_OVERLAY_DELAY_MS)
     const sendInputNow = (d: string) => {
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d }))
     }
@@ -254,6 +240,11 @@ export function Terminal({
     const markDataSeen = () => {
       if (firstDataSeen) return
       firstDataSeen = true
+      if (!launch) {
+        // First bytes rendered → the session is loaded; cancel / drop the cold-resume veil.
+        if (resumeOverlayTimer) { clearTimeout(resumeOverlayTimer); resumeOverlayTimer = null }
+        setOverlayMode('off')
+      }
     }
 
     const term = new Xterm({
@@ -446,10 +437,6 @@ export function Terminal({
         evaluateLaunchReady()
         scheduleStableLaunchReady()
         scheduleRevealCheck()
-      } else {
-        // Resume: each replayed byte refreshes the quiet timer; the mask drops once the redraw
-        // settles (or the min-visible / fallback bounds), never on the first messy byte.
-        scheduleResumeOverlayHide()
       }
       term.write(data, () => {
         if (!replayPositionRestored && !launch && historyBytes > DEFAULT_PTY_HISTORY_BYTES) {
@@ -499,8 +486,7 @@ export function Terminal({
       if (stableLaunchTimer) clearTimeout(stableLaunchTimer)
       if (launchFallbackTimer) clearTimeout(launchFallbackTimer)
       if (revealTimer) clearTimeout(revealTimer)
-      if (resumeStableTimer) clearTimeout(resumeStableTimer)
-      if (resumeFallbackTimer) clearTimeout(resumeFallbackTimer)
+      if (resumeOverlayTimer) clearTimeout(resumeOverlayTimer)
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
       resizeObserver?.disconnect()
       window.removeEventListener('resize', onResize)
