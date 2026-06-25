@@ -72,11 +72,12 @@ export const MenuLabel = ({ children }: { children: ReactNode }) => (
   <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-text-dim">{children}</div>
 )
 
-export const MenuItem = ({ children, onClick, danger }: { children: ReactNode; onClick: (e: React.MouseEvent) => void; danger?: boolean }) => (
+export const MenuItem = ({ children, onClick, danger, disabled }: { children: ReactNode; onClick: (e: React.MouseEvent) => void; danger?: boolean; disabled?: boolean }) => (
   <button
+    disabled={disabled}
     onClick={onClick}
     className={cn(
-      'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] hover:bg-accent',
+      'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] hover:bg-accent disabled:pointer-events-none disabled:opacity-55',
       danger ? 'text-destructive hover:bg-destructive/10' : 'text-foreground',
     )}
   >

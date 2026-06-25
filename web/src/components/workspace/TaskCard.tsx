@@ -255,6 +255,11 @@ export function TaskCard({
             <Sparkles size={11} className="spk-twinkle" /> 总结中…
           </span>
         )}
+        {titleGenerating && (
+          <span className="inline-flex flex-none items-center gap-1 text-[10.5px] text-brand">
+            <Loader2 size={11} className="animate-spin" /> 标题生成中…
+          </span>
+        )}
         {/* compact (inactive-column) live cards: ddl-if-set + priority chip ride in the head (single-row, dense) */}
         {!active && isLive && (
           <>
@@ -553,7 +558,7 @@ function TaskMenu({
       <div className="my-1 border-t border-border" />
       <PriorityList task={task} priorities={priorities} onSetPriority={onSetPriority} close={onClose} />
       <div className="my-1 border-t border-border" />
-      <MenuItem onClick={pick(() => onGenerateTitle?.(task.id))}>
+      <MenuItem disabled={titleGenerating} onClick={pick(() => onGenerateTitle?.(task.id))}>
         {titleGenerating ? <Loader2 size={13} className="flex-none animate-spin text-brand" /> : <Sparkles size={13} className="flex-none text-muted-foreground" />}
         {titleGenerating ? '标题生成中…' : '智能生成任务标题'}
       </MenuItem>
