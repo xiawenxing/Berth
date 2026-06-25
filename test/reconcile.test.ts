@@ -139,4 +139,17 @@ describe('reconcileLaunchIntents', () => {
     expect(s.todoKeyForSession('sess1')).toBeNull()  // no edge added
     expect(s.getAttach('sess1')).toMatchObject({ projectId: 'P', state: 'confirmed' })
   })
+
+  it('does not create a null-project attach for project-less codex launches', () => {
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'i1', cli: 'codex', cwd: '/scratch', projectId: null, todoKey: null, sessionId: null, createdAt: 1000, bound: false })
+    const cache = [makeSession('sess1', '/scratch', 1100)]
+    s.upsertSessions(cache)
+
+    reconcileLaunchIntents(s, cache)
+
+    expect(s.pendingIntents()).toEqual([])
+    expect(s.getAttach('sess1')).toBeNull()
+    expect(s.allBoundLaunchSessionIds().has('sess1')).toBe(true)
+  })
 })

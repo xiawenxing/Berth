@@ -61,7 +61,9 @@ export function reconcileLaunchIntents(store: Store, cache: LogicalSession[]): n
       // intent.todoKey is a Berth task id (post identity-migration), used directly as the edge key.
       store.addEdge(intent.todoKey, best.sessionId)
     }
-    store.setAttach(best.sessionId, intent.projectId, 'confirmed')
+    // Only attach to a real project. Project-less codex launches still surface through the bound
+    // launch intent; writing a null-project attach makes the frontend classify them as unassigned.
+    if (intent.projectId) store.setAttach(best.sessionId, intent.projectId, 'confirmed')
     store.bindIntent(intent.id, best.sessionId)
     // The fresh codex pty was registered under the intent id; move it to the real session id so a
     // later click reattaches to the SAME live process instead of spawning a parallel `codex resume`.
