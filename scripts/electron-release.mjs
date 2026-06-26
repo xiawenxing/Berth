@@ -115,7 +115,10 @@ try {
   const dstRelease = join(ROOT, 'release')
   if (existsSync(srcRelease)) {
     mkdirSync(dstRelease, { recursive: true })
-    for (const f of readdirSync(srcRelease)) cpSync(join(srcRelease, f), join(dstRelease, f), { recursive: true })
+    for (const f of readdirSync(srcRelease, { withFileTypes: true })) {
+      if (f.isDirectory() && f.name.startsWith('mac')) continue
+      cpSync(join(srcRelease, f.name), join(dstRelease, f.name), { recursive: true })
+    }
     console.log(`\n✓ artifacts copied to ${dstRelease}`)
   } else {
     console.error('electron-builder produced no release/ dir')
