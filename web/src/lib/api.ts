@@ -71,6 +71,7 @@ export interface AgentEntry {
   cli: AgentCli
   enabled: boolean
   model: string | null
+  safeMode: boolean
 }
 
 export interface AgentConfig {

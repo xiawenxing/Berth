@@ -69,9 +69,9 @@ function needsTitleBackfill(p: PendingLaunch, s: ApiSession): boolean {
 const DEFAULT_PRIORITIES = ['P0', 'P1', 'P2']
 const DEFAULT_AGENTS: AgentConfig = {
   list: [
-    { cli: 'claude', enabled: true, model: null },
-    { cli: 'codex', enabled: true, model: null },
-    { cli: 'coco', enabled: true, model: null },
+    { cli: 'claude', enabled: true, model: null, safeMode: false },
+    { cli: 'codex', enabled: true, model: null, safeMode: false },
+    { cli: 'coco', enabled: true, model: null, safeMode: false },
   ],
   berthAgentCli: 'claude',
   berthAgentModel: 'claude-haiku-4-5',
