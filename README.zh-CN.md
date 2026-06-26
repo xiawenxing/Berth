@@ -34,7 +34,7 @@ Berth 本地优先。它只读各 CLI 自己的会话存储，自己的数据放
 ### 方式一：npm 包
 
 ```bash
-npm install -g @corusco/berth && berth install skill && berth start
+npm install -g @corusco/berth && berth skill install && berth start
 ```
 
 这会安装 Berth CLI，把内置的 `berth-tasks` skill 安装到本机 agent，然后启动应用并打开 UI。

@@ -38,7 +38,7 @@ Choose one path.
 ### Option 1: npm package
 
 ```bash
-npm install -g @corusco/berth && berth install skill && berth start
+npm install -g @corusco/berth && berth skill install && berth start
 ```
 
 This installs the Berth CLI, installs the bundled `berth-tasks` skill into your local agents, then

@@ -43,7 +43,7 @@ Usage:
   berth start [options]   Start the local server and open the UI in your browser
   berth task ...          Manage tasks (list/add/done/status/set/log/doc/rm/sync) — needs a running server
   berth project ...       Manage projects (list/add/rename/archive/rm) — needs a running server
-  berth install skill     Install the bundled Berth skill into your agents (use --force to overwrite)
+  berth skill install     Install the bundled Berth skill into your agents (use --force to overwrite)
   berth --help            Show this help
   berth --version         Show the version
 
@@ -122,13 +122,8 @@ export async function runCli(argv: string[], version: string): Promise<void> {
     return
   }
 
-  if (argv[0] === 'install' && argv[1] === 'skill') {
-    await installSkill(argv.includes('--force'))
-    return
-  }
-
   if (argv[0] === 'skill') {
-    if (argv[1] !== 'install') { console.error('berth: usage: berth install skill [--force]'); process.exit(2); return }
+    if (argv[1] !== 'install') { console.error('berth: usage: berth skill install [--force]'); process.exit(2); return }
     await installSkill(argv.includes('--force'))
     return
   }
