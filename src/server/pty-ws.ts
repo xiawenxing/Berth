@@ -505,6 +505,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       injectFile,
       initialPrompt: initialPrompt ?? undefined,
       model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
+      safeMode: agentEntry.safeMode,           // per-CLI safe mode → freshArgv drops the bypass flag (Model A only)
       addDirs: finalAddDirs,
       cols,
       rows,
