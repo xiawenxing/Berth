@@ -82,20 +82,20 @@ describe('onboarding seed', () => {
 
   it('task 1 teaches the project-first philosophy and the skill-install step', () => {
     const welcome = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-welcome')!
-    expect(welcome.doc).toContain('berth skill install')
+    expect(welcome.doc).toContain('berth install skill')
     expect(welcome.doc).toMatch(/用完即弃/)
     const welcomeEn = onboardingContent('en').tasks.find(t => t.id === 'berth-guide-welcome')!
-    expect(welcomeEn.doc).toContain('berth skill install')
+    expect(welcomeEn.doc).toContain('berth install skill')
   })
 
-  it('task 1 directs the agent to actually run berth skill install and complete the task', () => {
+  it('task 1 directs the agent to actually run berth install skill and complete the task', () => {
     const welcome = onboardingContent('zh-CN').tasks.find(t => t.id === 'berth-guide-welcome')!
     expect(welcome.title).toContain('告诉我什么是 Berth')
-    expect(welcome.doc).toContain('berth skill install')   // really run the init step
+    expect(welcome.doc).toContain('berth install skill')   // really run the init step
     expect(welcome.doc).toMatch(/berth task done/)          // demo the lifecycle by completing it
     const welcomeEn = onboardingContent('en').tasks.find(t => t.id === 'berth-guide-welcome')!
     expect(welcomeEn.title).toContain('Tell me what Berth is')
-    expect(welcomeEn.doc).toContain('berth skill install')
+    expect(welcomeEn.doc).toContain('berth install skill')
     expect(welcomeEn.doc).toMatch(/berth task done/)
   })
 

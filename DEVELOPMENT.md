@@ -22,6 +22,9 @@ Node 20 · TypeScript (ESM) · `express` + `ws` · `node-pty` · `better-sqlite3
 
 ## The dev loop
 
+The public npm/GitHub README intentionally describes only end-user installs (npm package + skill, or
+the signed DMG). Source checkout setup and local debugging commands live here.
+
 ```bash
 npm install        # first time, or after a dependency change
 npm start          # vendor assets + run the dev server (via tsx, no build) → http://localhost:7777
@@ -36,6 +39,25 @@ npx tsc --noEmit   # type-check
   Vendored artifacts are committed, so a fresh checkout renders without running it first.
 - **`npm run build`** produces `dist/` via esbuild — used by the `berth` CLI and the Electron build,
   not by the dev server.
+
+## Desktop release
+
+```bash
+npm run electron:dev       # local desktop smoke test; rebuilds native addons in-tree
+npm run electron:release   # publishable installer build in an isolated worktree
+```
+
+macOS DMGs for public download must be Developer ID signed and notarized. `npm run electron:release`
+fails before building unless the machine has a `Developer ID Application` identity available through
+the keychain, `CSC_LINK`, or `CSC_NAME`, plus one complete notarization credential set:
+
+- `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`
+- `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`
+- `APPLE_KEYCHAIN_PROFILE` (with optional `APPLE_KEYCHAIN`)
+
+After packaging, the script verifies the generated `.app` with `codesign --verify --deep --strict`
+and `spctl --assess`. Do not upload a DMG that bypasses those checks; downloaded unsigned builds show
+macOS Gatekeeper's "app is damaged" error.
 
 ### Working without touching your real data
 

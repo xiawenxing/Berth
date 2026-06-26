@@ -15,8 +15,73 @@ import { fileURLToPath } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const WT = join(ROOT, '..', 'berth-electron-build')   // sibling dir; matches the repo's worktree convention
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, stdio: 'inherit' })
+const capture = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+
+function completeEnvGroup(names) {
+  return names.every(name => Boolean(process.env[name]))
+}
+
+function partialEnvGroup(names) {
+  return names.some(name => Boolean(process.env[name])) && !completeEnvGroup(names)
+}
+
+function hasDeveloperIdIdentity() {
+  if (process.env.CSC_LINK || process.env.CSC_NAME) return true
+  try {
+    return /Developer ID Application/.test(capture('security', ['find-identity', '-v', '-p', 'codesigning'], ROOT))
+  } catch {
+    return false
+  }
+}
+
+function hasNotarizationCredentials() {
+  const apiKey = ['APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER']
+  const appleId = ['APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']
+  const keychain = ['APPLE_KEYCHAIN_PROFILE']
+  const partialGroups = [apiKey, appleId].filter(partialEnvGroup)
+  if (process.env.APPLE_KEYCHAIN && !process.env.APPLE_KEYCHAIN_PROFILE) partialGroups.push(['APPLE_KEYCHAIN_PROFILE'])
+  if (partialGroups.length) {
+    const missing = partialGroups.flatMap(group => group.filter(name => !process.env[name]))
+    throw new Error(`Incomplete Apple notarization environment. Missing: ${[...new Set(missing)].join(', ')}`)
+  }
+  return completeEnvGroup(apiKey) || completeEnvGroup(appleId) || completeEnvGroup(keychain)
+}
+
+function assertMacReleaseReady() {
+  if (process.platform !== 'darwin') return
+  const missing = []
+  if (!hasDeveloperIdIdentity()) missing.push('Developer ID Application signing identity (keychain, CSC_LINK, or CSC_NAME)')
+  if (!hasNotarizationCredentials()) {
+    missing.push('Apple notarization credentials: APPLE_API_KEY/APPLE_API_KEY_ID/APPLE_API_ISSUER, or APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID, or APPLE_KEYCHAIN_PROFILE')
+  }
+  if (missing.length) {
+    throw new Error(
+      `Refusing to build an unsigned/unnotarized macOS release.\n` +
+      `Missing:\n- ${missing.join('\n- ')}\n\n` +
+      `A downloaded unsigned DMG triggers Gatekeeper's "app is damaged" error.`
+    )
+  }
+}
+
+function verifyMacApps(releaseDir) {
+  if (process.platform !== 'darwin' || !existsSync(releaseDir)) return
+  let verified = 0
+  for (const dir of readdirSync(releaseDir, { withFileTypes: true })) {
+    if (!dir.isDirectory() || !dir.name.startsWith('mac')) continue
+    const dirPath = join(releaseDir, dir.name)
+    for (const entry of readdirSync(dirPath)) {
+      if (!entry.endsWith('.app')) continue
+      const appPath = join(dirPath, entry)
+      run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath], ROOT)
+      run('spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath], ROOT)
+      verified++
+    }
+  }
+  if (verified === 0) throw new Error(`No macOS .app bundle found under ${releaseDir}; cannot verify release signing.`)
+}
 
 // Clean any stale worktree, then create a fresh one at HEAD.
+assertMacReleaseReady()
 try { run('git', ['worktree', 'remove', '--force', WT], ROOT) } catch { /* none */ }
 run('git', ['worktree', 'add', '--force', WT, 'HEAD'], ROOT)
 
@@ -27,6 +92,7 @@ try {
   run('npx', ['electron-builder', '--config', 'electron-builder.yml'], WT)
 
   const srcRelease = join(WT, 'release')
+  verifyMacApps(srcRelease)
   const dstRelease = join(ROOT, 'release')
   if (existsSync(srcRelease)) {
     mkdirSync(dstRelease, { recursive: true })

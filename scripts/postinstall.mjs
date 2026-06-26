@@ -29,6 +29,6 @@ try {
 // to ~/.claude automatically (that's a user-global side effect) — just point at the opt-in command.
 try {
   if (existsSync(join(ROOT, 'skills', 'berth-tasks', 'SKILL.md'))) {
-    console.log('berth: optional Claude Code skill available — run `berth skill install` to enable task/project management from chat.')
+    console.log('berth: optional agent skill available — run `berth install skill` to enable task/project management from chat.')
   }
 } catch { /* ignore */ }

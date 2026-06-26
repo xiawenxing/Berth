@@ -25,9 +25,11 @@ mac:
     - dmg
     - zip
   category: public.app-category.developer-tools
-  # arm64 first; add x64/universal when needed. Signing/notarization is a later step (P2c):
-  # build with notarize disabled, then submit the .dmg via `xcrun notarytool`.
-  notarize: false
+  # Publicly downloaded macOS builds must be Developer ID signed and notarized, otherwise Gatekeeper
+  # reports the app as damaged after download. The release script preflights the required credentials.
+  forceCodeSigning: true
+  hardenedRuntime: true
+  notarize: true
 win:
   target: nsis
 linux:

@@ -5,7 +5,7 @@
 // Scope/framing (decided with the owner): Berth manages PROJECTS, not sessions — the task is the
 // goal, a session is just one disposable voyage. The guide is a launch-to-learn FAQ: task 1 explains
 // Berth, then a set of question-tasks each answer one thing when launched. The launched agent is told
-// to DEMONSTRATE Berth by actually using it — task 1 really runs `berth skill install`, and every
+// to DEMONSTRATE Berth by actually using it — task 1 really runs `berth install skill`, and every
 // task marks itself complete with `berth task done` so the user watches the status flow to 已完成
 // (that lifecycle is itself the feature demo). Tasks sort on the board by updated_at DESC, so the seed
 // staggers updated_at by index to keep them in this top-to-bottom order.
@@ -242,11 +242,11 @@ function welcomeTask(locale: Locale): OnboardingTask {
           'Berth 管的是**项目**，不是会话：',
           '- **任务是最终目的**——你真正要交付的东西。',
           '- **会话只是一次航行**：装上上下文出航、带回交付物，任务完成后即可弃用（**用完即弃**）。所以你不必珍藏会话——沉淀下来的项目、任务和上下文才是资产。', '',
-          '三步初始化（把主循环跑通）：①在终端跑 `berth skill install` 把 berth-tasks skill 装进各个 agent；②创建一个 Berth 项目（一切的容器）；③在项目下新建任务并从任务「启航」一个会话。', '',
+          '三步初始化（把主循环跑通）：①在终端跑 `berth install skill` 把 berth-tasks skill 装进各个 agent；②创建一个 Berth 项目（一切的容器）；③在项目下新建任务并从任务「启航」一个会话。', '',
           '### 给被启动的 agent 的指令',
           '> 你是被 Berth 从一条引导任务里启动的。请做三件事，既讲清 Berth 也顺手演示它：',
           '> 1. 用你自己的话、面向第一次用 Berth 的新人，讲清「什么是 Berth」：核心理念（管项目不管会话、任务是目的、会话用完即弃）+ 三步初始化。',
-          '> 2. **实际执行初始化第一步**：在终端运行 `berth skill install`，把 berth-tasks skill 装好（装好后，以后会话里的 agent 就能直接用 `berth task` / `berth project`）。若 `berth` 命令不存在，就提示用户先安装 Berth 的 CLI。',
+          '> 2. **实际执行初始化第一步**：在终端运行 `berth install skill`，把 berth-tasks skill 装好（装好后，以后会话里的 agent 就能直接用 `berth task` / `berth project`）。若 `berth` 命令不存在，就提示用户先安装 Berth 的 CLI。',
           '> 3. 收尾时用 `berth task done` 把这条任务标记完成，让用户看到状态从「进行中」变「已完成」——这本身就是 Berth 的功能展示。',
           '>',
           '> 做完就停下等用户，不要自行展开其它无关工作。', '',
@@ -266,11 +266,11 @@ function welcomeTask(locale: Locale): OnboardingTask {
           'Berth manages **projects**, not sessions:',
           '- **The task is the goal** — the thing you actually want to deliver.',
           '- **A session is just one voyage**: sail out loaded with context, bring back the deliverable, and discard it once the task is done (**use it and toss it**). So you never hoard sessions — the projects, tasks, and context that accumulate are the real assets.', '',
-          'Three-step setup (run the main loop): (1) run `berth skill install` in a terminal to install the berth-tasks skill into your agents; (2) create a Berth project (the container for everything); (3) create a task under it and "Launch" a session from the task.', '',
+          'Three-step setup (run the main loop): (1) run `berth install skill` in a terminal to install the berth-tasks skill into your agents; (2) create a Berth project (the container for everything); (3) create a task under it and "Launch" a session from the task.', '',
           '### Directive for the launched agent',
           '> You were launched by Berth from an onboarding task. Do three things — explain Berth and demonstrate it:',
           '> 1. In your own words, to a first-time Berth user, explain "what is Berth": the core idea (manages projects not sessions, the task is the goal, a session is disposable) plus the three-step setup.',
-          '> 2. **Actually run the first setup step**: run `berth skill install` in the terminal to install the berth-tasks skill (after that, agents in your sessions can use `berth task` / `berth project` directly). If the `berth` command is not found, tell the user to install the Berth CLI first.',
+          '> 2. **Actually run the first setup step**: run `berth install skill` in the terminal to install the berth-tasks skill (after that, agents in your sessions can use `berth task` / `berth project` directly). If the `berth` command is not found, tell the user to install the Berth CLI first.',
           '> 3. Finish by running `berth task done` to mark this task complete, so the user sees the status go from "in progress" to "done" — that itself shows off Berth.',
           '>',
           '> Then stop and wait for the user; do not go off and do unrelated work.', '',
