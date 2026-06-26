@@ -391,6 +391,7 @@ export function ProjectWorkspace() {
             sessions,
             addPending,
             resolvePending,
+            resync,
             openDrawer,
           })
       })
