@@ -68,6 +68,16 @@ export function LaunchDialog() {
     saveLastAgent(c)
   }, [])
 
+  // Switching destination starts a clean slate: drop pasted images and clear the field we're leaving
+  // (so nothing bleeds across modes). We don't touch draft storage, so reopening the dialog restores it.
+  const changeDest = (next: 'task' | 'free') => {
+    if (next === dest) return
+    clearImages()
+    if (dest === 'free') setFreeText('')
+    else setTaskNote('')
+    setDest(next)
+  }
+
   if (!launch) return null
   // A task can come pre-selected (launched from a task card) or be chosen here via the picker.
   const presetTask = !!launch.taskTitle
@@ -136,10 +146,10 @@ export function LaunchDialog() {
         <div>
           <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">目的地</div>
           <div className="flex min-w-0 gap-4 text-[13px]">
-            <Radio checked={dest === 'task'} onClick={() => setDest('task')} className="min-w-0 flex-1">
+            <Radio checked={dest === 'task'} onClick={() => changeDest('task')} className="min-w-0 flex-1">
               任务：{taskTitle ?? '选择任务…'}
             </Radio>
-            <Radio checked={dest === 'free'} onClick={() => setDest('free')} className="shrink-0">
+            <Radio checked={dest === 'free'} onClick={() => changeDest('free')} className="shrink-0">
               自由提问
             </Radio>
           </div>
@@ -204,11 +214,13 @@ export function LaunchDialog() {
                 setTaskNote(e.target.value)
                 if (launchDraftKey) writeDraft(launchDraftKey, e.target.value)
               }}
+              onPaste={onPasteImages}
               rows={3}
-              placeholder="补充本次会话的额外背景、范围或具体要求…"
+              placeholder="补充本次会话的额外背景、范围或具体要求…（可粘贴图片）"
               className="mt-2 w-full resize-none rounded-md border border-border bg-card px-2.5 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
             />
           )}
+          {dest === 'task' && taskTitle && <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />}
         </div>
 
         <LaunchConfigFields

@@ -218,7 +218,10 @@ export function startFreshLaunch(input: StartFreshLaunchInput): string {
       projectId: input.projectId,
       todoKey: input.todoKey,
       prompt: input.dest === 'free' ? input.freeText || undefined : input.taskNote?.trim() || undefined,
-      images: input.dest === 'free' ? input.images : undefined,
+      // Both destinations can carry images. Task context rides its own channel (env / system prompt /
+      // SessionStart hooks — never the positional), so a task launch's images + note flow through the
+      // same image+prompt prime-socket path as a free launch without colliding with it.
+      images: input.images,
       addDirs: d.addDirs,
       ctxProject: d.ctxProject,
       ctxTask: input.dest === 'task' ? d.ctxTask : false,

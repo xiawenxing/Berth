@@ -144,6 +144,26 @@ describe('startFreshLaunch — drawer-independent launch submission', () => {
     expect(ws.sent.length).toBe(after) // no duplicate image or prompt
   })
 
+  it('task launch (TUI) with images: carries images + the task note as the first turn', () => {
+    startFreshLaunch(baseInput({
+      dest: 'task',
+      taskTitle: 'Fix the crash',
+      taskNote: 'repro on cold start',
+      todoKey: 'todo-9',
+      images: [{ name: 'log.png', dataUrl: 'data:image/png;base64,EEEE' }],
+    }))
+    const ws = FakeWS.instances[0]
+    expect(ws.url).not.toContain('prompt=') // images can't ride the URL — note goes over the socket
+
+    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
+    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
+      { t: 'img', name: 'log.png', d: 'data:image/png;base64,EEEE' },
+    ])
+    ws.emit('[Image #1]') // CLI ack frame → the task note follows as the prompt
+    expect(JSON.parse(ws.sent[1])).toEqual({ t: 'i', d: '\x1b[200~repro on cold start\x1b[201~\r' })
+  })
+
   it('image launch (Model B / stream): submits one structured turn on the launched frame', () => {
     localStorage.setItem('berth-render-mode', 'B')
     startFreshLaunch(baseInput({
