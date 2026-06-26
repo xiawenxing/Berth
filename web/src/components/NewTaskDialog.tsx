@@ -98,7 +98,7 @@ export function NewTaskDialog({
   }
 
   return (
-    <Dialog open={open} onClose={cancel} width={run ? 560 : 460}>
+    <Dialog open={open} onClose={cancel} width={560}>
       <div className="border-b border-border px-4 py-3">
         <h3 className="text-[13px] font-semibold text-foreground">新建任务</h3>
         <p className="mt-0.5 text-[11px] text-muted-foreground">{run ? '创建后直接起航 · 配置会随任务一起生效' : '写个标题就走 · 港务助手在后台补全'}</p>
