@@ -139,4 +139,36 @@ describe('data/agent-config', () => {
     expect(cfg.list).toEqual(DEFAULT_AGENTS)
     expect(cfg.berthAgentCli).toBe('claude')
   })
+
+  it('defaults safeMode to false for every agent', () => {
+    const store = openStore(':memory:')
+    const cfg = getAgentConfig(store)
+    expect(cfg.list.every(a => a.safeMode === false)).toBe(true)
+  })
+
+  it('round-trips safeMode per agent', () => {
+    const store = openStore(':memory:')
+    setAgentConfig(store, {
+      list: [
+        { cli: 'claude', enabled: true, model: null, safeMode: true },
+        { cli: 'codex', enabled: true, model: null, safeMode: false },
+        { cli: 'coco', enabled: true, model: null, safeMode: true },
+      ],
+    })
+    const cfg = getAgentConfig(store)
+    expect(cfg.list.find(a => a.cli === 'claude')!.safeMode).toBe(true)
+    expect(cfg.list.find(a => a.cli === 'codex')!.safeMode).toBe(false)
+    expect(cfg.list.find(a => a.cli === 'coco')!.safeMode).toBe(true)
+  })
+
+  it('reads a stored entry missing safeMode as false (backward compat)', () => {
+    const store = openStore(':memory:')
+    store.setSetting('agentList', JSON.stringify([
+      { cli: 'claude', enabled: true, model: null },
+      { cli: 'codex', enabled: true, model: null },
+      { cli: 'coco', enabled: true, model: null },
+    ]))
+    const cfg = getAgentConfig(store)
+    expect(cfg.list.every(a => a.safeMode === false)).toBe(true)
+  })
 })

@@ -31,9 +31,10 @@ export interface AgentEntry {
   cli: AgentCli
   enabled: boolean
   model: string | null   // default model for a FRESH launch; null = the CLI's own default
+  safeMode: boolean       // ON → omit the approval-bypass flag on interactive (Model A) launch. Default false.
 }
 
-export const DEFAULT_AGENTS: AgentEntry[] = KNOWN_CLIS.map(cli => ({ cli, enabled: true, model: null }))
+export const DEFAULT_AGENTS: AgentEntry[] = KNOWN_CLIS.map(cli => ({ cli, enabled: true, model: null, safeMode: false }))
 
 export interface AgentConfig {
   list: AgentEntry[]
@@ -70,7 +71,7 @@ function readList(store: Store): AgentEntry[] {
     for (const e of parsed) {
       if (!e || !isCli(e.cli) || seen.has(e.cli)) return DEFAULT_AGENTS
       seen.add(e.cli)
-      out.push({ cli: e.cli, enabled: e.enabled !== false, model: normModel(e.cli, e.model) })
+      out.push({ cli: e.cli, enabled: e.enabled !== false, model: normModel(e.cli, e.model), safeMode: e.safeMode === true })
     }
     // must cover exactly the known clis
     if (seen.size !== KNOWN_CLIS.length) return DEFAULT_AGENTS
@@ -119,7 +120,7 @@ function cleanList(input: unknown): AgentEntry[] {
     const cli = (e as any).cli as AgentCli
     if (seen.has(cli)) throw new Error(`duplicate cli "${cli}" in agent list`)
     seen.add(cli)
-    out.push({ cli, enabled: (e as any).enabled !== false, model: normModel(cli, (e as any).model) })
+    out.push({ cli, enabled: (e as any).enabled !== false, model: normModel(cli, (e as any).model), safeMode: (e as any).safeMode === true })
   }
   for (const c of KNOWN_CLIS) if (!seen.has(c)) throw new Error(`agent list must cover all clis (missing "${c}")`)
   if (!out.some(a => a.enabled)) throw new Error('at least one agent must be enabled')
