@@ -49,10 +49,28 @@ berth project list
 
 ### 方式二：macOS 桌面应用
 
-从 [GitHub Releases](https://github.com/xiawenxing/Berth/releases/latest) 下载最新签名 DMG，
-打开后把 **Berth** 拖进 Applications，再启动应用。
+从 [GitHub Releases](https://github.com/xiawenxing/Berth/releases/latest) 下载最新 DMG，
+打开后把 **Berth** 拖进 Applications。
 
-DMG 必须经过签名和公证。如果 macOS 提示 Berth 已损坏，请丢弃该安装包并下载最新 release。
+#### 首次打开（只需一次）
+
+Berth 的 macOS 安装包做了 ad-hoc 签名，但**没有**走 Apple 付费开发者计划的公证（notarize），
+所以首次打开时 Gatekeeper 会弹警告。应用本身没被改动，只需信任一次：
+
+1. 打开 **Applications（应用程序）**，**右键（按住 Control 点击）Berth → 打开**。
+2. 在弹出的对话框里点 **打开**。
+
+完成——这一次信任之后，以后每次双击都能正常打开。
+
+> 首次打开**不要直接双击**。双击一个未信任的下载文件，会弹出没有"打开"按钮的死胡同提示
+>（"*Apple cannot check it for malicious software / Contact the developer*"）。请改用 右键 → 打开。
+
+如果 右键 → 打开 也被拦（macOS 15 Sequoia 取消了未公证应用的这个捷径），或者你想彻底免掉警告，
+在终端里执行一次下面这条命令去掉"下载隔离"标记，之后就能直接双击：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Berth.app
+```
 
 ## 环境要求
 
