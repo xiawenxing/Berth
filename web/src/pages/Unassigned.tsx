@@ -6,7 +6,7 @@ import { CliBadge } from '@/components/workspace/TaskCard'
 import { SessionPanel } from '@/components/SessionPanel'
 import { SessionTitleBar } from '@/components/SessionTitleBar'
 import { useData } from '@/lib/data'
-import { relTime, shortCwd } from '@/lib/format'
+import { imagePathPlaceholderText, relTime, shortCwd } from '@/lib/format'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
 import { ImportDialog } from '@/components/ImportDialog'
@@ -461,6 +461,7 @@ function SessionListRow({
   const [failed, setFailed] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const generating = kicked || !!s.titleGenerating
+  const displayTitle = imagePathPlaceholderText(s.title, s.sessionId)
   useEffect(() => { if (s.titleGenerating) setKicked(false) }, [s.titleGenerating])
 
   useEffect(() => {
@@ -515,7 +516,7 @@ function SessionListRow({
     >
       <Glyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium text-foreground" title={s.title || s.sessionId}>{s.title || s.sessionId}</div>
+        <div className="truncate text-[13px] font-medium text-foreground" title={displayTitle}>{displayTitle}</div>
         <div className="mt-0.5 flex items-center gap-1.5">
           <CliBadge cli={s.cli} />
           {showCwd && <span className="truncate text-[11px] text-text-dim">{shortCwd(s.cwd)}</span>}

@@ -13,7 +13,7 @@ import { NewTaskDialog, refineTitle, type NewTaskCreateOptions } from '@/compone
 import { ProjectSummaryPopover, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
 import { useData } from '@/lib/data'
 import { useInlineEdit } from '@/lib/useInlineEdit'
-import { relTime, shortCwd, normPriority } from '@/lib/format'
+import { imagePathPlaceholderText, relTime, shortCwd, normPriority } from '@/lib/format'
 import { isDoneStatus, statusKind } from '@/lib/status'
 import { useLive } from '@/lib/live'
 import { startFreshLaunch } from '@/lib/launch-runner'
@@ -109,7 +109,7 @@ export function ProjectWorkspace() {
       const ls: LinkedSession[] = []
       for (const sid of t.sessions) {
         const s = sessById.get(sid)
-        if (s) ls.push({ id: s.sessionId, cli: s.cli, title: s.title || '(未命名会话)', status: live.shipStatus(s.sessionId, s.updatedAt) })
+        if (s) ls.push({ id: s.sessionId, cli: s.cli, title: imagePathPlaceholderText(s.title, '(未命名会话)'), status: live.shipStatus(s.sessionId, s.updatedAt) })
       }
       if (ls.length) m.set(t.id, ls)
     }
@@ -122,7 +122,7 @@ export function ProjectWorkspace() {
   const toRow = (s: (typeof projSessions)[number], pinned: boolean): SessionRow => ({
     id: s.sessionId,
     cli: s.cli,
-    title: s.title || '(未命名)',
+    title: imagePathPlaceholderText(s.title, '(未命名)'),
     cwd: shortCwd(s.cwd),
     time: relTime(s.updatedAt),
     updatedAt: s.updatedAt,
@@ -228,7 +228,7 @@ export function ProjectWorkspace() {
     const s = sessById.get(l.id)
     if (!s) return openDrawer({ title: l.title, cli: l.cli, cwd: '', status: l.status })
     live.markSeen(s.sessionId)
-    openDrawer({ title: s.title || l.title, cli: s.cli, cwd: shortCwd(s.cwd), status: live.shipStatus(s.sessionId, s.updatedAt), sessionId: s.sessionId })
+    openDrawer({ title: imagePathPlaceholderText(s.title, l.title), cli: s.cli, cwd: shortCwd(s.cwd), status: live.shipStatus(s.sessionId, s.updatedAt), sessionId: s.sessionId })
   }
 
   // Drag-to-status：optimistic move NOW, persist via PATCH /todos, then reload.

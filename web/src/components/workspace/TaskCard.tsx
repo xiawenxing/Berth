@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { AnchoredPopover, MenuLabel, MenuItem } from '@/components/ui/Menu'
 import { TaskSummaryPopover } from '@/components/AiPanels'
 import { useData } from '@/lib/data'
+import { imagePathPlaceholderText } from '@/lib/format'
 import { useInlineEdit } from '@/lib/useInlineEdit'
 import { priorityColors, priorityRank } from '@/lib/priority'
 import { isCancelledStatus, isDoneStatus, statusMeta } from '@/lib/status'
@@ -449,7 +450,7 @@ export function TaskCard({
                   >
                     <ShipGlyph status={l.status} />
                     <CliBadge cli={l.cli} />
-                    <span className="min-w-0 flex-1 truncate text-[12px] text-foreground" title={l.title}>{l.title}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-foreground" title={imagePathPlaceholderText(l.title)}>{imagePathPlaceholderText(l.title)}</span>
                   </button>
                 ))}
               </div>

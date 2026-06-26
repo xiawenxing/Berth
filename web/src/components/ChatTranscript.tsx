@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { turnHasVisibleContent, type Block, type ChatTurn } from '@/lib/chat'
+import { splitImagePathPlaceholders } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Markdown } from './Markdown'
 
@@ -78,6 +79,7 @@ function UserBubble({ turn }: { turn: ChatTurn }) {
   const images = turn.blocks.filter((b): b is Extract<Block, { kind: 'image' }> => b.kind === 'image')
   const text = turn.blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('')
   const hasImages = images.length > 0
+  const textParts = splitImagePathPlaceholders(text)
   return (
     <div className="berth-chat-turn flex justify-end">
       <div className="flex max-w-[78%] flex-col items-end gap-2">
@@ -100,7 +102,11 @@ function UserBubble({ turn }: { turn: ChatTurn }) {
               hasImages ? 'bg-card/70 text-foreground' : 'bg-brand text-brand-foreground',
             )}
           >
-            {text}
+            {textParts.map((part, idx) => (
+              part.kind === 'image'
+                ? <span key={`${part.path}-${idx}`} title={part.path} className="font-medium underline decoration-dotted underline-offset-2">{part.text}</span>
+                : <span key={idx}>{part.text}</span>
+            ))}
           </div>
         )}
       </div>

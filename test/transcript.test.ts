@@ -6,6 +6,7 @@ import {
   extractUserGist,
   extractConversation,
   titleInputFromTranscript,
+  replaceImagePathReferences,
   stripNoise,
   isInjectedText,
 } from '../src/agent/transcript'
@@ -232,6 +233,18 @@ describe('extractTitleContext', () => {
     expect(deriveTitleFromTranscript(sessionHead)).toBe('Fix title generation / shell command: rg -n "extractTitleContext" src/agent')
   })
 
+  it('uses a placeholder instead of pasted local image paths in offline titles', () => {
+    const sessionHead = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: '/Users/bytedance/Documents/Obsidian\\ Vault/assets/imagepng-1782446492681-2567.png 1. 打包的 dmg 文件安装失败报错',
+      },
+    })
+
+    expect(deriveTitleFromTranscript(sessionHead)).toBe('[图片] 1. 打包的 dmg 文件安装失败报错')
+  })
+
   it('does not append process tool JSON to Berth task-launch titles', () => {
     const sessionHead = [
       JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: '请开始处理任务：「❓ 移除会话会真的删除本地会话吗？」。' }] } }),
@@ -251,6 +264,33 @@ describe('extractTitleContext', () => {
     expect(deriveTitleFromTranscript(sessionHead)).toBe('❓ 移除会话会真的删除本地会话吗？')
   })
 
+  it('does not append codex exec_command function calls to image-backed query titles', () => {
+    const sessionHead = [
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'user_message',
+          message: '[Image #1] 我粘贴的图片在会话标题里会显示成图片地址，不要，跟query一样展示一个[图片]占位就行',
+          local_images: ['/Users/bytedance/Documents/Obsidian Vault/assets/imagepng-1782446589701-8336.png'],
+          text_elements: [{ placeholder: '[Image #1]' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'exec_command',
+          arguments: JSON.stringify({
+            cmd: "sed -n '1,240p' docs/ARCHITECTURE.md",
+            workdir: '/Users/bytedance/Documents/Code/berth',
+          }),
+        },
+      }),
+    ].join('\n')
+
+    expect(deriveTitleFromTranscript(sessionHead)).toBe('[图片] 我粘贴的图片在会话标题里会显示成图片地址，不要，跟query一样展示一个[图片]占位就行')
+  })
+
   it('derives the task title from Berth task-launch prompts with notes or English locale', () => {
     const zh = [
       JSON.stringify({ type: 'user', message: { role: 'user', content: '请开始处理任务：「修复起航标题」。\n\n本次会话补充说明：\n先只查原因' } }),
@@ -263,6 +303,13 @@ describe('extractTitleContext', () => {
 
     expect(deriveTitleFromTranscript(zh)).toBe('修复起航标题')
     expect(deriveTitleFromTranscript(en)).toBe('Fix launch title')
+  })
+})
+
+describe('replaceImagePathReferences', () => {
+  it('replaces pasted local image paths with a short placeholder', () => {
+    const text = '看看 /Users/bytedance/Documents/Obsidian\\ Vault/assets/imagepng-1782446492681-2567.png 这里'
+    expect(replaceImagePathReferences(text)).toBe('看看 [图片] 这里')
   })
 })
 

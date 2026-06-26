@@ -6,7 +6,7 @@ import { CliBadge } from '@/components/workspace/TaskCard'
 import { AnchoredPopover, MenuItem } from '@/components/ui/Menu'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
-import { shortCwd } from '@/lib/format'
+import { imagePathPlaceholderText, shortCwd } from '@/lib/format'
 import { api } from '@/lib/api'
 import { priorityColors, priorityRank } from '@/lib/priority'
 import { isDoneStatus } from '@/lib/status'
@@ -76,7 +76,7 @@ export function Now() {
   const openSession = (s: ApiSession) => {
     live.markSeen(s.sessionId)
     openDrawer({
-      title: s.title || s.sessionId,
+      title: imagePathPlaceholderText(s.title, s.sessionId),
       cli: s.cli,
       cwd: shortCwd(s.cwd),
       status: live.shipStatus(s.sessionId, s.updatedAt),
@@ -167,6 +167,7 @@ function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void
   const ship = live.shipStatus(s.sessionId, s.updatedAt)
   const pending = !!s.__pending
   const pendingOpenable = pending && !!s.__pendingOpenable
+  const displayTitle = imagePathPlaceholderText(s.title, s.sessionId)
 
   return (
     <div
@@ -187,8 +188,8 @@ function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void
       <ShipGlyph status={ship} />
       <ProjTag proj={s.project} />
       <CliBadge cli={s.cli} />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground" title={s.title || s.sessionId}>
-        {s.title || s.sessionId}
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground" title={displayTitle}>
+        {displayTitle}
       </span>
       <SessionActions s={s} ship={ship} pending={pending} />
     </div>
@@ -371,7 +372,7 @@ function TaskRow({
                 >
                   <ShipGlyph status={live.shipStatus(s.sessionId, s.updatedAt)} />
                   <CliBadge cli={s.cli} />
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-foreground" title={s.title || s.sessionId}>{s.title || s.sessionId}</span>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-foreground" title={imagePathPlaceholderText(s.title, s.sessionId)}>{imagePathPlaceholderText(s.title, s.sessionId)}</span>
                   <SessionActions s={s} ship={live.shipStatus(s.sessionId, s.updatedAt)} />
                 </div>
               ))}

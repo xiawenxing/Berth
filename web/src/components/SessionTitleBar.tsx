@@ -4,6 +4,7 @@ import { Spinner } from './ui/Spinner'
 import { CliBadge } from './workspace/TaskCard'
 import { SHIP_LABEL, type ShipStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { imagePathPlaceholderText } from '@/lib/format'
 
 interface SessionTitleBarProps {
   cli: string
@@ -29,6 +30,7 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
   const inputRef = useRef<HTMLInputElement>(null)
   const skipBlurCommit = useRef(false)
   const busy = kicked || generating
+  const displayTitle = imagePathPlaceholderText(localTitle)
   // Hand off from the optimistic local flag once the server confirms it's generating.
   useEffect(() => { if (generating) setKicked(false) }, [generating])
 
@@ -130,14 +132,14 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
         ) : (
           <button
             type="button"
-            title={editable ? `${localTitle}（双击修改标题）` : localTitle}
+            title={editable ? `${displayTitle}（双击修改标题）` : displayTitle}
             onDoubleClick={startEditing}
             className={cn(
               'block max-w-full truncate bg-transparent p-0 text-left text-[13px] font-semibold text-foreground',
               editable && 'cursor-text',
             )}
           >
-            {localTitle}
+            {displayTitle}
           </button>
         )}
         <div className="mt-0.5 truncate font-mono text-[11px] text-text-dim" title={cwd ?? undefined}>

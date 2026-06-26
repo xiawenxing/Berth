@@ -219,12 +219,7 @@ function cleanText(raw: string, max = 700): string {
 }
 
 function cleanUserTitleText(raw: string, max = 700): string {
-  const cleaned = cleanText(raw, max)
-    .replace(/^(?:\[图片\]\s*)+/g, '')
-    .replace(/\s+(?:\[图片\]\s*)+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return cleaned && !isInjectedText(cleaned) ? cleaned.slice(0, max) : ''
+  return cleanText(raw, max)
 }
 
 function pushDistinct(arr: string[], text: string, maxItems: number) {
@@ -400,7 +395,7 @@ export function deriveTitleFromTranscript(head: string): string | null {
   if (!firstUser) return null
   const berthTaskTitle = taskTitleFromBerthStartPrompt(firstUser)
   if (berthTaskTitle) return berthTaskTitle
-  const process = sample.tools[0] ?? sample.assistants[0] ?? ''
+  const process = firstUser.includes('[图片]') ? '' : (sample.tools[0] ?? sample.assistants[0] ?? '')
   if (!process) return firstUser
   return `${firstUser} / ${process}`
 }
