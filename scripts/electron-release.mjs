@@ -16,6 +16,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const WT = join(ROOT, '..', 'berth-electron-build')   // sibling dir; matches the repo's worktree convention
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, stdio: 'inherit' })
 const capture = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+const allowUnnotarizedMac = process.env.BERTH_ALLOW_UNNOTARIZED_MAC === '1'
 
 function completeEnvGroup(names) {
   return names.every(name => Boolean(process.env[name]))
@@ -49,6 +50,11 @@ function hasNotarizationCredentials() {
 
 function assertMacReleaseReady() {
   if (process.platform !== 'darwin') return
+  if (allowUnnotarizedMac) {
+    console.warn('BERTH_ALLOW_UNNOTARIZED_MAC=1: building an ad-hoc signed, unnotarized macOS installer.')
+    console.warn('Users will need to approve the app manually in macOS Gatekeeper.')
+    return
+  }
   const missing = []
   if (!hasDeveloperIdIdentity()) missing.push('Developer ID Application signing identity (keychain, CSC_LINK, or CSC_NAME)')
   if (!hasNotarizationCredentials()) {
@@ -58,7 +64,7 @@ function assertMacReleaseReady() {
     throw new Error(
       `Refusing to build an unsigned/unnotarized macOS release.\n` +
       `Missing:\n- ${missing.join('\n- ')}\n\n` +
-      `A downloaded unsigned DMG triggers Gatekeeper's "app is damaged" error.`
+      `Set BERTH_ALLOW_UNNOTARIZED_MAC=1 to build an ad-hoc signed DMG that users must open manually.`
     )
   }
 }
@@ -73,11 +79,24 @@ function verifyMacApps(releaseDir) {
       if (!entry.endsWith('.app')) continue
       const appPath = join(dirPath, entry)
       run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath], ROOT)
-      run('spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath], ROOT)
+      if (!allowUnnotarizedMac) run('spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath], ROOT)
       verified++
     }
   }
   if (verified === 0) throw new Error(`No macOS .app bundle found under ${releaseDir}; cannot verify release signing.`)
+}
+
+function electronBuilderArgs() {
+  const args = ['electron-builder', '--config', 'electron-builder.yml']
+  if (process.platform === 'darwin' && allowUnnotarizedMac) {
+    args.push(
+      '-c.mac.identity=-',
+      '-c.mac.notarize=false',
+      '-c.mac.forceCodeSigning=false',
+      '-c.mac.hardenedRuntime=false'
+    )
+  }
+  return args
 }
 
 // Clean any stale worktree, then create a fresh one at HEAD.
@@ -89,7 +108,7 @@ try {
   run('npm', ['ci'], WT)                 // fresh, isolated node_modules (node ABI here — irrelevant, we rebuild next)
   run('npm', ['run', 'build'], WT)       // vendor + esbuild → dist/
   // electron-builder rebuilds the natives for Electron's ABI INSIDE the worktree's node_modules.
-  run('npx', ['electron-builder', '--config', 'electron-builder.yml'], WT)
+  run('npx', electronBuilderArgs(), WT)
 
   const srcRelease = join(WT, 'release')
   verifyMacApps(srcRelease)

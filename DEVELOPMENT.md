@@ -59,6 +59,10 @@ After packaging, the script verifies the generated `.app` with `codesign --verif
 and `spctl --assess`. Do not upload a DMG that bypasses those checks; downloaded unsigned builds show
 macOS Gatekeeper's "app is damaged" error.
 
+For an internal/test DMG where the "unidentified developer" warning is acceptable, run
+`BERTH_ALLOW_UNNOTARIZED_MAC=1 npm run electron:release`. This uses ad-hoc signing and skips
+notarization; users must approve the app manually in macOS Gatekeeper.
+
 ### Working without touching your real data
 
 Berth's writable state lives under `~/.berth`. Point `BERTH_HOME` at a throwaway dir to run against a
