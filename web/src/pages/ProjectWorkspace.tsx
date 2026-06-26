@@ -19,6 +19,7 @@ import { useLive } from '@/lib/live'
 import { startFreshLaunch } from '@/lib/launch-runner'
 import { deliveryStats } from '@/lib/delivery'
 import { api, type PreviewSession } from '@/lib/api'
+import { emptyCargoGroups } from '@/lib/cargo-groups'
 import { sortSessionRows } from '@/lib/session-sort'
 import type { Task, SessionRow, CwdGroup, TaskStatus, LinkedSession } from '@/lib/types'
 
@@ -176,7 +177,7 @@ export function ProjectWorkspace() {
       return b[1].length - a[1].length
     })
     let contextN = 1
-    return sorted.map(([cwd, rows]) => {
+    const sessionGroups: CwdGroup[] = sorted.map(([cwd, rows]) => {
       if (cwd === ws) {
         // rawCwd is the real (masked) workspace path — drives the import icon so sessions that ran
         // in the default workspace dir but weren't auto-curated can still be imported manually.
@@ -194,6 +195,9 @@ export function ProjectWorkspace() {
         rawCwd: cwd === NO_CWD ? undefined : cwd,
       }
     })
+    // Registered 装载目录 with no session yet → empty groups, appended AFTER 主上下文 is fixed
+    // (an empty dir must never be picked as 主上下文). Each keeps its 导入 icon as a re-import entry.
+    return [...sessionGroups, ...emptyCargoGroups(project?.pathsMeta, map.keys(), ws)]
   }, [projSessions, project, live.rev])
 
   const done = tasks.filter((t) => isDoneStatus(t.status)).length
