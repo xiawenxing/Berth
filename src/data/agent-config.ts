@@ -27,6 +27,27 @@ export const HEADLESS_CLIS: AgentCli[] = ['claude', 'codex']
 export const DEFAULT_BERTH_CLI: AgentCli = 'claude'
 export const DEFAULT_BERTH_MODEL = 'claude-haiku-4-5'
 
+/** Why a CLI is (not) usable, surfaced to the UI for install/upgrade copy. */
+export type CliReason = 'ok' | 'missing' | 'outdated' | 'unverified'
+
+/** Live usability of one CLI on this machine (computed by src/pty/availability.ts). */
+export interface CliStatus {
+  cli: AgentCli
+  installed: boolean         // binary resolved on disk/PATH
+  binPath: string | null
+  version: string | null     // parsed from --version (claude/codex); null for coco
+  minVersion: string | null  // requirement (null for coco)
+  ok: boolean                // installed && identity-ok && version>=min
+  reason: CliReason
+}
+
+/** Minimum acceptable version per CLI. claude/codex only; coco is identity-gated (no floor).
+ *  Conservative starting values — tune as real-world minimums become clear. */
+export const MIN_CLI_VERSIONS: Partial<Record<AgentCli, string>> = {
+  claude: '1.0.0',
+  codex: '0.40.0',
+}
+
 export interface AgentEntry {
   cli: AgentCli
   enabled: boolean
