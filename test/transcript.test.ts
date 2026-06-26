@@ -288,7 +288,7 @@ describe('extractTitleContext', () => {
       }),
     ].join('\n')
 
-    expect(deriveTitleFromTranscript(sessionHead)).toBe('[图片] 我粘贴的图片在会话标题里会显示成图片地址，不要，跟query一样展示一个[图片]占位就行')
+    expect(deriveTitleFromTranscript(sessionHead)).toBe('[Image #1] 我粘贴的图片在会话标题里会显示成图片地址，不要，跟query一样展示一个[图片]占位就行')
   })
 
   it('derives the task title from Berth task-launch prompts with notes or English locale', () => {

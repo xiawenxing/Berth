@@ -83,7 +83,7 @@ describe('codex adapter', () => {
     ].join('\n') + '\n')
 
     const s = listCodexSessions(root).find(x => x.physicalId === id)!
-    expect(s.title).toBe('[图片] Fix codex launch title backfill')
+    expect(s.title).toBe('[Image #1] Fix codex launch title backfill')
   })
   it('falls back to session_index.jsonl thread_name when no response_item user message exists', () => {
     // The stub (0002) has no response_item lines; it is kind='import-stub' so firstUserTitle is skipped,
