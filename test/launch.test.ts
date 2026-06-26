@@ -128,6 +128,30 @@ it('writes the Codex Berth profile hook under CODEX_HOME', () => {
 // Regression: `--add-dir <directories...>` is variadic and would otherwise swallow the positional
 // prompt as a phantom directory, so the agent launches idle and never takes a turn. The prompt must
 // be separated from add-dir by `--`, never adjacent to it. (This combination was previously untested.)
+it('claude: safeMode omits --dangerously-skip-permissions', () => {
+  const a = freshArgv('claude', { cwd: '/c', sessionId: 'uuid-1', safeMode: true })
+  expect(a).toEqual(['--session-id', 'uuid-1'])
+  expect(a).not.toContain('--dangerously-skip-permissions')
+})
+
+it('coco: safeMode omits --yolo', () => {
+  const a = freshArgv('coco', { cwd: '/c', sessionId: 'uuid-1', safeMode: true })
+  expect(a).toEqual(['--session-id', 'uuid-1'])
+  expect(a).not.toContain('--yolo')
+})
+
+it('codex: safeMode omits the approvals/sandbox bypass but keeps --no-alt-screen', () => {
+  const a = freshArgv('codex', { cwd: '/c', safeMode: true })
+  expect(a).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+  expect(a).toContain('--no-alt-screen')
+})
+
+it('safeMode false/undefined keeps the bypass flag (default = max permission)', () => {
+  expect(freshArgv('claude', { cwd: '/c' })).toContain('--dangerously-skip-permissions')
+  expect(freshArgv('coco', { cwd: '/c' })).toContain('--yolo')
+  expect(freshArgv('codex', { cwd: '/c' })).toContain('--dangerously-bypass-approvals-and-sandbox')
+})
+
 it('addDirs + initialPrompt together: prompt is fenced behind `--`, never directly after --add-dir', () => {
   for (const cli of ['claude', 'coco', 'codex'] as const) {
     const a = freshArgv(cli, { cwd: '/c', sessionId: 'u', injectFile: '/m.txt', addDirs: ['/v1', '/v2'], initialPrompt: 'do it' })

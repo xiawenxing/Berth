@@ -72,6 +72,7 @@ export interface FreshOpts {
   cwd: string; sessionId?: string; injectFile?: string
   initialPrompt?: string   // the user's first message (positional prompt)
   model?: string           // per-CLI default model (claude/codex only; coco has no --model flag)
+  safeMode?: boolean       // ON → omit the approval-bypass flag (interactive Model A only). Default/undefined = max permission.
   addDirs?: string[]; cols?: number; rows?: number
 }
 
@@ -98,7 +99,7 @@ export function freshArgv(cli: AgentCli, o: FreshOpts): string[] {
   switch (cli) {
     case 'claude': return [
       ...(o.sessionId ? ['--session-id', o.sessionId] : []),
-      '--dangerously-skip-permissions',                 // bypass-permissions: Berth-launched sessions run unattended
+      ...(o.safeMode ? [] : ['--dangerously-skip-permissions']),  // bypass-permissions unless safe mode; Berth-launched sessions run unattended
       ...(o.model ? ['--model', o.model] : []),
       ...(o.injectFile ? ['--append-system-prompt-file', o.injectFile] : []),
       ...dirs,
@@ -108,7 +109,7 @@ export function freshArgv(cli: AgentCli, o: FreshOpts): string[] {
       const pos = positional(o)
       return [
         ...(o.sessionId ? ['--session-id', o.sessionId] : []),
-        '--yolo',                                       // bypass tool permission checks
+        ...(o.safeMode ? [] : ['--yolo']),                        // bypass tool permission checks unless safe mode
         ...dirs,
         ...(pos ? ['--', pos] : []),
       ]
@@ -117,7 +118,7 @@ export function freshArgv(cli: AgentCli, o: FreshOpts): string[] {
       const pos = positional(o)
       return [
         ...(o.injectFile ? ['--profile', CODEX_BERTH_PROFILE, '--dangerously-bypass-hook-trust'] : []),
-        '--dangerously-bypass-approvals-and-sandbox',   // bypass approvals + sandbox
+        ...(o.safeMode ? [] : ['--dangerously-bypass-approvals-and-sandbox']),  // bypass approvals + sandbox unless safe mode
         '--no-alt-screen',                              // inline TUI behaves better inside reattached web xterm
         ...(o.model ? ['--model', o.model] : []),
         ...dirs,
