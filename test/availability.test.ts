@@ -38,4 +38,27 @@ describe('detectCli', () => {
     expect(['missing', 'ok', 'unverified']).toContain(s.reason)
     if (s.reason === 'missing') expect(s.ok).toBe(false)
   }, 30_000)   // coco --help does a network/update check; allow up to 30 s
+
+  it('codex at/above the floor is ok', async () => {
+    const s = await detectCli('codex', fakeBin('codex', 'codex-cli 0.139.0'))
+    expect(s.reason).toBe('ok')
+    expect(s.ok).toBe(true)
+    expect(s.version).toBe('0.139.0')
+  })
+  it('codex below the floor is outdated', async () => {
+    const s = await detectCli('codex', fakeBin('codex', 'codex-cli 0.1.0'))
+    expect(s.reason).toBe('outdated')
+    expect(s.ok).toBe(false)
+    expect(s.version).toBe('0.1.0')
+  })
+  it('codex with unparseable --version is unverified', async () => {
+    const s = await detectCli('codex', fakeBin('codex', 'no semver here'))
+    expect(s.reason).toBe('unverified')
+    expect(s.ok).toBe(false)
+  })
+  it('a CLI with no resolved binary is missing', async () => {
+    const s = await detectCli('codex', null)
+    expect(s.reason).toBe('missing')
+    expect(s.installed).toBe(false)
+  })
 })

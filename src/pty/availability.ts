@@ -31,9 +31,12 @@ function missingStatus(cli: AgentCli): CliStatus {
   }
 }
 
+// In-process cache: last detection per CLI. Startup populates it; the Settings on-enable path and
+// POST /settings refresh it. A CLI never probed yet reads back as `missing` (conservative).
+const cache = new Map<AgentCli, CliStatus>()
+
 /** Force-fresh detect ONE CLI. Best-effort: probe failures degrade to `unverified`, never throw. */
-export async function detectCli(cli: AgentCli): Promise<CliStatus> {
-  const bin = firstUsableCandidate(cli)
+export async function detectCli(cli: AgentCli, bin = firstUsableCandidate(cli)): Promise<CliStatus> {
   let status: CliStatus
   if (!bin) {
     status = missingStatus(cli)
@@ -57,10 +60,6 @@ export async function detectCli(cli: AgentCli): Promise<CliStatus> {
   return status
 }
 
-// In-process cache: last detection per CLI. Startup populates it; the Settings on-enable path and
-// POST /settings refresh it. A CLI never probed yet reads back as `missing` (conservative).
-const cache = new Map<AgentCli, CliStatus>()
-
 /** All CLIs from cache, filling un-probed ones with their `missing` default. */
 export function getCachedAvailability(): CliStatus[] {
   return KNOWN_CLIS.map(cli => cache.get(cli) ?? missingStatus(cli))
@@ -73,5 +72,5 @@ export function okCliSet(): Set<AgentCli> {
 
 /** Force-fresh detect ALL known CLIs in parallel; updates the cache. */
 export async function detectAllClis(): Promise<CliStatus[]> {
-  return Promise.all(KNOWN_CLIS.map(detectCli))
+  return Promise.all(KNOWN_CLIS.map(cli => detectCli(cli)))
 }
