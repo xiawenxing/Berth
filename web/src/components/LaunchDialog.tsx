@@ -8,6 +8,7 @@ import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { api, type AgentCli } from '@/lib/api'
 import { initCargo, type CargoState } from '@/lib/launch-cargo'
+import { filterTaskOptions } from '@/lib/task-picker'
 import { startFreshLaunch } from '@/lib/launch-runner'
 import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
 import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
@@ -20,11 +21,14 @@ import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage
  */
 export function LaunchDialog() {
   const { launch, closeLaunch, openDrawer } = useUI()
-  const { projects, agents, sessions, addPending, resolvePending, reload, resync } = useData()
+  const { projects, agents, sessions, tasks, addPending, resolvePending, reload, resync } = useData()
   const [dest, setDest] = useState<'task' | 'free'>('task')
   const [cli, setCli] = useState<AgentCli>(() => loadLastAgent() ?? 'claude')
   const [freeText, setFreeText] = useState('')
   const [taskNote, setTaskNote] = useState('')
+  // When 起航 is opened without a preset task, the user picks one here (title + todoKey).
+  const [picked, setPicked] = useState<{ id: string; title: string } | null>(null)
+  const [taskQuery, setTaskQuery] = useState('')
   const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
   const [cargo, setCargo] = useState<CargoState | null>(null)
   const [adjust, setAdjust] = useState(false)
@@ -47,6 +51,8 @@ export function LaunchDialog() {
       clearImages()
       setAdjust(false)
       setExtraDir('')
+      setPicked(null)
+      setTaskQuery('')
       setCargo(initCargo(enabledPaths, project?.lastCwd ?? null, hasTask))
     }
     prevLaunch.current = launch
@@ -63,11 +69,15 @@ export function LaunchDialog() {
   }, [])
 
   if (!launch) return null
-  const taskTitle = launch.taskTitle
+  // A task can come pre-selected (launched from a task card) or be chosen here via the picker.
+  const presetTask = !!launch.taskTitle
+  const taskTitle = launch.taskTitle ?? picked?.title
+  const todoKey = presetTask ? launch.todoKey : picked?.id
+  const taskOptions = presetTask ? [] : filterTaskOptions(tasks, launch.projectId, taskQuery)
   const title = dest === 'task' && taskTitle ? taskTitle : freeText || '新会话'
   // We can always sail when there's a project (server falls back to its workspace dir). Only a
   // project-less launch with no resolvable cwd is blocked.
-  const canSail = (!!launch.projectId || enabledPaths.length > 0) && !!selectedAgent
+  const canSail = (!!launch.projectId || enabledPaths.length > 0) && !!selectedAgent && (dest === 'free' || !!taskTitle)
 
   const addExtraDir = async () => {
     const cwd = extraDir.trim()
@@ -94,7 +104,7 @@ export function LaunchDialog() {
       cargo,
       project,
       projectId: launch.projectId,
-      todoKey: launch.todoKey,
+      todoKey,
       taskTitle,
       taskNote,
       freeText,
@@ -133,6 +143,46 @@ export function LaunchDialog() {
               自由提问
             </Radio>
           </div>
+          {dest === 'task' && !presetTask && (
+            <div className="mt-2">
+              <input
+                value={taskQuery}
+                onChange={(e) => setTaskQuery(e.target.value)}
+                placeholder="搜索任务…"
+                className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
+              />
+              <div className="mt-1.5 max-h-44 overflow-y-auto rounded-md border border-border">
+                {taskOptions.length === 0 ? (
+                  <div className="px-2.5 py-3 text-center text-[12px] text-text-dim">
+                    {taskQuery.trim() ? '没有匹配的任务' : '该项目暂无可选任务'}
+                  </div>
+                ) : (
+                  taskOptions.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setPicked({ id: t.id, title: t.title })}
+                      className={cn(
+                        'flex w-full items-center px-2.5 py-1.5 text-left text-[12.5px] transition-colors',
+                        picked?.id === t.id ? 'bg-brand/5 text-foreground' : 'text-foreground hover:bg-muted/40',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'mr-2 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border',
+                          picked?.id === t.id ? 'border-brand' : 'border-border',
+                        )}
+                      >
+                        {picked?.id === t.id && <span className="h-2 w-2 rounded-full bg-brand" />}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate" title={t.title}>
+                        {t.title}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
           {dest === 'free' && (
             <textarea
               value={freeText}
@@ -178,7 +228,15 @@ export function LaunchDialog() {
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-        {!canSail && <span className="mr-auto text-[11px] text-warning">{enabledAgents.length === 0 ? '请先在设置页启用启动 Agent' : '无项目上下文，请从某个项目里起航'}</span>}
+        {!canSail && (
+          <span className="mr-auto text-[11px] text-warning">
+            {enabledAgents.length === 0
+              ? '请先在设置页启用启动 Agent'
+              : dest === 'task' && !taskTitle
+                ? '请先选择一个任务'
+                : '无项目上下文，请从某个项目里起航'}
+          </span>
+        )}
         <button
           onClick={() => {
             if (launchDraftKey) clearDraft(launchDraftKey)
