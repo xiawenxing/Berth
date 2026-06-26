@@ -441,6 +441,12 @@ function AgentRow({
           className="w-48 rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground outline-none placeholder:text-text-dim"
         />
       )}
+      <span className="text-[11px] text-muted-foreground" title="开启后该 agent 每次工具调用前请求授权（仅交互式会话生效）">安全</span>
+      <Toggle
+        on={agent.safeMode}
+        onChange={() => onChange({ safeMode: !agent.safeMode })}
+        title={agent.safeMode ? '安全模式：开（启动时请求授权）' : '安全模式：关（最高权限）'}
+      />
       <Toggle
         on={agent.enabled}
         onChange={() => canDisable && onChange({ enabled: !agent.enabled })}
