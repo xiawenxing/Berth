@@ -55,7 +55,11 @@ function findSurfacedSession(sessions: ApiSession[], p: PendingLaunch): ApiSessi
 }
 
 function needsTitleBackfill(p: PendingLaunch, s: ApiSession): boolean {
-  return p.cli === 'codex' && !s.title
+  // codex and coco both surface before their title is written (codex: thread_name; coco: session.json
+  // metadata.title lands a few seconds after the session file is created). Keep the refresh loop alive
+  // until the title backfills. claude writes its first user message into the transcript at creation, so
+  // it surfaces title-complete and never needs this.
+  return (p.cli === 'codex' || p.cli === 'coco') && !s.title
 }
 
 // One fetch of the whole dataset, shared across pages via context. Refetchable.
