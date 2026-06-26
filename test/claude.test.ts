@@ -32,7 +32,7 @@ describe('claude adapter', () => {
     expect(title.length).toBeGreaterThan(100)
     expect(s.title).toBe(title)
   })
-  it('includes process clues when the transcript has tool calls', () => {
+  it('uses assistant text but does not append tool calls to the offline title', () => {
     const dir = mkdtempSync(join(tmpdir(), 'berth-claude-'))
     const id = 'aaaabbbb-1111-4111-8111-222233334445'
     writeFileSync(join(dir, `${id}.jsonl`), [
@@ -56,7 +56,7 @@ describe('claude adapter', () => {
     ].join('\n') + '\n')
 
     const s = listClaudeSessions(dir).find(x => x.kind === 'native')!
-    expect(s.title).toBe('标题生成信息太少 / Bash command: rg -n "extractMeta|generateTitle" src test')
+    expect(s.title).toBe('标题生成信息太少 / 我会查看标题生成路径。')
   })
   it('classifies subagent transcripts as kind=subagent with parentId', () => {
     const sub = listClaudeSessions(ROOT).find(x => x.kind === 'subagent')!

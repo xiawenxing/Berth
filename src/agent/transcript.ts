@@ -394,8 +394,7 @@ export function deriveTitleFromTranscript(head: string): string | null {
   if (!firstUser) return null
   const berthTaskTitle = taskTitleFromBerthStartPrompt(firstUser)
   if (berthTaskTitle) return berthTaskTitle
-  const hasImagePlaceholder = firstUser.includes('[图片]') || /\[Image #[^\]]+\]/.test(firstUser)
-  const process = hasImagePlaceholder ? '' : (sample.tools[0] ?? sample.assistants[0] ?? '')
+  const process = sample.assistants[0] ?? ''
   if (!process) return firstUser
   return `${firstUser} / ${process}`
 }

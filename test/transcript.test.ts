@@ -224,13 +224,41 @@ describe('extractTitleContext', () => {
     expect(sample.tools).toEqual(['shell command: rg -n "title" src/adapters'])
   })
 
-  it('derives an offline title from both request and process clue', () => {
+  it('derives an offline title from the user request without appending tool calls', () => {
     const sessionHead = [
       JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: 'Fix title generation' }] } }),
       JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: { command: 'rg -n "extractTitleContext" src/agent' } } }),
     ].join('\n')
 
-    expect(deriveTitleFromTranscript(sessionHead)).toBe('Fix title generation / shell command: rg -n "extractTitleContext" src/agent')
+    expect(deriveTitleFromTranscript(sessionHead)).toBe('Fix title generation')
+  })
+
+  it('does not append exec_command function calls to ordinary task titles', () => {
+    const sessionHead = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ text: '从任务启动的会话后面为什么会带这样的一串数据' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'exec_command',
+          arguments: JSON.stringify({
+            cmd: "sed -n '1,260p' docs/ARCHITECTURE.md",
+            workdir: '/Users/bytedance/Documents/Code/berth',
+            yield_time_ms: 1000,
+            max_output_tokens: 20000,
+          }),
+        },
+      }),
+    ].join('\n')
+
+    expect(deriveTitleFromTranscript(sessionHead)).toBe('从任务启动的会话后面为什么会带这样的一串数据')
   })
 
   it('uses a placeholder instead of pasted local image paths in offline titles', () => {
