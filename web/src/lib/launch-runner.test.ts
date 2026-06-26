@@ -102,23 +102,46 @@ describe('startFreshLaunch — drawer-independent launch submission', () => {
     ws.emit('some startup banner\r\n')
     expect(ws.sent).toEqual([]) // still waiting for the readiness marker
 
+    // On the readiness frame only the image goes out. Sending the prompt in the same burst makes the
+    // CLI drop it (it's still attaching the image), so the prompt waits for the next frame.
     ws.emit(`ready ${BRACKETED_PASTE_READY} prompt>`)
+    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
+      { t: 'img', name: 'shot.png', d: 'data:image/png;base64,AAAA' },
+    ])
+
+    // The CLI re-renders to acknowledge the image paste; that frame is the cue to send the prompt.
+    ws.emit('[Image #1] attached')
     const msgs = ws.sent.map((s) => JSON.parse(s))
-    expect(msgs[0]).toEqual({ t: 'img', name: 'shot.png', d: 'data:image/png;base64,AAAA' })
     expect(msgs[1]).toEqual({ t: 'i', d: '\x1b[200~look at this\x1b[201~\r' })
   })
 
-  it('image launch (TUI): submits exactly once even with more output', () => {
+  it('image launch (TUI): never sends the prompt in the same frame as the image (regression)', () => {
+    startFreshLaunch(baseInput({
+      freeText: 'analyze',
+      images: [{ name: 'p.png', dataUrl: 'data:image/png;base64,DDDD' }],
+    }))
+    const ws = FakeWS.instances[0]
+    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
+    expect(ws.sent.map((s) => JSON.parse(s).t)).toEqual(['img']) // image only — prompt held back
+    ws.emit('[Image #1]')
+    expect(ws.sent.map((s) => JSON.parse(s).t)).toEqual(['img', 'i']) // prompt follows on the ack frame
+  })
+
+  it('image launch (TUI): submits each part exactly once even with more output', () => {
     startFreshLaunch(baseInput({
       freeText: 'hi',
       images: [{ name: 'a.png', dataUrl: 'data:image/png;base64,BBBB' }],
     }))
     const ws = FakeWS.instances[0]
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
-    ws.emit(`x ${BRACKETED_PASTE_READY}`)
+    ws.emit(`x ${BRACKETED_PASTE_READY}`)   // image
+    ws.emit('attached')                      // prompt
     const after = ws.sent.length
-    ws.emit(`more ${BRACKETED_PASTE_READY} output`)
-    expect(ws.sent.length).toBe(after) // no duplicate submission
+    expect(ws.sent.map((s) => JSON.parse(s).t)).toEqual(['img', 'i'])
+    ws.emit('more output')
+    ws.emit(`again ${BRACKETED_PASTE_READY}`)
+    expect(ws.sent.length).toBe(after) // no duplicate image or prompt
   })
 
   it('image launch (Model B / stream): submits one structured turn on the launched frame', () => {

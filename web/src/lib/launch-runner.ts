@@ -99,7 +99,9 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
   const ws = new WebSocket(`${proto}://${location.host}/pty?${buildLaunchQuery(launch, stream).toString()}`)
   ws.binaryType = 'arraybuffer'
   let launchedId: string | null = null
-  let payloadSent = false
+  let imagesSent = false
+  let promptSent = false
+  let promptFallback: ReturnType<typeof setTimeout> | undefined
   let recentOutput = ''
 
   const closeSoon = () => setTimeout(() => { try { ws.close() } catch {} }, 100)
@@ -113,26 +115,42 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
     setTimeout(tick, 50)
   }
 
+  // Model A only: send the prompt as its own bracketed paste + Enter, exactly once. Split out from the
+  // image send because the CLI drops the prompt if it arrives in the same burst as the image — it's
+  // still attaching the just-pasted image when the prompt + Enter land, so only the image survives.
+  // We instead fire this on the CLI's next output frame (its image-paste ack), mirroring the gap a
+  // human leaves when they paste an image and then type. A fallback timer covers a silent CLI.
+  const sendPromptModelA = (): void => {
+    if (promptSent || !imagesSent || ws.readyState !== WebSocket.OPEN) return
+    promptSent = true
+    if (promptFallback) clearTimeout(promptFallback)
+    const prompt = launch.prompt?.trim()
+    if (prompt) ws.send(JSON.stringify({ t: 'i', d: `\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~\r` }))
+    else ws.send(JSON.stringify({ t: 'i', d: '\r' }))
+    closeWhenFlushed()
+  }
+
   // Submit the image-backed first turn exactly once. Mirrors what the drawer terminal/chat used to do,
   // now owned here. Returns false until it actually fires (Model A waits for bracketed-paste readiness).
   const sendImagePayload = (): boolean => {
-    if (payloadSent || !hasImages || ws.readyState !== WebSocket.OPEN) return false
+    if (imagesSent || !hasImages || ws.readyState !== WebSocket.OPEN) return false
     const prompt = launch.prompt?.trim()
     if (stream) {
       // Model B: one structured turn carrying the images + prompt.
-      payloadSent = true
+      imagesSent = true
+      promptSent = true
       ws.send(JSON.stringify({ t: 'turn', text: prompt ?? '', images, clientTurnId: `launch_${launch.launchToken}` }))
       closeWhenFlushed()
       return true
     }
     // Model A (TUI): wait until the CLI enables bracketed paste, else the escape markers echo as
-    // literal text during startup. Then send each image, followed by the prompt as a bracketed paste.
+    // literal text during startup. Send only the images now — the prompt follows on the next frame
+    // (see onmessage), once the CLI has acknowledged the image paste.
     if (!recentOutput.includes('\x1b[?2004h')) return false
-    payloadSent = true
+    imagesSent = true
     for (const img of images) ws.send(JSON.stringify({ t: 'img', name: img.name || 'paste', d: img.dataUrl }))
-    if (prompt) ws.send(JSON.stringify({ t: 'i', d: `\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~\r` }))
-    else ws.send(JSON.stringify({ t: 'i', d: '\r' }))
-    closeWhenFlushed()
+    // Fallback: if the CLI emits no further frame, never strand the prompt.
+    promptFallback = setTimeout(sendPromptModelA, 1200)
     return true
   }
 
@@ -154,12 +172,13 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
     }
     if (hasImages && !stream && launchedId) {
       recentOutput = (recentOutput + data).slice(-4096)
-      sendImagePayload()
+      if (!imagesSent) sendImagePayload()
+      else sendPromptModelA()   // a frame after the images = the CLI ack'd the paste → send the prompt now
     }
   }
   ws.onerror = () => { try { ws.close() } catch {} }
   // Safety: never let an image-launch socket linger if the CLI never announces paste readiness.
-  if (hasImages) setTimeout(() => { if (!payloadSent) { try { ws.close() } catch {} } }, PRIME_PAYLOAD_TIMEOUT_MS)
+  if (hasImages) setTimeout(() => { if (!imagesSent) { try { ws.close() } catch {} } }, PRIME_PAYLOAD_TIMEOUT_MS)
 }
 
 export function startFreshLaunch(input: StartFreshLaunchInput): string {
