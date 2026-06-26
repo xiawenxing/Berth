@@ -92,14 +92,19 @@ strip unknown fields (normalize each incoming entry to include `safeMode`).
 ...(o.safeMode ? [] : ['--dangerously-skip-permissions']),
 // coco
 ...(o.safeMode ? [] : ['--yolo']),
-// codex
-...(o.safeMode ? [] : ['--dangerously-bypass-approvals-and-sandbox']),
+// codex — safe mode must EXPLICITLY set approval+sandbox (not just omit the bypass):
+// a user's ~/.codex/config.toml can pin approval_policy="never" / sandbox_mode="danger-full-access"
+// globally, so merely dropping the CLI flag still launches in YOLO mode. The -a/-s CLI flags
+// override config (verified live: without these the TUI reported "permissions: YOLO mode").
+...(o.safeMode
+  ? ['--ask-for-approval', 'on-request', '--sandbox', 'workspace-write']
+  : ['--dangerously-bypass-approvals-and-sandbox']),
 ```
 
   For codex, keep `--profile CODEX_BERTH_PROFILE`,
   `--dangerously-bypass-hook-trust` (when `injectFile` present), and
-  `--no-alt-screen` unchanged — safe mode flips only the approvals/sandbox flag,
-  not profile/manifest loading.
+  `--no-alt-screen` unchanged — safe mode only changes the approvals/sandbox
+  policy, not profile/manifest loading.
 
 - `freshArgvStream`, `codexTurnArgv`, `cocoTurnArgv`, and `src/agent/index.ts`
   are **not** modified.
@@ -117,8 +122,10 @@ strip unknown fields (normalize each incoming entry to include `safeMode`).
 - **claude** — no `--dangerously-skip-permissions` → claude's default permission
   mode; prompts for tool approval in the terminal. (Trust dialog stays
   pre-seeded via `pty/trust.ts`.)
-- **codex** — no `--dangerously-bypass-approvals-and-sandbox` → codex uses its
-  configured default approval policy + sandbox; the inline TUI prompts.
+- **codex** — `--ask-for-approval on-request --sandbox workspace-write` (replacing
+  the bypass flag). Explicit `-a`/`-s` are REQUIRED because they override the
+  user's global codex config, which may pin `never`/`danger-full-access`; the
+  inline TUI then prompts on-request and confines writes to the workspace.
 - **coco** — no `--yolo`/`-y` → coco's default approval behavior; prompts in the
   terminal.
 
@@ -133,13 +140,17 @@ strip unknown fields (normalize each incoming entry to include `safeMode`).
   compat).
 - Existing `freshArgvStream` / per-turn / headless tests remain green (unchanged).
 
-## Open verification item (implementation time)
+## Resolved verification item (codex)
 
-Confirm codex launches cleanly in interactive TUI when the dangerous flag is
-dropped but `--profile` + `--dangerously-bypass-hook-trust` are retained (i.e.
-the profile/manifest still loads and codex falls back to prompting rather than
-erroring on a missing approval mode). Adjust if codex requires an explicit
-`--ask-for-approval` / `--sandbox` to start.
+Live PTY smoke test (real binary, Berth's launch path) revealed that merely
+omitting `--dangerously-bypass-approvals-and-sandbox` was **insufficient**: with
+a global `~/.codex/config.toml` setting `approval_policy="never"` /
+`sandbox_mode="danger-full-access"`, codex still launched in **"permissions: YOLO
+mode"**. Fix: codex safe mode now passes explicit `--ask-for-approval on-request
+--sandbox workspace-write`, which override the config. Re-verified: the YOLO
+banner is gone. claude and coco do not need this — neither has an analogous
+config-level always-bypass on the tested machine; they rely on the CLI flag, so
+dropping it restores prompting.
 
 ## Out of scope
 

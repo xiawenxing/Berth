@@ -118,7 +118,12 @@ export function freshArgv(cli: AgentCli, o: FreshOpts): string[] {
       const pos = positional(o)
       return [
         ...(o.injectFile ? ['--profile', CODEX_BERTH_PROFILE, '--dangerously-bypass-hook-trust'] : []),
-        ...(o.safeMode ? [] : ['--dangerously-bypass-approvals-and-sandbox']),  // bypass approvals + sandbox unless safe mode
+        // safe mode must EXPLICITLY set approval+sandbox: a user's codex config can pin
+        // approval_policy="never"/sandbox_mode="danger-full-access" globally, so merely omitting the
+        // bypass flag still launches in YOLO mode (verified). The -a/-s CLI flags override config.
+        ...(o.safeMode
+          ? ['--ask-for-approval', 'on-request', '--sandbox', 'workspace-write']
+          : ['--dangerously-bypass-approvals-and-sandbox']),
         '--no-alt-screen',                              // inline TUI behaves better inside reattached web xterm
         ...(o.model ? ['--model', o.model] : []),
         ...dirs,

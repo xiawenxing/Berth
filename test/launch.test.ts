@@ -140,10 +140,13 @@ it('coco: safeMode omits --yolo', () => {
   expect(a).not.toContain('--yolo')
 })
 
-it('codex: safeMode omits the approvals/sandbox bypass but keeps --no-alt-screen', () => {
+it('codex: safeMode drops the bypass and EXPLICITLY sets approval+sandbox (to override a never/danger user config)', () => {
   const a = freshArgv('codex', { cwd: '/c', safeMode: true })
   expect(a).not.toContain('--dangerously-bypass-approvals-and-sandbox')
   expect(a).toContain('--no-alt-screen')
+  // explicit -a/-s override the user's global config_policy/sandbox_mode (which may be never/danger)
+  expect(a.join(' ')).toContain('--ask-for-approval on-request')
+  expect(a.join(' ')).toContain('--sandbox workspace-write')
 })
 
 it('safeMode false/undefined keeps the bypass flag (default = max permission)', () => {
