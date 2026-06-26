@@ -11,6 +11,12 @@ const HOOK_MARKERS = [
   'AGENTS.md', 'BERTH_SENTINEL', 'treat as reference', 'Context for this task',
 ]
 
+const IMAGE_PATH_RE = /(?:(?:~|\/)[^\n\r]*?\.(?:png|jpe?g|gif|webp|bmp|heic|heif|tiff?))/gi
+
+export function replaceImagePathReferences(text: string, placeholder = '[图片]'): string {
+  return text.replace(IMAGE_PATH_RE, placeholder)
+}
+
 /** Strip tag blocks and block-level injected content from text. */
 export function stripNoise(text: string): string {
   // Remove <system-reminder>...</system-reminder> blocks
@@ -54,7 +60,7 @@ function extractTextViaRegex(line: string): string | null {
     if (!raw) continue
     // Skip base64 image data
     if (raw.startsWith('data:image')) continue
-    const cleaned = stripNoise(raw).replace(/\s+/g, ' ').trim()
+    const cleaned = replaceImagePathReferences(stripNoise(raw)).replace(/\s+/g, ' ').trim()
     if (cleaned && !isInjectedText(cleaned)) return cleaned.slice(0, 700)
   }
   return null
@@ -95,7 +101,7 @@ export function extractUserGist(head: string): string {
     // Claude format: type === 'user'
     if (o.type === 'user' && o.message?.role === 'user') {
       const raw = extractContentText(o.message.content)
-      const cleaned = stripNoise(raw).replace(/\s+/g, ' ').trim()
+      const cleaned = replaceImagePathReferences(stripNoise(raw)).replace(/\s+/g, ' ').trim()
       if (cleaned && !isInjectedText(cleaned)) {
         surviving.push(cleaned.slice(0, 700))
       }
@@ -108,7 +114,7 @@ export function extractUserGist(head: string): string {
       const raw = Array.isArray(content)
         ? content.map((c: any) => c?.text ?? '').join(' ')
         : typeof content === 'string' ? content : ''
-      const cleaned = stripNoise(raw).replace(/\s+/g, ' ').trim()
+      const cleaned = replaceImagePathReferences(stripNoise(raw)).replace(/\s+/g, ' ').trim()
       if (cleaned && !isInjectedText(cleaned)) {
         surviving.push(cleaned.slice(0, 700))
       }
@@ -204,9 +210,15 @@ export interface TitleContextSample {
 }
 
 function cleanText(raw: string, max = 700): string {
-  const cleaned = stripNoise(raw).replace(/\[Image #[^\]]+\]\s*/g, '').replace(/\s+/g, ' ').trim()
+  const cleaned = replaceImagePathReferences(stripNoise(raw))
+    .replace(/\s+/g, ' ')
+    .trim()
   if (!cleaned || isInjectedText(cleaned)) return ''
   return cleaned.slice(0, max)
+}
+
+function cleanUserTitleText(raw: string, max = 700): string {
+  return cleanText(raw, max)
 }
 
 function pushDistinct(arr: string[], text: string, maxItems: number) {
@@ -287,7 +299,7 @@ export function extractTitleContextSample(head: string): TitleContextSample {
     }
 
     if (o.type === 'user' && o.message?.role === 'user') {
-      pushDistinct(sample.users, cleanText(extractContentText(o.message.content), 700), 3)
+      pushDistinct(sample.users, cleanUserTitleText(extractContentText(o.message.content), 700), 3)
       continue
     }
 
@@ -299,7 +311,7 @@ export function extractTitleContextSample(head: string): TitleContextSample {
     if (o.type === 'response_item') {
       const p = o.payload
       if (p?.type === 'message' && p.role === 'user') {
-        const cleaned = cleanText(extractContentText(p.content), 700)
+        const cleaned = cleanUserTitleText(extractContentText(p.content), 700)
         if (cleaned && !cleaned.startsWith('#')) pushDistinct(sample.users, cleaned, 3)
       } else {
         collectCodexPayload(p, sample)
@@ -310,7 +322,7 @@ export function extractTitleContextSample(head: string): TitleContextSample {
     if (o.type === 'event_msg') {
       const p = o.payload
       if (p?.type === 'user_message') {
-        pushDistinct(sample.users, cleanText(p.message ?? '', 700), 3)
+        pushDistinct(sample.users, cleanUserTitleText(p.message ?? '', 700), 3)
       } else {
         collectCodexPayload(p, sample)
       }
@@ -362,7 +374,7 @@ function looksLikeJsonlTranscript(text: string): boolean {
 export function titleInputFromTranscript(text: string): string {
   const sampled = extractTitleContext(text) || extractUserGist(text)
   if (sampled) return sampled
-  const fallback = stripNoise(text).replace(/\s+/g, ' ').trim()
+  const fallback = replaceImagePathReferences(stripNoise(text)).replace(/\s+/g, ' ').trim()
   if (!fallback || looksLikeJsonlTranscript(fallback)) return ''
   return fallback.slice(0, 5000)
 }
@@ -382,7 +394,7 @@ export function deriveTitleFromTranscript(head: string): string | null {
   if (!firstUser) return null
   const berthTaskTitle = taskTitleFromBerthStartPrompt(firstUser)
   if (berthTaskTitle) return berthTaskTitle
-  const process = sample.tools[0] ?? sample.assistants[0] ?? ''
+  const process = sample.assistants[0] ?? ''
   if (!process) return firstUser
   return `${firstUser} / ${process}`
 }

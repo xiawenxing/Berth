@@ -35,7 +35,7 @@ describe('codex adapter', () => {
     expect(title.length).toBeGreaterThan(100)
     expect(s.title).toBe(title)
   })
-  it('includes process clues when the transcript has tool calls', () => {
+  it('does not append tool calls to the offline title', () => {
     const root = mkdtempSync(join(tmpdir(), 'berth-codex-'))
     const dir = join(root, 'sessions', '2026', '06', '15')
     mkdirSync(dir, { recursive: true })
@@ -47,7 +47,7 @@ describe('codex adapter', () => {
     ].join('\n') + '\n')
 
     const s = listCodexSessions(root).find(x => x.physicalId === id)!
-    expect(s.title).toBe('Fix title generation / shell command: rg -n "firstUserTitle|generateTitle" src test')
+    expect(s.title).toBe('Fix title generation')
   })
   it('extracts title from event_msg user_message after huge codex metadata/image lines', () => {
     const root = mkdtempSync(join(tmpdir(), 'berth-codex-'))
@@ -83,7 +83,7 @@ describe('codex adapter', () => {
     ].join('\n') + '\n')
 
     const s = listCodexSessions(root).find(x => x.physicalId === id)!
-    expect(s.title).toBe('Fix codex launch title backfill')
+    expect(s.title).toBe('[Image #1] Fix codex launch title backfill')
   })
   it('falls back to session_index.jsonl thread_name when no response_item user message exists', () => {
     // The stub (0002) has no response_item lines; it is kind='import-stub' so firstUserTitle is skipped,

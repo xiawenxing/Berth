@@ -47,6 +47,7 @@ export interface StartFreshLaunchInput {
   sessions: ApiSession[]
   addPending: (p: LaunchPending) => void
   resolvePending?: (tempId: string, sessionId: string) => void
+  resync?: () => Promise<void> | void
   openDrawer: (s: LaunchDrawerSession) => void
   project?: ApiProject
   projectId?: string | null
@@ -89,7 +90,7 @@ const PRIME_PAYLOAD_TIMEOUT_MS = 60_000
  *   terminal/chat socket — means it survives the drawer being closed. The drawer sockets are pure
  *   viewers (they no longer auto-submit), so exactly one socket submits the payload.
  */
-function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (sessionId: string) => void): void {
+function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (sessionId: string) => void | Promise<void>): void {
   if (typeof WebSocket === 'undefined' || typeof location === 'undefined') return
   const stream = streamRenderEnabled()
   const images = (launch.images ?? []).filter((img) => img.dataUrl)
@@ -142,7 +143,7 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
         const msg = JSON.parse(data)
         if (msg.__berth === 'launched' && msg.sessionId) {
           launchedId = msg.sessionId
-          onLaunched?.(msg.sessionId)
+          void onLaunched?.(msg.sessionId)
           if (!hasImages) closeSoon()       // prompt rode the URL → server already fired it
           else sendImagePayload()           // Model B fires now; Model A waits for the marker below
         }
@@ -205,7 +206,14 @@ export function startFreshLaunch(input: StartFreshLaunchInput): string {
     },
   }
 
-  primeFreshLaunch(drawerSession.launch, (sessionId) => input.resolvePending?.(launchToken, sessionId))
+  primeFreshLaunch(drawerSession.launch, async (sessionId) => {
+    input.resolvePending?.(launchToken, sessionId)
+    try {
+      await input.resync?.()
+    } catch {
+      // The existing pending poll still retries; a launch handshake must not fail because resync did.
+    }
+  })
   input.openDrawer(drawerSession)
 
   return launchToken

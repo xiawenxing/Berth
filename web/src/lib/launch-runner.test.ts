@@ -72,6 +72,18 @@ describe('startFreshLaunch — drawer-independent launch submission', () => {
     expect(ws.sent).toEqual([]) // server fired the URL prompt at spawn; nothing to push
   })
 
+  it('resolves pending and resyncs from the prime socket without relying on the drawer viewer', () => {
+    const resolvePending = vi.fn()
+    const resync = vi.fn()
+    startFreshLaunch(baseInput({ freeText: 'do the thing', resolvePending, resync }))
+    const ws = FakeWS.instances[0]
+
+    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+
+    expect(resolvePending).toHaveBeenCalledWith('tok-1', 'S1')
+    expect(resync).toHaveBeenCalledTimes(1)
+  })
+
   it('image launch (TUI): submits images+prompt over the prime socket after bracketed-paste ready', () => {
     const resolvePending = vi.fn()
     startFreshLaunch(baseInput({

@@ -20,7 +20,7 @@ import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage
  */
 export function LaunchDialog() {
   const { launch, closeLaunch, openDrawer } = useUI()
-  const { projects, agents, sessions, addPending, resolvePending, reload } = useData()
+  const { projects, agents, sessions, addPending, resolvePending, reload, resync } = useData()
   const [dest, setDest] = useState<'task' | 'free'>('task')
   const [cli, setCli] = useState<AgentCli>(() => loadLastAgent() ?? 'claude')
   const [freeText, setFreeText] = useState('')
@@ -102,6 +102,7 @@ export function LaunchDialog() {
       sessions,
       addPending,
       resolvePending,
+      resync,
       openDrawer,
     })
   }

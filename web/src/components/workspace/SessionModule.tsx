@@ -5,6 +5,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
 import { useLive } from '@/lib/live'
 import { useShowMore } from '@/lib/paging'
+import { imagePathPlaceholderText } from '@/lib/format'
 import { ShowMoreToggle } from '@/components/ui/ShowMoreToggle'
 import { type SessionRow, type CwdGroup, type ShipStatus } from '@/lib/types'
 import { CliBadge } from './TaskCard'
@@ -145,6 +146,7 @@ function Row({
   // and no row actions. It's replaced by the real row the moment the session surfaces (data layer).
   if (s.pending) {
     const openable = !!s.pendingOpenable && !!onOpen
+    const displayTitle = imagePathPlaceholderText(s.title)
     return (
       <div
         role={openable ? 'button' : undefined}
@@ -164,7 +166,7 @@ function Row({
           <Spinner size={12} className="text-text-dim" />
         </span>
         <CliBadge cli={s.cli} />
-        <span className="min-w-0 flex-[1_1_auto] truncate text-[13px] font-medium text-muted-foreground" title={s.title}>{s.title}</span>
+        <span className="min-w-0 flex-[1_1_auto] truncate text-[13px] font-medium text-muted-foreground" title={displayTitle}>{displayTitle}</span>
         <span className="inline-flex flex-none items-center rounded bg-muted-foreground/15 px-1.5 py-px text-[10.5px] font-semibold text-muted-foreground">
           创建中
         </span>
@@ -202,6 +204,7 @@ function Row({
     setMenuOpen(false)
     live.markUnread(s.id)
   }
+  const displayTitle = imagePathPlaceholderText(s.title)
 
   return (
     <div
@@ -226,9 +229,9 @@ function Row({
           'min-w-0 flex-[1_1_auto] truncate text-[13px]',
           ship === 'dock' ? 'font-semibold text-foreground' : ship === 'moored' ? 'font-normal text-muted-foreground' : 'font-medium text-foreground',
         )}
-        title={s.title}
+        title={displayTitle}
       >
-        {s.title}
+        {displayTitle}
       </span>
       {/* cwd: right-aligned, fills the gap (mirrors v7 .s-cwd flex:1 text-align:right) */}
       <span

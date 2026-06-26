@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { relTime } from '@/lib/format'
+import { imagePathPlaceholderText, relTime } from '@/lib/format'
 import { CliBadge } from '@/components/workspace/TaskCard'
 import type { PreviewSession } from '@/lib/api'
 
@@ -19,6 +19,7 @@ export function SessionPickRow({
   onToggle: () => void
   showCwd?: boolean
 }) {
+  const displayTitle = imagePathPlaceholderText(session.title, '(未命名)')
   return (
     <button
       onClick={onToggle}
@@ -36,8 +37,8 @@ export function SessionPickRow({
         ✓
       </span>
       <CliBadge cli={session.cli} />
-      <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground" title={session.title || '(未命名)'}>
-        {session.title || '(未命名)'}
+      <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground" title={displayTitle}>
+        {displayTitle}
         {showCwd && session.cwd && (
           <span className="ml-1.5 font-mono text-[10.5px] text-text-dim" title={session.cwd}>
             {session.cwd}
