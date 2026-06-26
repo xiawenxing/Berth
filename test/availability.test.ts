@@ -1,5 +1,54 @@
 import { describe, it, expect } from 'vitest'
 import { extractSemver, semverGte } from '../src/pty/availability'
+import { seedAgentDefaults, setAgentConfig, getAgentConfig, type AgentEntry } from '../src/data/agent-config'
+
+function memStore() {
+  const m = new Map<string, string>()
+  return { getSetting: (k: string) => m.get(k) ?? null, setSetting: (k: string, v: string) => void m.set(k, v) }
+}
+
+describe('seedAgentDefaults', () => {
+  it('first run enables only ok CLIs', () => {
+    const store = memStore()
+    seedAgentDefaults(store, new Set(['claude'] as const))
+    const list = getAgentConfig(store).list
+    expect(list.find(a => a.cli === 'claude')!.enabled).toBe(true)
+    expect(list.find(a => a.cli === 'codex')!.enabled).toBe(false)
+    expect(list.find(a => a.cli === 'coco')!.enabled).toBe(false)
+  })
+  it('all-unavailable seeds an all-disabled list that survives readback', () => {
+    const store = memStore()
+    seedAgentDefaults(store, new Set())
+    expect(getAgentConfig(store).list.every(a => !a.enabled)).toBe(true)
+  })
+  it('does nothing when a list is already stored', () => {
+    const store = memStore()
+    store.setSetting('agentList', JSON.stringify([{ cli: 'codex', enabled: true, model: null, safeMode: false }, { cli: 'claude', enabled: false, model: null, safeMode: false }, { cli: 'coco', enabled: false, model: null, safeMode: false }]))
+    seedAgentDefaults(store, new Set(['claude'] as const))
+    expect(getAgentConfig(store).list.find(a => a.cli === 'codex')!.enabled).toBe(true)
+  })
+})
+
+describe('setAgentConfig with availability', () => {
+  const full = (over: Partial<Record<'claude' | 'codex' | 'coco', boolean>>): AgentEntry[] =>
+    (['claude', 'codex', 'coco'] as const).map(cli => ({ cli, enabled: over[cli] ?? false, model: null, safeMode: false }))
+
+  it('rejects enabling a CLI that is not ok', () => {
+    const store = memStore()
+    expect(() => setAgentConfig(store, { list: full({ codex: true }) }, new Set(['claude'] as const)))
+      .toThrow(/codex.*not available/i)
+  })
+  it('allows the enabled CLI when it is ok', () => {
+    const store = memStore()
+    const cfg = setAgentConfig(store, { list: full({ claude: true }) }, new Set(['claude'] as const))
+    expect(cfg.list.find(a => a.cli === 'claude')!.enabled).toBe(true)
+  })
+  it('allows zero enabled only when nothing is ok', () => {
+    const store = memStore()
+    expect(() => setAgentConfig(store, { list: full({}) }, new Set())).not.toThrow()
+    expect(() => setAgentConfig(store, { list: full({}) }, new Set(['claude'] as const))).toThrow(/at least one/i)
+  })
+})
 
 describe('semver helpers', () => {
   it('extracts x.y.z from real --version output', () => {

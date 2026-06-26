@@ -57,6 +57,14 @@ export interface AgentEntry {
 
 export const DEFAULT_AGENTS: AgentEntry[] = KNOWN_CLIS.map(cli => ({ cli, enabled: true, model: null, safeMode: false }))
 
+/** First-run seed: if no agent list is stored yet, write defaults enabling ONLY the `ok` CLIs.
+ *  No-op once a list exists, so we never silently rewrite a user's saved config. */
+export function seedAgentDefaults(store: Store, okClis: Set<AgentCli>): void {
+  if (store.getSetting(LIST_KEY)) return
+  const seeded: AgentEntry[] = KNOWN_CLIS.map(cli => ({ cli, enabled: okClis.has(cli), model: null, safeMode: false }))
+  store.setSetting(LIST_KEY, JSON.stringify(seeded))
+}
+
 export interface AgentConfig {
   list: AgentEntry[]
   berthAgentCli: AgentCli
@@ -96,7 +104,6 @@ function readList(store: Store): AgentEntry[] {
     }
     // must cover exactly the known clis
     if (seen.size !== KNOWN_CLIS.length) return DEFAULT_AGENTS
-    if (!out.some(a => a.enabled)) return DEFAULT_AGENTS
     return out
   } catch {
     return DEFAULT_AGENTS
@@ -132,7 +139,7 @@ export interface AgentConfigPatch {
   berthAgentModel?: unknown
 }
 
-function cleanList(input: unknown): AgentEntry[] {
+function cleanList(input: unknown, okClis?: Set<AgentCli>): AgentEntry[] {
   if (!Array.isArray(input)) throw new Error('agent list must be an array')
   const out: AgentEntry[] = []
   const seen = new Set<string>()
@@ -144,15 +151,24 @@ function cleanList(input: unknown): AgentEntry[] {
     out.push({ cli, enabled: (e as any).enabled !== false, model: normModel(cli, (e as any).model), safeMode: (e as any).safeMode === true })
   }
   for (const c of KNOWN_CLIS) if (!seen.has(c)) throw new Error(`agent list must cover all clis (missing "${c}")`)
-  if (!out.some(a => a.enabled)) throw new Error('at least one agent must be enabled')
+  if (okClis) {
+    for (const a of out) {
+      if (a.enabled && !okClis.has(a.cli)) throw new Error(`agent "${a.cli}" is not available (cannot enable)`)
+    }
+    // Require ≥1 enabled only when at least one CLI is usable; all-unavailable may be all-disabled.
+    const anyOk = KNOWN_CLIS.some(c => okClis.has(c))
+    if (anyOk && !out.some(a => a.enabled)) throw new Error('at least one agent must be enabled')
+  } else if (!out.some(a => a.enabled)) {
+    throw new Error('at least one agent must be enabled')
+  }
   return out
 }
 
 /** Validate + persist the provided fields (each optional). Throws on invalid input; returns the
  *  resulting config. The berth cli must be headless-capable AND enabled in the (new or existing) list. */
-export function setAgentConfig(store: Store, patch: AgentConfigPatch): AgentConfig {
+export function setAgentConfig(store: Store, patch: AgentConfigPatch, okClis?: Set<AgentCli>): AgentConfig {
   // Validate everything first (against the resulting list) so an invalid patch never half-persists.
-  const newList = patch.list !== undefined ? cleanList(patch.list) : getAgentConfig(store).list
+  const newList = patch.list !== undefined ? cleanList(patch.list, okClis) : getAgentConfig(store).list
 
   let newBerthCli: AgentCli | undefined
   if (patch.berthAgentCli !== undefined) {
