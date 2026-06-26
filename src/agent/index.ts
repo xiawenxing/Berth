@@ -132,12 +132,64 @@ export async function generateTitle(transcriptHead: string, agent?: BerthAgent):
   return out
 }
 
-/** Summarize a task's context doc into a short progress snapshot (the DB `progress` field). */
-export async function generateProgressSummary(docText: string, summaryPrompt: string, agent?: BerthAgent): Promise<string> {
-  const prompt = summaryPrompt + '\n\n---\n' + docText.slice(0, 4000)
+/** Generate a concise task title from task clues (description/context/session titles). */
+export async function generateTaskTitle(input: string, agent?: BerthAgent): Promise<string> {
+  const text = input.replace(/\s+/g, ' ').trim()
+  if (!text) return ''
+  const prompt =
+    `Below are clues about a task: its current title or description, optional context notes, ` +
+    `and optional linked session titles. ` +
+    `Rewrite it as ONLY a concise task title of at most 8 words, in the same language. ` +
+    `Prefer the task context and linked session titles when they make the task more specific. ` +
+    `Keep the concrete object and action. Do not add details that are not present in the clues. ` +
+    `No surrounding quotes, no trailing punctuation.\n\n---\n` +
+    text.slice(0, 4000)
   const cli = agent?.cli ?? 'claude'
   const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
   let out = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 45000 }, { cli, timeoutMs: 60000 })
-  out = out.split('\n').map(l => l.trim()).filter(Boolean).join(' ').replace(/^["'""\s]+|["'""\s]+$/g, '').slice(0, 500)
+  out = (out.split('\n').find(l => l.trim()) ?? '').replace(/^["'""\s]+|["'""\s]+$/g, '').slice(0, 100)
   return out
+}
+
+/** Structured summary (shared by 项目小结 and the task 进展详情): a one-line headline + progress
+ *  bullets + milestone/TODO items. */
+export interface StructuredSummary {
+  headline: string
+  progress: string[]
+  milestones: { text: string; done: boolean }[]
+}
+
+/** Generate a structured summary (JSON) from a context doc. Falls back to a headline-only summary
+ *  if the agent doesn't return parseable JSON. */
+export async function generateStructuredSummary(docText: string, summaryPrompt: string, agent?: BerthAgent, maxChars = 4000): Promise<StructuredSummary> {
+  const prompt = summaryPrompt + '\n\n---\n' + docText.slice(0, maxChars)
+  const cli = agent?.cli ?? 'claude'
+  const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
+  const raw = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 60000 }, { cli, timeoutMs: 75000 })
+  return parseStructuredSummary(raw)
+}
+
+/** Extract the first {...} JSON block and coerce it into a StructuredSummary. Robust to code fences
+ *  and stray prose around the JSON; degrades to a headline-only summary on any parse failure. */
+export function parseStructuredSummary(raw: string): StructuredSummary {
+  const empty: StructuredSummary = { headline: '', progress: [], milestones: [] }
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start >= 0 && end > start) {
+    try {
+      const o = JSON.parse(raw.slice(start, end + 1))
+      const progress = Array.isArray(o.progress)
+        ? o.progress.filter((x: any) => x != null).map((x: any) => String(x).trim()).filter(Boolean)
+        : []
+      const milestones = Array.isArray(o.milestones)
+        ? o.milestones
+            .map((m: any) => ({ text: String(m?.text ?? '').trim(), done: !!m?.done }))
+            .filter((m: { text: string }) => m.text)
+        : []
+      return { headline: String(o.headline ?? '').trim(), progress, milestones }
+    } catch { /* fall through to headline-only */ }
+  }
+  // Not JSON — treat the cleaned text as a plain headline so the popover still shows something.
+  const headline = raw.split('\n').map(l => l.trim()).filter(Boolean).join(' ').slice(0, 500)
+  return { ...empty, headline }
 }

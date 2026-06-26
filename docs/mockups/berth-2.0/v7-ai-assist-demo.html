@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Berth 港务助手 · 交互模式</title>
+<style>
+:root{
+  color-scheme:dark;
+  --background:#141b2e; --foreground:#b3bcd4; --card:#1f2940; --card-foreground:#c7cfe3;
+  --popover:#283450; --secondary:#2c3852; --muted:#2c3852; --muted-foreground:#8089a3; --accent:#2c3852;
+  --accent-foreground:#dbe1f0; --border:#3a4768; --input:#3a4768; --ring:#56b6ff; --sidebar:#101526;
+  --sidebar-accent:#1f2940; --canvas:#0d1220; --brand:#56b6ff; --brand-foreground:#0d1220;
+  --success:#7ed4a6; --warning:#f0c773; --priority:#e0a060; --purple:#b88cf0; --destructive:#f0707f;
+  --radius:0.625rem; --radius-md:0.5rem; --radius-sm:0.375rem; --text-dim:#6b7280;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; --font-mono:'SF Mono',ui-monospace,Menlo,monospace;
+}
+body.light{
+  color-scheme:light;
+  --background:#eef1f7; --foreground:#3a4156; --card:#ffffff; --card-foreground:#2a3145;
+  --popover:#f4f6fb; --secondary:#e6eaf2; --muted:#e6eaf2; --muted-foreground:#717a92; --accent:#e6eaf2;
+  --accent-foreground:#2a3145; --border:#d2d9e6; --input:#d2d9e6; --ring:#2f8fe0; --sidebar:#e3e7f0;
+  --sidebar-accent:#ffffff; --canvas:#dfe4ee; --brand:#2f8fe0; --brand-foreground:#ffffff;
+  --success:#3fa873; --warning:#c79534; --priority:#c47f33; --purple:#8a55cf; --destructive:#d9485a;
+  --text-dim:#9aa1b2;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{
+  background:var(--background); color:var(--foreground);
+  font-family:var(--font-sans); font-size:13px; line-height:1.55;
+  -webkit-font-smoothing:antialiased; padding:32px 20px 96px;
+  transition:background .25s,color .25s;
+}
+.wrap{max-width:860px; margin:0 auto;}
+
+/* ===== header ===== */
+.page-head{margin-bottom:26px;}
+.page-head h1{font-size:19px; font-weight:600; color:var(--card-foreground); letter-spacing:.2px; display:flex; align-items:center; gap:9px;}
+.page-head h1 .anchor-ic{color:var(--brand); display:inline-flex;}
+.stance{margin-top:8px; font-size:13px; color:var(--foreground); max-width:680px;}
+.stance b{color:var(--card-foreground); font-weight:600;}
+.legend{display:flex; gap:8px; flex-wrap:wrap; margin-top:13px;}
+.lg{display:inline-flex; align-items:center; gap:5px; font-size:10.5px; padding:3px 9px; border-radius:999px;
+  background:var(--secondary); color:var(--muted-foreground); border:1px solid var(--border);}
+.lg b{color:var(--card-foreground); font-weight:600;}
+.lg .k{display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:4px;
+  background:var(--brand); color:var(--brand-foreground); font-size:9.5px; font-weight:700;}
+
+/* ===== demo card ===== */
+.card{
+  background:var(--card); border:1px solid var(--border); border-radius:var(--radius-md);
+  padding:18px 18px 16px; margin-bottom:18px; position:relative;
+}
+.card-head{display:flex; align-items:baseline; gap:9px; margin-bottom:3px;}
+.card-tag{flex:none; display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px;
+  border-radius:5px; background:var(--brand); color:var(--brand-foreground); font-size:10.5px; font-weight:700;}
+.card-head h2{font-size:13px; font-weight:600; color:var(--card-foreground);}
+.card-head .fit{font-size:10.5px; color:var(--muted-foreground); margin-left:auto;}
+.card-cap{font-size:11px; color:var(--muted-foreground); margin-bottom:14px;}
+.card-foot{font-size:11px; color:var(--muted-foreground); margin-top:13px; padding-top:11px; border-top:1px solid var(--border);
+  display:flex; gap:6px; align-items:flex-start;}
+.card-foot .lb{color:var(--warning); flex:none; display:inline-flex; margin-top:1px;}
+
+/* ===== shared bits ===== */
+.demo-zone{background:var(--canvas); border:1px solid var(--border); border-radius:var(--radius-sm); padding:15px;}
+label.fld-lbl{display:block; font-size:10.5px; color:var(--muted-foreground); margin-bottom:5px; font-weight:500;}
+textarea, input.txt, select{
+  width:100%; background:var(--background); color:var(--foreground); border:1px solid var(--input);
+  border-radius:var(--radius-sm); padding:9px 11px; font-size:13px; font-family:var(--font-sans); resize:vertical;
+  outline:none; transition:border-color .15s,box-shadow .15s;
+}
+textarea:focus, input.txt:focus, select:focus{border-color:var(--ring); box-shadow:0 0 0 2px color-mix(in srgb,var(--ring) 28%,transparent);}
+textarea{min-height:54px; line-height:1.5;}
+select{appearance:none; cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238089a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat:no-repeat; background-position:right 9px center; padding-right:30px;}
+
+.btn{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500; font-family:var(--font-sans);
+  border-radius:var(--radius-sm); padding:8px 13px; cursor:pointer; border:1px solid transparent; transition:.15s; line-height:1;}
+.btn:disabled{opacity:.5; cursor:not-allowed;}
+.btn-primary{background:var(--brand); color:var(--brand-foreground); border-color:var(--brand);}
+.btn-primary:not(:disabled):hover{filter:brightness(1.08);}
+.btn-secondary{background:transparent; color:var(--card-foreground); border-color:var(--border);}
+.btn-secondary:not(:disabled):hover{background:var(--accent);}
+.btn-ghost{background:transparent; color:var(--muted-foreground); border-color:transparent;}
+.btn-ghost:not(:disabled):hover{color:var(--card-foreground); background:var(--accent);}
+.btn .ic{display:inline-flex;}
+.iconbtn{display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:var(--radius-sm);
+  background:transparent; border:1px solid var(--border); color:var(--muted-foreground); cursor:pointer; transition:.15s;}
+.iconbtn:hover{color:var(--card-foreground); background:var(--accent);}
+
+/* spinner */
+.spinner{width:13px; height:13px; border-radius:50%; border:2px solid color-mix(in srgb,var(--brand) 30%,transparent);
+  border-top-color:var(--brand); display:inline-block; animation:spin .7s linear infinite; flex:none;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ===== DEMO 1 — 即时创建 · 后台自我完善 ===== */
+.d1-form{display:flex; flex-direction:column; gap:12px;}
+.d1-opts{display:flex; gap:18px; flex-wrap:wrap;}
+.d1-check{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--card-foreground); cursor:pointer; user-select:none;}
+.d1-check input{position:absolute; opacity:0; width:0; height:0;}
+.d1-check .bx{display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:4px;
+  border:1px solid var(--border); background:var(--background); color:transparent; transition:.15s; flex:none;}
+.d1-check .bx .ic{width:11px; height:11px;}
+.d1-check input:checked + .bx{background:var(--brand); border-color:var(--brand); color:var(--brand-foreground);}
+.d1-check .ic[data-i]{color:var(--muted-foreground); display:inline-flex;}
+.d1-actions{display:flex; align-items:center; gap:10px; margin-top:2px;}
+.d1-out{margin-top:14px; display:flex; flex-direction:column; gap:11px;}
+/* the created task card */
+.task-card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius-md); padding:13px 14px;
+  opacity:0; transform:translateY(6px); animation:cardIn .3s forwards;}
+@keyframes cardIn{to{opacity:1; transform:none;}}
+.tc-top{display:flex; align-items:flex-start; gap:9px;}
+.tc-main{flex:1; min-width:0;}
+.tc-title{font-size:13px; font-weight:600; color:var(--card-foreground); line-height:1.45; transition:font-size .3s,color .3s;}
+.tc-title.raw{font-weight:500; color:var(--foreground);}
+.tc-summarizing{display:inline-flex; align-items:center; gap:6px; font-size:10.5px; color:var(--brand); margin-top:6px;}
+.tc-summarizing .spinner{width:11px; height:11px; border-width:2px;}
+.tc-desc{font-size:11px; color:var(--muted-foreground); line-height:1.5; margin-top:7px;
+  max-height:0; opacity:0; overflow:hidden; transition:max-height .35s ease,opacity .3s,margin-top .3s;}
+.tc-desc.show{max-height:80px; opacity:1;}
+.tc-desc b{color:var(--foreground); font-weight:600;}
+.tc-aitag{display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:600; color:var(--brand);
+  margin-top:7px; opacity:0; transition:opacity .3s;}
+.tc-aitag.show{opacity:1;}
+.tc-chips{display:flex; gap:7px; flex-wrap:wrap; margin-top:9px;}
+.run-chip{display:inline-flex; align-items:center; gap:6px; padding:4px 9px; font-size:10.5px; font-weight:600; border-radius:999px;
+  background:color-mix(in srgb,var(--success) 14%,var(--card)); color:var(--success); border:1px solid color-mix(in srgb,var(--success) 40%,var(--border));}
+.run-chip .recv-dot{width:7px; height:7px; border-radius:50%; background:var(--success); animation:pulse 1.2s ease-in-out infinite; flex:none;}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--success) 55%,transparent);} 50%{box-shadow:0 0 0 5px transparent;}}
+
+/* ===== DEMO C ===== */
+/* 触发条件 panel */
+.trigger{border:1px solid var(--border); border-radius:var(--radius-sm); background:color-mix(in srgb,var(--popover) 45%,transparent);
+  padding:11px 13px; margin-bottom:13px;}
+.trg-head{font-size:11px; font-weight:600; color:var(--card-foreground); display:flex; align-items:center; gap:6px; margin-bottom:9px;}
+.trg-head .ic{color:var(--brand); display:inline-flex;}
+.trg-line{font-size:11px; color:var(--muted-foreground); line-height:1.55; display:flex; gap:7px; align-items:flex-start; margin-bottom:6px;}
+.trg-line:last-child{margin-bottom:0;}
+.trg-line b{color:var(--card-foreground); font-weight:600;}
+.trg-line code{font-family:var(--font-mono); font-size:10px; background:var(--background); border:1px solid var(--border);
+  border-radius:4px; padding:1px 5px; color:var(--foreground);}
+.trg-line .dot{flex:none; width:7px; height:7px; border-radius:50%; margin-top:6px;}
+.trg-line .dot.ok{background:var(--success);}
+.trg-line .dot.no{background:var(--destructive);}
+.trg-line.trg-foot{font-size:10.5px; color:var(--muted-foreground);}
+.trg-line.trg-foot .ic{color:var(--muted-foreground); display:inline-flex; margin-top:1px;}
+.c-context .ship .ic{width:11px; height:11px;}
+.c-context{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--card-foreground); margin-bottom:6px;}
+.c-context .ship{display:inline-flex; align-items:center; gap:5px; font-size:10.5px; padding:2px 8px; border-radius:999px;
+  background:color-mix(in srgb,var(--success) 14%,var(--card)); color:var(--success); border:1px solid color-mix(in srgb,var(--success) 40%,var(--border));}
+.c-toggle-row{display:flex; align-items:center; gap:10px; margin-bottom:13px;}
+.c-toggle-row .tlbl{font-size:11.5px; color:var(--card-foreground); display:inline-flex; align-items:center; gap:6px;}
+.c-toggle-row .tlbl .lb{color:var(--warning); display:inline-flex;}
+.sw{position:relative; width:38px; height:21px; border-radius:999px; background:var(--border); cursor:pointer; transition:.2s; flex:none;}
+.sw::after{content:''; position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%; background:var(--card-foreground); transition:.2s;}
+.sw.on{background:var(--brand);} .sw.on::after{left:19px; background:var(--brand-foreground);}
+.sw-state{font-size:11px; color:var(--muted-foreground); font-weight:600; min-width:24px;}
+.suggestions{display:flex; flex-direction:column; gap:11px; transition:opacity .25s;}
+.suggestions.off{opacity:.38; pointer-events:none; filter:grayscale(.5);}
+.off-note{display:none; font-size:11px; color:var(--muted-foreground); align-items:center; gap:6px; margin-bottom:11px;}
+.off-note.show{display:flex;}
+.sug-card{background:var(--popover); border:1px solid var(--border); border-left:3px solid var(--brand); border-radius:var(--radius-sm);
+  padding:12px 13px; display:flex; gap:10px; transition:.3s; overflow:hidden;}
+.sug-card .lb{color:var(--warning); flex:none; margin-top:1px;}
+.sug-main{flex:1; min-width:0;}
+.sug-card .stxt{font-size:12.5px; color:var(--card-foreground); line-height:1.5;}
+.sug-card .stxt em{font-style:normal; color:var(--brand); font-weight:600;}
+.sug-actions{display:flex; gap:8px; margin-top:10px;}
+.sug-card.resolved{border-left-color:var(--success); background:color-mix(in srgb,var(--success) 9%,var(--popover));}
+.sug-card.resolved .resolved-state{display:flex;}
+.resolved-state{display:none; align-items:center; gap:7px; font-size:12.5px; color:var(--success); font-weight:600;}
+.sug-card.removing{max-height:0; opacity:0; padding-top:0; padding-bottom:0; margin:0; border-width:0;}
+
+/* ===== recommendation map ===== */
+.recmap{margin-top:26px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--card); padding:15px 17px;}
+.recmap h3{font-size:12px; font-weight:600; color:var(--card-foreground); margin-bottom:11px; display:flex; align-items:center; gap:7px;}
+.recmap h3 .ic{color:var(--brand); display:inline-flex;}
+.recgrid{display:grid; grid-template-columns:repeat(2,1fr); gap:9px;}
+.recrow{display:flex; align-items:center; gap:9px; font-size:11.5px; color:var(--foreground); padding:8px 11px;
+  background:var(--background); border:1px solid var(--border); border-radius:var(--radius-sm);}
+.recrow .num{flex:none; width:17px; height:17px; border-radius:5px; background:var(--secondary); color:var(--muted-foreground);
+  font-size:10px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;}
+.recrow .scene{flex:1;}
+.recrow .mode{flex:none; display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:999px;
+  background:color-mix(in srgb,var(--brand) 16%,var(--card)); color:var(--brand); border:1px solid color-mix(in srgb,var(--brand) 38%,var(--border));}
+.recrow .mode.b{background:color-mix(in srgb,var(--success) 16%,var(--card)); color:var(--success); border-color:color-mix(in srgb,var(--success) 38%,var(--border));}
+.recrow .mode.c{background:color-mix(in srgb,var(--purple) 16%,var(--card)); color:var(--purple); border-color:color-mix(in srgb,var(--purple) 38%,var(--border));}
+.recrow .mode.x{background:var(--secondary); color:var(--muted-foreground); border-color:var(--border);}
+
+/* ===== chrome ===== */
+.theme-toggle{position:fixed; bottom:18px; right:18px;}
+.caption{position:fixed; bottom:18px; right:64px; display:inline-flex; align-items:center; gap:7px; font-size:10.5px;
+  color:var(--muted-foreground); background:var(--card); border:1px solid var(--border); border-radius:999px; padding:6px 12px;}
+.caption .cdot{width:7px; height:7px; border-radius:50%; background:var(--brand);}
+.caption b{color:var(--card-foreground); font-weight:600;}
+/* toast */
+.toast{position:fixed; bottom:26px; left:50%; transform:translateX(-50%) translateY(16px); opacity:0;
+  background:var(--popover); color:var(--card-foreground); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:10px 18px; font-size:12.5px; pointer-events:none; transition:.25s; z-index:50; display:inline-flex; align-items:center; gap:8px;
+  box-shadow:0 8px 28px rgba(0,0,0,.35);}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+.toast .chk{color:var(--success); display:inline-flex;}
+@media(max-width:600px){ .fields,.recgrid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== header ===== -->
+  <div class="page-head">
+    <h1><span class="anchor-ic" data-i="anchor"></span> Berth 港务助手 · 交互模式</h1>
+    <p class="stance"><b>不等待</b>：你的动作<b>立即生效</b>，AI 在<b>后台</b>把它做得更好、<b>原地更新</b>——不等 skeleton、不通知你回来。只有判断型的帮忙（关联任务 / 记录进展）才作为<b>建议</b>，由你确认。</p>
+    <div class="legend">
+      <span class="lg"><span class="k">1</span> <b>即时创建 · 后台自我完善</b></span>
+      <span class="lg"><span class="k">C</span> <b>建议 chip · 你确认</b></span>
+    </div>
+  </div>
+
+  <!-- ===== DEMO 1 ===== -->
+  <div class="card">
+    <div class="card-head">
+      <span class="card-tag">1</span>
+      <h2>即时创建 · 后台自我完善 <span style="font-weight:400;color:var(--muted-foreground)">— 新建任务的新模型</span></h2>
+      <span class="fit">适合：建任务 / 默认装载 / 仓库</span>
+    </div>
+    <p class="card-cap">点创建——任务<b style="color:var(--card-foreground);font-weight:500">立刻就在</b>，按你写的原话先建好；港务助手在后台把标题总结好、补上描述，<b style="color:var(--card-foreground);font-weight:500">原地更新</b>。<b style="color:var(--card-foreground);font-weight:500">不等待。</b></p>
+
+    <div class="demo-zone">
+      <label class="fld-lbl">新建任务</label>
+      <div class="d1-form">
+        <input class="txt" id="d1Input" value="把会话列表从活跃/已归档那套改掉，改成 pin 加按 cwd 分组，这周做完">
+        <div class="d1-opts">
+          <label class="d1-check"><input type="checkbox" id="d1Sum" checked> <span class="bx"><span class="ic" data-i="check"></span></span> <span class="ic" data-i="sparkles"></span> AI 自动总结任务标题</label>
+          <label class="d1-check"><input type="checkbox" id="d1Run"> <span class="bx"><span class="ic" data-i="check"></span></span> <span class="ic" data-i="play"></span> 立即执行</label>
+        </div>
+        <div class="d1-actions">
+          <button class="btn btn-primary" id="d1Create"><span class="ic" data-i="anchor"></span> 创建</button>
+          <button class="btn btn-ghost" id="d1Reset" style="display:none;"><span class="ic" data-i="refresh"></span> 再试一次</button>
+        </div>
+      </div>
+
+      <div class="d1-out" id="d1Out"></div>
+    </div>
+
+    <div class="card-foot"><span class="lb" data-i="lightbulb"></span> 不等待：先按你写的建好，AI 在后台把标题总结好、补上描述，原地更新。</div>
+  </div>
+
+  <!-- ===== DEMO 2 (C) ===== -->
+  <div class="card">
+    <div class="card-head">
+      <span class="card-tag">C</span>
+      <h2>建议 chip <span style="font-weight:400;color:var(--muted-foreground)">— 提议不应用</span></h2>
+      <span class="fit">适合：关联航线 / 更新进度</span>
+    </div>
+    <p class="card-cap">判断型的帮忙才走建议：港务助手看船返港，给一张卡；你 采纳 或 忽略，它不替你动手。<b style="color:var(--card-foreground);font-weight:500">什么/何时/取舍：</b>低风险提示 · 会话返港时 · 零打断、最安全。</p>
+
+    <div class="demo-zone">
+      <div class="c-toggle-row">
+        <span class="tlbl"><span class="lb" data-i="lightbulb"></span> 港务助手主动提议</span>
+        <span class="sw on" id="cSwitch"></span>
+        <span class="sw-state" id="cSwState">开</span>
+      </div>
+
+      <div class="off-note" id="cOffNote"><span class="ic" data-i="info"></span> 已关 · AI 仅在你点击时出现，不会主动弹建议</div>
+
+      <!-- 触发条件 panel -->
+      <div class="trigger" id="cTrigger">
+        <div class="trg-head"><span class="ic" data-i="filter"></span> 触发条件 · 哪些会话才给建议</div>
+        <div class="trg-line trg-yes"><span class="dot ok"></span> <b>一艘船返港</b>（会话结束 / 在航→停泊）时，若 <b>有实质产出</b>（文件改动 / commit / 推送 / 总结性结尾）<b>且</b>（尚未归属任务 <b>或</b> 归属任务进度久未更新）→ 给 <b>1 张</b>建议卡。</div>
+        <div class="trg-line trg-no"><span class="dot no"></span> <b>不触发：</b>无产出 / scratch 临时会话（<code>~/.berth/scratch</code>、<code>~/Downloads</code>）/ 已处理或已忽略过的。</div>
+        <div class="trg-line trg-foot"><span class="ic" data-i="info"></span> 可关主动提议。</div>
+      </div>
+
+      <div class="c-context">
+        <span class="ship"><span class="ic" data-i="anchor"></span> 返港</span>
+        会话 <b style="color:var(--card-foreground);font-weight:600">『数据层解耦 review』</b> 返港 · 有 <b style="color:var(--card-foreground);font-weight:600">2 文件改动</b> · 未归属任务
+      </div>
+
+      <div class="suggestions" id="cSugs">
+        <div class="sug-card" data-sug="1">
+          <span class="lb" data-i="lightbulb"></span>
+          <div class="sug-main">
+            <div class="stxt">建议：把这条会话关联到航线 <em>《会话列表改为 pin + cwd 分组》</em>，并记一条进展（<em>+1</em>）</div>
+            <div class="sug-actions">
+              <button class="btn btn-primary" data-c-accept="1"><span class="ic" data-i="check"></span> 采纳</button>
+              <button class="btn btn-ghost" data-c-ignore="1">忽略</button>
+            </div>
+            <div class="resolved-state"><span class="ic" data-i="check"></span> 已关联 · 进度 +1</div>
+          </div>
+        </div>
+        <div class="sug-card" data-sug="2">
+          <span class="lb" data-i="lightbulb"></span>
+          <div class="sug-main">
+            <div class="stxt">建议：这条会话有实质产出但未归属任何航线，<em>建一个任务</em>收纳它（<em>数据层解耦 review</em>）</div>
+            <div class="sug-actions">
+              <button class="btn btn-primary" data-c-accept="2"><span class="ic" data-i="check"></span> 采纳</button>
+              <button class="btn btn-ghost" data-c-ignore="2">忽略</button>
+            </div>
+            <div class="resolved-state"><span class="ic" data-i="check"></span> 已新建任务 · Now · 今日</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-foot"><span class="lb" data-i="lightbulb"></span> 只有判断型的帮忙才打扰你：返港有产出 + 未归属/久未更新 → 给建议，你 采纳/忽略。</div>
+  </div>
+
+  <!-- ===== recommendation map ===== -->
+  <div class="recmap">
+    <h3><span class="ic" data-i="map"></span> 何时用哪个模式</h3>
+    <div class="recgrid">
+      <div class="recrow"><span class="num">1</span><span class="scene">建任务</span><span class="mode">即时创建 + 后台总结</span></div>
+      <div class="recrow"><span class="num">2</span><span class="scene">关联航线 / 更新进度</span><span class="mode c"><span class="k2">C</span> 建议</span></div>
+      <div class="recrow"><span class="num">3</span><span class="scene">默认装载 / 仓库</span><span class="mode">同即时模式（描述→后台填）</span></div>
+      <div class="recrow"><span class="num">4</span><span class="scene">项目 / 任务总结</span><span class="mode b">后台原地更新</span></div>
+      <div class="recrow" style="grid-column:1/-1"><span class="num">5</span><span class="scene">会话标题</span><span class="mode x">即时 + 可撤销</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- chrome -->
+<div class="caption"><span class="cdot"></span> <b>v7</b> · 港务助手交互</div>
+<button class="iconbtn theme-toggle" id="themeToggle" title="切换主题"><span class="ic" data-i="sun"></span></button>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== inline-SVG icon set ===== */
+const ICONS = {
+  anchor:"<path d='M12 22V8'/><path d='M5 12H2a10 10 0 0 0 20 0h-3'/><circle cx='12' cy='5' r='3'/>",
+  sparkles:"<path d='M9.94 14.34A1.5 1.5 0 0 0 9 13.4l-2.6-.84a.5.5 0 0 1 0-.95l2.6-.84a1.5 1.5 0 0 0 .94-.94l.84-2.6a.5.5 0 0 1 .95 0l.84 2.6a1.5 1.5 0 0 0 .94.94l2.6.84a.5.5 0 0 1 0 .95l-2.6.84a1.5 1.5 0 0 0-.94.94l-.84 2.6a.5.5 0 0 1-.95 0z'/><path d='M18 5h2'/><path d='M19 4v2'/><path d='M5 18h2'/><path d='M6 17v2'/>",
+  lightbulb:"<path d='M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5'/><path d='M9 18h6'/><path d='M10 22h4'/>",
+  check:"<path d='M20 6 9 17l-5-5'/>",
+  play:"<polygon points='6 3 20 12 6 21 6 3'/>",
+  refresh:"<path d='M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8'/><path d='M21 3v5h-5'/><path d='M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16'/><path d='M8 16H3v5'/>",
+  filter:"<polygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'/>",
+  info:"<circle cx='12' cy='12' r='10'/><path d='M12 16v-4'/><path d='M12 8h.01'/>",
+  map:"<path d='M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z'/><path d='M15 5.764v15'/><path d='M9 3.236v15'/>",
+  sun:"<circle cx='12' cy='12' r='4'/><path d='M12 2v2'/><path d='M12 20v2'/><path d='m4.93 4.93 1.41 1.41'/><path d='m17.66 17.66 1.41 1.41'/><path d='M2 12h2'/><path d='M20 12h2'/><path d='m6.34 17.66-1.41 1.41'/><path d='m19.07 4.93-1.41 1.41'/>"
+};
+function svg(name){
+  return "<svg viewBox='0 0 24 24' width='14' height='14' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>"+(ICONS[name]||"")+"</svg>";
+}
+document.querySelectorAll('[data-i]').forEach(el=>{ el.innerHTML = svg(el.getAttribute('data-i')); });
+
+/* ===== toast ===== */
+let toastTimer;
+function toast(msg, ok){
+  const t=document.getElementById('toast');
+  t.innerHTML = (ok?"<span class='chk'>"+svg('check')+"</span>":"") + "<span>"+msg+"</span>";
+  t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),1900);
+}
+
+/* ===== theme toggle ===== */
+document.getElementById('themeToggle').addEventListener('click',()=>{
+  document.body.classList.toggle('light');
+  toast(document.body.classList.contains('light')?'浅色主题':'深色主题');
+});
+
+/* ============================================================
+   DEMO 1 — 即时创建 · 后台自我完善 (no wait; AI summarizes in place)
+   ============================================================ */
+(function(){
+  const input   = document.getElementById('d1Input');
+  const sumChk  = document.getElementById('d1Sum');
+  const runChk  = document.getElementById('d1Run');
+  const createBtn = document.getElementById('d1Create');
+  const resetBtn  = document.getElementById('d1Reset');
+  const out     = document.getElementById('d1Out');
+  const DEFAULT = '把会话列表从活跃/已归档那套改掉，改成 pin 加按 cwd 分组，这周做完';
+  let timer=null;
+
+  function reset(){
+    if(timer) clearTimeout(timer), timer=null;
+    out.innerHTML='';
+    input.value=DEFAULT; sumChk.checked=true; runChk.checked=false;
+    createBtn.disabled=false; createBtn.style.display='';
+    resetBtn.style.display='none';
+  }
+
+  createBtn.addEventListener('click',()=>{
+    const raw=(input.value||'').trim(); if(!raw) return;
+    const wantSummary=sumChk.checked, wantRun=runChk.checked;
+    createBtn.disabled=true; createBtn.style.display='none'; resetBtn.style.display='';
+
+    // 1) task card appears IMMEDIATELY — raw typed text as title
+    out.innerHTML =
+      "<div class='task-card' id='d1Card'>"+
+        "<div class='tc-top'>"+
+          "<span class='ic' style='color:var(--brand);margin-top:2px;' data-i='anchor'></span>"+
+          "<div class='tc-main'>"+
+            "<div class='tc-title raw' id='d1Title'></div>"+
+            (wantSummary
+              ? "<div class='tc-summarizing' id='d1Sumline'><span class='spinner'></span> 总结中…</div>"
+              : "")+
+            "<div class='tc-aitag' id='d1Aitag'>"+svg('sparkles')+" AI 已总结 · 补描述</div>"+
+            "<div class='tc-desc' id='d1Desc'></div>"+
+            "<div class='tc-chips' id='d1Chips'></div>"+
+          "</div>"+
+        "</div>"+
+      "</div>";
+    document.getElementById('d1Title').textContent = raw;
+    document.querySelectorAll('#d1Card [data-i]').forEach(el=>el.innerHTML=svg(el.getAttribute('data-i')));
+
+    // running chip (if 立即执行) — also immediate
+    if(wantRun){
+      document.getElementById('d1Chips').innerHTML =
+        "<span class='run-chip'><span class='recv-dot'></span> 已起航 · 在航</span>";
+    }
+    toast('已创建任务', true);
+
+    // 2) AI improves IN BACKGROUND, updates IN PLACE after ~2s
+    if(wantSummary){
+      timer=setTimeout(()=>{
+        const titleEl=document.getElementById('d1Title');
+        if(!titleEl) return;
+        titleEl.classList.remove('raw');                 // shrink/strengthen in place
+        titleEl.textContent='会话列表改为 pin + cwd 分组';
+        const sumline=document.getElementById('d1Sumline'); if(sumline) sumline.remove();
+        document.getElementById('d1Aitag').classList.add('show');
+        const desc=document.getElementById('d1Desc');
+        desc.innerHTML='把会话列表从「活跃 / 已归档」旧分法改成 <b>pin 置顶 + 按 cwd 分组</b>，旧分法下线。<b>本周内</b>完成。';
+        desc.classList.add('show');
+        toast('港务助手：标题已总结 · 描述已补');
+      },2000);
+    }
+  });
+
+  resetBtn.addEventListener('click',reset);
+})();
+
+/* ============================================================
+   DEMO C — 建议 chip (accept / ignore + proactivity switch)
+   ============================================================ */
+(function(){
+  const sw = document.getElementById('cSwitch');
+  const swState = document.getElementById('cSwState');
+  const sugs = document.getElementById('cSugs');
+  const offNote = document.getElementById('cOffNote');
+  let on=true;
+
+  sw.addEventListener('click',()=>{
+    on=!on;
+    sw.classList.toggle('on',on);
+    swState.textContent = on?'开':'关';
+    sugs.classList.toggle('off',!on);
+    offNote.classList.toggle('show',!on);
+    toast(on?'港务助手：主动提议 已开':'港务助手：主动提议 已关');
+  });
+
+  sugs.querySelectorAll('[data-c-accept]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      if(!on) return;
+      const card=btn.closest('.sug-card');
+      card.querySelector('.sug-actions').style.display='none';
+      card.querySelector('.stxt').style.display='none';
+      card.querySelector('.lb').style.display='none';
+      card.classList.add('resolved');
+      toast(btn.dataset.cAccept==='1'?'已关联会话 · 进度 +1':'已新建任务 · Now · 今日', true);
+    });
+  });
+  sugs.querySelectorAll('[data-c-ignore]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      if(!on) return;
+      const card=btn.closest('.sug-card');
+      card.classList.add('removing');
+      setTimeout(()=>{ card.style.display='none'; }, 320);
+      toast('已忽略该建议');
+    });
+  });
+})();
+</script>
+</body>
+</html>

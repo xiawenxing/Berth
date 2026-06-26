@@ -1,5 +1,23 @@
-import { describe, it, expect, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { registerPty, attachViewer, hasLivePty, killPty, killAllPtys, rekeyPty, liveCount } from '../src/server/pty-registry'
+import { ptySpoolPath, readPtySpoolTail } from '../src/server/pty-spool'
+
+const origBerthHome = process.env.BERTH_HOME
+let testHome = ''
+
+beforeEach(() => {
+  testHome = mkdtempSync(join(tmpdir(), 'berth-pty-registry-'))
+  process.env.BERTH_HOME = testHome
+})
+
+afterEach(() => {
+  if (origBerthHome === undefined) delete process.env.BERTH_HOME
+  else process.env.BERTH_HOME = origBerthHome
+  if (testHome) rmSync(testHome, { recursive: true, force: true })
+})
 
 // Minimal fake IPty: capture onData/onExit callbacks, record writes/kills.
 function fakePty(pid?: number) {
@@ -52,6 +70,32 @@ describe('pty-registry', () => {
     attachViewer('sess-1', v2)
     expect(v2.sent.join('')).toContain('hello world')
     killPty('sess-1')
+  })
+
+  it('persists raw pty bytes and replays the requested tail from disk', () => {
+    const pty = fakePty()
+    registerPty('spool-1', pty)
+    pty.emit('aaa')
+    pty.emit('bbb')
+
+    expect(readPtySpoolTail('spool-1')).toBe('aaabbb')
+
+    const ws = fakeWs()
+    attachViewer('spool-1', ws, { replayBytes: 4 })
+    expect(ws.sent.join('')).toBe('abbb')
+    killPty('spool-1')
+  })
+
+  it('moves the raw pty spool when a live pty is rekeyed', () => {
+    const pty = fakePty()
+    registerPty('intent-spool', pty)
+    pty.emit('before-bind')
+    rekeyPty('intent-spool', 'real-spool')
+    pty.emit('-after-bind')
+
+    expect(readPtySpoolTail('real-spool')).toContain('before-bind-after-bind')
+    expect(ptySpoolPath('real-spool')).not.toBe(ptySpoolPath('intent-spool'))
+    killPty('real-spool')
   })
 
   it('forwards input and kill messages; broadcasts to multiple viewers', () => {

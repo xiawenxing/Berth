@@ -1,4 +1,8 @@
 /* ============================================================================
+ * ⚠️ FROZEN — Berth 1.0 (legacy vanilla UI) design tokens. The active frontend is the React SPA in
+ *    `web/` (Berth 2.0); its themes/palettes live in `web/src/lib/theme.ts`. Edit palettes THERE,
+ *    not here. See CLAUDE.md → "The frontend lives in `web/`".
+ *
  * Berth design tokens — ported from multica's shadcn/ui theme (oklch neutral).
  * Dark is the default (:root); light is opt-in via `html.light`.
  * Every consumer is theme-agnostic: same variable names, different values.
@@ -12,50 +16,50 @@
 :root {
   color-scheme: dark;
 
-  /* ② One Dark Pro */
-  --background: #282c34;
-  --foreground: #abb2bf;
-  --card: #2c313a;
-  --card-foreground: #abb2bf;
-  --popover: #21252b;
-  --popover-foreground: #abb2bf;
-  --primary: #abb2bf;
-  --primary-foreground: #282c34;
-  --secondary: #3a4150;
-  --secondary-foreground: #abb2bf;
-  --muted: #3a4150;
-  --muted-foreground: #828997;
-  --accent: #3a4150;
-  --accent-foreground: #d7dae0;
-  --destructive: #e06c75;
-  --destructive-foreground: #ffffff;
-  --border: #3e4451;
-  --input: #3e4451;
-  --ring: #61afef;
+  /* ② 午夜靛蓝 (Berth 2.0 default dark — see docs/mockups/berth-2.0/v7-project.html) */
+  --background: #141b2e;
+  --foreground: #b3bcd4;
+  --card: #1f2940;
+  --card-foreground: #c7cfe3;
+  --popover: #283450;
+  --popover-foreground: #c7cfe3;
+  --primary: #c7cfe3;
+  --primary-foreground: #0d1220;
+  --secondary: #2c3852;
+  --secondary-foreground: #dbe1f0;
+  --muted: #2c3852;
+  --muted-foreground: #8089a3;
+  --accent: #2c3852;
+  --accent-foreground: #dbe1f0;
+  --destructive: #f0707f;
+  --destructive-foreground: #0d1220;
+  --border: #3a4768;
+  --input: #3a4768;
+  --ring: #56b6ff;
 
-  --chart-1: #61afef;
-  --chart-2: #98c379;
-  --chart-3: #e5c07b;
-  --chart-4: #c678dd;
-  --chart-5: #e06c75;
+  --chart-1: #56b6ff;
+  --chart-2: #7ed4a6;
+  --chart-3: #f0c773;
+  --chart-4: #b88cf0;
+  --chart-5: #f0707f;
 
-  --sidebar: #21252b;
-  --sidebar-foreground: #abb2bf;
-  --sidebar-primary: #61afef;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #2c313a;
-  --sidebar-accent-foreground: #d7dae0;
-  --sidebar-border: #3e4451;
-  --sidebar-ring: #61afef;
+  --sidebar: #101526;
+  --sidebar-foreground: #b3bcd4;
+  --sidebar-primary: #56b6ff;
+  --sidebar-primary-foreground: #0d1220;
+  --sidebar-accent: #1f2940;
+  --sidebar-accent-foreground: #dbe1f0;
+  --sidebar-border: #3a4768;
+  --sidebar-ring: #56b6ff;
 
-  --brand: #61afef;
-  --brand-foreground: #ffffff;
-  --canvas: #21242b;
-  --success: #98c379;
-  --warning: #e5c07b;
-  --info: #61afef;
-  --priority: #d19a66;
-  --purple: #c678dd;
+  --brand: #56b6ff;
+  --brand-foreground: #0d1220;
+  --canvas: #0d1220;
+  --success: #7ed4a6;
+  --warning: #f0c773;
+  --info: #56b6ff;
+  --priority: #e0a060;
+  --purple: #b88cf0;
 
   --scrollbar-thumb: rgba(171,178,191,0.13);
   --scrollbar-thumb-hover: rgba(171,178,191,0.26);

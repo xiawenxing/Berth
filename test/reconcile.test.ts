@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openStore } from '../src/db/store'
 import { reconcileLaunchIntents } from '../src/server/reconcile'
+import { filterImportedSessions, curatedSessionIds } from '../src/sessions'
 import type { LogicalSession } from '../src/types'
 
 /** Build a minimal LogicalSession for testing. */
@@ -20,10 +21,33 @@ describe('reconcileLaunchIntents', () => {
       makeSession('new', '/proj', 1100),  // after → bind
     ]
     s.upsertSessions(cache)
-    reconcileLaunchIntents(s, cache)
+    expect(reconcileLaunchIntents(s, cache)).toBe(1)
     expect(s.pendingIntents()).toEqual([])
     expect(s.todoKeyForSession('new')).toBe('rec_A')
     expect(s.getAttach('new')).toMatchObject({ projectId: 'P', state: 'confirmed' })
+  })
+
+  // Regression: refresh() must feed reconcile the UNFILTERED scan, not the import-filtered cache. A
+  // fresh codex launch is bound=0 / unattached / not session-imported, and its cwd is no longer an
+  // import root → it's filtered OUT of the cache. If reconcile got the filtered set it could never
+  // find the session → never bind → never surface (a permanent deadlock).
+  it('reconciles a fresh codex session that the import filter would exclude (must get the full scan)', () => {
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'i1', cli: 'codex', cwd: '/unrooted', projectId: 'P', todoKey: null, sessionId: null, createdAt: 1000, bound: false })
+    const all = [makeSession('fresh', '/unrooted', 1100)]
+    s.upsertSessions(all)
+    // refresh()'s real ordering: filter to import roots (none here) ∪ curated (none) → empty cache.
+    const cache = filterImportedSessions(all, [] /* importRoots: no session_import_dir */, curatedSessionIds(s.allPinnedSet(), s.allAttachMap(), s.edgesByTodo().values(), s.allSessionImportSet(), s.allBoundLaunchSessionIds()))
+    expect(cache.map(x => x.sessionId)).toEqual([]) // the fresh session is NOT in the cache
+
+    // Passing the filtered cache would NOT bind (documents the bug):
+    expect(reconcileLaunchIntents(s, cache)).toBe(0)
+    expect(s.pendingIntents().map(i => i.id)).toEqual(['i1'])
+
+    // Passing the full scan binds it; next refresh's curated set then includes it via bound-launch.
+    expect(reconcileLaunchIntents(s, all)).toBe(1)
+    expect(s.pendingIntents()).toEqual([])
+    expect(s.allBoundLaunchSessionIds().has('fresh')).toBe(true)
   })
 
   it('does not bind across cwd or to an already-bound session', () => {
@@ -69,6 +93,21 @@ describe('reconcileLaunchIntents', () => {
     expect(pending.length).toBe(1)
   })
 
+  it('pairs newer same-cwd codex intents with newer sessions before older ones', () => {
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'i1', cli: 'codex', cwd: '/proj', projectId: 'AI', todoKey: null, sessionId: null, createdAt: 1000, bound: false })
+    s.addLaunchIntent({ id: 'i2', cli: 'codex', cwd: '/proj', projectId: 'Other', todoKey: null, sessionId: null, createdAt: 1010, bound: false })
+    const cache = [
+      makeSession('older-session', '/proj', 1005),
+      makeSession('newer-session', '/proj', 1015),
+    ]
+    s.upsertSessions(cache)
+    reconcileLaunchIntents(s, cache)
+
+    expect(s.getAttach('newer-session')).toMatchObject({ projectId: 'Other', state: 'confirmed' })
+    expect(s.getAttach('older-session')).toMatchObject({ projectId: 'AI', state: 'confirmed' })
+  })
+
   it('ignores non-codex intents', () => {
     const s = openStore(':memory:')
     s.addLaunchIntent({ id: 'i1', cli: 'claude', cwd: '/proj', projectId: 'P', todoKey: 'rec_A', sessionId: null, createdAt: 1000, bound: false })
@@ -99,5 +138,18 @@ describe('reconcileLaunchIntents', () => {
     expect(s.pendingIntents()).toEqual([])
     expect(s.todoKeyForSession('sess1')).toBeNull()  // no edge added
     expect(s.getAttach('sess1')).toMatchObject({ projectId: 'P', state: 'confirmed' })
+  })
+
+  it('does not create a null-project attach for project-less codex launches', () => {
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'i1', cli: 'codex', cwd: '/scratch', projectId: null, todoKey: null, sessionId: null, createdAt: 1000, bound: false })
+    const cache = [makeSession('sess1', '/scratch', 1100)]
+    s.upsertSessions(cache)
+
+    reconcileLaunchIntents(s, cache)
+
+    expect(s.pendingIntents()).toEqual([])
+    expect(s.getAttach('sess1')).toBeNull()
+    expect(s.allBoundLaunchSessionIds().has('sess1')).toBe(true)
   })
 })

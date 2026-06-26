@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
+import { generateTaskTitle } from '../agent/index'
 import { classifyProject } from '../agent/triage'
 import { listProjects, createProject } from './projects'
 import { getTaskFieldConfig } from './task-config'
 import { resolveBerthAgent } from './agent-config'
+import { triggerTaskSummary } from './task-summary'
 import type { DocStore } from './docstore'
 import type { Task } from './types'
 
@@ -33,7 +35,7 @@ export async function createTask(
   store: Store,
   docStore: DocStore,
   text: string,
-  opts: { projectId?: string; confirm?: boolean; createOption?: boolean; images?: string[] } = {},
+  opts: { projectId?: string; confirm?: boolean; createOption?: boolean; images?: string[]; autoTitle?: boolean } = {},
   now: Now = Date.now,
 ): Promise<CreateResult> {
   text = text.trim()
@@ -75,12 +77,24 @@ export async function createTask(
     }
   }
 
+  let title = text
+  if (opts.autoTitle) {
+    try {
+      const generated = (await generateTaskTitle(text, resolveBerthAgent(store))).trim()
+      if (generated) title = generated
+    } catch {
+      // Title generation is best-effort; task creation should not fail just because the agent is blocked.
+    }
+    const titleDup = title !== text ? findDuplicate(store, title) : null
+    if (titleDup && !opts.confirm) return { status: 'duplicate', existing: titleDup }
+  }
+
   // 3. mint + insert
   const id = randomUUID()
   const t = now()
   const cfg = getTaskFieldConfig(store)
   const task: Task = {
-    id, title: text, status: cfg.defaultStatus, priority: cfg.defaultPriority,
+    id, title, status: cfg.defaultStatus, priority: cfg.defaultPriority,
     projectId, project, detailDoc: null, progress: null, updatedAt: t, syncedAt: 0, deleted: false,
   }
   store.insertTask(task)
@@ -88,11 +102,11 @@ export async function createTask(
   // 4. pasted images → detail doc owned by Berth
   let detailDoc: string | undefined
   if (opts.images && opts.images.length) {
-    try { detailDoc = attachImagesAsDetailDoc(store, docStore, id, text, project, opts.images, now) }
+    try { detailDoc = attachImagesAsDetailDoc(store, docStore, id, title, project, opts.images, now) }
     catch { /* best-effort; the task already exists */ }
   }
 
-  return { status: 'created', record: { id, title: text, projectId, project, detailDoc } }
+  return { status: 'created', record: { id, title, projectId, project, detailDoc } }
 }
 
 /** Update a task's editable fields (title / priority / status). Validates enums; bumps updated_at. */
@@ -111,7 +125,13 @@ export function updateTask(store: Store, id: string, patch: { title?: string; pr
   }
   if (typeof patch.progress === 'string') fields.progress = patch.progress   // free text; '' clears it
   if (Object.keys(fields).length === 0) throw new Error('no editable fields in patch')
+  // Detect an actual status change (before the write) so we can auto-refresh the progress summary.
+  const statusChanged = fields.status !== undefined && store.getTask(id)?.status !== fields.status
   store.updateTaskFields(id, fields, now())
+  // Any local status change (UI / berth CLI / any PATCH path lands here) kicks a background summary
+  // regeneration; fire-and-forget + per-task dedup, so it never blocks or stacks up. Sync-pulled
+  // changes go through store.updateTaskFields directly and are intentionally NOT hooked here.
+  if (statusChanged) triggerTaskSummary(store, id)
   return { ok: true }
 }
 

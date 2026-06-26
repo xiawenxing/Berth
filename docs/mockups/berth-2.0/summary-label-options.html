@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>项目小结 — 小标题样式选项</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --popover:#fff; --border:#e5e7eb; --accent:#eef2ff;
+    --foreground:#1f2430; --muted-foreground:#6b7280; --text-dim:#9aa1ad;
+    --brand:#3b6ef5; --warning:#e0972a; --success:#22a06b; --destructive:#dc2626;
+    --radius-md:10px; --radius-sm:6px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:32px;background:var(--bg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--foreground);-webkit-font-smoothing:antialiased;
+  }
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{font-size:13px;color:var(--muted-foreground);margin:0 0 24px}
+  .grid{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+  .col{width:340px}
+  .col > .opt-name{font-size:13px;font-weight:700;margin:0 0 2px}
+  .col > .opt-desc{font-size:11.5px;color:var(--muted-foreground);margin:0 0 10px;line-height:1.5;min-height:32px}
+
+  /* ===== popover card (matches the real component) ===== */
+  .panel{
+    width:340px;background:var(--popover);border:1px solid var(--border);
+    border-radius:var(--radius-md);box-shadow:0 12px 40px rgba(20,30,55,.12);overflow:hidden;
+  }
+  .p-head{display:flex;align-items:center;gap:8px;padding:10px 12px}
+  .p-head .t{font-size:13px;font-weight:700}
+  .p-head .spk{color:var(--brand)}
+  .p-head .acts{margin-left:auto;display:flex;gap:2px}
+  .iconbtn{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:var(--radius-sm);color:var(--muted-foreground);cursor:pointer}
+  .iconbtn:hover{background:var(--accent);color:var(--foreground)}
+  .p-body{border-top:1px solid var(--border);padding:14px 16px;display:flex;flex-direction:column;gap:16px}
+  .p-foot{display:flex;align-items:center;gap:8px;border-top:1px solid var(--border);background:var(--card);padding:9px 12px}
+  .regen{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted-foreground);border:1px solid var(--border);background:transparent;border-radius:var(--radius-sm);padding:5px 10px;cursor:pointer}
+  .regen:hover{background:var(--accent);color:var(--foreground)}
+  .foot-note{margin-left:auto;font-size:10.5px;color:var(--text-dim)}
+
+  /* content rows shared by every variant */
+  .headline{font-size:12.5px;line-height:1.6;color:var(--foreground)}
+  ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .bullet{display:flex;gap:8px;font-size:12px;line-height:1.45;color:var(--muted-foreground)}
+  .bullet::before{content:"";margin-top:6px;width:5px;height:5px;border-radius:50%;background:var(--brand);flex:none}
+  .todo{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.45;color:var(--foreground)}
+  .todo .ring{margin-top:1px;width:13px;height:13px;border-radius:50%;border:1.5px solid var(--text-dim);flex:none;box-sizing:border-box}
+
+  /* the section block */
+  .sec{display:flex;flex-direction:column;gap:6px}
+
+  /* ---- label variants ---- */
+  /* current: dot + grey uppercase (reference) */
+  .lbl-dot{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--text-dim)}
+  .lbl-dot .d{width:6px;height:6px;border-radius:50%;flex:none}
+
+  /* A: colored text label, no marker */
+  .lbl-color{font-size:10.5px;font-weight:800;letter-spacing:.5px}
+
+  /* B: left vertical bar */
+  .lbl-bar{display:flex;align-items:center;gap:7px;font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--text-dim)}
+  .lbl-bar .b{width:3px;height:12px;border-radius:2px;flex:none}
+
+  /* C: icon prefix */
+  .lbl-icon{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--muted-foreground)}
+  .lbl-icon svg{width:13px;height:13px;flex:none}
+
+  /* D: plain divider label (no color at all, hairline rule under it) */
+  .lbl-rule{font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--text-dim);padding-bottom:5px;border-bottom:1px solid var(--border)}
+
+  .color-warn{color:var(--warning)} .bg-warn{background:var(--warning)}
+  .color-succ{color:var(--success)} .bg-succ{background:var(--success)}
+  .color-brand{color:var(--brand)} .bg-brand{background:var(--brand)}
+</style>
+</head>
+<body>
+  <h1>项目小结 / 任务进展详情 — 小标题样式选项</h1>
+  <p class="sub">需求：小标题（一句话总结 / 进度要点 / 重要里程碑）前不再用圆点，避免与正文圆点混淆。下面 4 个方案 + 现状参考，挑一个我直接落地。</p>
+
+  <div class="grid">
+
+    <!-- 现状 -->
+    <div class="col">
+      <p class="opt-name">现状（参考）</p>
+      <p class="opt-desc">小标题前是彩色圆点，和正文要点的蓝圆点同形，容易混。</p>
+      <div class="panel" id="tpl-dot"></div>
+    </div>
+
+    <!-- A 彩色文字 -->
+    <div class="col">
+      <p class="opt-name">A · 彩色文字标签（推荐）</p>
+      <p class="opt-desc">去掉圆点，标题文字用区分色（橙/绿/蓝）+ 更粗字重。最简洁，无任何前缀符号与圆点冲突。</p>
+      <div class="panel" id="tpl-color"></div>
+    </div>
+
+    <!-- B 左侧竖条 -->
+    <div class="col">
+      <p class="opt-name">B · 左侧竖条</p>
+      <p class="opt-desc">标题前用一根彩色短竖条代替圆点，文字保持灰。竖条≠圆点，形状上就分开了。</p>
+      <div class="panel" id="tpl-bar"></div>
+    </div>
+
+    <!-- C 图标前缀 -->
+    <div class="col">
+      <p class="opt-name">C · 图标前缀</p>
+      <p class="opt-desc">每个区配一个语义图标（✦ 总结 / ☰ 进度 / ✓ 里程碑）。最直观，但视觉比圆点重。</p>
+      <div class="panel" id="tpl-icon"></div>
+    </div>
+
+    <!-- D 细线标题 -->
+    <div class="col">
+      <p class="opt-name">D · 细线标题（无色）</p>
+      <p class="opt-desc">完全去色，标题下加一条细分隔线分区。最克制、最“文档感”，但失去颜色区分。</p>
+      <div class="panel" id="tpl-rule"></div>
+    </div>
+
+  </div>
+
+<script>
+  // shared content
+  const headline = '项目暂无有效进展信息，当前状态、关键资料和进展日志均未填写。';
+  const points = ['当前状态未填写。','关键资料 / 入口未填写。','进展日志暂无记录。'];
+  const todos  = ['补充当前状态','补充关键资料 / 入口','记录首次进展日志'];
+
+  const icon = {
+    spk:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>',
+    copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+    x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+    refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>',
+    sum:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>',
+    list:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+    check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  };
+
+  const bullets = points.map(p=>`<li class="bullet">${p}</li>`).join('');
+  const todoList = todos.map(t=>`<li class="todo"><span class="ring"></span>${t}</li>`).join('');
+
+  // label renderers per variant: (text, key) where key in warn/succ/brand
+  const labelFns = {
+    dot:(t,c)=>`<div class="lbl-dot"><span class="d bg-${c}"></span>${t}</div>`,
+    color:(t,c)=>`<div class="lbl-color color-${c}">${t}</div>`,
+    bar:(t,c)=>`<div class="lbl-bar"><span class="b bg-${c}"></span>${t}</div>`,
+    icon:(t,c,ic)=>`<div class="lbl-icon color-${c}">${icon[ic]}${t}</div>`,
+    rule:(t)=>`<div class="lbl-rule">${t}</div>`,
+  };
+
+  function panel(variant){
+    const L = labelFns[variant];
+    const secSum  = `<div class="sec">${L('一句话总结','warn','sum')}<div class="headline">${headline}</div></div>`;
+    const secProg = `<div class="sec">${L('进度要点','succ','list')}<ul>${bullets}</ul></div>`;
+    const secMile = `<div class="sec">${L('重要里程碑','brand','check')}<ul>${todoList}</ul></div>`;
+    return `
+      <div class="p-head">
+        <span class="spk">${icon.spk}</span>
+        <span class="t">项目小结</span>
+        <span class="acts">
+          <button class="iconbtn">${icon.copy}</button>
+          <button class="iconbtn">${icon.x}</button>
+        </span>
+      </div>
+      <div class="p-body">${secSum}${secProg}${secMile}</div>
+      <div class="p-foot">
+        <button class="regen">${icon.refresh} 重新生成</button>
+        <span class="foot-note">7小时前更新</span>
+      </div>`;
+  }
+  // fix head icon sizes
+  document.querySelectorAll('#x');
+  for(const v of ['dot','color','bar','icon','rule']){
+    document.getElementById('tpl-'+v).innerHTML = panel(v);
+  }
+  // size the header sparkle + small svgs
+  document.querySelectorAll('.spk svg').forEach(s=>{s.style.width='15px';s.style.height='15px';});
+  document.querySelectorAll('.iconbtn svg').forEach(s=>{s.style.width='14px';s.style.height='14px';});
+  document.querySelectorAll('.regen svg').forEach(s=>{s.style.width='13px';s.style.height='13px';});
+</script>
+</body>
+</html>

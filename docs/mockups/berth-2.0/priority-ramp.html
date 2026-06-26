@@ -1,0 +1,388 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>优先级色带 · light</title><style>
+:root{--background:#f6f8fb;--foreground:#1f2733;--card:#ffffff;--card-foreground:#1f2733;--muted-foreground:#6b7689;
+  --border:#dde3ec;--brand:#2f6fed;--sidebar-accent:#e3e8f1;--text-dim:#97a1b0;--shadow:0 1px 2px rgba(20,30,60,.06);--radius-sm:6px}
+.dark{--background:#141b2e;--foreground:#b3bcd4;--card:#1f2940;--card-foreground:#c7cfe3;--muted-foreground:#8089a3;
+  --border:#3a4768;--brand:#56b6ff;--sidebar-accent:#1f2940;--text-dim:#6b7280;--shadow:0 1px 2px rgba(0,0,0,.3)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--background);color:var(--foreground);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:18px 22px 50px}
+h1{font-size:17px;margin:0 0 4px}
+.sub{color:var(--muted-foreground);font-size:12px;margin:0 0 14px;line-height:1.5}.sub b{color:var(--foreground)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.variant{border:1px solid var(--border);border-radius:10px;background:var(--card);overflow:hidden}
+.vhead{padding:10px 13px;border-bottom:1px solid var(--border)}
+.vname{font-size:13px;font-weight:700}
+.star{font-size:10px;font-weight:700;color:var(--brand);border:1px solid var(--brand);border-radius:4px;padding:0 5px;margin-left:5px}
+.vdesc{font-size:11px;color:var(--muted-foreground);margin-top:3px;line-height:1.45}
+.mini-row{display:flex;gap:10px;padding:11px}
+.mini{flex:1;min-width:0}
+.mini-h{font-size:10.5px;font-weight:700;color:var(--text-dim);margin:0 0 7px 2px;letter-spacing:.3px}
+.mini-body{display:flex;flex-direction:column;gap:6px}
+.kcard{position:relative;background:var(--sidebar-accent);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow);overflow:hidden}
+.dark .kcard{background:var(--background)}
+.kcard-bar{position:absolute;left:0;top:0;bottom:0;width:2px;z-index:1}
+.kcard-head{display:flex;align-items:center;gap:6px;padding:6px 8px 6px 11px}
+.kcard-title{font-size:11.5px;font-weight:600;color:var(--card-foreground);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prio-chip{display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:5px;font-size:9.5px;font-weight:700;letter-spacing:.3px;flex:none}
+.legend{margin-top:18px;font-size:11.5px;color:var(--muted-foreground);line-height:1.6}.legend b{color:var(--foreground)}
+</style></head><body>
+<div class="wrap">
+  <h1>优先级色带 · 任意档位自动配色（日间）</h1>
+  <p class="sub">用户在设置页增减优先级 → 在有序色带上<b>等距采样 N 个点</b>。每条策略左 5 档、右 7 档：看<b>越靠上越热/越重、相邻档能否分清、整体是否和谐</b>。bar=种子色，chip 底/字按固定明度派生（任意档都 ≥AA）。颜色由 oklch 算法生成，不是手填、也不是随机。</p>
+  <div class="grid">
+    <section class="variant">
+    <div class="vhead"><span class="vname">升温·经紫 <span class="star">推荐</span></span>
+      <div class="vdesc">种子色从绛红(最高)平滑过到午夜靛蓝(最低)，色相走暖红→莓→紫→靛的短路径（不经浑浊的黄绿），彩度集中在高优端、低优端近灰。最像「日落→午夜」，多等级也清晰有序、与品牌靛蓝收尾。</div></div>
+    <div class="mini-row"><div class="mini"><div class="mini-h">5 档</div><div class="mini-body"><div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.500 0.132 18.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 1 · 最高</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 18.0);color:oklch(0.420 0.120 18.0)">P1</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.542 0.102 347.3)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 2 · 第 2</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 347.3);color:oklch(0.420 0.097 347.3)">P2</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.585 0.074 316.5)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 3 · 第 3</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 316.5);color:oklch(0.420 0.070 316.5)">P3</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.628 0.048 285.8)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 4 · 第 4</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 285.8);color:oklch(0.420 0.045 285.8)">P4</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.670 0.026 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 5 · 最低</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.026 255.0);color:oklch(0.420 0.025 255.0)">P5</span>
+    </div>
+  </div></div></div><div class="mini"><div class="mini-h">7 档</div><div class="mini-body"><div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.500 0.132 18.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 1 · 最高</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 18.0);color:oklch(0.420 0.120 18.0)">P1</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.528 0.112 357.5)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 2 · 第 2</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 357.5);color:oklch(0.420 0.106 357.5)">P2</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.557 0.092 337.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 3 · 第 3</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 337.0);color:oklch(0.420 0.088 337.0)">P3</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.585 0.074 316.5)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 4 · 第 4</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 316.5);color:oklch(0.420 0.070 316.5)">P4</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.613 0.056 296.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 5 · 第 5</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 296.0);color:oklch(0.420 0.053 296.0)">P5</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.642 0.040 275.5)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 6 · 第 6</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.040 275.5);color:oklch(0.420 0.038 275.5)">P6</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.670 0.026 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 7 · 最低</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.026 255.0);color:oklch(0.420 0.025 255.0)">P7</span>
+    </div>
+  </div></div></div></div>
+  </section>
+<section class="variant">
+    <div class="vhead"><span class="vname">顶部独热</span>
+      <div class="vdesc">只有最高优是暖绛红，其余全部是「冷靛蓝→淡」的灰阶。最贴合「只有紧急的有色、其它都安静」——当只有 1 档告警 + 多档常态时最干净。</div></div>
+    <div class="mini-row"><div class="mini"><div class="mini-h">5 档</div><div class="mini-body"><div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.500 0.132 18.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 1 · 最高</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 18.0);color:oklch(0.420 0.120 18.0)">P1</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.610 0.042 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 2 · 第 2</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.042 255.0);color:oklch(0.420 0.040 255.0)">P2</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.640 0.034 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 3 · 第 3</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.034 255.0);color:oklch(0.420 0.032 255.0)">P3</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.670 0.026 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 4 · 第 4</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.026 255.0);color:oklch(0.420 0.025 255.0)">P4</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.700 0.018 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 5 · 最低</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.018 255.0);color:oklch(0.420 0.017 255.0)">P5</span>
+    </div>
+  </div></div></div><div class="mini"><div class="mini-h">7 档</div><div class="mini-body"><div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.500 0.132 18.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 1 · 最高</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 18.0);color:oklch(0.420 0.120 18.0)">P1</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.600 0.045 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 2 · 第 2</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 255.0);color:oklch(0.420 0.042 255.0)">P2</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.620 0.039 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 3 · 第 3</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.039 255.0);color:oklch(0.420 0.037 255.0)">P3</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.640 0.034 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 4 · 第 4</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.034 255.0);color:oklch(0.420 0.032 255.0)">P4</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.660 0.029 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 5 · 第 5</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.029 255.0);color:oklch(0.420 0.027 255.0)">P5</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.680 0.023 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 6 · 第 6</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.023 255.0);color:oklch(0.420 0.022 255.0)">P6</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.700 0.018 255.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 7 · 最低</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.018 255.0);color:oklch(0.420 0.017 255.0)">P7</span>
+    </div>
+  </div></div></div></div>
+  </section>
+<section class="variant">
+    <div class="vhead"><span class="vname">单色强度</span>
+      <div class="vdesc">固定一个暖红色相，只用明度+彩度从「深而浓(最高)」降到「淡灰(最低)」。最协调（同色家族），但等级一多就是同色的深浅，靠明度区分。</div></div>
+    <div class="mini-row"><div class="mini"><div class="mini-h">5 档</div><div class="mini-body"><div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.480 0.135 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 1 · 最高</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 16.0);color:oklch(0.420 0.120 16.0)">P1</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.545 0.107 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 2 · 第 2</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 16.0);color:oklch(0.420 0.101 16.0)">P2</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.610 0.079 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 3 · 第 3</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 16.0);color:oklch(0.420 0.075 16.0)">P3</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.675 0.050 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 4 · 第 4</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 16.0);color:oklch(0.420 0.048 16.0)">P4</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.740 0.022 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 5 · 最低</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.022 16.0);color:oklch(0.420 0.021 16.0)">P5</span>
+    </div>
+  </div></div></div><div class="mini"><div class="mini-h">7 档</div><div class="mini-body"><div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.480 0.135 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 1 · 最高</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 16.0);color:oklch(0.420 0.120 16.0)">P1</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.523 0.116 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 2 · 第 2</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 16.0);color:oklch(0.420 0.110 16.0)">P2</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.567 0.097 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 3 · 第 3</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 16.0);color:oklch(0.420 0.092 16.0)">P3</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.610 0.079 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 4 · 第 4</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 16.0);color:oklch(0.420 0.075 16.0)">P4</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.653 0.060 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 5 · 第 5</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 16.0);color:oklch(0.420 0.057 16.0)">P5</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.697 0.041 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 6 · 第 6</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.041 16.0);color:oklch(0.420 0.039 16.0)">P6</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.740 0.022 16.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 7 · 最低</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.022 16.0);color:oklch(0.420 0.021 16.0)">P7</span>
+    </div>
+  </div></div></div></div>
+  </section>
+<section class="variant">
+    <div class="vhead"><span class="vname">暖→中性灰</span>
+      <div class="vdesc">色相从警示红渐移到中性、彩度降到近 0，最低优是纯中性灰（不走蓝）。适合不想让「低优=蓝色」被误读成另一类信息的场景。</div></div>
+    <div class="mini-row"><div class="mini"><div class="mini-h">5 档</div><div class="mini-body"><div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.520 0.120 26.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 1 · 最高</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 26.0);color:oklch(0.420 0.114 26.0)">P1</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.568 0.091 34.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 2 · 第 2</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 34.0);color:oklch(0.420 0.087 34.0)">P2</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.615 0.063 42.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 3 · 第 3</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 42.0);color:oklch(0.420 0.060 42.0)">P3</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.662 0.035 50.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 4 · 第 4</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.035 50.0);color:oklch(0.420 0.033 50.0)">P4</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.710 0.006 58.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 5 · 最低</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.006 58.0);color:oklch(0.420 0.006 58.0)">P5</span>
+    </div>
+  </div></div></div><div class="mini"><div class="mini-h">7 档</div><div class="mini-body"><div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.520 0.120 26.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 1 · 最高</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 26.0);color:oklch(0.420 0.114 26.0)">P1</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.552 0.101 31.3)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 2 · 第 2</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 31.3);color:oklch(0.420 0.096 31.3)">P2</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.583 0.082 36.7)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 3 · 第 3</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 36.7);color:oklch(0.420 0.078 36.7)">P3</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.615 0.063 42.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 4 · 第 4</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.045 42.0);color:oklch(0.420 0.060 42.0)">P4</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.647 0.044 47.3)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 5 · 第 5</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.044 47.3);color:oklch(0.420 0.042 47.3)">P5</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.678 0.025 52.7)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 6 · 第 6</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.025 52.7);color:oklch(0.420 0.024 52.7)">P6</span>
+    </div>
+  </div>
+<div class="kcard">
+    <span class="kcard-bar" style="background:oklch(0.710 0.006 58.0)"></span>
+    <div class="kcard-head">
+      <span class="kcard-title">优先级 7 · 最低</span>
+      <span class="prio-chip" style="background:oklch(0.955 0.006 58.0);color:oklch(0.420 0.006 58.0)">P7</span>
+    </div>
+  </div></div></div></div>
+  </section>
+  </div>
+  <div class="legend">
+    <b>分配规则</b>：优先级是有序列表，第 i 个（i 从 0=最高）取色带位置 t=i/(N-1)。同一优先级永远同色（确定性，不随机、不闪烁）。<br>
+    <b>我的排序</b>：① 升温·经紫（多档最稳、收尾靛蓝最贴品牌）② 暖→中性灰（不引入蓝、最克制）③ 单色强度（同色家族最协调，但多档靠深浅分）。顶部独热只适合「单一告警档」。
+  </div>
+</div></body></html>

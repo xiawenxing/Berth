@@ -1,2 +1,4 @@
 import { start } from '../src/server/index'
-start().catch(e => { console.error(e); process.exit(1) })
+import { formatStartupError } from '../src/startup-error'
+
+start().catch(e => { console.error(formatStartupError(e)); process.exit(1) })

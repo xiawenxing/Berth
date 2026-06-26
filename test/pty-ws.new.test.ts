@@ -10,7 +10,8 @@ vi.mock('../src/data/tasks', () => ({
   updateTask: vi.fn(() => ({ ok: true })),
 }))
 
-import { planFreshLaunch, shouldAdvanceTodoOnLaunch, advanceTodoOnLaunch, buildTaskInitialPrompt, codexActivityStateForSession } from '../src/server/pty-ws'
+import { planFreshLaunch, shouldAdvanceTodoOnLaunch, advanceTodoOnLaunch, buildTaskInitialPrompt, composeLaunchInitialPrompt } from '../src/server/pty-ws'
+import { codexActivityStateForSession } from '../src/server/resume-spawn'
 import { updateTask } from '../src/data/tasks'
 
 const DOCS = '/tmp/berth-test/docs'
@@ -99,6 +100,26 @@ describe('planFreshLaunch', () => {
       expect(plan.manifestInput.projectTodos.map(t => t.title)).toEqual(['A'])
     }
   })
+
+  it('uses the explicit project name for project launches even when cwd is shared elsewhere', () => {
+    const todos = [
+      { id: 'task_A', title: 'A', projectId: 'ai-id', project: 'AI项目', detailDoc: 'projects/d-a.md', progress: null, status: null, priority: null, updatedAt: 1, syncedAt: 0, deleted: false },
+      { id: 'task_B', title: 'B', projectId: 'other-id', project: '其他业务支持', detailDoc: 'projects/d-b.md', progress: null, status: null, priority: null, updatedAt: 1, syncedAt: 0, deleted: false },
+    ] as any
+    const plan = planFreshLaunch(
+      { cli: 'codex', cwd: '/repo/meego-openapp-v3', todoKey: null, projectId: 'ai-id', projectName: 'AI项目' },
+      todos,
+      1000,
+      () => 'uuid-mint',
+      DOCS,
+    )
+    expect(plan.manifestInput.kind).toBe('project')
+    if (plan.manifestInput.kind === 'project') {
+      expect(plan.manifestInput.projectName).toBe('AI项目')
+      expect(plan.manifestInput.projectId).toBe('ai-id')
+      expect(plan.manifestInput.projectTodos.map(t => t.title)).toEqual(['A'])
+    }
+  })
 })
 
 describe('codexActivityStateForSession', () => {
@@ -128,6 +149,23 @@ describe('buildTaskInitialPrompt i18n', () => {
     expect(p).toContain('Please start working on the task: "fix the thing"')
     expect(p).not.toContain('Detail doc')
     expect(p).not.toContain('请开始处理任务')
+  })
+})
+
+describe('composeLaunchInitialPrompt', () => {
+  it('appends task launch notes without replacing the default task directive', () => {
+    const prompt = composeLaunchInitialPrompt('请开始处理任务："修弹窗"', '先只做任务补充输入框')
+    expect(prompt).toContain('请开始处理任务')
+    expect(prompt).toContain('本次会话补充说明')
+    expect(prompt).toContain('先只做任务补充输入框')
+  })
+
+  it('keeps project/free explicit prompts as the whole first turn', () => {
+    expect(composeLaunchInitialPrompt(null, '随便问一个问题')).toBe('随便问一个问题')
+  })
+
+  it('uses an English notes label for English launches', () => {
+    expect(composeLaunchInitialPrompt('Start task', 'Focus the dialog copy', 'en')).toContain('Additional notes for this session:')
   })
 })
 

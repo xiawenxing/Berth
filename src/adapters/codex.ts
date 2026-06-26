@@ -1,17 +1,85 @@
 import fg from 'fast-glob'
 import { readFileSync, openSync, readSync, closeSync } from 'node:fs'
 import { join } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import type { PhysicalSession, LedgerRecord } from '../types'
 import { deriveTitleFromTranscript } from '../agent/transcript'
 import { lastMessageTime } from './transcript-time'
 
-function transcriptTitle(storePath: string): string | null {
-  let head: string
+const TITLE_SCAN_BYTES = 8 * 1024 * 1024
+const TITLE_CHUNK_BYTES = 64 * 1024
+const TITLE_MAX_LINE_BYTES = 512 * 1024
+const TITLE_MAX_LINES = 120
+
+function keepTitleLine(line: string): boolean {
+  if (!line.trim()) return false
   try {
-    const fd = openSync(storePath, 'r'); const buf = Buffer.alloc(131072)
-    const n = readSync(fd, buf, 0, 131072, 0); closeSync(fd); head = buf.toString('utf8', 0, n)
-  } catch { return null }
-  return deriveTitleFromTranscript(head)
+    const o = JSON.parse(line)
+    if (o?.type === 'session_meta') return false
+  } catch {
+    return false
+  }
+  return true
+}
+
+function readTitleSample(storePath: string): string {
+  const fd = openSync(storePath, 'r')
+  try {
+    const buf = Buffer.alloc(TITLE_CHUNK_BYTES)
+    const lines: string[] = []
+    let carry = ''
+    let scanned = 0
+    let skippingLongLine = false
+    const decoder = new StringDecoder('utf8')
+
+    while (scanned < TITLE_SCAN_BYTES && lines.length < TITLE_MAX_LINES) {
+      const toRead = Math.min(TITLE_CHUNK_BYTES, TITLE_SCAN_BYTES - scanned)
+      const n = readSync(fd, buf, 0, toRead, scanned)
+      if (n <= 0) break
+      scanned += n
+
+      const parts = decoder.write(buf.subarray(0, n)).split('\n')
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (skippingLongLine) {
+          skippingLongLine = false
+          continue
+        }
+        const line = carry + parts[i]
+        carry = ''
+        if (line.length > TITLE_MAX_LINE_BYTES) continue
+        if (keepTitleLine(line)) lines.push(line)
+        if (lines.length >= TITLE_MAX_LINES) break
+      }
+
+      if (lines.length >= TITLE_MAX_LINES) break
+      const tail = parts[parts.length - 1] ?? ''
+      if (skippingLongLine) continue
+      if (carry.length + tail.length > TITLE_MAX_LINE_BYTES) {
+        carry = ''
+        skippingLongLine = true
+      } else {
+        carry += tail
+      }
+    }
+
+    const rest = decoder.end()
+    if (rest && !skippingLongLine) {
+      if (carry.length + rest.length > TITLE_MAX_LINE_BYTES) {
+        carry = ''
+        skippingLongLine = true
+      } else {
+        carry += rest
+      }
+    }
+    if (!skippingLongLine && carry && carry.length <= TITLE_MAX_LINE_BYTES && keepTitleLine(carry))
+      lines.push(carry)
+    return lines.join('\n')
+  } finally { closeSync(fd) }
+}
+
+function transcriptTitle(storePath: string): string | null {
+  try { return deriveTitleFromTranscript(readTitleSample(storePath)) }
+  catch { return null }
 }
 
 const STUB_PREFIX = 'Imported from Claude Code session:'

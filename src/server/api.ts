@@ -1,29 +1,45 @@
 import { Router } from 'express'
-import { openSync, readSync, closeSync, fstatSync } from 'node:fs'
 import { execFile } from 'node:child_process'
-import { getStore, getCache, refresh } from './store-singleton'
+import { getStore, getCache, refresh, storeRoots } from './store-singleton'
+import { collectLogicalSessions } from '../sessions'
+import { toPreview, previewByCli, previewByIds } from './import-preview'
+import type { AgentCli } from '../types'
+import { canonicalPathKey } from '../path-normalize'
 import { listProjects, createProject, updateProject, deleteProject } from '../data/projects'
 import { listTasks, createTask, updateTask, deleteTask } from '../data/tasks'
+import { generateAndApplyTaskTitle } from '../data/task-title'
+import { triggerTaskSummary, isSummarizingTask } from '../data/task-summary'
+import { triggerProjectSummary, isSummarizingProject } from '../data/project-summary'
 import { getDocStore, getDocsRoot } from '../data/docstore'
 import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, setAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getLocale, normalizeLocale, LOCALES, contextStrings } from '../i18n'
-import { ensureContextDoc, appendContextLogOnDisk } from '../data/context-doc'
+import { ensureContextDoc, appendContextLogOnDiskAsync } from '../data/context-doc'
+import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
 import { getContextConfig, setContextConfig } from '../data/context-config'
 import { lastLogEntries } from '../data/context-log'
 import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
-import { generateTitle, generateProgressSummary } from '../agent/index'
+import { parseStructuredSummary } from '../agent/index'
+import { summarizeCompactedContext } from '../agent/context-compact'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
-import { titleInputFromTranscript } from '../agent/transcript'
+import { isGeneratingTitle, triggerSessionTitle, titleGist } from './title-service'
 import type { Locale } from '../i18n'
-import { readFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { readFileSync, statSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { snapshotActivity } from './pty-registry'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
+import { parseTranscriptChatTurns, parseTranscriptTurns } from './transcript-turns'
+import { parseClaudeJsonlTurns } from '../agent/normalize/claude-jsonl'
 import { revertCommit } from '../data/doc-git'
-import { berthAgentCwd } from '../paths'
+import { berthAgentCwd, berthHome } from '../paths'
+
+function isFolderPickerCancelled(err: unknown, stderr = ''): boolean {
+  const e = err as { message?: unknown; stderr?: unknown }
+  const text = `${String(e?.message ?? '')}\n${String(e?.stderr ?? '')}\n${stderr}`
+  return /User canceled/i.test(text) || /\(-128\)/.test(text)
+}
 
 function truncate(s: string | null, max: number): string | null {
   if (!s) return null
@@ -49,39 +65,34 @@ function sendAgentError(res: import('express').Response, error: unknown, locale:
   return res.status(502).json(contextAgentError(error))
 }
 
-function readTitleTranscriptSample(path: string): string {
-  const fd = openSync(path, 'r')
-  try {
-    const size = fstatSync(fd).size
-    const maxBytes = 1024 * 1024
-    if (size <= maxBytes) {
-      const b = Buffer.alloc(size)
-      const n = readSync(fd, b, 0, size, 0)
-      return b.toString('utf8', 0, n)
-    }
-
-    const headBytes = 256 * 1024
-    const tailBytes = maxBytes - headBytes
-    const head = Buffer.alloc(headBytes)
-    const hn = readSync(fd, head, 0, headBytes, 0)
-    const tailStart = Math.max(0, size - tailBytes)
-    const tail = Buffer.alloc(size - tailStart)
-    const tn = readSync(fd, tail, 0, tail.length, tailStart)
-    let tailText = tail.toString('utf8', 0, tn)
-    const firstNewline = tailText.indexOf('\n')
-    if (tailStart > 0 && firstNewline >= 0) tailText = tailText.slice(firstNewline + 1)
-    return head.toString('utf8', 0, hn) + '\n' + tailText
-  } finally {
-    closeSync(fd)
-  }
-}
-
 export interface ApiSession {
   sessionId: string; cli: string; cwd: string | null; title: string | null
   updatedAt: number; deleted: boolean; copies: number
   pinned: boolean; projectId: string | null; project: string | null; attachState: string
   todoKey?: string | null
   activity: 'running' | 'settled' | null   // live PTY status (null = no live process / external session)
+  titleGenerating?: boolean                // 港务助手 is generating this session's title right now
+}
+
+/**
+ * Collapse a session cwd that is really the project's Berth workspace dir — reached through a
+ * filesystem alias — back to the canonical workspace path the client groups on. claude resolves
+ * symlinks before recording its cwd (macOS: /tmp → /private/tmp), so a workspace launch ends up with
+ * `/private/tmp/.../workspaces/<id>` while `project.workspaceCwd` stays `/tmp/.../workspaces/<id>`. A
+ * raw string compare then splits it into its own "(real path)" group instead of 项目默认目录. We only
+ * rewrite when the cwd canonically equals the project's workspace dir, so real code dirs are untouched.
+ * `canon` is injected for testability (it's realpath-backed in production).
+ */
+export function normalizeWorkspaceCwd(
+  rawCwd: string | null,
+  projectId: string | null,
+  workspaceDirFor: (projectId: string) => string,
+  canon: (p: string) => string,
+): string | null {
+  if (!rawCwd || !projectId) return rawCwd
+  const ws = workspaceDirFor(projectId)
+  if (rawCwd === ws) return rawCwd                 // already canonical (coco form) — cheap path, no realpath
+  return canon(rawCwd) === canon(ws) ? ws : rawCwd // symlink-variant of the workspace dir → present canonically
 }
 
 function serialize(): ApiSession[] {
@@ -99,16 +110,35 @@ function serialize(): ApiSession[] {
   }
   // Live activity snapshot from the pty-registry (built once; O(1) lookup per session).
   const activityMap = new Map(snapshotActivity().map(a => [a.sessionId, a.state]))
-  return getCache().map(s => ({
-    sessionId: s.sessionId, cli: s.cli, cwd: s.cwd, title: overrides.get(s.sessionId) ?? s.title,
+  // Backfill cwd for Berth launches whose CLI transcript hasn't recorded one yet (init window): the
+  // launch intent already knows the resolved cwd (incl. the project workspace fallback). Without this
+  // a fresh project launch surfaces with cwd=null and the client groups it under "(无目录)" instead of
+  // the project default dir. We only fill when s.cwd is null, so a real recorded cwd always wins.
+  const intentCwd = store.launchIntentCwdBySession()
+  // Per-call memo so a /sessions poll realpaths each distinct workspace dir / cwd at most once.
+  const wsDirCache = new Map<string, string>()
+  const workspaceDirFor = (pid: string) => {
+    let v = wsDirCache.get(pid); if (v === undefined) { v = join(berthHome(), 'workspaces', pid); wsDirCache.set(pid, v) } return v
+  }
+  const canonCache = new Map<string, string>()
+  const canon = (p: string) => { let v = canonCache.get(p); if (v === undefined) { v = canonicalPathKey(p); canonCache.set(p, v) } return v }
+  return getCache().map(s => {
+    const projectId = attach.get(s.sessionId)?.projectId ?? null
+    // Fill an init-window null cwd from the launch intent, then collapse a symlink-variant of the
+    // project workspace dir back to its canonical form so it groups under 项目默认目录.
+    const cwd = normalizeWorkspaceCwd(s.cwd ?? intentCwd.get(s.sessionId) ?? null, projectId, workspaceDirFor, canon)
+    return {
+    sessionId: s.sessionId, cli: s.cli, cwd, title: overrides.get(s.sessionId) ?? s.title,
     updatedAt: s.updatedAt, deleted: s.deleted, copies: s.copies.length,
     pinned: pins.has(s.sessionId),
-    projectId: attach.get(s.sessionId)?.projectId ?? null,
-    project: projectNames.get(attach.get(s.sessionId)?.projectId ?? '') ?? null,
+    projectId,
+    project: projectNames.get(projectId ?? '') ?? null,
     attachState: attach.get(s.sessionId)?.state ?? 'unconfirmed',
     todoKey: reverseMap.get(s.sessionId) ?? null,
     activity: activityMap.get(s.sessionId) ?? null,
-  })).sort((a, b) => b.updatedAt - a.updatedAt)
+    titleGenerating: isGeneratingTitle(s.sessionId),   // drives the live spinner on the generate-title icon
+    }
+  }).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export const api = Router()
@@ -152,9 +182,13 @@ api.post('/pick-folder', (req, res) => {
   const def = typeof req.body?.default === 'string' ? req.body.default : ''
   // `choose folder` returns an alias; `POSIX path of` yields the absolute path (trailing slash).
   const loc = def ? ` default location (POSIX file ${JSON.stringify(def)})` : ''
+  const cancelled = () => res.json({ cancelled: true })
   const tryScript = (script: string, onFail: () => void) => {
-    execFile('osascript', ['-e', script], { timeout: 300000 }, (err, stdout) => {
-      if (err) return onFail()
+    execFile('osascript', ['-e', script], { timeout: 300000 }, (err, stdout, stderr) => {
+      if (err) {
+        if (isFolderPickerCancelled(err, stderr?.toString?.() ?? '')) return cancelled()
+        return onFail()
+      }
       const p = stdout.toString().trim().replace(/\/+$/, '')
       if (!p) return onFail()
       res.json({ path: p })
@@ -165,7 +199,7 @@ api.post('/pick-folder', (req, res) => {
     `POSIX path of (choose folder with prompt "选择会话工作目录"${loc})`,
     () => tryScript(
       `POSIX path of (choose folder with prompt "选择会话工作目录")`,
-      () => res.json({ cancelled: true }),
+      cancelled,
     ),
   )
 })
@@ -180,9 +214,36 @@ api.get('/projects', (_req, res) => {
       ...p,
       archived: archived.has(p.id),
       homeCwd: pathMap.get(p.id)?.home ?? null,
-      paths: pathMap.get(p.id)?.paths ?? [],
+      paths: pathMap.get(p.id)?.paths ?? [],          // bare string[] — back-compat (old app + ApiProject)
+      pathsMeta: pathMap.get(p.id)?.meta ?? [],        // {cwd,enabled}[] — drives the 货舱 toggle UI
+      workspaceCwd: join(berthHome(), 'workspaces', p.id), // Berth-assigned default cwd (masked in UI)
+      lastCwd: store.getSetting(`project_last_cwd:${p.id}`), // sticky 主 cwd for the launch auto-pick
+      summarizing: isSummarizingProject(p.id),             // drives the 小结 button spinner (popup-independent)
     })),
   })
+})
+
+// Project 小结 (港务助手). GET returns the cached structured 项目小结 + whether a (re)generation is
+// in flight; the popover polls it. Summaries are stored as JSON; legacy plain-text rows degrade to
+// headline-only.
+api.get('/projects/:id/summary', (req, res) => {
+  const store = getStore()
+  const project = listProjects(store).find(p => p.id === req.params.id)
+  if (!project) return res.status(404).json({ error: 'unknown project' })
+  const cached = store.getProjectSummary(project.id)
+  const summarizing = isSummarizingProject(project.id)
+  if (!cached) return res.json({ summary: null, summarizing })
+  res.json({ summary: parseStructuredSummary(cached.summary), generatedAt: cached.generatedAt, summarizing })
+})
+
+// Kick a (re)generation and return immediately — generation runs detached server-side, so closing
+// the popover never stops it. The client polls GET (summarizing flag) for the result.
+api.post('/projects/:id/summary', (req, res) => {
+  const store = getStore()
+  const project = listProjects(store).find(p => p.id === req.params.id)
+  if (!project) return res.status(404).json({ error: 'unknown project' })
+  triggerProjectSummary(store, project.id)
+  res.json({ summarizing: true })
 })
 
 api.post('/projects/archive', (req, res) => {
@@ -248,6 +309,44 @@ api.post('/session-dirs', (req, res) => {
   res.json({ ok: true, count: getCache().length })
 })
 
+// Preview which CLI sessions a candidate import dir would surface, WITHOUT mutating state (no import,
+// no refresh). Scans the same CLI stores `refresh()` reads and returns sessions whose cwd EQUALS the
+// given cwd — the exact-match rule `filterImportedSessions` applies to import roots. Returns the FULL
+// set (no cap): the import dialog paginates client-side (近期 8 + Show more) and 全选 must cover all.
+function normDirForMatch(p: string): string {
+  const key = canonicalPathKey(p)
+  return key.length > 1 ? key.replace(/\/+$/, '') : key
+}
+api.post('/session-dirs/preview', (req, res) => {
+  const cwd = typeof req.body?.cwd === 'string' ? req.body.cwd.trim().replace(/\/+$/, '') : ''
+  if (!cwd) return res.status(400).json({ error: 'cwd required' })
+  const target = normDirForMatch(cwd)
+  const all = collectLogicalSessions(storeRoots())
+  const sessions = all
+    .filter(s => s.cwd != null && normDirForMatch(s.cwd) === target)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map(toPreview)
+  res.json({ sessions })
+})
+
+// 导入会话 chooser — per-CLI source. Returns every session for one CLI (across all cwds), recent-first;
+// the dialog groups them by cwd client-side. Same scan source as the per-cwd preview above.
+const IMPORT_CLIS = new Set<AgentCli>(['claude', 'codex', 'coco'])
+api.post('/sessions/preview-by-cli', (req, res) => {
+  const cli = req.body?.cli
+  if (typeof cli !== 'string' || !IMPORT_CLIS.has(cli as AgentCli))
+    return res.status(400).json({ error: 'cli must be one of claude|codex|coco' })
+  res.json({ sessions: previewByCli(collectLogicalSessions(storeRoots()), cli as AgentCli) })
+})
+
+// 导入会话 chooser — by-id source. Looks the given ids up across all stores so the paste-ids flow can
+// show found/notFound before importing (the actual import still goes through POST /session-import).
+api.post('/sessions/preview-by-ids', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
+  if (ids.length === 0) return res.status(400).json({ error: 'ids:string[] required' })
+  res.json(previewByIds(collectLogicalSessions(storeRoots()), ids))
+})
+
 api.delete('/session-dirs', (req, res) => {
   const cwd = typeof req.body?.cwd === 'string' ? req.body.cwd.trim().replace(/\/+$/, '') : ''
   if (!cwd) return res.status(400).json({ error: 'cwd required' })
@@ -256,15 +355,83 @@ api.delete('/session-dirs', (req, res) => {
   res.json({ ok: true, count: getCache().length })
 })
 
-// Add a cwd path to a project's path list (optionally make it the home cwd).
+// Register a cwd as a project 货舱 (optionally home, optionally disabled). `enabled` defaults true.
 api.post('/projects/add-path', (req, res) => {
-  const { projectId, name, cwd, isHome } = req.body ?? {}
+  const { projectId, name, cwd, isHome, enabled } = req.body ?? {}
   const store = getStore()
   const id = typeof projectId === 'string' ? projectId : (typeof name === 'string' ? store.resolveProjectId(name) : null)
   if (!id || typeof cwd !== 'string' || cwd.trim() === '')
     return res.status(400).json({ error: 'projectId:string, cwd:string required' })
-  store.addProjectPath(id, cwd.trim(), !!isHome)
+  store.addProjectPath(id, cwd.trim(), !!isHome, enabled === undefined ? true : !!enabled)
   res.json({ ok: true })
+})
+
+// Toggle a registered path's 默认装载 (enabled) flag.
+api.post('/projects/path/toggle', (req, res) => {
+  const { projectId, name, cwd, enabled } = req.body ?? {}
+  const store = getStore()
+  const id = typeof projectId === 'string' ? projectId : (typeof name === 'string' ? store.resolveProjectId(name) : null)
+  if (!id || typeof cwd !== 'string' || cwd.trim() === '' || typeof enabled !== 'boolean')
+    return res.status(400).json({ error: 'projectId:string, cwd:string, enabled:boolean required' })
+  store.setPathEnabled(id, cwd.trim(), enabled)
+  res.json({ ok: true })
+})
+
+// Remove a registered 货舱 path (does not touch any already-imported sessions). POST (not DELETE)
+// with a two-segment path so it can't be shadowed by `DELETE /projects/:id` (:id="path").
+api.post('/projects/path/remove', (req, res) => {
+  const { projectId, name, cwd } = req.body ?? {}
+  const store = getStore()
+  const id = typeof projectId === 'string' ? projectId : (typeof name === 'string' ? store.resolveProjectId(name) : null)
+  if (!id || typeof cwd !== 'string' || cwd.trim() === '')
+    return res.status(400).json({ error: 'projectId:string, cwd:string required' })
+  store.removeProjectPath(id, cwd.trim())
+  res.json({ ok: true })
+})
+
+// Session-grained import: mark the given sessions as explicitly in Berth's visible set (and, with a
+// projectId, attach them to that project). Replaces the old dir-grained importDir for the React app —
+// registering a 货舱 cwd no longer surfaces all its sessions; only these ids surface.
+api.post('/session-import', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
+  const projectId = typeof req.body?.projectId === 'string' && req.body.projectId.trim() !== '' ? req.body.projectId.trim() : null
+  const store = getStore()
+  for (const id of ids) {
+    store.addSessionImport(id)
+    if (projectId) store.setAttach(id, projectId, 'confirmed')
+  }
+  refresh()
+  res.json({ ok: true, count: getCache().length })
+})
+
+// 移出项目（保留导入信号）：批量 detach。会话脱离项目并清除任务关联，回到「无归属」。
+api.post('/sessions/detach', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
+  if (!ids.length) return res.status(400).json({ error: 'ids:string[] required' })
+  const store = getStore()
+  for (const id of ids) {
+    store.removeEdgesForSession(id)
+    store.setAttach(id, null, 'confirmed')
+  }
+  refresh()
+  res.json({ ok: true, count: getCache().length })
+})
+
+// 取消导入：撤销 Berth 侧可见/组织信号。不会删除磁盘上的 CLI 会话文件。
+api.post('/session-import/remove', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
+  if (!ids.length) return res.status(400).json({ error: 'ids:string[] required' })
+  const store = getStore()
+  for (const id of ids) {
+    store.removeSessionImport(id)
+    store.removeEdgesForSession(id)
+    store.setPin(id, false)
+    store.setAttach(id, null, 'confirmed')
+    store.removeLaunchIntentsForSession(id)
+    store.hideSession(id)
+  }
+  refresh()
+  res.json({ ok: true, count: getCache().length })
 })
 
 // ── Markdown context docs (read/write, restricted to the configurable docs root) ──
@@ -336,14 +503,18 @@ api.post('/context', (req, res) => {
     if (kind === 'task' && ensured.created && task && !task.detailDoc) {
       store.updateTaskFields(key, { detailDoc: ensured.ref }, Date.now())
     }
-    res.json({ ref: ensured.ref, created: ensured.created })
+    // Seed + resolve the maintenance protocol (AGENTS.md) so callers (CLI/skill) can Read the single
+    // source of the write rules instead of duplicating them. Per-project override wins if present.
+    seedDefaultProtocol(ds, locale)
+    const protocolPath = resolveProtocol(ds, locale, projectName).protocolPath
+    res.json({ ref: ensured.ref, created: ensured.created, protocolPath })
   } catch (e: any) {
     res.status(500).json({ error: String(e?.message ?? e) })
   }
 })
 
 // Mechanically append a dated entry to an entity's progress-log section (canonical B).
-api.post('/context/log', (req, res) => {
+api.post('/context/log', async (req, res) => {
   const { kind, key, text } = req.body ?? {}
   if ((kind !== 'task' && kind !== 'project') || typeof key !== 'string' || !key.trim())
     return res.status(400).json({ error: 'kind:task|project, key:string required' })
@@ -362,8 +533,11 @@ api.post('/context/log', (req, res) => {
     }
     const date = new Date().toISOString().slice(0, 10)
     // appendLogEntry collapses internal whitespace/newlines into a single line — no pre-processing needed here.
-    const r = appendContextLogOnDisk(ds, ensured.abs, { text, date, maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })
-    res.json({ ref: ensured.ref, appended: r.appended, rotated: r.rotated })
+    const r = await appendContextLogOnDiskAsync(ds, ensured.abs, {
+      text, date, maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale,
+      maxChars: cfg.docMaxChars, keepChars: cfg.docKeepChars,
+    }, (input) => summarizeCompactedContext(input, resolveBerthAgent(store)))
+    res.json({ ref: ensured.ref, appended: r.appended, rotated: r.rotated, compacted: r.compacted })
   } catch (e: any) {
     res.status(500).json({ error: String(e?.message ?? e) })
   }
@@ -402,13 +576,16 @@ api.post('/context/update', async (req, res) => {
       target, docStore: ds, locale, agent: resolveBerthAgent(store),
       userInput: effectiveUserInput || undefined, transcript,
       date: new Date().toISOString().slice(0, 10),
-      getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
+      getCfg: () => {
+        const c = getContextConfig(store)
+        return { logMaxLines: c.logMaxLines, logKeep: c.logKeep, docMaxChars: c.docMaxChars, docKeepChars: c.docKeepChars }
+      },
     })
     if (!outcome.ok) {
       try { refresh() } catch {}
       return res.status(409).json(contextAgentError(outcome.reason))
     }
-    res.json({ ok: true, ref, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
+    res.json({ ok: true, ref, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated, compacted: outcome.compacted })
   } catch (e: any) {
     try { refresh() } catch {}
     res.status(502).json(contextAgentError(e))
@@ -424,6 +601,7 @@ api.get('/todos', (_req, res) => {
     detailDoc: t.detailDoc, progress: truncate(t.progress, 300),
     ddl: ddlMap.get(t.id) ?? null,
     sessions: edgesMap.get(t.id) ?? [],
+    summarizing: isSummarizingTask(t.id),   // drives the card's 摘要 loading icon
   }))
   res.json({ error: null, todos })
 })
@@ -447,16 +625,37 @@ api.get('/todos/:id/progress', (req, res) => {
 })
 
 api.post('/todos', async (req, res) => {
-  const { text, projectId, confirm, createOption, images } = req.body ?? {}
+  const { text, projectId, confirm, createOption, images, autoTitle } = req.body ?? {}
   if (typeof text !== 'string' || (text.trim() === '' && (!Array.isArray(images) || images.length === 0)))
     return res.status(400).json({ error: 'text or images required' })
   try {
     const store = getStore()
     const imgs = Array.isArray(images) ? images.filter((s: any) => typeof s === 'string') : undefined
-    const result = await createTask(store, getDocStore(store), text, { projectId, confirm, createOption, images: imgs })
+    const result = await createTask(store, getDocStore(store), text, { projectId, confirm, createOption, images: imgs, autoTitle: autoTitle === true })
     res.json(result)
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
+  }
+})
+
+// Smart task title: regenerate from task context + linked session titles, then persist as the task
+// title. Manual editing remains PATCH /todos/:id from the inline double-click affordance.
+api.post('/todos/:id/title', async (req, res) => {
+  const store = getStore()
+  const task = listTasks(store).find(t => t.id === req.params.id)
+  if (!task) return res.status(404).json({ error: 'unknown task' })
+  const linkedIds = store.edgesByTodo().get(task.id) ?? []
+  const overrides = store.allTitleOverrides()
+  const cacheById = new Map(getCache().map(s => [s.sessionId, s]))
+  const sessions = linkedIds.map(id => {
+    const s = cacheById.get(id)
+    return { id, title: overrides.get(id) ?? s?.title ?? null }
+  })
+  try {
+    const result = await generateAndApplyTaskTitle(store, getDocStore(store), task.id, sessions, resolveBerthAgent(store))
+    res.json(result)
+  } catch (e: any) {
+    return sendAgentError(res, e, getLocale(store))
   }
 })
 
@@ -479,24 +678,27 @@ api.patch('/todos/:id', (req, res) => {
   }
 })
 
-// Summarize the task's context doc (B) into the short progress snapshot (A). Mirrors the title pipeline.
-api.post('/todos/:id/progress-summary', async (req, res) => {
+// Structured 任务进展详情 (headline + progress + TODO), behind the card's 更多 popover. GET returns
+// the cached result + whether a (re)generation is in flight; the popover polls it.
+api.get('/todos/:id/summary-detail', (req, res) => {
   const store = getStore()
   const task = listTasks(store).find(t => t.id === req.params.id)
   if (!task) return res.status(404).json({ error: 'unknown task' })
-  const ds = getDocStore(store)
-  const locale = getLocale(store)
-  try {
-    const ensured = ensureContextDoc(ds, 'task', task.id, { title: task.title, projectName: task.project, locale })
-    if (ensured.created && !task.detailDoc) store.updateTaskFields(task.id, { detailDoc: ensured.ref }, Date.now())
-    const { content } = ds.readDoc(ensured.abs)
-    const summary = await generateProgressSummary(content, contextStrings(locale).summaryPrompt, resolveBerthAgent(store))
-    if (!summary) return res.status(502).json({ error: 'agent returned empty summary' })
-    updateTask(store, task.id, { progress: summary })
-    res.json({ summary })
-  } catch (e: any) {
-    sendAgentError(res, e, locale)
-  }
+  const cached = store.getTaskSummary(task.id)
+  const summarizing = isSummarizingTask(task.id)
+  if (!cached) return res.json({ summary: null, summarizing })
+  res.json({ summary: parseStructuredSummary(cached.summary), generatedAt: cached.generatedAt, summarizing })
+})
+
+// Kick a (re)generation and return immediately — runs detached server-side (same path as the
+// status-change auto-trigger), so closing the popover never stops it. The client polls GET; the card's
+// 摘要 loading icon also lights up via /todos.summarizing. Generation writes the headline back to 进展摘要.
+api.post('/todos/:id/summary-detail', (req, res) => {
+  const store = getStore()
+  const task = listTasks(store).find(t => t.id === req.params.id)
+  if (!task) return res.status(404).json({ error: 'unknown task' })
+  triggerTaskSummary(store, task.id)
+  res.json({ summarizing: true })
 })
 
 // Delete a task (soft delete; the removal propagates to external sources on the next sync).
@@ -621,19 +823,15 @@ api.post('/settings', (req, res) => {
   res.json({ ok: true, docsRoot: getDocsRoot(store), locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
 })
 
-api.post('/sessions/:id/title', async (req, res) => {
+// Kick a detached title (re)generation and return immediately — it runs decoupled from this request,
+// so closing the drawer never stops it. Fails fast (422) when the session has no usable content; the
+// client polls /api/sessions (titleGenerating + the eventual title) for progress.
+api.post('/sessions/:id/title', (req, res) => {
   const s = getCache().find(x => x.sessionId === req.params.id)
   if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
-  let sample = ''
-  try { sample = readTitleTranscriptSample(s.contentSourcePath) } catch {}
-  const gist = titleInputFromTranscript(sample)
-  if (!gist) return res.status(422).json({ error: 'no usable session content for title' })
-  try {
-    const title = await generateTitle(gist, resolveBerthAgent(getStore()))
-    if (!title) return res.status(502).json({ error: 'agent returned empty title' })
-    getStore().setTitleOverride(s.sessionId, title)
-    res.json({ title })
-  } catch (e: any) { sendAgentError(res, e, getLocale(getStore())) }
+  if (!titleGist(s.sessionId)) return res.status(422).json({ error: 'no usable session content for title' })
+  triggerSessionTitle(s.sessionId)
+  res.json({ generating: true })
 })
 
 api.patch('/sessions/:id/title', (req, res) => {
@@ -666,15 +864,50 @@ api.post('/sessions/:id/consolidate', async (req, res) => {
       session: { sessionId: s.sessionId, todoKey, projectId, contentSourcePath: s.contentSourcePath },
       task: task ? { title: task.title, project: task.project } : null,
       docStore, locale, agent: resolveBerthAgent(store),
-      getCfg: () => { const c = getContextConfig(store); return { logMaxLines: c.logMaxLines, logKeep: c.logKeep } },
+      getCfg: () => {
+        const c = getContextConfig(store)
+        return { logMaxLines: c.logMaxLines, logKeep: c.logKeep, docMaxChars: c.docMaxChars, docKeepChars: c.docKeepChars }
+      },
     })
     if (!outcome.ok) {
       try { refresh() } catch {}
       return res.status(409).json(contextAgentError(outcome.reason))
     }
-    res.json({ ok: true, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated })
+    res.json({ ok: true, changed: outcome.changed, added: outcome.added, removed: outcome.removed, commit: outcome.commit, rotated: outcome.rotated, compacted: outcome.compacted })
   } catch (e: any) {
     try { refresh() } catch {}
     sendAgentError(res, e, locale)
+  }
+})
+
+// Structured conversation for the session drawer's codex-style chat view (walkthrough #4).
+// Best-effort parse of the session jsonl into { turns: [{role:'user'|'agent'|'tool', text, collapsed?}] };
+// falls back to a single cleaned agent turn for an unrecognized shape so it never crashes.
+api.get('/sessions/:id/transcript', (req, res) => {
+  const s = getCache().find(x => x.sessionId === req.params.id)
+  if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
+  try {
+    const turns = parseTranscriptTurns(s.cli, s.contentSourcePath)
+    res.json({ turns })
+  } catch {
+    res.json({ turns: [] })
+  }
+})
+
+// Model B history replay: seed bubbles from the on-disk jsonl, then attach the live stream for new
+// turns. Claude has a rich durable-jsonl reducer; codex/coco currently use the simple transcript
+// parser bridged into ChatTurn[] so historical sessions do not open as a false empty chat.
+const MAX_CHAT_JSONL_BYTES = 32 * 1024 * 1024
+api.get('/sessions/:id/chat', (req, res) => {
+  const s = getCache().find(x => x.sessionId === req.params.id)
+  if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
+  try {
+    if (s.cli === 'claude' && statSync(s.contentSourcePath).size > MAX_CHAT_JSONL_BYTES) return res.json({ turns: [], truncated: true })
+    const turns = s.cli === 'claude'
+      ? parseClaudeJsonlTurns(readFileSync(s.contentSourcePath, 'utf8'))
+      : parseTranscriptChatTurns(s.cli, s.contentSourcePath)
+    res.json({ turns })
+  } catch {
+    res.json({ turns: [] })
   }
 })

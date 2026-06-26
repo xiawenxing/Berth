@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Berth 2.0 · cwd 自动分配 + 货舱启动 cwd（v8 样式稿）</title>
+<style>
+:root{
+  color-scheme:dark;
+  --background:#141b2e; --foreground:#b3bcd4; --card:#1f2940; --card-foreground:#c7cfe3;
+  --popover:#283450; --secondary:#2c3852; --muted:#2c3852; --muted-foreground:#8089a3;
+  --accent:#2c3852; --accent-foreground:#dbe1f0; --border:#3a4768; --input:#3a4768; --ring:#56b6ff;
+  --sidebar:#101526; --sidebar-accent:#1f2940; --canvas:#0d1220;
+  --brand:#56b6ff; --brand-foreground:#0d1220;
+  --success:#7ed4a6; --warning:#f0c773; --priority:#e0a060; --purple:#b88cf0; --destructive:#f0707f;
+  --radius:0.625rem; --radius-md:0.5rem; --radius-sm:0.375rem; --text-dim:#6b7280;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --font-mono:'SF Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 2px 8px rgba(0,0,0,.18);
+}
+body.light{
+  --background:#fafafa; --foreground:#383a42; --card:#fff; --card-foreground:#383a42;
+  --popover:#fff; --secondary:#eaecef; --muted:#eaecef; --muted-foreground:#6b7280;
+  --accent:#eaecef; --accent-foreground:#383a42; --border:#e0e2e6; --input:#e0e2e6;
+  --sidebar:#f0f1f3; --sidebar-accent:#e6e8eb; --canvas:#f0f1f3; --text-dim:#9aa0aa;
+  --shadow:0 1px 2px rgba(0,0,0,.08),0 2px 8px rgba(0,0,0,.06);
+}
+*{box-sizing:border-box}
+body{background:var(--canvas);color:var(--foreground);font:13px/1.5 var(--font-sans);margin:0;padding:32px}
+svg{display:inline-block;vertical-align:-2px;flex:none}
+button{font-family:inherit;color:inherit;cursor:pointer}
+
+.page{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:30px}
+.page-head{display:flex;align-items:baseline;gap:10px}
+.page-head h1{font-size:17px;font-weight:700;color:var(--foreground);margin:0}
+.page-head .sub{font-size:12px;color:var(--muted-foreground)}
+.theme-btn{margin-left:auto;border:1px solid var(--border);background:transparent;border-radius:var(--radius-sm);padding:4px 10px;color:var(--muted-foreground);font-size:12px}
+
+.panel-label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--brand);margin-bottom:10px;letter-spacing:.3px}
+.panel-label .n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--brand);color:var(--brand-foreground);font-size:11px;font-weight:700}
+.cap{font-size:11.5px;color:var(--text-dim);margin-top:9px;line-height:1.7}
+.cap b{color:var(--muted-foreground);font-weight:600}
+
+/* ====== shared card ====== */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;box-shadow:var(--shadow)}
+.mod-head{display:flex;align-items:center;gap:8px;padding:0 0 11px}
+.mod-head h2{font-size:13px;font-weight:600;color:var(--muted-foreground);margin:0}
+.mod-head .tag{border-radius:10px;background:var(--muted);padding:1px 8px;font-size:11px;color:var(--muted-foreground)}
+.mod-head .spacer{flex:1}
+.hbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:transparent;border-radius:var(--radius-sm);padding:4px 9px;font-size:12px;color:var(--muted-foreground)}
+.hbtn:hover{background:var(--accent)}
+
+/* ====== session module groups ====== */
+.sgrp-head{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;border-top:1px solid var(--border);padding:9px 13px;color:var(--muted-foreground);font-size:12px;font-weight:600}
+.card .sgrp:first-child .sgrp-head{border-top:none}
+.sgrp-head .chev{color:var(--text-dim)}
+.sgrp-label{color:var(--card-foreground)}
+.sgrp-label.mono{font-family:var(--font-mono);font-size:11.5px}
+.sgrp-sub{color:var(--text-dim);font-weight:400}
+.sgrp-count{color:var(--text-dim);font-weight:400}
+.sgrp-head .spacer{flex:1}
+.sec-tag{border-radius:999px;background:var(--muted);padding:1px 8px;font-size:10px;font-weight:500;color:var(--text-dim)}
+.sec-tag.home{background:color-mix(in oklab,var(--brand) 18%,transparent);color:var(--brand)}
+.sec-tag.berth{background:color-mix(in oklab,var(--purple) 18%,transparent);color:var(--purple)}
+.import-ic{border:none;background:transparent;color:var(--text-dim);padding:2px;border-radius:4px;display:inline-flex}
+.import-ic:hover{background:var(--secondary);color:var(--brand)}
+
+.srow{display:flex;align-items:center;gap:10px;border-top:1px solid color-mix(in oklab,var(--border) 55%,transparent);padding:0 13px;height:34px}
+.srow .glyph{width:8px;height:8px;flex:none;border-radius:50%}
+.srow .glyph.run{background:var(--success)}
+.srow .glyph.dock{border:2px solid var(--brand)}
+.srow .glyph.idle{background:transparent}
+.cli{font-family:var(--font-mono);font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;flex:none}
+.cli.claude{background:color-mix(in oklab,var(--priority) 22%,transparent);color:var(--priority)}
+.cli.codex{background:color-mix(in oklab,var(--brand) 22%,transparent);color:var(--brand)}
+.cli.coco{background:color-mix(in oklab,var(--purple) 22%,transparent);color:var(--purple)}
+.s-title{font-size:13px;font-weight:500;color:var(--card-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px}
+.s-pill{border-radius:4px;padding:0 6px;font-size:10.5px;font-weight:600;background:color-mix(in oklab,var(--muted-foreground) 16%,transparent);color:var(--muted-foreground)}
+.s-spacer{flex:1}
+.s-time{font-size:11px;color:var(--muted-foreground)}
+
+/* ====== cargo registry (panel 2) ====== */
+.cargo-th{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;color:var(--accent-foreground)}
+.cargo-th .icon{color:var(--brand)}
+.cargo-th .sub{margin-left:auto;font-size:11px;font-weight:500;color:var(--text-dim)}
+.crow{display:flex;align-items:center;gap:11px;padding:9px 13px;border-top:1px solid color-mix(in oklab,var(--border) 55%,transparent)}
+.crow:first-of-type{border-top:none}
+.crow .ic{color:var(--muted-foreground)}
+.crow .path{font-family:var(--font-mono);font-size:12px;color:var(--card-foreground)}
+.crow .sp{flex:1}
+.crow .rm{border:none;background:transparent;color:var(--text-dim);padding:3px;border-radius:5px;display:inline-flex}
+.crow .rm:hover{background:var(--secondary);color:var(--destructive)}
+/* on/off toggle (matches the real <Toggle> in CargoDefaults.tsx) */
+.tgl{position:relative;width:36px;height:20px;border-radius:999px;border:none;flex:none;padding:2px;display:inline-flex;align-items:center;background:var(--muted)}
+.tgl.on{background:color-mix(in oklab,var(--success) 70%,transparent)}
+.tgl .knob{width:16px;height:16px;border-radius:50%;background:var(--card-foreground);transition:transform .15s}
+.tgl.on .knob{transform:translateX(16px)}
+.cargo-add{display:flex;align-items:center;gap:7px;width:100%;background:transparent;border:none;border-top:1px solid var(--border);padding:10px 13px;color:var(--brand);font-size:12px;font-weight:500}
+.cargo-add:hover{background:var(--accent)}
+
+/* ====== import checklist dialog (panel 4) ====== */
+.imp{max-width:520px}
+.imp-head{border-bottom:1px solid var(--border);padding:11px 14px}
+.imp-head .t{font-size:13px;font-weight:600;color:var(--card-foreground)}
+.imp-head .p{margin-top:2px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+.imp-head .hint{margin-top:6px;font-size:11px;color:var(--muted-foreground);background:color-mix(in oklab,var(--brand) 8%,transparent);border:1px solid color-mix(in oklab,var(--brand) 25%,transparent);border-radius:var(--radius-sm);padding:5px 8px}
+.imp-bar{display:flex;align-items:center;justify-content:space-between;padding:9px 14px 4px}
+.imp-bar .cnt{font-size:11px;color:var(--text-dim)}
+.imp-bar .all{font-size:11px;color:var(--brand);background:none;border:none}
+.imp-list{max-height:300px;overflow-y:auto;padding:4px 14px 10px;display:flex;flex-direction:column;gap:3px}
+.imp-row{display:flex;align-items:center;gap:9px;border:1px solid transparent;border-radius:var(--radius-sm);padding:5px 8px;background:transparent;text-align:left;width:100%}
+.imp-row:hover{background:color-mix(in oklab,var(--muted-foreground) 8%,transparent)}
+.imp-row.on{border-color:color-mix(in oklab,var(--brand) 50%,transparent);background:color-mix(in oklab,var(--brand) 6%,transparent)}
+.imp-row .box{width:15px;height:15px;flex:none;border-radius:4px;border:1px solid var(--border);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:transparent}
+.imp-row.on .box{border-color:var(--brand);background:var(--brand);color:var(--brand-foreground)}
+.imp-row .t{flex:1;min-width:0;font-size:12.5px;color:var(--card-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.imp-row .tm{font-size:10.5px;color:var(--text-dim);flex:none}
+.imp-more{margin-top:4px;background:none;border:none;color:var(--text-dim);font-size:11px;font-weight:500;text-align:left;padding:4px 8px}
+.imp-more:hover{color:var(--brand)}
+
+/* ====== launch dialog states (panel 3) ====== */
+.dlg{max-width:430px}
+.dlg-head{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);padding:11px 14px}
+.dlg-head .icon{color:var(--brand)}
+.dlg-head h3{font-size:13px;font-weight:600;margin:0;color:var(--card-foreground)}
+.dlg-body{padding:13px 14px}
+.field-label{font-size:11px;font-weight:600;color:var(--muted-foreground);margin-bottom:7px}
+.cwd-static{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--background);padding:8px 10px;font-size:12.5px}
+.cwd-static .path{font-family:var(--font-mono);color:var(--card-foreground)}
+.cwd-static .auto{margin-left:auto;font-size:10.5px;color:var(--text-dim)}
+.cwd-pick{border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden}
+.cwd-opt{display:flex;align-items:center;gap:9px;padding:8px 10px;border-top:1px solid color-mix(in oklab,var(--border) 55%,transparent);background:transparent;width:100%;border-left:none;border-right:none;text-align:left}
+.cwd-opt:first-child{border-top:none}
+.cwd-opt.sel{background:color-mix(in oklab,var(--brand) 12%,transparent)}
+.cwd-opt .radio{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--border);flex:none;display:inline-flex;align-items:center;justify-content:center}
+.cwd-opt.sel .radio{border-color:var(--brand)}
+.cwd-opt.sel .radio::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--brand)}
+.cwd-opt .path{font-family:var(--font-mono);font-size:12px;color:var(--card-foreground)}
+.cwd-opt .star{margin-left:auto}
+.dlg-note{font-size:10.5px;color:var(--text-dim);margin-top:8px}
+.dlg-foot{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--border);padding:11px 14px}
+.btn{border-radius:var(--radius-sm);padding:6px 12px;font-size:13px;border:1px solid var(--border);background:transparent;color:var(--card-foreground)}
+.btn.primary{background:var(--brand);color:var(--brand-foreground);border-color:var(--brand);font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.state-tab{display:inline-flex;gap:6px;margin-bottom:10px}
+.state-tab button{border:1px solid var(--border);background:transparent;border-radius:999px;padding:3px 11px;font-size:11.5px;color:var(--muted-foreground)}
+.state-tab button.on{background:var(--brand);color:var(--brand-foreground);border-color:var(--brand);font-weight:600}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="page-head">
+    <h1>cwd 自动分配 + 货舱启动 cwd</h1>
+    <span class="sub">v8 样式稿 · 确认后实现</span>
+    <button class="theme-btn" onclick="document.body.classList.toggle('light')">☀ / ☾ 切换主题</button>
+  </div>
+
+  <!-- ============ PANEL 1 : 会话模块 ============ -->
+  <section>
+    <div class="panel-label"><span class="n">1</span> 会话模块 — 项目默认目录可见但路径打码</div>
+    <div class="mod-head">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      <h2>会话</h2><span class="tag">船只</span>
+      <span class="spacer"></span>
+      <button class="hbtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> 同步</button>
+      <button class="hbtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 3 20 12 6 21 6 3"/></svg> 起会话</button>
+    </div>
+    <div class="card">
+      <!-- Berth auto-assigned default cwd group — masked, NOT real disk path -->
+      <div class="sgrp">
+        <div class="sgrp-head">
+          <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-3H5a2 2 0 0 0-2 2z"/></svg>
+          <span class="sgrp-label">项目默认目录</span>
+          <span class="sgrp-count">2</span>
+          <span class="spacer"></span>
+          <span class="sec-tag berth">Berth 工作区</span>
+        </div>
+        <div class="srow"><span class="glyph idle"></span><span class="cli claude">claude</span><span class="s-title">随手起的一个会话</span><span class="s-pill">已停泊</span><span class="s-spacer"></span><span class="s-time">3小时前</span></div>
+        <div class="srow"><span class="glyph run"></span><span class="cli codex">codex</span><span class="s-title">没指定目录的调试会话</span><span class="s-pill" style="background:color-mix(in oklab,var(--success) 16%,transparent);color:var(--success)">在航</span><span class="s-spacer"></span><span class="s-time">刚刚</span></div>
+      </div>
+      <!-- real primary cargo cwd -->
+      <div class="sgrp">
+        <div class="sgrp-head">
+          <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2"><path d="M2 22a8 8 0 0 1 16 0"/><circle cx="10" cy="8" r="5" transform="translate(2 0)"/></svg>
+          <span class="sgrp-label mono">~/Code/berth</span>
+          <span class="sgrp-sub"> · 主 cwd</span>
+          <span class="sgrp-count">12</span>
+          <span class="spacer"></span>
+          <span class="sec-tag home">主 cwd</span>
+          <button class="import-ic" title="导入该目录下磁盘上的其他会话">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+          </button>
+        </div>
+        <div class="srow"><span class="glyph idle"></span><span class="cli claude">claude</span><span class="s-title">Berth 2.0 交互重构</span><span class="s-pill">已停泊</span><span class="s-spacer"></span><span class="s-time">昨天</span></div>
+        <div class="srow"><span class="glyph dock"></span><span class="cli codex">codex</span><span class="s-title">数据层解耦 review</span><span class="s-pill" style="background:color-mix(in oklab,var(--brand) 16%,transparent);color:var(--brand)">靠岸·待查收</span><span class="s-spacer"></span><span class="s-time">2小时前</span></div>
+      </div>
+      <!-- real worktree cargo cwd -->
+      <div class="sgrp">
+        <div class="sgrp-head">
+          <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform:rotate(-90deg)"><polyline points="6 9 12 15 18 9"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2"><path d="M2 22a8 8 0 0 1 16 0"/><circle cx="10" cy="8" r="5" transform="translate(2 0)"/></svg>
+          <span class="sgrp-label mono">~/Code/berth-i18n</span>
+          <span class="sgrp-sub"> · worktree·2</span>
+          <span class="sgrp-count">4</span>
+          <span class="spacer"></span>
+          <span class="sec-tag">worktree · 第 2 上下文</span>
+          <button class="import-ic" title="导入该目录下磁盘上的其他会话">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <p class="cap">
+      <b>项目默认目录</b>：Berth 自动分配的工作区（物理上是 <code>~/.berth/workspaces/&lt;项目&gt;/</code>），起航没选 cwd 的会话落这儿。分组里**只显示「项目默认目录」**，不露真实磁盘路径。它**不进货舱登记**，也没有「导入」icon。<br>
+      <b>其余组</b>：真实 cwd（货舱里登记的目录 / 会话实际跑过的目录），打码用 <code>~</code> 缩写。每组右侧 <b>导入 icon</b> = 把该目录下磁盘上、尚未导入的其他会话拉进来（会话粒度勾选）。
+    </p>
+  </section>
+
+  <!-- ============ PANEL 2 : 货舱登记 ============ -->
+  <section>
+    <div class="panel-label"><span class="n">2</span> 货舱目录登记 — 真实数据 · 开关 = 起航默认装载</div>
+    <div class="card">
+      <div class="cargo-th">
+        <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/></svg>
+        代码上下文 (cwd / worktree)
+        <span class="sub">开关 = 起航默认装载该目录</span>
+      </div>
+      <div class="crow">
+        <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-3H5a2 2 0 0 0-2 2z"/></svg>
+        <span class="path">~/Code/berth</span>
+        <span class="sp"></span>
+        <button class="tgl on" title="默认装载"><span class="knob"></span></button>
+        <button class="rm" title="移除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="crow">
+        <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+        <span class="path">~/Code/berth-i18n</span>
+        <span class="sp"></span>
+        <button class="tgl on" title="默认装载"><span class="knob"></span></button>
+        <button class="rm" title="移除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="crow">
+        <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-3H5a2 2 0 0 0-2 2z"/></svg>
+        <span class="path">~/Code/berth-spike</span>
+        <span class="sp"></span>
+        <button class="tgl" title="已登记但默认不装载"><span class="knob"></span></button>
+        <button class="rm" title="移除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <button class="cargo-add"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> 添加目录…（系统目录选择器 → 接面板④导入清单）</button>
+    </div>
+    <p class="cap">
+      真实目录，写进项目的 <code>project_path</code>；<b>无 ★ 主标记</b>——只保留 <b>开关</b>（沿用现有 <code>&lt;Toggle&gt;</code>）：开 = 起航默认把它当 cwd 候选，关 = 登记备用、不进起航默认。<br>
+      <b>「项目默认目录」不出现在这里</b>——它是 Berth 内部分配、不可登记的兜底。新建项目时也能填一个主目录（留空就只用项目默认目录）。
+    </p>
+  </section>
+
+  <!-- ============ PANEL 3 : 起航 cwd 解析 ============ -->
+  <section>
+    <div class="panel-label"><span class="n">3</span> 起航 — 启动 cwd 怎么定（无 ★，自动点亮一个、可切换）</div>
+    <div class="state-tab">
+      <button class="on" onclick="showState(0,this)">装载 0 个</button>
+      <button onclick="showState(1,this)">装载 1 个</button>
+      <button onclick="showState(2,this)">装载 ≥2 个</button>
+    </div>
+
+    <div class="card dlg">
+      <div class="dlg-head">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 22a8 8 0 0 1 16 0"/><circle cx="10" cy="8" r="5" transform="translate(2 0)"/></svg>
+        <h3>起航</h3>
+      </div>
+      <div class="dlg-body">
+        <div class="field-label">启动目录</div>
+
+        <!-- state 0 : no enabled cargo -->
+        <div class="st st0">
+          <div class="cwd-static">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-3H5a2 2 0 0 0-2 2z"/></svg>
+            <span class="path">项目默认目录</span>
+            <span class="auto">自动 · 无装载目录</span>
+          </div>
+          <div class="dlg-note">没有开启任何货舱 → 落 Berth 项目默认工作区。无需选择。</div>
+        </div>
+
+        <!-- state 1 : exactly one enabled cargo -->
+        <div class="st st1 hidden">
+          <div class="cwd-static">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-3H5a2 2 0 0 0-2 2z"/></svg>
+            <span class="path">~/Code/berth</span>
+            <span class="auto">自动 · 唯一装载目录</span>
+          </div>
+          <div class="dlg-note">只开启了 1 个货舱 → 直接在它下启动。无需选择。</div>
+        </div>
+
+        <!-- state 2 : 2+ enabled, auto-light one, switchable -->
+        <div class="st st2 hidden">
+          <div class="cwd-pick">
+            <button class="cwd-opt sel">
+              <span class="radio"></span>
+              <span class="path">~/Code/berth</span>
+              <span class="auto" style="margin-left:auto;font-size:10px;color:var(--brand)">自动选中</span>
+            </button>
+            <button class="cwd-opt">
+              <span class="radio"></span>
+              <span class="path">~/Code/berth-i18n</span>
+            </button>
+          </div>
+          <div class="dlg-note">开启了多个货舱 → 自动点亮一个（沿用上次该项目的启动 cwd，否则第一个）；可手动切到别的，本次生效并记住为下次默认。</div>
+        </div>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn">取消</button>
+        <button class="btn primary"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 3 20 12 6 21 6 3"/></svg> 起航</button>
+      </div>
+    </div>
+    <p class="cap">
+      解析顺序：<b>本次选中的装载 cwd</b> → 唯一装载则取它 → <b>都没有则落「项目默认目录」</b>。自动点亮规则：<b>该项目上次启动的 cwd（粘性）</b>，无记录则第一个开启的。
+    </p>
+  </section>
+
+  <!-- ============ PANEL 4 : 导入清单（已存在的 ImportDialog） ============ -->
+  <section>
+    <div class="panel-label"><span class="n">4</span> 导入清单 — 点 cwd 组的导入 icon / 添加目录后弹出（组件已存在）</div>
+    <div class="card imp">
+      <div class="imp-head">
+        <div class="t">登记目录到项目货舱</div>
+        <div class="p">~/Code/berth-i18n · 配置为项目上下文（cwd 候选）</div>
+        <div class="hint">添加目录主要是把它登记为项目货舱。下面是<b>可选</b>导入已有会话——默认不导入，直接「仅登记目录」即可。</div>
+      </div>
+      <div class="imp-bar">
+        <span class="cnt">在该目录下找到 <b style="color:var(--muted-foreground)">63</b> 个会话 · 已选 <b style="color:var(--brand)">0</b></span>
+        <button class="all">全选（含未展开）</button>
+      </div>
+      <div class="imp-list">
+        <div class="imp-row"><span class="box">✓</span><span class="cli claude">claude</span><span class="t">i18n 抽取 zh-CN 文案</span><span class="tm">2小时前</span></div>
+        <div class="imp-row"><span class="box">✓</span><span class="cli codex">codex</span><span class="t">locale 切换逻辑重构</span><span class="tm">昨天</span></div>
+        <div class="imp-row"><span class="box">✓</span><span class="cli claude">claude</span><span class="t">（未命名）</span><span class="tm">3天前</span></div>
+        <div class="imp-row"><span class="box">✓</span><span class="cli coco">coco</span><span class="t">RTL 布局试验</span><span class="tm">5天前</span></div>
+        <div class="imp-row"><span class="box">✓</span><span class="cli codex">codex</span><span class="t">日期格式 i18n</span><span class="tm">上周</span></div>
+        <div class="imp-row"><span class="box">✓</span><span class="cli claude">claude</span><span class="t">复数规则 / ICU message</span><span class="tm">上周</span></div>
+        <div class="imp-row"><span class="box">✓</span><span class="cli claude">claude</span><span class="t">字体回退与 CJK 排版</span><span class="tm">2周前</span></div>
+        <div class="imp-row"><span class="box">✓</span><span class="cli codex">codex</span><span class="t">语言包懒加载</span><span class="tm">2周前</span></div>
+        <button class="imp-more">▾ Show more（再展开 8 / 共 63）</button>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn">取消</button>
+        <button class="btn primary">仅登记目录</button>
+      </div>
+    </div>
+    <p class="cap">
+      复用 <code>CargoDefaults.tsx</code> 的 <code>ImportDialog</code>，加：<b>紧凑行</b>、<b>近期 8 + Show more（每次 +8）</b>、顶部 <b>全选/全不选作用于全集（含未展开）</b>、<b>默认全不选</b>。<br>
+      两个入口、两种语义：<br>
+      ① <b>货舱「添加目录」</b> → <b>登记目录是主操作</b>（写 <code>project_path</code> enabled=1），导入会话可选；按钮：选 0 = <code>仅登记目录</code>，选 N = <code>登记并导入 (N)</code>。<br>
+      ② <b>会话模块某 cwd 组的导入 icon</b>（该目录已登记）→ 纯导入；按钮：<code>导入选中 (N)</code>，选 0 时禁用。<br>
+      导入 = 选中会话 <code>addSessionImport</code>（+项目入口则 <code>attach</code>）；未选留在「无归属」，目录照样登记成功。
+    </p>
+  </section>
+</div>
+<script>
+function showState(i, btn){
+  document.querySelectorAll('.state-tab button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  [0,1,2].forEach(n=>document.querySelector('.st'+n).classList.toggle('hidden', n!==i));
+}
+</script>
+</body>
+</html>

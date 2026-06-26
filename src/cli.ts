@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { formatStartupError } from './startup-error'
 
 export interface CliArgs {
   command: 'start' | 'help' | 'version'
@@ -135,7 +136,16 @@ export async function runCli(argv: string[], version: string): Promise<void> {
 
   const { start } = await import('./server/index')
   const host = args.host ?? process.env.HOST ?? '127.0.0.1'
-  const { port } = await start(args.port, host)
-  const url = `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
+  let started: Awaited<ReturnType<typeof start>>
+  try {
+    started = await start(args.port, host)
+  } catch (e) {
+    console.error(formatStartupError(e))
+    process.exit(1); return
+  }
+  const { port, hasWeb } = started
+  const base = `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
+  // 2.0 SPA lives at /app (1.0 entry deprecated); open it directly when built to skip the redirect hop.
+  const url = hasWeb ? `${base}/app/` : base
   if (args.open) openBrowser(url)
 }

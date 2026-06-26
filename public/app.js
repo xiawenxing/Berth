@@ -1,4 +1,9 @@
 /**
+ * ⚠️ FROZEN — Berth 1.0 (legacy vanilla-JS UI). Maintenance-paused. The active frontend is the
+ *    React SPA in `web/` (Berth 2.0). Do NOT add features or UI changes here — they belong in `web/`.
+ *    See CLAUDE.md → "The frontend lives in `web/`". Only edit this file for a server-contract fix
+ *    the old client still needs to boot.
+ *
  * Berth UI — vanilla JS, no framework
  * Functions: loadAll, renderSidebar, relativeTime, openTerminal, closeTerminal, pin, assign
  * View router: setMode('now'|'projects'|'sessions'), openProject(name), openTerminalFor(sessionId)
@@ -73,6 +78,36 @@ function positionFloatingPanel(panel, anchor, opts = {}) {
 
   panel.style.top = top + 'px';
   panel.style.left = left + 'px';
+}
+
+function readClipboardImages(e, onImage) {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  let handled = false;
+  for (const it of items) {
+    if (!it.type || !it.type.startsWith('image/')) continue;
+    const file = it.getAsFile();
+    if (!file) continue;
+    handled = true;
+    const reader = new FileReader();
+    reader.onload = () => onImage({ src: reader.result, name: file.name || 'paste' });
+    reader.readAsDataURL(file);
+  }
+  if (handled) e.preventDefault();
+  return handled;
+}
+
+function renderImageThumbs(thumbs, images) {
+  if (!thumbs) return;
+  thumbs.innerHTML = '';
+  thumbs.style.display = images.length ? 'flex' : 'none';
+  images.forEach((img, i) => {
+    const src = typeof img === 'string' ? img : img.src;
+    const wrap = document.createElement('div');
+    wrap.className = 'todo-thumb';
+    wrap.innerHTML = `<img src="${src}"><button class="todo-thumb-x" title="移除">${icon('x')}</button>`;
+    wrap.querySelector('.todo-thumb-x').addEventListener('click', () => { images.splice(i, 1); renderImageThumbs(thumbs, images); });
+    thumbs.appendChild(wrap);
+  });
 }
 
 function projectById(id) {
@@ -552,7 +587,7 @@ function reconcilePendingLaunches() {
       realId = p.realId;
     } else {
       const pendingCwd = cwdKey(p.cwd);
-      const cand = allSessions.find(s => s.cli === p.cli && cwdKey(s.cwd) === pendingCwd && !p.knownIds.has(s.sessionId));
+      const cand = allSessions.find(s => sessionMatchesPendingLaunch(s, p, pendingCwd));
       if (cand) realId = cand.sessionId;
     }
     if (!realId) continue;
@@ -560,6 +595,16 @@ function reconcilePendingLaunches() {
     changed = true;
   }
   return changed;
+}
+
+function sessionMatchesPendingLaunch(s, p, pendingCwd) {
+  if (s.cli !== p.cli) return false;
+  if (cwdKey(s.cwd) !== pendingCwd) return false;
+  if (p.knownIds.has(s.sessionId)) return false;
+  if (p.todoKey && s.todoKey !== p.todoKey) return false;
+  if (!p.todoKey && s.todoKey) return false;
+  if (p.projectId) return s.projectId === p.projectId;
+  return s.projectId === null || s.projectId === undefined;
 }
 
 // Keep refreshing until every "创建中…" placeholder has matched its real session. The fixed
@@ -719,32 +764,11 @@ function renderCreateTodoBar(host, presetProject) {
 
   const pendingImages = [];   // data URLs
   const renderThumbs = () => {
-    thumbs.innerHTML = '';
-    thumbs.style.display = pendingImages.length ? 'flex' : 'none';
-    pendingImages.forEach((src, i) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'todo-thumb';
-      wrap.innerHTML = `<img src="${src}"><button class="todo-thumb-x" title="移除">${icon('x')}</button>`;
-      wrap.querySelector('.todo-thumb-x').addEventListener('click', () => { pendingImages.splice(i, 1); renderThumbs(); });
-      thumbs.appendChild(wrap);
-    });
+    renderImageThumbs(thumbs, pendingImages);
   };
 
   input.addEventListener('paste', e => {
-    const items = (e.clipboardData && e.clipboardData.items) || [];
-    let handled = false;
-    for (const it of items) {
-      if (it.type && it.type.startsWith('image/')) {
-        const file = it.getAsFile();
-        if (file) {
-          handled = true;
-          const reader = new FileReader();
-          reader.onload = () => { pendingImages.push(reader.result); renderThumbs(); };
-          reader.readAsDataURL(file);
-        }
-      }
-    }
-    if (handled) e.preventDefault();
+    readClipboardImages(e, img => { pendingImages.push(img.src); renderThumbs(); });
   });
 
   const submit = () => {
@@ -1910,11 +1934,12 @@ function openLaunchPopover(anchorEl, ctx, cwdHint) {
  * which we don't know client-side, so we key the pool entry by a temp `new:<n>` id and
  * schedule loadAll() so the attributed session surfaces in the lists.
  */
-function launchFreshSession({ cli, cwd, todoKey, projectId, prompt }) {
+function launchFreshSession({ cli, cwd, todoKey, projectId, prompt, images }) {
   // Switch to sessions mode so the terminal pane is visible.
   if (currentMode !== 'sessions') setMode('sessions');
 
   const tempId = 'new:' + (++newSessionCounter);
+  const launchToken = `${tempId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
   hideEmptyState();
 
   // LRU cap: evict an idle slot (killing its pty) if at limit — never a pinned/running one.
@@ -1959,6 +1984,7 @@ function launchFreshSession({ cli, cwd, todoKey, projectId, prompt }) {
   // project/cwd, snapshotting the current same-cwd+cli sessions so we can spot the new one later.
   pendingLaunches.set(tempId, {
     tempId, cli, cwd,
+    launchToken,
     projectId: projectId || null,
     todoKey: todoKey || null,
     realId: null,
@@ -1972,8 +1998,25 @@ function launchFreshSession({ cli, cwd, todoKey, projectId, prompt }) {
 
   requestAnimationFrame(() => {
     try { fit.fit(); } catch (e) {}
-    connectFreshWs(entry, pseudoSession, { cli, cwd, todoKey, projectId, prompt });
+    connectFreshWs(entry, pseudoSession, { cli, cwd, todoKey, projectId, prompt, images: images || [], launchToken });
   });
+}
+
+function sendFreshLaunchComposerInput(ws, opts) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const images = Array.isArray(opts.images) ? opts.images.filter(x => x && x.src) : [];
+  const prompt = (opts.prompt || '').trim();
+  if (!images.length) return;
+
+  for (const img of images) {
+    ws.send(JSON.stringify({ t: 'img', name: img.name || 'paste', d: img.src }));
+  }
+  if (prompt) {
+    const pasted = `\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~`;
+    ws.send(JSON.stringify({ t: 'i', d: pasted + '\r' }));
+  } else {
+    ws.send(JSON.stringify({ t: 'i', d: '\r' }));
+  }
 }
 
 /**
@@ -1996,7 +2039,9 @@ function connectFreshWs(entry, session, opts) {
   params.set('cwd', opts.cwd);
   params.set('todoKey', opts.todoKey || '');
   params.set('projectId', opts.projectId || '');
-  if (opts.prompt) params.set('prompt', opts.prompt);
+  params.set('launchToken', opts.launchToken || '');
+  const hasLaunchImages = Array.isArray(opts.images) && opts.images.length > 0;
+  if (opts.prompt && !hasLaunchImages) params.set('prompt', opts.prompt);
   params.set('cols', String(cols));
   params.set('rows', String(rows));
   const wsUrl = `ws://${location.host}/pty?${params.toString()}`;
@@ -2010,6 +2055,7 @@ function connectFreshWs(entry, session, opts) {
   }
 
   let refreshedOnData = false;
+  let sentComposerInput = false;
   // Re-scan on the SERVER (the new session's jsonl must be picked up) then reload the lists.
   const scheduleRefresh = delay => setTimeout(() => {
     fetch('/api/refresh', { method: 'POST' }).then(() => loadAll()).catch(() => {});
@@ -2032,7 +2078,14 @@ function connectFreshWs(entry, session, opts) {
     if (typeof e.data === 'string' && e.data.startsWith('{"__berth"')) {
       try {
         const ctl = JSON.parse(e.data);
-        if (ctl.__berth === 'launched') { onLaunchIdentified(tempId, ctl); return; }
+        if (ctl.__berth === 'launched') {
+          onLaunchIdentified(tempId, ctl);
+          if (!sentComposerInput) {
+            sentComposerInput = true;
+            setTimeout(() => sendFreshLaunchComposerInput(ws, opts), 50);
+          }
+          return;
+        }
       } catch (_) { /* not a control frame — fall through to terminal */ }
     }
     entry.term.write(e.data);
@@ -2224,6 +2277,18 @@ function openProject(name) {
 }
 
 function renderCurrentView() {
+  // The workspace view isn't driven by currentMode, so when it's the open surface (e.g. a session
+  // was just launched from the project page) re-render it directly — otherwise a background
+  // /api/refresh updates allSessions but the project's 会话 list stays stale until a manual refresh.
+  const wsVisible = document.getElementById('workspace-view').style.display !== 'none';
+  if (wsVisible) {
+    const name = document.getElementById('workspace-title').dataset.projectId;
+    if (name) {
+      renderProjectSidebar(name);
+      renderWorkspace(name);
+      return;
+    }
+  }
   if (currentMode === 'now') renderNow();
   else if (currentMode === 'projects') renderProjects();
   else if (currentMode === 'sessions') renderSidebar();
@@ -2786,7 +2851,8 @@ function renderNowComposer() {
     .map(p => `<option value="${escHtml(p.id)}">${escHtml(p.name)}</option>`).join('');
 
   host.innerHTML = `
-    <textarea class="composer-input" placeholder="描述你想让 agent 做什么 —— 然后选 agent / 目录 / 项目，点「起会话」…" spellcheck="false"></textarea>
+    <textarea class="composer-input" placeholder="描述你想让 agent 做什么，可粘贴图片 —— 然后选 agent / 目录 / 项目，点「起会话」…" spellcheck="false"></textarea>
+    <div class="composer-thumbs create-todo-thumbs" style="display:none"></div>
     <div class="composer-controls">
       <span class="composer-label">Agent</span>
       ${cliRadios('composer-cli')}
@@ -2801,8 +2867,15 @@ function renderNowComposer() {
   `;
 
   const input = host.querySelector('.composer-input');
+  const thumbs = host.querySelector('.composer-thumbs');
   const cwdSel = host.querySelector('.composer-cwd');
   const projSel = host.querySelector('.composer-proj');
+  const pendingImages = [];
+  const renderThumbs = () => renderImageThumbs(thumbs, pendingImages);
+
+  input.addEventListener('paste', e => {
+    readClipboardImages(e, img => { pendingImages.push(img); renderThumbs(); });
+  });
 
   // Rebuild the cwd dropdown scoped to the selected project (home + paths + history; or all if none).
   const rebuildCwds = () => {
@@ -2839,8 +2912,11 @@ function renderNowComposer() {
     if (!cwd) { cwdSel.focus(); return; }
     const projectId = projSel.value || null;
     const prompt = input.value.trim();
-    launchFreshSession({ cli, cwd, todoKey: null, projectId, prompt });
+    const images = pendingImages.slice();
+    launchFreshSession({ cli, cwd, todoKey: null, projectId, prompt, images });
     input.value = '';
+    pendingImages.length = 0;
+    renderThumbs();
   });
   // Cmd/Ctrl+Enter sends
   input.addEventListener('keydown', e => {
@@ -3584,7 +3660,7 @@ function renderWorkspace(name) {
   todoSection.innerHTML = `<div class="ws-section-title">${icon('list-checks')} 任务</div>`;
 
   if (projTodos.length === 0) {
-    todoSection.innerHTML += '<div class="ws-empty">（该项目暂无任务）</div>';
+    todoSection.appendChild(buildTodoEmptyCta(name));
   } else {
     todoSection.appendChild(buildTodoBoard(projTodos, name));
   }
@@ -3692,6 +3768,24 @@ function renderWorkspace(name) {
     sessSection.appendChild(sessList);
   }
   container.appendChild(sessSection);
+}
+
+function buildTodoEmptyCta(projectName) {
+  const wrap = document.createElement('div');
+  wrap.className = 'todo-empty-cta';
+  const btn = document.createElement('button');
+  btn.className = 'todo-empty-create-btn';
+  btn.type = 'button';
+  btn.innerHTML = `${icon('plus')} 创建任务`;
+  btn.addEventListener('click', () => {
+    const input = document.querySelector('#ws-create-todo .create-todo-input');
+    if (!input) return;
+    input.focus();
+    input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (!input.value && projectName) input.placeholder = `给「${projectName}」新建任务…`;
+  });
+  wrap.appendChild(btn);
+  return wrap;
 }
 
 function todoStatusClass(status) {

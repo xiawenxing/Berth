@@ -45,17 +45,23 @@ describe('contextStrings', () => {
   })
 })
 
-describe('summaryPrompt', () => {
-  it('exists for both locales and instructs to ignore stable sections / no markdown', () => {
-    const zh = contextStrings('zh-CN').summaryPrompt
-    const en = contextStrings('en').summaryPrompt
-    // non-empty + genuinely localized (not a shared/placeholder string)
-    expect(zh.length).toBeGreaterThan(20)
-    expect(en.length).toBeGreaterThan(20)
-    expect(zh).not.toBe(en)
-    expect(zh).toContain('进展')
-    expect(zh).toMatch(/忽略|稳定/)
-    expect(en.toLowerCase()).toContain('progress')
-    expect(en.toLowerCase()).toMatch(/ignore|stable/)
+describe('structured summary prompts', () => {
+  it('projectSummaryPrompt / taskSummaryDetailPrompt exist for both locales and request strict JSON', () => {
+    for (const key of ['projectSummaryPrompt', 'taskSummaryDetailPrompt'] as const) {
+      const zh = contextStrings('zh-CN')[key]
+      const en = contextStrings('en')[key]
+      // non-empty + genuinely localized (not a shared/placeholder string)
+      expect(zh.length).toBeGreaterThan(20)
+      expect(en.length).toBeGreaterThan(20)
+      expect(zh).not.toBe(en)
+      // both must spell out the JSON shape the parser expects
+      for (const p of [zh, en]) {
+        expect(p).toContain('headline')
+        expect(p).toContain('progress')
+        expect(p).toContain('milestones')
+      }
+      expect(zh).toMatch(/忽略|稳定/)
+      expect(en.toLowerCase()).toMatch(/ignore|stable/)
+    }
   })
 })

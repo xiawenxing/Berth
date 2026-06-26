@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Berth 2.0 · V3 Tab Hub</title>
+<style>
+:root{
+  color-scheme:dark;
+  --background:#282c34; --foreground:#abb2bf; --card:#2c313a; --card-foreground:#abb2bf;
+  --popover:#21252b; --primary:#abb2bf; --secondary:#3a4150; --muted:#3a4150; --muted-foreground:#828997;
+  --accent:#3a4150; --accent-foreground:#d7dae0; --destructive:#e06c75; --border:#3e4451; --input:#3e4451; --ring:#61afef;
+  --sidebar:#21252b; --sidebar-accent:#2c313a; --brand:#61afef; --brand-foreground:#fff; --canvas:#21242b;
+  --success:#98c379; --warning:#e5c07b; --info:#61afef; --priority:#d19a66; --purple:#c678dd;
+  --radius:0.625rem; --radius-md:0.5rem; --radius-sm:0.375rem;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --font-mono:'SF Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --text-dim:#6b7280;
+  --shadow:0 2px 8px rgba(0,0,0,.35);
+  --shadow-lg:0 8px 28px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+body{ background:var(--background); color:var(--foreground); font:13px/1.5 var(--font-sans); margin:0; -webkit-font-smoothing:antialiased; }
+
+/* Light theme overrides */
+body.light{
+  --background:#fafafa; --foreground:#3a3f4b; --card:#ffffff; --card-foreground:#3a3f4b;
+  --popover:#ffffff; --primary:#3a3f4b; --secondary:#eef0f3; --muted:#eef0f3; --muted-foreground:#6b7280;
+  --accent:#eef0f3; --accent-foreground:#1f2330; --border:#e2e5ea; --input:#e2e5ea;
+  --sidebar:#f1f3f6; --sidebar-accent:#e7eaef; --canvas:#f1f3f6;
+  --shadow:0 2px 8px rgba(0,0,0,.08); --shadow-lg:0 8px 28px rgba(0,0,0,.14);
+}
+
+button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+svg{display:block}
+::selection{background:color-mix(in oklab,var(--brand) 40%,transparent)}
+
+/* scrollbars */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:color-mix(in oklab,var(--muted-foreground) 35%,transparent);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:color-mix(in oklab,var(--muted-foreground) 55%,transparent);background-clip:padding-box}
+
+/* ───────────────────────── App shell ───────────────────────── */
+.app{display:grid;grid-template-columns:260px 1fr;height:100vh;overflow:hidden}
+
+/* ───────────────────────── Left rail ───────────────────────── */
+.rail{background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.rail-head{display:flex;align-items:center;gap:9px;padding:15px 16px 12px}
+.wordmark{font-size:15px;font-weight:650;letter-spacing:.2px;color:var(--accent-foreground)}
+.wordmark .anchor{color:var(--brand)}
+.rail-head .spacer{flex:1}
+.theme-toggle{width:28px;height:28px;border-radius:var(--radius-sm);display:grid;place-items:center;color:var(--muted-foreground)}
+.theme-toggle:hover{background:var(--sidebar-accent);color:var(--accent-foreground)}
+
+.nav{padding:4px 10px 10px;display:flex;flex-direction:column;gap:2px}
+.nav-item{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:var(--radius-sm);color:var(--muted-foreground);font-size:13px;font-weight:500;position:relative}
+.nav-item:hover{background:var(--sidebar-accent);color:var(--accent-foreground)}
+.nav-item.active{background:var(--sidebar-accent);color:var(--accent-foreground)}
+.nav-item.active::before{content:"";position:absolute;left:-10px;top:7px;bottom:7px;width:3px;border-radius:2px;background:var(--brand)}
+.nav-item .ico{flex:none;display:grid;place-items:center}
+.nav-item .lbl{flex:1}
+.nav-dot{width:7px;height:7px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 3px color-mix(in oklab,var(--brand) 22%,transparent)}
+
+.rail-scroll{flex:1;overflow-y:auto;min-height:0;padding:2px 10px 10px}
+.switcher-head{display:flex;align-items:center;justify-content:space-between;padding:10px 8px 6px}
+.switcher-head .t{font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-dim)}
+.switcher-head .add{width:22px;height:22px;border-radius:var(--radius-sm);display:grid;place-items:center;color:var(--muted-foreground)}
+.switcher-head .add:hover{background:var(--sidebar-accent);color:var(--accent-foreground)}
+
+.grp{margin-top:6px}
+.grp-label{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:10.5px;font-weight:650;letter-spacing:.4px;color:var(--text-dim);cursor:pointer;user-select:none;border-radius:var(--radius-sm)}
+.grp-label:hover{color:var(--muted-foreground)}
+.grp-label .chev{transition:transform .15s ease;color:var(--text-dim)}
+.grp-label.collapsed .chev{transform:rotate(-90deg)}
+.grp-label .cnt{margin-left:auto;font-variant-numeric:tabular-nums}
+
+.proj{display:block;width:100%;text-align:left;padding:7px 9px;border-radius:var(--radius-md);margin-bottom:2px;border:1px solid transparent;position:relative}
+.proj:hover{background:var(--sidebar-accent)}
+.proj.sel{background:var(--sidebar-accent);border-color:color-mix(in oklab,var(--brand) 40%,transparent)}
+.proj-top{display:flex;align-items:center;gap:7px}
+.proj-name{font-size:12.5px;font-weight:600;color:var(--accent-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj.sel .proj-name{color:#fff}
+body.light .proj.sel .proj-name{color:var(--brand)}
+.proj-run{width:7px;height:7px;border-radius:50%;background:var(--success);flex:none;animation:pulse 2s infinite}
+.proj-meta{font-size:10.5px;color:var(--text-dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.proj.sel .proj-meta{color:var(--muted-foreground)}
+.proj.empty .proj-meta{color:color-mix(in oklab,var(--text-dim) 80%,transparent)}
+
+.special{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:8px;border-radius:var(--radius-md);border:1px dashed var(--border);color:var(--muted-foreground);font-size:12px}
+.special:hover{background:var(--sidebar-accent);border-color:color-mix(in oklab,var(--brand) 35%,transparent);color:var(--accent-foreground)}
+.special .cnt{margin-left:auto;font-size:11px;background:var(--muted);color:var(--muted-foreground);padding:1px 7px;border-radius:999px;font-variant-numeric:tabular-nums}
+
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in oklab,var(--success) 55%,transparent)}50%{box-shadow:0 0 0 4px color-mix(in oklab,var(--success) 0%,transparent)}}
+
+/* ───────────────────────── Main pane ───────────────────────── */
+.main{display:flex;flex-direction:column;min-width:0;background:var(--background);overflow:hidden}
+
+/* project header */
+.phead{padding:16px 24px 0;border-bottom:1px solid var(--border);background:var(--background);flex:none}
+.phead-row{display:flex;align-items:flex-start;gap:14px}
+.phead-l{min-width:0;flex:1}
+.ptitle{display:flex;align-items:center;gap:9px}
+.ptitle h1{font-size:19px;font-weight:680;letter-spacing:.2px;margin:0;color:var(--accent-foreground)}
+.ptitle .run{width:8px;height:8px;border-radius:50%;background:var(--success);animation:pulse 2s infinite}
+.ppath{font-size:12px;color:var(--text-dim);font-family:var(--font-mono);margin-top:3px}
+
+.phead-actions{display:flex;align-items:center;gap:8px;flex:none}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:var(--radius-md);font-size:12.5px;font-weight:550;border:1px solid var(--border);background:var(--card);color:var(--accent-foreground)}
+.btn:hover{background:var(--accent);border-color:color-mix(in oklab,var(--muted-foreground) 40%,transparent)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:var(--brand-foreground)}
+.btn.primary:hover{background:color-mix(in oklab,var(--brand) 88%,#000);box-shadow:var(--shadow)}
+.btn.icon{width:32px;padding:0;justify-content:center}
+
+/* rollup strip */
+.rollup{display:flex;align-items:center;gap:18px;padding:12px 0 14px;flex-wrap:wrap}
+.rollup .stat{display:flex;align-items:center;gap:8px}
+.rollup .stat .k{font-size:11px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.rollup .stat .v{font-size:13px;font-weight:650;color:var(--accent-foreground);font-variant-numeric:tabular-nums}
+.rollup .pbar{width:140px;height:6px;border-radius:999px;background:var(--muted);overflow:hidden}
+.rollup .pbar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--brand),color-mix(in oklab,var(--brand) 60%,var(--success)))}
+.rollup .dot-amber{width:8px;height:8px;border-radius:50%;background:var(--priority)}
+.rollup .sep{width:1px;height:18px;background:var(--border)}
+
+/* tab bar */
+.tabbar{display:flex;gap:2px;padding:0;margin-top:2px}
+.tab{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 16px;font-size:13.5px;font-weight:600;color:var(--muted-foreground);position:relative;border-radius:var(--radius-sm) var(--radius-sm) 0 0}
+.tab:hover{color:var(--accent-foreground);background:color-mix(in oklab,var(--sidebar-accent) 50%,transparent)}
+.tab.active{color:var(--accent-foreground)}
+.tab.active::after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:2.5px;border-radius:3px;background:var(--brand)}
+.tab .badge{font-size:10.5px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:999px;display:grid;place-items:center;background:var(--muted);color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.tab.active .badge{background:color-mix(in oklab,var(--brand) 22%,transparent);color:var(--brand)}
+
+/* tab body scroller */
+.body-scroll{flex:1;overflow-y:auto;min-height:0;padding:18px 24px 60px}
+.tabpane{display:none;animation:fade .18s ease}
+.tabpane.show{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ───────────────────────── Sessions tab ───────────────────────── */
+.sec{margin-bottom:18px}
+.sec-head{display:flex;align-items:center;gap:9px;padding:6px 4px;cursor:pointer;user-select:none;border-radius:var(--radius-sm)}
+.sec-head:hover{background:color-mix(in oklab,var(--sidebar-accent) 45%,transparent)}
+.sec-head .chev{transition:transform .15s ease;color:var(--muted-foreground)}
+.sec-head.collapsed .chev{transform:rotate(-90deg)}
+.sec-head .icon-pin{color:var(--warning)}
+.sec-head .sec-t{font-size:13px;font-weight:680;color:var(--accent-foreground)}
+.sec-head .sec-c{font-size:11px;font-weight:650;color:var(--muted-foreground);background:var(--muted);padding:1px 8px;border-radius:999px;font-variant-numeric:tabular-nums}
+.sec-head .sec-hint{margin-left:auto;font-size:11px;color:var(--text-dim)}
+.sec-body{margin-top:6px;display:flex;flex-direction:column;gap:5px;overflow:hidden}
+.sec-head.collapsed + .sec-body{display:none}
+
+/* full-width session row — V3: actions always inline */
+.srow{display:flex;align-items:center;gap:12px;height:48px;padding:0 12px 0 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer;transition:border-color .12s ease,background .12s ease;position:relative}
+.srow:hover{border-color:color-mix(in oklab,var(--brand) 50%,transparent);background:color-mix(in oklab,var(--card) 80%,var(--sidebar-accent))}
+.srow.pinned-glow{border-color:color-mix(in oklab,var(--warning) 45%,transparent)}
+.srow:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+
+.glyph{width:14px;display:grid;place-items:center;flex:none}
+.dot-run{width:9px;height:9px;border-radius:50%;background:var(--success);animation:pulse 2s infinite}
+.ring-unread{width:9px;height:9px;border-radius:50%;border:2px solid var(--brand);background:transparent}
+
+.badge-cli{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:var(--radius-sm);flex:none;letter-spacing:.2px;font-family:var(--font-mono)}
+.cli-claude{background:color-mix(in oklab,var(--brand) 18%,transparent);color:var(--brand)}
+.cli-codex{background:color-mix(in oklab,var(--success) 18%,transparent);color:var(--success)}
+.cli-coco{background:color-mix(in oklab,var(--purple) 18%,transparent);color:var(--purple)}
+
+.srow .stitle{font-size:13px;font-weight:560;color:var(--accent-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;max-width:340px}
+.srow .scwd{font-size:11.5px;color:var(--text-dim);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:40px}
+.srow .stime{font-size:11.5px;color:var(--muted-foreground);flex:none;font-variant-numeric:tabular-nums;min-width:54px;text-align:right}
+.srow .sstate{font-size:10.5px;font-weight:650;padding:1px 8px;border-radius:999px;flex:none}
+.sstate.running{background:color-mix(in oklab,var(--success) 16%,transparent);color:var(--success)}
+.sstate.unread{background:color-mix(in oklab,var(--brand) 16%,transparent);color:var(--brand)}
+
+/* inline action cluster — always visible (V3 discoverability) */
+.actions{display:flex;align-items:center;gap:2px;flex:none;padding-left:6px;border-left:1px solid var(--border);margin-left:2px}
+.iconbtn{width:28px;height:28px;border-radius:var(--radius-sm);display:grid;place-items:center;color:var(--muted-foreground)}
+.iconbtn:hover{background:var(--accent);color:var(--accent-foreground)}
+.iconbtn.on{color:var(--warning)}
+.iconbtn.danger:hover{background:color-mix(in oklab,var(--destructive) 20%,transparent);color:var(--destructive)}
+
+/* show more */
+.showmore{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;margin-top:7px;border-radius:var(--radius-md);border:1px dashed var(--border);color:var(--muted-foreground);font-size:12px;font-weight:550}
+.showmore:hover{border-color:color-mix(in oklab,var(--brand) 40%,transparent);color:var(--accent-foreground);background:color-mix(in oklab,var(--sidebar-accent) 40%,transparent)}
+.hidden-row{display:none}
+.hidden-row.revealed{display:flex}
+
+/* ───────────────────────── Tasks tab (kanban) ───────────────────────── */
+.kanban{display:grid;grid-template-columns:repeat(5,minmax(190px,1fr));gap:12px;align-items:start}
+.kcol{background:var(--canvas);border:1px solid var(--border);border-radius:var(--radius-md);min-height:120px;display:flex;flex-direction:column}
+.kcol-head{display:flex;align-items:center;gap:7px;padding:11px 12px 8px}
+.kcol-head .kt{font-size:12px;font-weight:680;color:var(--accent-foreground)}
+.kcol-head .kc{font-size:10.5px;font-weight:650;color:var(--muted-foreground);background:var(--muted);padding:0 7px;border-radius:999px;font-variant-numeric:tabular-nums}
+.kcol-head .kdot{width:7px;height:7px;border-radius:50%;flex:none}
+.kdot.todo{background:var(--muted-foreground)}
+.kdot.doing{background:var(--priority)}
+.kdot.review{background:var(--purple)}
+.kdot.done{background:var(--success)}
+.kdot.cancel{background:var(--muted-foreground);opacity:.6}
+.kcol-body{padding:0 9px 11px;display:flex;flex-direction:column;gap:7px}
+
+.tcard{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 10px;cursor:grab;transition:border-color .12s ease,box-shadow .12s ease}
+.tcard:hover{border-color:color-mix(in oklab,var(--brand) 45%,transparent);box-shadow:var(--shadow)}
+.tcard-top{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.chip-pri{font-size:9.5px;font-weight:750;padding:1px 6px;border-radius:var(--radius-sm);letter-spacing:.3px}
+.p0{background:color-mix(in oklab,var(--destructive) 20%,transparent);color:var(--destructive)}
+.p1{background:color-mix(in oklab,var(--priority) 20%,transparent);color:var(--priority)}
+.p2{background:color-mix(in oklab,var(--muted-foreground) 22%,transparent);color:var(--muted-foreground)}
+.tcard-top .spawn{margin-left:auto;width:22px;height:22px;border-radius:var(--radius-sm);display:grid;place-items:center;color:var(--muted-foreground)}
+.tcard-top .spawn:hover{background:color-mix(in oklab,var(--brand) 20%,transparent);color:var(--brand)}
+.tcard .tname{font-size:12px;font-weight:550;color:var(--card-foreground);line-height:1.4}
+.tcard .tfoot{margin-top:7px;display:flex;align-items:center;gap:6px}
+.linkcnt{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--muted-foreground);background:var(--muted);padding:1px 7px;border-radius:999px}
+.tcard.done .tname{color:var(--muted-foreground)}
+.tcard.cancel .tname{color:var(--text-dim);text-decoration:line-through;text-decoration-color:color-mix(in oklab,var(--text-dim) 60%,transparent)}
+
+/* ───────────────────────── Context tab ───────────────────────── */
+.ctx-list{display:flex;flex-direction:column;gap:10px;max-width:880px}
+.ctx-card{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px}
+.ctx-card:hover{border-color:color-mix(in oklab,var(--brand) 40%,transparent)}
+.ctx-ico{width:38px;height:38px;border-radius:var(--radius-md);display:grid;place-items:center;flex:none;background:color-mix(in oklab,var(--brand) 14%,transparent);color:var(--brand)}
+.ctx-ico.proj{background:color-mix(in oklab,var(--purple) 14%,transparent);color:var(--purple)}
+.ctx-main{min-width:0;flex:1}
+.ctx-k{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
+.ctx-title{font-size:13.5px;font-weight:600;color:var(--accent-foreground);margin-top:2px}
+.ctx-path{font-size:11.5px;color:var(--text-dim);font-family:var(--font-mono);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctx-meta{font-size:11px;color:var(--muted-foreground);flex:none;background:var(--muted);padding:2px 9px;border-radius:999px}
+
+/* ───────────────────────── Terminal full-pane ───────────────────────── */
+.term{position:absolute;inset:0;background:var(--canvas);display:none;flex-direction:column;z-index:20}
+.term.show{display:flex}
+.term-crumb{display:flex;align-items:center;gap:8px;height:42px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--background);flex:none}
+.crumb-back{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border-radius:var(--radius-sm);font-size:12.5px;font-weight:600;color:var(--accent-foreground);border:1px solid var(--border)}
+.crumb-back:hover{background:var(--accent);border-color:color-mix(in oklab,var(--brand) 40%,transparent)}
+.crumb-trail{font-size:12px;color:var(--text-dim)}
+.crumb-trail b{color:var(--muted-foreground);font-weight:600}
+
+.term-head{display:flex;align-items:center;gap:10px;height:42px;padding:0 14px;border-bottom:1px solid var(--border);background:var(--popover);flex:none}
+.term-head .badge-cli{font-size:10px}
+.term-title{font-size:12.5px;color:var(--accent-foreground);font-weight:560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.term-title .sep{color:var(--text-dim);margin:0 7px}
+.term-title .pth{font-family:var(--font-mono);color:var(--text-dim)}
+.term-title .st{color:var(--success);font-weight:650}
+.term-head .tbtn{width:30px;height:30px;border-radius:var(--radius-sm);display:grid;place-items:center;color:var(--muted-foreground);border:1px solid transparent}
+.term-head .tbtn:hover{background:var(--accent);color:var(--accent-foreground)}
+.term-head .tbtn.kill:hover{background:color-mix(in oklab,var(--destructive) 20%,transparent);color:var(--destructive)}
+
+.term-body{flex:1;overflow-y:auto;padding:16px 18px;font-family:var(--font-mono);font-size:12.5px;line-height:1.7;background:var(--canvas)}
+.term-body .ln{white-space:pre-wrap;word-break:break-word}
+.t-user{color:var(--brand)}
+.t-dim{color:var(--text-dim)}
+.t-ok{color:var(--success)}
+.t-warn{color:var(--warning)}
+.t-pur{color:var(--purple)}
+.t-out{color:var(--foreground)}
+.t-prompt{color:var(--accent-foreground)}
+.caret{display:inline-block;width:8px;height:15px;background:var(--success);vertical-align:text-bottom;margin-left:2px;animation:blink 1.05s step-end infinite}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+
+/* version caption chip */
+.cap{position:fixed;right:14px;bottom:14px;z-index:60;display:flex;align-items:center;gap:8px;background:var(--popover);border:1px solid var(--border);border-radius:999px;padding:6px 13px 6px 11px;font-size:11.5px;color:var(--muted-foreground);box-shadow:var(--shadow-lg)}
+.cap .vdot{width:8px;height:8px;border-radius:50%;background:var(--brand)}
+.cap b{color:var(--accent-foreground);font-weight:650}
+
+/* tiny toast */
+.toast{position:fixed;left:50%;bottom:22px;translate:-50% 0;z-index:80;background:var(--popover);border:1px solid var(--border);border-radius:var(--radius-md);padding:9px 16px;font-size:12.5px;color:var(--accent-foreground);box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:opacity .2s ease,transform .2s ease}
+.toast.show{opacity:1;transform:translateY(-6px)}
+.toast .tdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success);margin-right:8px;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ───────────── LEFT RAIL ───────────── -->
+  <aside class="rail">
+    <div class="rail-head">
+      <span class="wordmark"><svg class="anchor" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-3px;margin-right:5px"><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>Berth</span>
+      <span class="spacer"></span>
+      <button class="theme-toggle" id="themeToggle" title="切换主题"></button>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-item" id="navNow"><span class="ico" data-ico="inbox"></span><span class="lbl">Now</span><span class="nav-dot" title="有未读"></span></a>
+      <a class="nav-item active" id="navProj"><span class="ico" data-ico="folder"></span><span class="lbl">项目</span></a>
+    </nav>
+
+    <div class="rail-scroll">
+      <div class="switcher-head">
+        <span class="t">项目</span>
+        <button class="add" title="新建项目" data-ico="plus"></button>
+      </div>
+
+      <!-- 置顶项目 -->
+      <div class="grp">
+        <div class="grp-label" data-grp="pinproj"><span class="chev" data-ico="chevronDown"></span>置顶项目<span class="cnt">1</span></div>
+        <div class="grp-body" id="grp-pinproj">
+          <button class="proj sel">
+            <div class="proj-top"><span class="proj-run" title="有会话在运行"></span><span class="proj-name">Berth</span></div>
+            <div class="proj-meta">13 任务 · 3 进行中 · 6 会话 · 2 未读</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- 活跃项目 -->
+      <div class="grp">
+        <div class="grp-label" data-grp="activeproj"><span class="chev" data-ico="chevronDown"></span>活跃项目<span class="cnt">3</span></div>
+        <div class="grp-body" id="grp-activeproj">
+          <button class="proj empty">
+            <div class="proj-top"><span class="proj-name">berth test</span></div>
+            <div class="proj-meta">0 任务 · 0 会话</div>
+          </button>
+          <button class="proj">
+            <div class="proj-top"><span class="proj-name">Zhang Shuai conversation</span></div>
+            <div class="proj-meta">2 任务(已完成) · 1 会话</div>
+          </button>
+          <button class="proj">
+            <div class="proj-top"><span class="proj-name">dotfiles</span></div>
+            <div class="proj-meta">4 任务 · 2 会话</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- 已归档项目 -->
+      <div class="grp">
+        <div class="grp-label collapsed" data-grp="archproj"><span class="chev" data-ico="chevronDown"></span>已归档项目<span class="cnt">1</span></div>
+        <div class="grp-body" id="grp-archproj">
+          <button class="proj">
+            <div class="proj-top"><span class="proj-name">old-prototype</span></div>
+            <div class="proj-meta">已归档</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- 特殊入口 -->
+      <button class="special" title="未分配到任何项目的会话">
+        <span data-ico="terminal"></span>
+        <span>无归属会话</span>
+        <span class="cnt">5</span>
+      </button>
+    </div>
+
+    <!-- settings pinned bottom -->
+    <nav class="nav" style="border-top:1px solid var(--border);padding-top:8px">
+      <a class="nav-item" id="navSettings"><span class="ico" data-ico="settings"></span><span class="lbl">设置</span></a>
+    </nav>
+  </aside>
+
+  <!-- ───────────── MAIN PANE ───────────── -->
+  <main class="main" id="mainPane">
+
+    <!-- project header -->
+    <header class="phead">
+      <div class="phead-row">
+        <div class="phead-l">
+          <div class="ptitle"><h1>Berth</h1><span class="run" title="运行中"></span></div>
+          <div class="ppath">~/Code/berth</div>
+        </div>
+        <div class="phead-actions">
+          <button class="btn"><span data-ico="plus"></span>新建任务</button>
+          <button class="btn primary"><span data-ico="play"></span>起会话</button>
+          <button class="btn icon" title="项目菜单" data-ico="more"></button>
+        </div>
+      </div>
+
+      <div class="rollup">
+        <div class="stat"><span class="k">任务进展</span><span class="v">5/13</span>
+          <span class="pbar"><i style="width:38%"></i></span>
+          <span class="v" style="color:var(--muted-foreground)">38%</span>
+        </div>
+        <span class="sep"></span>
+        <div class="stat"><span class="dot-amber"></span><span class="k">进行中</span><span class="v">3</span></div>
+        <span class="sep"></span>
+        <div class="stat"><span class="k">最近活动</span><span class="v">12分钟前</span></div>
+      </div>
+
+      <!-- TAB BAR -->
+      <div class="tabbar" id="tabbar">
+        <button class="tab active" data-tab="sessions"><span data-ico="terminal"></span>会话<span class="badge">6</span></button>
+        <button class="tab" data-tab="tasks"><span data-ico="square"></span>任务<span class="badge">13</span></button>
+        <button class="tab" data-tab="context"><span data-ico="folder"></span>上下文<span class="badge">2</span></button>
+      </div>
+    </header>
+
+    <!-- TAB BODIES -->
+    <div class="body-scroll">
+
+      <!-- ═══════════ 会话 TAB ═══════════ -->
+      <section class="tabpane show" data-pane="sessions">
+
+        <!-- 📌 Pin -->
+        <div class="sec">
+          <div class="sec-head" data-sec="pin">
+            <span class="chev" data-ico="chevronDown"></span>
+            <span class="icon-pin" data-ico="pin"></span>
+            <span class="sec-t">Pin</span>
+            <span class="sec-c">3</span>
+            <span class="sec-hint">置顶的会话固定在最上方</span>
+          </div>
+          <div class="sec-body" id="sec-pin"><!-- pinned rows injected --></div>
+        </div>
+
+        <!-- 活跃 -->
+        <div class="sec">
+          <div class="sec-head" data-sec="active">
+            <span class="chev" data-ico="chevronDown"></span>
+            <span class="sec-t">活跃</span>
+            <span class="sec-c">6</span>
+          </div>
+          <div class="sec-body" id="sec-active"><!-- active rows injected --></div>
+        </div>
+
+        <!-- 已归档 -->
+        <div class="sec">
+          <div class="sec-head collapsed" data-sec="arch">
+            <span class="chev" data-ico="chevronDown"></span>
+            <span class="icon-arch" data-ico="archive" style="color:var(--muted-foreground)"></span>
+            <span class="sec-t">已归档</span>
+            <span class="sec-c">4</span>
+          </div>
+          <div class="sec-body" id="sec-arch"><!-- archived rows injected --></div>
+        </div>
+
+      </section>
+
+      <!-- ═══════════ 任务 TAB ═══════════ -->
+      <section class="tabpane" data-pane="tasks">
+        <div class="kanban" id="kanban"><!-- columns injected --></div>
+      </section>
+
+      <!-- ═══════════ 上下文 TAB ═══════════ -->
+      <section class="tabpane" data-pane="context">
+        <div class="ctx-list">
+          <div class="ctx-card">
+            <div class="ctx-ico" data-ico="square"></div>
+            <div class="ctx-main">
+              <div class="ctx-k">任务上下文</div>
+              <div class="ctx-title">会话列表 pin/活跃/已归档 三栏</div>
+              <div class="ctx-path">tasks/会话列表-pin-活跃-已归档-三栏/index.md</div>
+            </div>
+            <div class="ctx-meta">进展 6 条</div>
+          </div>
+          <div class="ctx-card">
+            <div class="ctx-ico proj" data-ico="folder"></div>
+            <div class="ctx-main">
+              <div class="ctx-k">项目上下文</div>
+              <div class="ctx-title">Berth</div>
+              <div class="ctx-path">projects/Berth/index.md</div>
+            </div>
+            <div class="ctx-meta">项目级</div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ───────────── TERMINAL full-pane (overlay inside main) ───────────── -->
+    <div class="term" id="term">
+      <div class="term-crumb">
+        <button class="crumb-back" id="termBack"><span data-ico="chevronRight" style="transform:rotate(180deg)"></span>返回</button>
+        <span class="crumb-trail"><b>Berth</b> / 会话</span>
+      </div>
+      <div class="term-head">
+        <span class="badge-cli cli-claude" id="termBadge">claude</span>
+        <div class="term-title" id="termTitle">
+          Berth 2.0 交互重构讨论<span class="sep">·</span><span class="pth">~/Code/berth</span><span class="sep">·</span><span class="st">running</span>
+        </div>
+        <button class="tbtn kill" title="终止会话 (kill)" data-ico="square"></button>
+        <button class="tbtn" id="termClose" title="关闭" data-ico="x"></button>
+      </div>
+      <div class="term-body" id="termBody">
+        <div class="ln"><span class="t-dim">$ claude --resume berth-2.0-redesign</span></div>
+        <div class="ln"><span class="t-dim">› reading project context · ~/Code/berth/CLAUDE.md</span></div>
+        <div class="ln"><span class="t-user">user ›</span> <span class="t-out">把会话列表拆成 pin / 活跃 / 已归档 三栏，pin 段固定在顶部</span></div>
+        <div class="ln">&nbsp;</div>
+        <div class="ln"><span class="t-pur">claude ›</span> <span class="t-out">明白。我会在项目页的会话模块里加三个分段：</span></div>
+        <div class="ln"><span class="t-out">  · <span class="t-warn">📌 Pin</span> — 置顶会话，始终在最上方</span></div>
+        <div class="ln"><span class="t-out">  · <span class="t-ok">活跃</span> — 最近有活动，支持 show-more 折叠</span></div>
+        <div class="ln"><span class="t-out">  · <span class="t-dim">已归档</span> — 默认折叠</span></div>
+        <div class="ln"><span class="t-ok">✓</span> <span class="t-dim">patched public/app.js · sessions.module.ts (+148 −22)</span></div>
+        <div class="ln">&nbsp;</div>
+        <div class="ln"><span class="t-prompt">› </span><span class="caret"></span></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- version caption -->
+<div class="cap"><span class="vdot"></span><b>V3</b> · Tab Hub / 项目分页</div>
+
+<!-- toast -->
+<div class="toast" id="toast"><span class="tdot"></span><span id="toastMsg"></span></div>
+
+<script>
+/* ────────────────── icon helper ────────────────── */
+const ICONS = {
+  anchor:`<path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/>`,
+  inbox:`<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>`,
+  folder:`<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>`,
+  settings:`<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>`,
+  pin:`<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>`,
+  play:`<polygon points="6 3 20 12 6 21 6 3"/>`,
+  terminal:`<path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/>`,
+  refresh:`<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>`,
+  link:`<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>`,
+  pencil:`<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>`,
+  more:`<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>`,
+  chevronDown:`<path d="m6 9 6 6 6-6"/>`,
+  chevronRight:`<path d="m9 18 6-6-6-6"/>`,
+  archive:`<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>`,
+  x:`<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`,
+  square:`<rect width="18" height="18" x="3" y="3" rx="2"/>`,
+  plus:`<path d="M5 12h14"/><path d="M12 5v14"/>`,
+  sun:`<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>`,
+};
+function svg(name, size=14){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`;
+}
+// hydrate all [data-ico]
+document.querySelectorAll('[data-ico]').forEach(el=>{ el.innerHTML = svg(el.dataset.ico, el.dataset.size?+el.dataset.size:14); });
+
+/* ────────────────── toast ────────────────── */
+let toastTimer;
+function toast(msg){
+  const t=document.getElementById('toast');
+  document.getElementById('toastMsg').textContent=msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),1700);
+}
+
+/* ────────────────── session data ────────────────── */
+const SESSIONS = {
+  pin:[
+    {cli:'claude', title:'Berth 2.0 交互重构讨论', cwd:'~/Code/berth', time:'12分钟前', state:'running'},
+    {cli:'codex',  title:'数据层解耦 review',      cwd:'~/Code/berth', time:'1小时前',  state:'unread'},
+    {cli:'coco',   title:'i18n 文案抽取',          cwd:'~/Code/berth', time:'昨天',     state:'idle'},
+  ],
+  active:[
+    {cli:'claude', title:'修复 pty 重连丢失滚动',  cwd:'~/Code/berth', time:'2小时前', state:'idle'},
+    {cli:'codex',  title:'reconcile.ts 绑定调试',  cwd:'~/Code/berth', time:'3小时前', state:'idle'},
+    {cli:'claude', title:'trust dialog 预置',      cwd:'~/Code/berth', time:'5小时前', state:'idle'},
+    {cli:'coco',   title:'lucide sprite 构建',     cwd:'~/Code/berth', time:'昨天',    state:'idle'},
+    {cli:'claude', title:'manifest 静默注入',      cwd:'~/Code/berth', time:'2天前',   state:'idle', hidden:true},
+    {cli:'codex',  title:'writeQueue 单测',        cwd:'~/Code/berth', time:'3天前',   state:'idle', hidden:true},
+  ],
+  arch:[
+    {cli:'coco',   title:'旧版 todo 同步',          cwd:'~/Code/berth', time:'上周',   state:'idle'},
+    {cli:'claude', title:'初版会话列表布局',        cwd:'~/Code/berth', time:'上周',   state:'idle'},
+    {cli:'codex',  title:'PTY 池早期实验',          cwd:'~/Code/berth', time:'2周前',  state:'idle'},
+    {cli:'coco',   title:'设置页雏形',              cwd:'~/Code/berth', time:'3周前',  state:'idle'},
+  ],
+};
+const CLI_LABEL = {claude:'claude', codex:'codex', coco:'coco'};
+
+function glyphFor(state){
+  if(state==='running') return `<span class="dot-run" title="运行中"></span>`;
+  if(state==='unread')  return `<span class="ring-unread" title="有未读输出"></span>`;
+  return '';
+}
+function stateChip(state){
+  if(state==='running') return `<span class="sstate running">running</span>`;
+  if(state==='unread')  return `<span class="sstate unread">unread</span>`;
+  return '';
+}
+
+/* build one full-width session row — actions ALWAYS inline (V3) */
+function rowHTML(s, section){
+  const pinned = section==='pin';
+  return `
+  <div class="srow ${pinned?'pinned-glow':''}" tabindex="0"
+       data-cli="${s.cli}" data-title="${s.title}" data-cwd="${s.cwd}" data-state="${s.state}" ${s.hidden?'data-hidden="1"':''}>
+    <span class="glyph">${glyphFor(s.state)}</span>
+    <span class="badge-cli cli-${s.cli}">${CLI_LABEL[s.cli]}</span>
+    <span class="stitle" title="${s.title}">${s.title}</span>
+    <span class="scwd" title="${s.cwd}">${s.cwd}</span>
+    ${stateChip(s.state)}
+    <span class="stime">${s.time}</span>
+    <span class="actions" data-noopen="1">
+      <button class="iconbtn ${pinned?'on':''} act-pin" title="${pinned?'取消置顶':'置顶'}">${svg('pin')}</button>
+      <button class="iconbtn act-refresh" title="刷新上下文">${svg('refresh')}</button>
+      <button class="iconbtn act-link" title="关联任务">${svg('link')}</button>
+      <button class="iconbtn act-rename" title="重命名">${svg('pencil')}</button>
+      <button class="iconbtn act-arch" title="归档">${svg('archive')}</button>
+      <button class="iconbtn act-detach" title="移出项目">${svg('folder')}</button>
+      <button class="iconbtn danger act-kill" title="终止 (kill)">${svg('square')}</button>
+    </span>
+  </div>`;
+}
+
+function renderSessions(){
+  document.getElementById('sec-pin').innerHTML    = SESSIONS.pin.map(s=>rowHTML(s,'pin')).join('');
+  const activeHidden = SESSIONS.active.filter(s=>s.hidden).length;
+  document.getElementById('sec-active').innerHTML =
+    SESSIONS.active.map(s=>rowHTML(s,'active').replace('class="srow','class="srow'+(s.hidden?' hidden-row':''))).join('') +
+    (activeHidden? `<button class="showmore" id="showMore" data-state="more">${svg('chevronDown')}<span>Show more (${activeHidden})</span></button>`:'');
+  document.getElementById('sec-arch').innerHTML   = SESSIONS.arch.map(s=>rowHTML(s,'arch')).join('');
+  wireRows();
+}
+
+/* ────────────────── tasks data ────────────────── */
+const TASKS = {
+  todo:{label:'待办', dot:'todo', items:[
+    {t:'项目页直接进工作台(废弃导览页)', p:'P1'},
+    {t:'无归属会话归并入口', p:'P2'},
+    {t:'Now 改造为跨项目收件箱', p:'P2'},
+  ]},
+  doing:{label:'进行中', dot:'doing', items:[
+    {t:'会话列表 pin/活跃/已归档 三栏', p:'P1', link:2},
+    {t:'废弃全部会话页', p:'P1'},
+    {t:'show-more 移植到会话模块', p:'P2'},
+  ]},
+  review:{label:'待评估', dot:'review', items:[
+    {t:'会话 archive 数据模型', p:'P2'},
+  ]},
+  done:{label:'已完成', dot:'done', items:[
+    {t:'数据层解耦', p:'P1', done:true, link:1},
+    {t:'上下文管理 Phase1', p:'P2', done:true},
+    {t:'持久化 PTY 模型', p:'P1', done:true},
+    {t:'设计令牌迁移', p:'P2', done:true},
+    {t:'codex hook trust', p:'P2', done:true},
+  ]},
+  cancel:{label:'已取消', dot:'cancel', items:[
+    {t:'多端实时同步(暂缓)', p:'P2', cancel:true},
+  ]},
+};
+function priClass(p){return p==='P0'?'p0':p==='P1'?'p1':'p2';}
+function taskCard(it){
+  const cls = it.done?'tcard done':it.cancel?'tcard cancel':'tcard';
+  return `<div class="${cls}">
+    <div class="tcard-top">
+      <span class="chip-pri ${priClass(it.p)}">${it.p}</span>
+      ${!it.done&&!it.cancel?`<button class="spawn" title="基于此任务起会话">${svg('play',13)}</button>`:''}
+    </div>
+    <div class="tname">${it.t}</div>
+    ${it.link?`<div class="tfoot"><span class="linkcnt">${svg('link',11)} link ${it.link}</span></div>`:''}
+  </div>`;
+}
+function renderTasks(){
+  const k = document.getElementById('kanban');
+  k.innerHTML = Object.values(TASKS).map(col=>`
+    <div class="kcol">
+      <div class="kcol-head"><span class="kdot ${col.dot}"></span><span class="kt">${col.label}</span><span class="kc">${col.items.length}</span></div>
+      <div class="kcol-body">${col.items.map(taskCard).join('')}</div>
+    </div>`).join('');
+}
+
+renderSessions();
+renderTasks();
+
+/* ────────────────── tab switching ────────────────── */
+document.getElementById('tabbar').addEventListener('click', e=>{
+  const tab = e.target.closest('.tab'); if(!tab) return;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t===tab));
+  const name = tab.dataset.tab;
+  document.querySelectorAll('.tabpane').forEach(p=>p.classList.toggle('show', p.dataset.pane===name));
+});
+
+/* ────────────────── section collapse ────────────────── */
+document.querySelectorAll('.sec-head').forEach(h=>{
+  h.addEventListener('click', e=>{
+    if(e.target.closest('button')) return;
+    h.classList.toggle('collapsed');
+  });
+});
+
+/* ────────────────── rail groups collapse ────────────────── */
+document.querySelectorAll('.grp-label').forEach(g=>{
+  g.addEventListener('click', ()=>{
+    g.classList.toggle('collapsed');
+    const body = document.getElementById('grp-'+g.dataset.grp);
+    if(body) body.style.display = g.classList.contains('collapsed')?'none':'';
+  });
+});
+// apply initial collapsed state
+document.querySelectorAll('.grp-label.collapsed').forEach(g=>{
+  const body=document.getElementById('grp-'+g.dataset.grp); if(body) body.style.display='none';
+});
+
+/* ────────────────── show more / less (活跃) ────────────────── */
+document.addEventListener('click', e=>{
+  const sm = e.target.closest('#showMore'); if(!sm) return;
+  const hiddenRows = document.querySelectorAll('#sec-active .hidden-row');
+  if(sm.dataset.state==='more'){
+    hiddenRows.forEach(r=>r.classList.add('revealed'));
+    sm.dataset.state='less';
+    sm.innerHTML = svg('chevronDown').replace('viewBox','style="transform:rotate(180deg)" viewBox') + '<span>Show less</span>';
+  } else {
+    hiddenRows.forEach(r=>r.classList.remove('revealed'));
+    sm.dataset.state='more';
+    sm.innerHTML = svg('chevronDown') + `<span>Show more (${hiddenRows.length})</span>`;
+  }
+});
+
+/* ────────────────── row interactions: open terminal + actions ────────────────── */
+function wireRows(){
+  document.querySelectorAll('.srow').forEach(row=>{
+    row.addEventListener('click', e=>{
+      // ignore clicks on the inline action cluster
+      if(e.target.closest('[data-noopen]')) return;
+      openTerminal(row);
+    });
+    row.addEventListener('keydown', e=>{
+      if(e.key==='Enter'){ openTerminal(row); }
+    });
+  });
+
+  // pin toggle (visual)
+  document.querySelectorAll('.act-pin').forEach(b=>{
+    b.addEventListener('click', e=>{
+      e.stopPropagation();
+      const on = b.classList.toggle('on');
+      const row = b.closest('.srow');
+      row.classList.toggle('pinned-glow', on);
+      b.title = on?'取消置顶':'置顶';
+      toast(on?'已置顶 · 移入 Pin 段':'已取消置顶');
+    });
+  });
+  // other actions → toast feedback (mock)
+  const acts = [
+    ['.act-refresh','已刷新上下文'],
+    ['.act-link','打开关联任务…'],
+    ['.act-rename','重命名会话…'],
+    ['.act-arch','已归档会话'],
+    ['.act-detach','移出项目 → 无归属会话'],
+    ['.act-kill','已终止会话 (kill)'],
+  ];
+  acts.forEach(([sel,msg])=>{
+    document.querySelectorAll(sel).forEach(b=>{
+      b.addEventListener('click', e=>{ e.stopPropagation(); toast(msg); });
+    });
+  });
+}
+
+/* ────────────────── terminal open/close ────────────────── */
+const term = document.getElementById('term');
+function openTerminal(row){
+  const cli = row.dataset.cli, title = row.dataset.title, cwd = row.dataset.cwd, state = row.dataset.state;
+  const badge = document.getElementById('termBadge');
+  badge.className = 'badge-cli cli-'+cli;
+  badge.textContent = CLI_LABEL[cli];
+  const st = state==='running' ? `<span class="st">running</span>` :
+             state==='unread'  ? `<span class="st" style="color:var(--brand)">unread</span>` :
+             `<span class="st" style="color:var(--muted-foreground)">idle</span>`;
+  document.getElementById('termTitle').innerHTML =
+    `${title}<span class="sep">·</span><span class="pth">${cwd}</span><span class="sep">·</span>${st}`;
+  term.classList.add('show');
+}
+document.getElementById('termBack').addEventListener('click', ()=>term.classList.remove('show'));
+document.getElementById('termClose').addEventListener('click', ()=>term.classList.remove('show'));
+term.querySelector('.tbtn.kill').addEventListener('click', ()=>{ toast('已终止会话 (kill)'); term.classList.remove('show'); });
+
+/* ────────────────── nav (mock, project active) ────────────────── */
+document.querySelectorAll('.nav-item').forEach(n=>{
+  n.addEventListener('click', ()=>{
+    document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+    n.classList.add('active');
+    if(n.id!=='navProj') toast(n.querySelector('.lbl').textContent + ' · 演示占位');
+  });
+});
+// project switcher selection (visual only — Berth stays primary)
+document.querySelectorAll('.proj').forEach(p=>{
+  p.addEventListener('click', ()=>{
+    document.querySelectorAll('.proj').forEach(x=>x.classList.remove('sel'));
+    p.classList.add('sel');
+    if(!p.classList.contains('sel')) return;
+    const nm = p.querySelector('.proj-name').textContent;
+    if(nm!=='Berth') toast('切换项目 · '+nm+'（演示）');
+  });
+});
+
+/* ────────────────── theme toggle ────────────────── */
+const themeBtn = document.getElementById('themeToggle');
+function paintTheme(){
+  const light = document.body.classList.contains('light');
+  themeBtn.innerHTML = svg(light?'sun':'sun', 16); // sun glyph both ways; recolor handles affordance
+  themeBtn.title = light?'切换到深色':'切换到浅色';
+}
+themeBtn.addEventListener('click', ()=>{ document.body.classList.toggle('light'); paintTheme(); });
+paintTheme();
+</script>
+</body>
+</html>

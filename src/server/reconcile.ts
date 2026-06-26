@@ -25,13 +25,16 @@ function normPath(p: string): string {
  * Among candidates pick the one with the highest updatedAt. If none found, the
  * intent stays pending and will be retried on the next refresh.
  */
-export function reconcileLaunchIntents(store: Store, cache: LogicalSession[]): void {
-  const pending = store.pendingIntents().filter(i => i.cli === 'codex')
-  if (pending.length === 0) return
+export function reconcileLaunchIntents(store: Store, cache: LogicalSession[]): number {
+  const pending = store.pendingIntents()
+    .filter(i => i.cli === 'codex')
+    .sort((a, b) => b.createdAt - a.createdAt)
+  if (pending.length === 0) return 0
 
   // Track which sessions have been claimed in this pass so two intents cannot
   // compete for the same session.
   const used = new Set<string>()
+  let bound = 0
 
   for (const intent of pending) {
     const normIntentCwd = normPath(intent.cwd)
@@ -58,10 +61,14 @@ export function reconcileLaunchIntents(store: Store, cache: LogicalSession[]): v
       // intent.todoKey is a Berth task id (post identity-migration), used directly as the edge key.
       store.addEdge(intent.todoKey, best.sessionId)
     }
-    store.setAttach(best.sessionId, intent.projectId, 'confirmed')
+    // Only attach to a real project. Project-less codex launches still surface through the bound
+    // launch intent; writing a null-project attach makes the frontend classify them as unassigned.
+    if (intent.projectId) store.setAttach(best.sessionId, intent.projectId, 'confirmed')
     store.bindIntent(intent.id, best.sessionId)
     // The fresh codex pty was registered under the intent id; move it to the real session id so a
     // later click reattaches to the SAME live process instead of spawning a parallel `codex resume`.
     rekeyPty(intent.id, best.sessionId)
+    bound += 1
   }
+  return bound
 }

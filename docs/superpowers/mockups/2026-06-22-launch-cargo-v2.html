@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>起航 · 货舱交互稿 v2（定稿方向）</title>
+<style>
+  :root{
+    --background:#141b2e; --foreground:#b3bcd4; --card:#1f2940; --card-foreground:#c7cfe3;
+    --muted:#2c3852; --muted-foreground:#8089a3; --accent:#2c3852; --accent-foreground:#dbe1f0;
+    --border:#3a4768; --canvas:#0d1220; --brand:#56b6ff; --brand-foreground:#0d1220;
+    --warning:#f0c773; --purple:#b88cf0; --text-dim:#6b7280;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--canvas);color:var(--foreground);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    padding:34px 20px 90px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:620px;margin:0 auto}
+  h1{font-size:17px;font-weight:700;color:#e5ebfa;margin:0 0 4px}
+  .sub{font-size:12.5px;color:var(--muted-foreground);margin:0 0 24px;line-height:1.65}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  svg{display:block}
+
+  .dlg{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;
+    box-shadow:0 18px 50px rgba(0,0,0,.5)}
+  .dlg-head{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);padding:11px 16px}
+  .dlg-head .t{font-size:13px;font-weight:600;color:#e5ebfa}
+  .dlg-body{display:flex;flex-direction:column;gap:13px;padding:16px}
+  .dlg-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;border-top:1px solid var(--border);padding:11px 16px}
+  .lbl{font-size:11px;font-weight:600;color:var(--muted-foreground);margin-bottom:6px}
+  .btn{border:1px solid var(--border);background:transparent;color:var(--foreground);border-radius:7px;padding:6px 12px;font-size:13px;cursor:pointer}
+  .btn:hover{background:var(--accent);color:var(--accent-foreground)}
+  .btn-pri{display:inline-flex;align-items:center;gap:6px;background:var(--brand);color:var(--brand-foreground);
+    border:none;border-radius:7px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer}
+
+  .row{display:flex;gap:16px;align-items:center;font-size:13px}
+  .radio{display:inline-flex;align-items:center;gap:7px;color:var(--foreground)}
+  .ring{width:14px;height:14px;border-radius:50%;border:1px solid var(--border);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .ring.on{border-color:var(--brand)}.ring.on::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--brand)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:7px;padding:6px 10px;font-size:12px;color:var(--muted-foreground);cursor:pointer;background:transparent}
+  .chip.on{border-color:var(--brand);background:rgba(86,182,255,.10);color:#e5ebfa}
+  .chip .m{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--text-dim)}
+
+  /* collapsed bar — version C chrome */
+  .cargo{border:1px solid var(--border);border-radius:8px}
+  .cargo.open{background:rgba(13,18,32,.30)}
+  .cargo-head{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;border:none;color:inherit;padding:9px 12px;cursor:pointer;font-size:12.5px}
+  .cargo.open .cargo-head{border-bottom:1px solid var(--border)}
+  .cargo-head .sum{color:var(--muted-foreground);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cargo-head .sum .mono{color:#aeb8d2}
+  .cargo-head .adj{display:inline-flex;align-items:center;gap:5px;color:var(--muted-foreground);font-size:12px;flex:0 0 auto}
+  .chev{transition:transform .18s}.cargo.open .chev{transform:rotate(180deg)}
+  .cargo-body{padding:13px 12px;display:none;flex-direction:column;gap:14px}
+  .cargo.open .cargo-body{display:flex}
+
+  .grp-title{font-size:11px;color:var(--muted-foreground);font-weight:600;display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .check{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--card-foreground);cursor:pointer}
+  .check+.check{margin-top:8px}
+  .box{width:15px;height:15px;border-radius:4px;border:1px solid var(--border);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;background:transparent}
+  .box.on{background:var(--brand);border-color:var(--brand)}
+  .box.on::after{content:"";width:8px;height:5px;border:2px solid var(--brand-foreground);border-top:none;border-right:none;transform:translateY(-1px) rotate(-45deg)}
+  .check.off{color:var(--text-dim)}
+
+  /* code-context section (master toggle in header) */
+  .sec.dim{opacity:.45;pointer-events:none}
+  .mini-tog{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-weight:500;color:var(--muted-foreground);cursor:pointer;pointer-events:auto}
+  .switch{width:26px;height:15px;border-radius:9px;background:var(--muted);border:1px solid var(--border);position:relative;transition:.15s}
+  .switch::after{content:"";position:absolute;top:1px;left:1px;width:11px;height:11px;border-radius:50%;background:#9aa6c2;transition:.15s}
+  .switch.on{background:rgba(86,182,255,.35);border-color:var(--brand)}
+  .switch.on::after{left:12px;background:var(--brand)}
+
+  .dirhint{font-size:10.5px;color:var(--text-dim);margin:0 0 8px;line-height:1.5}
+  .dirbox{border:1px solid var(--border);border-radius:7px;overflow:hidden}
+  .dir{display:flex;align-items:center;gap:10px;padding:8px 10px;border-top:1px solid rgba(58,71,104,.55);font-size:12px}
+  .dir:first-child{border-top:none}
+  .dir .ck{display:inline-flex;align-items:center;cursor:pointer}
+  .dir .p{font-family:ui-monospace,monospace;color:#cdd6ec;flex:1;min-width:0;cursor:pointer}
+  .dir.unck .p{color:var(--text-dim)}
+  /* anchor (设为启动目录) button */
+  .anchor{display:none;align-items:center;gap:5px;border:1px solid var(--border);background:transparent;color:var(--muted-foreground);
+    border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;flex:0 0 auto}
+  .anchor:hover{background:var(--accent);color:var(--accent-foreground)}
+  .dir.ckd .anchor{display:inline-flex}
+  .anchor.lit{border-color:var(--brand);background:rgba(86,182,255,.12);color:var(--brand)}
+  .anchor .txt-set{display:inline}.anchor .txt-on{display:none}
+  .anchor.lit .txt-set{display:none}.anchor.lit .txt-on{display:inline}
+
+  .cwd-line{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted-foreground);margin-top:9px}
+  .cwd-line .v{font-family:ui-monospace,monospace;color:#aeb8d2}
+  .cwd-line .def{color:var(--text-dim);font-style:normal}
+  .addbtn{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--brand);background:transparent;border:none;cursor:pointer;padding:8px 2px 2px}
+  .addbtn:hover{text-decoration:underline}
+
+  .legend{font-size:11px;color:var(--muted-foreground);background:rgba(13,18,32,.4);border:1px dashed var(--border);border-radius:8px;padding:11px 13px;line-height:1.75;margin-top:22px}
+  .legend b{color:var(--card-foreground)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>起航 · 货舱交互稿 v2 · 定稿方向</h1>
+  <p class="sub">A 的折叠模型 + C 的安静折叠条；<b style="color:#cdd6ec">启动目录不再单列</b>——目录列表里勾选＝装载，点行尾「⚓ 设为启动」把其一作为启动目录(cwd)，不点则<b style="color:#cdd6ec">默认启动目录</b>。点「高级 ⌄」展开；勾/取消目录、点⚓、切「代码上下文」开关都可交互。</p>
+
+  <div class="dlg">
+    <div class="dlg-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#56b6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 22V8M5 12H2a10 10 0 0 0 20 0h-3"/></svg>
+      <span class="t">起航</span>
+    </div>
+    <div class="dlg-body">
+      <div>
+        <div class="lbl">目的地</div>
+        <div class="row">
+          <span class="radio"><span class="ring on"></span>任务：白色模式样稿确认</span>
+          <span class="radio"><span class="ring"></span>自由提问</span>
+        </div>
+      </div>
+      <div>
+        <div class="lbl">Agent</div>
+        <div class="chips">
+          <span class="chip on">claude <span class="m">opus-4.8</span></span>
+          <span class="chip">codex <span class="m">CLI 默认</span></span>
+          <span class="chip">coco <span class="m">无 --model</span></span>
+        </div>
+      </div>
+      <div>
+        <div class="lbl">货舱</div>
+        <div class="cargo" id="cargo">
+          <button class="cargo-head" onclick="document.getElementById('cargo').classList.toggle('open')">
+            <span class="sum" id="sum">上下文 3 项 · 启动 <span class="mono">~/code/berth</span> · 装载 +1</span>
+            <span class="adj">高级 <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+          </button>
+          <div class="cargo-body">
+
+            <!-- 上下文注入 -->
+            <div class="sec">
+              <div class="grp-title">上下文注入</div>
+              <label class="check" onclick="ck(this);sync()"><span class="box on"></span>项目上下文（Berth）</label>
+              <label class="check" onclick="ck(this);sync()"><span class="box on"></span>任务上下文 · 进展 6 条</label>
+            </div>
+
+            <!-- 代码上下文 = 目录列表（启动目录由 ⚓ 点亮决定） -->
+            <div class="sec" id="codeSec">
+              <div class="grp-title">代码上下文
+                <span class="mini-tog" onclick="toggleCode()">装载 <span class="switch on" id="codeSw"></span></span>
+              </div>
+              <div id="codeInner">
+                <div class="dirhint">勾选要装载的目录(走 <span class="mono">--add-dir</span>)；点行尾 <b>⚓ 设为启动</b> 选其一作为启动目录，不点则用默认启动目录。</div>
+                <div class="dirbox" id="dirbox">
+                  <div class="dir ckd">
+                    <span class="ck" onclick="toggleDir(this)"><span class="box on"></span></span>
+                    <span class="p" onclick="toggleDir(this.parentNode.querySelector('.ck'))">~/code/berth</span>
+                    <button class="anchor lit" onclick="anchor(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 22V8M5 12H2a10 10 0 0 0 20 0h-3"/></svg><span class="txt-set">设为启动</span><span class="txt-on">启动目录</span></button>
+                  </div>
+                  <div class="dir ckd">
+                    <span class="ck" onclick="toggleDir(this)"><span class="box on"></span></span>
+                    <span class="p" onclick="toggleDir(this.parentNode.querySelector('.ck'))">~/work/berth-2.0</span>
+                    <button class="anchor" onclick="anchor(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 22V8M5 12H2a10 10 0 0 0 20 0h-3"/></svg><span class="txt-set">设为启动</span><span class="txt-on">启动目录</span></button>
+                  </div>
+                  <div class="dir unck">
+                    <span class="ck" onclick="toggleDir(this)"><span class="box"></span></span>
+                    <span class="p" onclick="toggleDir(this.parentNode.querySelector('.ck'))">~/Obsidian/specs</span>
+                    <button class="anchor" onclick="anchor(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 22V8M5 12H2a10 10 0 0 0 20 0h-3"/></svg><span class="txt-set">设为启动</span><span class="txt-on">启动目录</span></button>
+                  </div>
+                </div>
+                <button class="addbtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> 额外目录…</button>
+                <div class="cwd-line">启动目录：<span class="v" id="cwdVal">~/code/berth</span></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn">取消</button>
+      <button class="btn-pri"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> 起航</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <b>关键规则</b><br>
+    · 勾选目录＝装载(<span class="mono">--add-dir</span>)。点 <b>⚓ 设为启动</b> 把其一设为启动目录(cwd)，单选；再点一次取消 → 回到<b>默认启动目录</b>(项目 workspace, <span class="mono">cwd=''</span>)。<br>
+    · 勾选第一个目录时自动点亮为启动目录；取消勾选会一并熄灭。一个都不勾＝默认启动目录。<br>
+    · <b>代码上下文</b>开关关掉＝整段不装载(默认启动目录、无 <span class="mono">--add-dir</span>)。项目/任务上下文独立开关，默认全开。<br>
+    · 折叠条只读摘要，安静灰；每次起航重置选择，仅沿用 sticky <span class="mono">lastCwd</span> 自动点亮。
+  </div>
+</div>
+
+<script>
+  function ck(el){const b=el.querySelector('.box');b.classList.toggle('on');el.classList.toggle('off',!b.classList.contains('on'))}
+  function toggleDir(ckEl){
+    const dir=ckEl.closest('.dir'); const box=ckEl.querySelector('.box'); const on=!box.classList.contains('on');
+    box.classList.toggle('on',on); dir.classList.toggle('ckd',on); dir.classList.toggle('unck',!on);
+    if(!on){const a=dir.querySelector('.anchor'); if(a.classList.contains('lit')) a.classList.remove('lit');}
+    else{ if(!document.querySelector('.anchor.lit')) dir.querySelector('.anchor').classList.add('lit'); }
+    sync();
+  }
+  function anchor(btn){
+    const dir=btn.closest('.dir'); if(!dir.classList.contains('ckd')) return; // only checked rows
+    const wasLit=btn.classList.contains('lit');
+    document.querySelectorAll('.anchor').forEach(a=>a.classList.remove('lit'));
+    if(!wasLit) btn.classList.add('lit');
+    sync();
+  }
+  function toggleCode(){
+    const sw=document.getElementById('codeSw'); const inner=document.getElementById('codeInner');
+    const on=sw.classList.toggle('on'); inner.style.opacity=on?'1':'.4'; inner.style.pointerEvents=on?'auto':'none'; sync();
+  }
+  function sync(){
+    const ctxCount=[...document.querySelectorAll('.sec:first-child .box')].filter(b=>b.classList.contains('on')).length
+      + (document.getElementById('codeSw').classList.contains('on')?1:0);
+    const loaded=[...document.querySelectorAll('.dir.ckd')];
+    const lit=document.querySelector('.anchor.lit');
+    const codeOn=document.getElementById('codeSw').classList.contains('on');
+    let cwd = (codeOn && lit) ? lit.closest('.dir').querySelector('.p').textContent : null;
+    const cwdEl=document.getElementById('cwdVal');
+    cwdEl.textContent = cwd || '默认启动目录'; cwdEl.className = cwd?'v':'v def';
+    const extra = codeOn ? loaded.length - (lit?1:0) : 0;
+    const startTxt = cwd ? `启动 <span class="mono">${cwd}</span>` : '启动 <span class="def" style="color:var(--text-dim)">默认</span>';
+    document.getElementById('sum').innerHTML = `上下文 ${ctxCount} 项 · ${startTxt}` + (extra>0?` · 装载 +${extra}`:'');
+  }
+  sync();
+</script>
+</body>
+</html>

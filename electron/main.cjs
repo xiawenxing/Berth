@@ -24,7 +24,9 @@ function createWindow(port) {
     backgroundColor: '#0b0b0c',
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   })
-  mainWindow.loadURL(`http://127.0.0.1:${port}`)
+  // 1.0 entry is deprecated — load the 2.0 SPA directly. The server also 302s / → /app/, so this is
+  // belt-and-suspenders.
+  mainWindow.loadURL(`http://127.0.0.1:${port}/app/`)
   // Open external links (e.g. obsidian://, http docs) in the user's real browser, not in-app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (!url.startsWith(`http://127.0.0.1:${port}`)) { shell.openExternal(url); return { action: 'deny' } }

@@ -18,3 +18,21 @@ export function resolvePublicDir(startDir: string): string {
   }
   throw new Error(`could not locate public/ (with index.html) above ${startDir}`)
 }
+
+/**
+ * Locate the built React SPA (`web/dist/index.html`) by walking up from `startDir`, the same way
+ * resolvePublicDir does. Returns null when it hasn't been built yet (so the server simply doesn't
+ * mount the SPA route). The Berth 2.0 SPA is served at `/app` alongside the legacy `public/` UI at
+ * `/` until it reaches data parity, then `/` flips to it.
+ */
+export function resolveWebDistDir(startDir: string): string | null {
+  let dir = startDir
+  for (let i = 0; i < 8; i++) {
+    const candidate = join(dir, 'web', 'dist')
+    if (existsSync(join(candidate, 'index.html'))) return candidate
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return null
+}

@@ -1,0 +1,899 @@
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { Plus, Play, Sparkles, MoreHorizontal, Anchor, Route, Pencil, Archive, ArchiveRestore, Trash2 } from 'lucide-react'
+import { Spinner } from '@/components/ui/Spinner'
+import { Kanban } from '@/components/workspace/Kanban'
+import { SessionModule } from '@/components/workspace/SessionModule'
+import { CargoDefaults } from '@/components/workspace/CargoDefaults'
+import { ImportDialog } from '@/components/ImportDialog'
+import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
+import { Dialog } from '@/components/ui/Overlay'
+import { useUI } from '@/lib/ui-store'
+import { NewTaskDialog, refineTitle, type NewTaskCreateOptions } from '@/components/NewTaskDialog'
+import { ProjectSummaryPopover, ContextDocDrawer, type ContextDocTarget } from '@/components/AiPanels'
+import { useData } from '@/lib/data'
+import { useInlineEdit } from '@/lib/useInlineEdit'
+import { relTime, shortCwd, normPriority } from '@/lib/format'
+import { isDoneStatus, statusKind } from '@/lib/status'
+import { useLive } from '@/lib/live'
+import { startFreshLaunch } from '@/lib/launch-runner'
+import { deliveryStats } from '@/lib/delivery'
+import { api, type PreviewSession } from '@/lib/api'
+import { sortSessionRows } from '@/lib/session-sort'
+import type { Task, SessionRow, CwdGroup, TaskStatus, LinkedSession } from '@/lib/types'
+
+/**
+ * Project workspace (the hub) — v7 layout: sticky header + 港湾概览,
+ * then 任务(航线) kanban hero, 会话(船只) module, 默认装载 registry.
+ * Data is canonical sample for now; /api wiring lands in a later phase.
+ */
+let taskSeq = 100
+
+type SessionGroupConfirm =
+  | { kind: 'detach'; ids: string[]; rawCwd?: string }
+
+export function ProjectWorkspace() {
+  const { id = '' } = useParams()
+  const navigate = useNavigate()
+  const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
+  const { projects, tasks: apiTasks, sessions, statuses, priorities, agents, pending, addPending, resolvePending, reload, resync } = useData()
+  const live = useLive()
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [ctxDoc, setCtxDoc] = useState<ContextDocTarget | null>(null)
+  const moreBtnRef = useRef<HTMLButtonElement>(null)
+  const summaryBtnRef = useRef<HTMLButtonElement>(null)
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const doResync = () => {
+    if (syncing) return
+    setSyncing(true)
+    resync().finally(() => setSyncing(false))
+  }
+  // Per-cwd-group import: preview the dir's on-disk sessions, then the dialog imports the picked ones.
+  // `allowRegister` (§10.3, 导入其他目录) lets the dialog also offer 「同时登记为装载目录」.
+  const [importDlg, setImportDlg] = useState<{ path: string; sessions: PreviewSession[]; allowRegister?: boolean } | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
+  const importFromGroup = (rawCwd: string) => {
+    api.previewDir(rawCwd).then(({ sessions }) => setImportDlg({ path: rawCwd, sessions })).catch(() => {})
+  }
+  // §10.3 导入其他目录: pick an arbitrary folder, preview its on-disk sessions, then import (optionally register).
+  const importOther = async () => {
+    try {
+      const picked = await api.pickFolder()
+      if (!picked?.path) return
+      const { sessions } = await api.previewDir(picked.path)
+      setImportDlg({ path: picked.path, sessions, allowRegister: true })
+    } catch {
+      // pick / preview failures are non-fatal
+    }
+  }
+  // §10.1 移除装载目录 (parent-owned so it can offer 「一并移出会话」 with a real session count).
+  const [removeCargo, setRemoveCargo] = useState<{ cwd: string } | null>(null)
+  const [emptyCargo, setEmptyCargo] = useState<{ cwd: string; registeredCwd: string } | null>(null)
+  const [groupConfirm, setGroupConfirm] = useState<SessionGroupConfirm | null>(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
+  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false)
+  const [titleGeneratingIds, setTitleGeneratingIds] = useState<Set<string>>(() => new Set())
+
+  const project = projects.find((p) => p.id === id)
+  const projName = project?.name ?? id
+
+  // Real tasks for this project → board cards.
+  const realTasks = useMemo<Task[]>(
+    () =>
+      apiTasks
+        .filter((t) => t.projectId === id)
+        .map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: t.status, // raw configured status; Kanban resolves it to a column
+          priority: normPriority(t.priority),
+          summary: t.progress ?? undefined,
+          summarizing: t.summarizing,
+          ddl: t.ddl ?? undefined,
+          links: [],
+        })),
+    [apiTasks, id],
+  )
+  const [tasks, setTasks] = useState<Task[]>(realTasks)
+  useEffect(() => setTasks(realTasks), [realTasks])
+
+  // Resolve each task's linked session IDs (ApiTask.sessions) to real sessions for the card's
+  // expansion. Kept SEPARATE from the editable `tasks` state so live-status ticks refresh links
+  // without clobbering optimistic status/priority edits. Unresolved ids (deleted/unimported) skip.
+  const sessById = useMemo(() => new Map(sessions.map((s) => [s.sessionId, s])), [sessions])
+  const linksByTask = useMemo(() => {
+    const m = new Map<string, LinkedSession[]>()
+    for (const t of apiTasks) {
+      if (t.projectId !== id || !t.sessions?.length) continue
+      const ls: LinkedSession[] = []
+      for (const sid of t.sessions) {
+        const s = sessById.get(sid)
+        if (s) ls.push({ id: s.sessionId, cli: s.cli, title: s.title || '(未命名会话)', status: live.shipStatus(s.sessionId, s.updatedAt) })
+      }
+      if (ls.length) m.set(t.id, ls)
+    }
+    return m
+  }, [apiTasks, id, sessById, live.rev])
+  const boardTasks = useMemo(() => tasks.map((t) => ({ ...t, links: linksByTask.get(t.id) ?? [] })), [tasks, linksByTask])
+
+  // Real sessions for this project → Pin section + by-cwd groups.
+  const projSessions = useMemo(() => sessions.filter((s) => s.projectId === id), [sessions, id])
+  const toRow = (s: (typeof projSessions)[number], pinned: boolean): SessionRow => ({
+    id: s.sessionId,
+    cli: s.cli,
+    title: s.title || '(未命名)',
+    cwd: shortCwd(s.cwd),
+    time: relTime(s.updatedAt),
+    updatedAt: s.updatedAt,
+    status: live.shipStatus(s.sessionId, s.updatedAt),
+    linkedTask: !!s.todoKey,
+    taskId: s.todoKey ?? null,
+    pinned,
+    titleGenerating: s.titleGenerating,
+  })
+  const pin: SessionRow[] = useMemo(
+    () => projSessions.filter((s) => s.pinned).map((s) => toRow(s, true)),
+    [projSessions, live.rev],
+  )
+  // In-flight launches for this project → optimistic 创建中… rows (dropped once the real session
+  // surfaces; see DataProvider). Shows the launch immediately instead of after a manual 同步.
+  const pendingRows: SessionRow[] = useMemo(
+    () =>
+      pending
+        .filter((p) => p.projectId === id && !p.surfaced)
+        .map((p) => ({
+          id: p.sessionId ?? p.tempId,
+          cli: p.cli,
+          title: p.sessionId ? '启动中…' : '创建中…',
+          cwd: p.cwdLabel,
+          time: '刚刚',
+          status: 'idle' as const,
+          pending: true,
+          pendingOpenable: !!p.sessionId,
+        })),
+    [pending, id],
+  )
+  const groups: CwdGroup[] = useMemo(() => {
+    const NO_CWD = '(无目录)'
+    const ws = project?.workspaceCwd // the Berth-assigned default dir — masked, no path shown
+    const map = new Map<string, SessionRow[]>()
+    for (const s of projSessions.filter((x) => !x.pinned)) {
+      const key = s.cwd || NO_CWD // RAW cwd as the stable key (display form is shortened below)
+      ;(map.get(key) ?? map.set(key, []).get(key)!).push(toRow(s, false))
+    }
+    // 主上下文 = sticky last cwd, else a registered enabled path, else the busiest cwd (excluding the
+    // masked workspace group, which is always pinned to the top and never the 主 label).
+    const enabled = (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd)
+    const candidate = (project?.lastCwd && map.has(project.lastCwd) && project.lastCwd) || enabled.find((c) => map.has(c))
+    const nonWs = [...map.entries()].filter(([cwd]) => cwd !== ws)
+    const mainCwd = candidate || nonWs.sort((a, b) => b[1].length - a[1].length)[0]?.[0]
+    const sorted = [...map.entries()].sort((a, b) => {
+      if (a[0] === ws) return -1 // workspace group first
+      if (b[0] === ws) return 1
+      if (a[0] === mainCwd) return -1
+      if (b[0] === mainCwd) return 1
+      return b[1].length - a[1].length
+    })
+    let contextN = 1
+    return sorted.map(([cwd, rows]) => {
+      if (cwd === ws) {
+        // rawCwd is the real (masked) workspace path — drives the import icon so sessions that ran
+        // in the default workspace dir but weren't auto-curated can still be imported manually.
+        return { key: cwd, cwd: '项目默认目录', tag: 'Berth 工作区', shortTag: 'Berth 工作区', sessions: sortSessionRows(rows), kind: 'workspace' as const, rawCwd: cwd }
+      }
+      const isMain = cwd === mainCwd
+      const n = isMain ? 0 : ++contextN // secondary code contexts count from 2 (主 is the 1st context)
+      return {
+        key: cwd,
+        cwd: cwd === NO_CWD ? NO_CWD : shortCwd(cwd),
+        tag: isMain ? '主上下文' : `代码目录 · 第 ${n} 上下文`,
+        shortTag: isMain ? '主上下文' : `目录·${n}`,
+        sessions: sortSessionRows(rows),
+        kind: 'cwd' as const,
+        rawCwd: cwd === NO_CWD ? undefined : cwd,
+      }
+    })
+  }, [projSessions, project, live.rev])
+
+  const done = tasks.filter((t) => isDoneStatus(t.status)).length
+  const total = tasks.length || 1
+  const inProgress = tasks.filter((t) => statusKind(t.status) === 'doing').length
+  const pct = Math.round((done / total) * 100)
+
+  // 港湾概览 + 最近活动, derived from real sessions/tasks.
+  const sailN = projSessions.filter((s) => live.shipStatus(s.sessionId, s.updatedAt) === 'sail').length
+  const dockN = projSessions.filter((s) => live.shipStatus(s.sessionId, s.updatedAt) === 'dock').length
+  const todayDelivery = useMemo(() => deliveryStats(apiTasks.filter((t) => t.projectId === id)), [apiTasks, id])
+  const lastActivity = projSessions.length ? relTime(Math.max(...projSessions.map((s) => s.updatedAt))) : '—'
+
+  // taskId === '' → free launch (header / session-module button); otherwise resolve the task by id
+  // (NOT by title — titles aren't unique and get refined) to carry its real todoKey + project.
+  // The spawn cwd is decided in LaunchDialog (enabled 货舱 → sticky/pick → workspace fallback).
+  const launch = (taskId: string) => {
+    const task = taskId ? apiTasks.find((x) => x.id === taskId) : undefined
+    openLaunch(
+      task
+        ? { dest: 'task', taskTitle: task.title, projectId: task.projectId ?? id, todoKey: task.id }
+        : { dest: 'free', projectId: id },
+    )
+  }
+  // Open a real session → attach its live /pty terminal in the drawer; mark it seen.
+  const openRow = (s: SessionRow) => {
+    live.markSeen(s.id)
+    openDrawer({ title: s.title, cli: s.cli, cwd: s.cwd, status: s.status === 'idle' ? 'moored' : s.status, sessionId: s.id })
+  }
+  // From a task's expanded linked-session row → open the REAL session by id (markSeen + live pty).
+  const openLinkedSession = (l: LinkedSession) => {
+    const s = sessById.get(l.id)
+    if (!s) return openDrawer({ title: l.title, cli: l.cli, cwd: '', status: l.status })
+    live.markSeen(s.sessionId)
+    openDrawer({ title: s.title || l.title, cli: s.cli, cwd: shortCwd(s.cwd), status: live.shipStatus(s.sessionId, s.updatedAt), sessionId: s.sessionId })
+  }
+
+  // Drag-to-status：optimistic move NOW, persist via PATCH /todos, then reload.
+  const onMove = (taskId: string, status: TaskStatus) => {
+    setTasks((ts) => ts.map((t) => (t.id === taskId && t.status !== status ? { ...t, status } : t)))
+    api
+      .patchTask(taskId, { status })
+      .then(() => reload())
+      .catch(() => reload())
+  }
+
+  // Pin toggle：persist via POST /pin, then reload (re-derives pin section vs groups).
+  const onPin = (sessionId: string, on: boolean) => {
+    api
+      .pin(sessionId, on)
+      .then(() => reload())
+      .catch(() => reload())
+  }
+  const onGenerateSessionTitle = (sessionId: string) =>
+    api
+      .sessionTitle(sessionId)
+      .then(() => reload())
+      .catch(() => reload())
+  const onLinkSessionTask = (sessionId: string, taskId: string | null) =>
+    api
+      .edge(sessionId, taskId, id)
+      .then(() => reload())
+      .catch(() => reload())
+
+  // ── 会话移出项目 + 装载目录联动 (§10.2) ──
+  const norm = (p: string) => p.replace(/\/+$/, '')
+  // The registered 装载目录 cwd matching `cwd` (trailing-slash tolerant), or null.
+  const registeredPath = (cwd: string) =>
+    (project?.pathsMeta ?? []).map((p) => p.cwd).find((rc) => norm(rc) === norm(cwd)) ?? null
+  const cwdsOf = (ids: string[]) =>
+    ids.map((sid) => projSessions.find((s) => s.sessionId === sid)?.cwd ?? '').filter(Boolean)
+  // After a removal that empties a cargo-registered group, offer to also drop the 装载目录 registration.
+  // `projSessions` here is the pre-reload snapshot, so we subtract the just-removed ids explicitly.
+  const offerRemoveCargo = (removedIds: string[], cwds: string[]) => {
+    for (const cwd of [...new Set(cwds)]) {
+      const reg = registeredPath(cwd)
+      if (!reg) continue
+      const remaining = projSessions.filter((s) => s.cwd && norm(s.cwd) === norm(cwd) && !removedIds.includes(s.sessionId))
+      if (remaining.length === 0) setEmptyCargo({ cwd, registeredCwd: reg })
+      return
+    }
+  }
+  const onDetach = (sid: string) => {
+    const cwds = cwdsOf([sid])
+    api.detachSessions([sid]).then(() => { reload(); offerRemoveCargo([sid], cwds) }).catch(() => reload())
+  }
+  const onDetachGroup = (ids: string[], rawCwd?: string) => {
+    if (!ids.length) return
+    setGroupConfirm({ kind: 'detach', ids, rawCwd })
+  }
+  const confirmGroupAction = async () => {
+    if (!groupConfirm || confirmBusy) return
+    const { ids, rawCwd } = groupConfirm
+    const cwds = rawCwd ? [rawCwd] : cwdsOf(ids)
+    setConfirmBusy(true)
+    try {
+      await api.detachSessions(ids)
+      setGroupConfirm(null)
+      reload()
+      offerRemoveCargo(ids, cwds)
+    } catch {
+      reload()
+    } finally {
+      setConfirmBusy(false)
+    }
+  }
+  // §10.1 sessions under a to-be-removed 装载目录 (for the 「一并移出会话」 count + detach).
+  const removeCargoIds = useMemo(
+    () => (removeCargo ? projSessions.filter((s) => s.cwd && norm(s.cwd) === norm(removeCargo.cwd)).map((s) => s.sessionId) : []),
+    [removeCargo, projSessions],
+  )
+
+  // ⋯ task-menu actions: optimistic local edit NOW, persist via PATCH/DELETE, then reload.
+  const onSetPriority = (taskId: string, priority: Task['priority']) => {
+    setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, priority } : t)))
+    api
+      .patchTask(taskId, { priority })
+      .then(() => reload())
+      .catch(() => reload())
+  }
+  const onSetDdl = (taskId: string, ddl: string | null) => {
+    setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, ddl } : t)))
+    api
+      .patchTask(taskId, { ddl })
+      .then(() => reload())
+      .catch(() => reload())
+  }
+  const onRename = (taskId: string, title: string) => {
+    setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, title } : t)))
+    api
+      .patchTask(taskId, { title })
+      .then(() => reload())
+      .catch(() => reload())
+  }
+  const onGenerateTaskTitle = (taskId: string) => {
+    if (titleGeneratingIds.has(taskId)) return
+    setTitleGeneratingIds((ids) => new Set(ids).add(taskId))
+    api
+      .taskTitle(taskId)
+      .then(({ title }) => {
+        if (title) setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, title } : t)))
+        reload()
+      })
+      .catch(() => reload())
+      .finally(() => {
+        setTitleGeneratingIds((ids) => {
+          const next = new Set(ids)
+          next.delete(taskId)
+          return next
+        })
+      })
+  }
+  const onDelete = (taskId: string) => {
+    setTasks((ts) => ts.filter((t) => t.id !== taskId))
+    api
+      .deleteTask(taskId)
+      .then(() => reload())
+      .catch(() => reload())
+  }
+
+  // 即时创建：optimistic card NOW, persist via POST /todos, then reload real data.
+  // (The server's createTask guard already classifies + titles; AI-summarize is that pipeline.)
+  const createTask = (raw: string, opts: NewTaskCreateOptions) => {
+    const tid = `new-${++taskSeq}`
+    const taskText = raw.trim() || (opts.images.length ? '带图任务' : '')
+    // Optimistic card uses the configured vocab (server settles to cfg defaults on reload):
+    // runNow → first doing-kind status (else the 2nd column), else the first column; lowest priority.
+    const todoStatus = statuses[0] ?? '待办'
+    const doingStatus = statuses.find((s) => statusKind(s) === 'doing') ?? statuses[1] ?? todoStatus
+    const card: Task = {
+      id: tid,
+      title: taskText,
+      status: opts.runNow ? doingStatus : todoStatus,
+      priority: priorities[priorities.length - 1] ?? 'P2',
+      summary: opts.aiSummarize ? '港务助手正在总结进展摘要…' : undefined,
+      links: [],
+    }
+    setTasks((ts) => [card, ...ts])
+    api
+      .createTask(taskText, id, opts.images, opts.aiSummarize)
+      .then((res) => {
+        reload()
+        // 立即执行: 新建任务弹窗已经收集了会话启动配置。拿到服务端真实 task id 后直接起航，
+        // 不再打开第二个 LaunchDialog。
+        if (opts.runNow && res?.record?.id && opts.launch)
+          startFreshLaunch({
+            dest: 'task',
+            title: res.record.title ?? taskText,
+            taskTitle: res.record.title ?? taskText,
+            cli: opts.launch.cli,
+            cargo: opts.launch.cargo,
+            project,
+            projectId: id,
+            todoKey: res.record.id,
+            sessions,
+            addPending,
+            resolvePending,
+            openDrawer,
+          })
+      })
+      .catch(() => {
+        // keep the optimistic card but settle its title locally if the POST failed
+        const { title, summary } = refineTitle(taskText)
+        setTasks((ts) => ts.map((t) => (t.id === tid ? { ...t, title, summary } : t)))
+      })
+  }
+
+  // Inline project rename — double-click the title, or ⋯ menu → 重命名 (calls startRenameProject).
+  const { editing: renamingProject, start: startRenameProject, inputProps: projNameInput } = useInlineEdit(
+    project?.name ?? '',
+    (next) => {
+      if (project) api.patchProject(project.id, { name: next }).then(() => reload()).catch(() => reload())
+    },
+  )
+  const archiveProject = () => {
+    if (!project) return
+    api.archiveProject(project.id, !project.archived).then(() => reload()).catch(() => reload())
+  }
+  const deleteProject = () => {
+    if (!project) return
+    setDeleteProjectOpen(true)
+  }
+  const confirmDeleteProject = async () => {
+    if (!project || confirmBusy) return
+    setConfirmBusy(true)
+    try {
+      await api.deleteProject(project.id)
+      setDeleteProjectOpen(false)
+      reload()
+      navigate('/now')
+    } catch {
+      reload()
+    } finally {
+      setConfirmBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto">
+      <header className="elev-header sticky top-0 z-10 bg-background px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-baseline gap-3">
+            {renamingProject ? (
+              <input
+                {...projNameInput}
+                className="h-7 rounded border border-input bg-background px-1.5 text-[17px] font-bold text-foreground outline-none focus:border-ring"
+              />
+            ) : (
+              <h1
+                onDoubleClick={() => project && startRenameProject()}
+                title={project ? '双击重命名' : undefined}
+                className="text-[17px] font-bold text-foreground"
+              >
+                {projName}
+              </h1>
+            )}
+            {project?.archived && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                <Archive size={11} />
+                已归档
+              </span>
+            )}
+            {project?.homeCwd && <span className="font-mono text-[12px] text-muted-foreground">{shortCwd(project.homeCwd)}</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setNewTask(true)}
+              className="btn-primary flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-semibold"
+            >
+              <Plus size={14} /> 新建任务
+            </button>
+            <HBtn icon={<Play size={13} />} onClick={() => launch('')}>起会话</HBtn>
+            <HBtn
+              btnRef={summaryBtnRef}
+              icon={<Sparkles size={13} className={project?.summarizing ? 'spk-twinkle' : undefined} />}
+              onClick={() => setSummaryOpen((v) => !v)}
+            >
+              小结
+            </HBtn>
+            {summaryOpen && (
+              <ProjectSummaryPopover anchor={summaryBtnRef} projectId={id} onClose={() => setSummaryOpen(false)} onGenerated={reload} />
+            )}
+            <button
+              ref={moreBtnRef}
+              onClick={() => setProjectMenuOpen((v) => !v)}
+              className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent"
+              title="项目操作"
+            >
+              <MoreHorizontal size={15} />
+            </button>
+            {projectMenuOpen && project && (
+              <AnchoredPopover anchor={moreBtnRef} width={176} onClose={() => setProjectMenuOpen(false)}>
+                <MenuLabel>项目</MenuLabel>
+                <MenuItem
+                  onClick={() => {
+                    setProjectMenuOpen(false)
+                    startRenameProject()
+                  }}
+                >
+                  <Pencil size={13} className="flex-none text-muted-foreground" /> 重命名
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    setProjectMenuOpen(false)
+                    archiveProject()
+                  }}
+                >
+                  {project.archived ? <ArchiveRestore size={13} className="flex-none text-muted-foreground" /> : <Archive size={13} className="flex-none text-muted-foreground" />}
+                  {project.archived ? '取消归档' : '归档项目'}
+                </MenuItem>
+                <div className="my-1 border-t border-border" />
+                <MenuItem
+                  danger
+                  onClick={() => {
+                    setProjectMenuOpen(false)
+                    deleteProject()
+                  }}
+                >
+                  <Trash2 size={13} className="flex-none" /> 删除项目
+                </MenuItem>
+              </AnchoredPopover>
+            )}
+          </div>
+        </div>
+
+        {/* rollup */}
+        <div className="mt-2.5 flex items-center gap-3 text-[12px] text-muted-foreground">
+          <span>
+            任务进展 <span className="font-semibold text-foreground">{done}/{total}</span>
+          </span>
+          <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
+          </div>
+          <span>{pct}%</span>
+          <span className="ml-2">进行中 <span className="font-semibold text-priority">{inProgress}</span></span>
+          <span className="ml-2">最近活动 <span className="text-foreground">{lastActivity}</span></span>
+        </div>
+
+        {/* 港湾概览 */}
+        <div className="mt-3 flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2">
+          <Anchor size={14} className="text-brand" />
+          <span className="text-[12px] font-semibold text-foreground">港湾概览</span>
+          <Pill tone="brand" loading>在跑 {sailN}</Pill>
+          <Pill tone="destructive">靠岸·待查收 {dockN}</Pill>
+          <Pill tone="warning">今日交付 {todayDelivery.done}/{todayDelivery.total}</Pill>
+        </div>
+      </header>
+
+      <div className="flex flex-col gap-5 px-6 py-5">
+        {/* 任务 — hero */}
+        <section>
+          {/* hero module — same icon + title + tag structure as 会话/默认装载, but brand-toned (not
+              muted) so it reads as the primary section. */}
+          <div className="mb-3 flex items-center gap-2">
+            <Route size={14} className="text-brand" />
+            <h2 className="text-[13px] font-semibold text-brand">任务</h2>
+            <span className="rounded-[10px] bg-brand/15 px-2 py-px text-[11px] font-medium tracking-wide text-brand">航线</span>
+          </div>
+          <Kanban
+            tasks={boardTasks}
+            onLaunch={launch}
+            onOpenSession={openLinkedSession}
+            onMove={onMove}
+            onSetPriority={onSetPriority}
+            onSetDdl={onSetDdl}
+            onRename={onRename}
+            onGenerateTitle={onGenerateTaskTitle}
+            titleGeneratingIds={titleGeneratingIds}
+            onDelete={onDelete}
+            onOpenContext={(t) =>
+              setCtxDoc({ kind: 'task', key: t.id, path: `tasks/${t.id}/index.md`, title: `任务上下文 · ${t.title}` })
+            }
+            onCreateTask={() => setNewTask(true)}
+          />
+        </section>
+
+        <SessionModule
+          pin={pin}
+          groups={groups}
+          pending={pendingRows}
+          tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))}
+          onLaunch={() => launch('')}
+          onResync={doResync}
+          syncing={syncing}
+          onOpen={openRow}
+          onPin={onPin}
+          onImport={importFromGroup}
+          onImportOther={importOther}
+          onGenerateTitle={onGenerateSessionTitle}
+          onLinkTask={onLinkSessionTask}
+          onDetach={onDetach}
+          onDetachGroup={onDetachGroup}
+        />
+        <CargoDefaults paths={project?.pathsMeta ?? []} tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
+      </div>
+
+      <NewTaskDialog
+        open={newTask}
+        onClose={() => setNewTask(false)}
+        onCreate={createTask}
+        project={project}
+        agents={agents}
+        onAddLaunchPath={async (cwd) => {
+          try {
+            await api.addPath(id, cwd, { enabled: true })
+            reload()
+            return true
+          } catch {
+            return false
+          }
+        }}
+      />
+      <ContextDocDrawer target={ctxDoc} onClose={() => setCtxDoc(null)} />
+      {importDlg && (
+        <ImportDialog
+          path={importDlg.path}
+          sessions={importDlg.sessions}
+          mode="import"
+          busy={importBusy}
+          registerOption={importDlg.allowRegister}
+          onCancel={() => setImportDlg(null)}
+          onConfirm={async (ids, alsoRegister) => {
+            setImportBusy(true)
+            try {
+              // §10.3: when imported from 「导入其他目录」 with the box checked, also register the dir.
+              if (importDlg.allowRegister && alsoRegister) await api.addPath(id, importDlg.path, { enabled: true })
+              if (ids.length) { await api.importSessions(ids, id); live.markSeenMany(ids) } // imported → READ
+              setImportDlg(null)
+              doResync()
+            } finally {
+              setImportBusy(false)
+            }
+          }}
+        />
+      )}
+      {removeCargo && (
+        <RemoveCargoDialog
+          cwd={removeCargo.cwd}
+          count={removeCargoIds.length}
+          onCancel={() => setRemoveCargo(null)}
+          onConfirm={async (alsoDetach) => {
+            await api.removePath(id, removeCargo.cwd)
+            if (alsoDetach && removeCargoIds.length) await api.detachSessions(removeCargoIds)
+            setRemoveCargo(null)
+            doResync()
+          }}
+        />
+      )}
+      {groupConfirm && (
+        <SessionGroupConfirmDialog
+          action={groupConfirm}
+          busy={confirmBusy}
+          onCancel={() => setGroupConfirm(null)}
+          onConfirm={confirmGroupAction}
+        />
+      )}
+      {emptyCargo && (
+        <EmptyCargoDialog
+          cwd={emptyCargo.cwd}
+          busy={confirmBusy}
+          onCancel={() => setEmptyCargo(null)}
+          onConfirm={async () => {
+            if (confirmBusy) return
+            setConfirmBusy(true)
+            try {
+              await api.removePath(id, emptyCargo.registeredCwd)
+              setEmptyCargo(null)
+              reload()
+            } catch {
+              reload()
+            } finally {
+              setConfirmBusy(false)
+            }
+          }}
+        />
+      )}
+      {deleteProjectOpen && project && (
+        <DeleteProjectDialog
+          projectName={project.name}
+          busy={confirmBusy}
+          onCancel={() => setDeleteProjectOpen(false)}
+          onConfirm={confirmDeleteProject}
+        />
+      )}
+    </div>
+  )
+}
+
+function SessionGroupConfirmDialog({
+  action,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  action: SessionGroupConfirm
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <Dialog open onClose={busy ? () => {} : onCancel} width={460}>
+      <div className="flex flex-col">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-[13px] font-semibold text-foreground">移出整组会话</div>
+          <div className="mt-0.5 text-[11px] text-text-dim">共 {action.ids.length} 个会话</div>
+        </div>
+        <div className="space-y-2 px-4 py-3 text-[12px] text-muted-foreground">
+          <p>将该目录下的会话移出本项目，并清除任务关联。会话仍保留在 Berth，可在「无归属」重新归类。</p>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            取消
+          </button>
+          <button
+            className="rounded-md bg-destructive px-3 py-1.5 text-[12px] font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? '处理中…' : '移出整组'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+function EmptyCargoDialog({
+  cwd,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  cwd: string
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <Dialog open onClose={busy ? () => {} : onCancel} width={440}>
+      <div className="flex flex-col">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-[13px] font-semibold text-foreground">移除空装载目录</div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-text-dim">{shortCwd(cwd)}</div>
+        </div>
+        <div className="px-4 py-3 text-[12px] text-muted-foreground">
+          该目录已没有项目会话。是否同时移除装载目录登记？
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            保留
+          </button>
+          <button
+            className="rounded-md bg-destructive px-3 py-1.5 text-[12px] font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? '移除中…' : '移除登记'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+function DeleteProjectDialog({
+  projectName,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  projectName: string
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <Dialog open onClose={busy ? () => {} : onCancel} width={440}>
+      <div className="flex flex-col">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-[13px] font-semibold text-foreground">删除项目</div>
+          <div className="mt-0.5 truncate text-[11px] text-text-dim">{projectName}</div>
+        </div>
+        <div className="px-4 py-3 text-[12px] text-muted-foreground">
+          项目下的任务会一起删除，此操作不可撤销。
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            取消
+          </button>
+          <button
+            className="rounded-md bg-destructive px-3 py-1.5 text-[12px] font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? '删除中…' : '删除项目'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+/**
+ * 移除装载目录 — §10.1. Always drops the 货舱 registration; optionally also 移出项目 (detach) the
+ * sessions that ran under that dir, sending them back to 无归属. Never touches disk transcripts.
+ */
+function RemoveCargoDialog({
+  cwd,
+  count,
+  onCancel,
+  onConfirm,
+}: {
+  cwd: string
+  count: number
+  onCancel: () => void
+  onConfirm: (alsoDetach: boolean) => Promise<void>
+}) {
+  const [detach, setDetach] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const confirm = async () => {
+    setBusy(true)
+    try {
+      await onConfirm(detach)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open onClose={busy ? () => {} : onCancel} width={460}>
+      <div className="flex flex-col">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-[13px] font-semibold text-foreground">移除装载目录</div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-text-dim">{cwd}</div>
+        </div>
+        <div className="px-4 py-3 text-[12px] text-muted-foreground">
+          仅移除「默认装载」登记，不影响磁盘文件。
+          {count > 0 && (
+            <label className="mt-2.5 flex cursor-pointer items-start gap-2 text-foreground select-none">
+              <input
+                type="checkbox"
+                checked={detach}
+                onChange={(e) => setDetach(e.target.checked)}
+                disabled={busy}
+                className="mt-0.5 h-3.5 w-3.5 accent-brand"
+              />
+              <span>
+                同时把该目录下的 <b className="text-brand">{count}</b> 个会话移出项目（回到「无归属」，仍保留在 Berth）。
+              </span>
+            </label>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            className="rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            取消
+          </button>
+          <button
+            className="rounded-md bg-destructive px-3 py-1.5 text-[12px] font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+            onClick={confirm}
+            disabled={busy}
+          >
+            {busy ? '移除中…' : '移除'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+function HBtn({ icon, children, onClick, btnRef }: { icon: ReactNode; children: ReactNode; onClick?: () => void; btnRef?: React.Ref<HTMLButtonElement> }) {
+  return (
+    <button ref={btnRef} onClick={onClick} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-accent">
+      {icon}
+      {children}
+    </button>
+  )
+}
+
+function Pill({ children, tone, loading }: { children: ReactNode; tone: 'brand' | 'destructive' | 'warning'; loading?: boolean }) {
+  const dot = tone === 'brand' ? 'bg-brand' : tone === 'destructive' ? 'bg-destructive' : 'bg-warning'
+  const ink = tone === 'brand' ? 'text-brand' : tone === 'destructive' ? 'text-destructive' : 'text-warning'
+  return (
+    <span className="flex items-center gap-1.5 rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
+      {loading ? <Spinner size={10} className={ink} /> : <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />}
+      {children}
+    </span>
+  )
+}

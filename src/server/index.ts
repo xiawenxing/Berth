@@ -7,11 +7,17 @@ import { refresh, getCache, initData } from './store-singleton'
 import { createPtyWss } from './pty-ws'
 import { createStatusWss } from './status-ws'
 import { killAllPtys } from './pty-registry'
-import { resolvePublicDir } from './public-dir'
+import { resolvePublicDir, resolveWebDistDir } from './public-dir'
+import { warmAgentBinaryCaches } from '../pty/binaries'
+import { warmSessionPool } from './warm-pool'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 // Resolved by walking up to a public/index.html, so it works both in dev (tsx, src/server) and when
 // compiled (dist/server) with public/ shipped at the package root. See public-dir.ts.
-const PUBLIC = resolvePublicDir(dirname(fileURLToPath(import.meta.url)))
+const HERE = dirname(fileURLToPath(import.meta.url))
+const PUBLIC = resolvePublicDir(HERE)
+const WEB_DIST = resolveWebDistDir(HERE)   // Berth 2.0 React SPA (web/dist), served at /app when built
 
 /**
  * One upgrade listener routes WebSocket upgrades by path to the matching (noServer) WebSocketServer.
@@ -31,10 +37,20 @@ export function attachWebSockets(server: Server) {
   })
 }
 
-export function createApp() {
+export function createApp(webDist: string | null = WEB_DIST) {
   const app = express()
   app.use(express.json({ limit: '30mb' }))   // pasted images (base64) can be a few MB
   app.use('/api', api)
+  // Berth 2.0 React SPA at /app (when built). HashRouter, so static serving + an
+  // index.html fallback for the bare /app path is all that's needed.
+  if (webDist) {
+    // 1.0 entry is deprecated: route the bare root to the 2.0 SPA. The legacy public/ UI stays
+    // statically served below (still reachable at /index.html for an old client), but / no longer
+    // lands on it. Registered before express.static(PUBLIC) so it wins.
+    app.get('/', (_req, res) => res.redirect(302, '/app/'))
+    app.use('/app', express.static(webDist))
+    app.get('/app', (_req, res) => res.sendFile(join(webDist, 'index.html')))
+  }
   app.use(express.static(PUBLIC))
   return app
 }
@@ -60,14 +76,23 @@ export async function start(
 ) {
   await initData()   // one-time recordId→uuid migration before anything reads the data layer
   refresh()
+  warmAgentBinaryCaches()
   installShutdownCleanup()
   const server = createServer(createApp())
   attachWebSockets(server)   // /pty terminals + /status live-activity broadcast, one upgrade router
-  return new Promise<{ port: number }>((resolve) => {
+  const hasWeb = !!WEB_DIST   // 2.0 SPA built and served at /app → callers open /app/ directly
+  return new Promise<{ port: number; hasWeb: boolean }>((resolve, reject) => {
+    const onListenError = (error: Error) => reject(error)
+    server.once('error', onListenError)
     server.listen(port, host, () => {
+      server.off('error', onListenError)
       const shown = host === '0.0.0.0' || host === '::' ? 'localhost' : host
-      console.log(`Berth: ${getCache().length} sessions | http://${shown}:${(server.address() as any)?.port ?? port}`)
-      resolve({ port: (server.address() as any)?.port ?? port })
+      const realPort = (server.address() as any)?.port ?? port
+      console.log(`Berth: ${getCache().length} sessions | http://${shown}:${realPort}${hasWeb ? '/app/' : ''}`)
+      // Pre-spawn the top-K sessions off the request path so their first open is instant. Detached:
+      // warming must never delay the listen, and a warm failure must never crash startup.
+      void warmSessionPool().catch(() => {})
+      resolve({ port: realPort, hasWeb })
     })
   })
 }

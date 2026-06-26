@@ -67,13 +67,16 @@ it('renders the maintain block with compact rules + context/protocol paths when 
 
 it('project manifest points at the project context file when provided', () => {
   const { text } = buildManifest({
-    kind: 'project', projectName: 'Berth', docsRoot: DOCS_ROOT,
+    kind: 'project', projectName: 'Berth', projectId: 'proj-1', docsRoot: DOCS_ROOT,
     projectTodos: [{ title: 'A', detailDoc: 'tasks/a/index.md' }],
     contextDocPath: '/tmp/berth-test/docs/projects/Berth/index.md',
     protocolPath: '/tmp/berth-test/docs/AGENTS.md',
     compactRules: contextStrings('zh-CN').compactRules,
   })
   expect(text).toContain('/tmp/berth-test/docs/projects/Berth/index.md')
+  expect(text).toContain('当前 Berth 项目领域是「Berth」')
+  expect(text).toContain('proj-1')
+  expect(text).toContain('berth task add "<任务>" --project "Berth" --confirm')
 })
 
 it('omits the maintain block when no compact rules are provided (back-compat)', () => {
@@ -103,4 +106,45 @@ it('keeps the maintain block + paths intact even when the index body overflows t
   expect(text).toContain(contextStrings('zh-CN').sectionMaintain)
   expect(text).toContain(ctxPath)
   expect(text).toContain(protoPath)
+})
+
+it('include.task=false drops the task section but keeps project scope', () => {
+  const { text } = buildManifest({
+    kind: 'task', projectName: 'Berth', docsRoot: DOCS_ROOT,
+    include: { project: true, task: false },
+    todo: { id: 'u1', title: '秘密任务标题', status: '进行中', priority: 'P1', projectId: 'p1', project: 'Berth',
+            detailDoc: 'projects/x.md', progress: null, updatedAt: 1, syncedAt: 0, deleted: false },
+  })
+  expect(text).not.toContain('秘密任务标题')
+  expect(text).toContain('Berth project scope')
+})
+
+it('include.project=false drops project scope but keeps the task section', () => {
+  const { text } = buildManifest({
+    kind: 'task', projectName: 'Berth', docsRoot: DOCS_ROOT,
+    include: { project: false, task: true },
+    todo: { id: 'u1', title: '可见任务标题', status: '进行中', priority: 'P1', projectId: 'p1', project: 'Berth',
+            detailDoc: 'projects/x.md', progress: null, updatedAt: 1, syncedAt: 0, deleted: false },
+  })
+  expect(text).toContain('可见任务标题')
+  expect(text).not.toContain('Berth project scope')
+})
+
+it('include.project=false on a project launch drops the project todo index', () => {
+  const { text } = buildManifest({
+    kind: 'project', projectName: 'Berth', docsRoot: DOCS_ROOT,
+    include: { project: false },
+    projectTodos: [{ title: '只出现在项目索引里的标题', detailDoc: 'projects/doc-a.md' }],
+  })
+  expect(text).not.toContain('只出现在项目索引里的标题')
+})
+
+it('defaults to both sections when include is omitted (back-compat)', () => {
+  const { text } = buildManifest({
+    kind: 'task', projectName: 'Berth', docsRoot: DOCS_ROOT,
+    todo: { id: 'u1', title: '默认标题', status: '进行中', priority: 'P1', projectId: 'p1', project: 'Berth',
+            detailDoc: 'projects/x.md', progress: null, updatedAt: 1, syncedAt: 0, deleted: false },
+  })
+  expect(text).toContain('默认标题')
+  expect(text).toContain('Berth project scope')
 })

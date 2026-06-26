@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Berth 2.0 · 交互设计方案对比</title>
+<style>
+  :root{
+    color-scheme:dark;
+    --background:#282c34; --foreground:#abb2bf; --card:#2c313a; --popover:#21252b;
+    --muted-foreground:#828997; --border:#3e4451; --sidebar:#21252b;
+    --brand:#61afef; --success:#98c379; --warning:#e5c07b; --purple:#c678dd; --priority:#d19a66; --destructive:#e06c75;
+    --radius:0.625rem; --radius-md:0.5rem;
+    --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --font-mono:'SF Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);font:14px/1.6 var(--font-sans);-webkit-font-smoothing:antialiased;padding:44px 32px 80px}
+  .wrap{max-width:1120px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+  .anchor{width:22px;height:22px;color:var(--brand)}
+  .sub{color:var(--muted-foreground);margin:0}
+  .lead{color:var(--muted-foreground);max-width:820px;margin:18px 0 8px;font-size:13.5px}
+  .lead b{color:var(--foreground)}
+  .sectitle{margin:38px 0 4px;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--foreground);text-transform:uppercase}
+  .sectitle .muted{color:var(--muted-foreground);font-weight:500;text-transform:none;letter-spacing:0}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:14px}
+  @media(max-width:920px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;display:flex;flex-direction:column;text-decoration:none;color:inherit;transition:border-color .15s,transform .15s,box-shadow .15s;position:relative}
+  .card:hover{border-color:var(--brand);transform:translateY(-3px);box-shadow:0 12px 32px -10px rgba(0,0,0,.5)}
+  .card.rec{border-color:color-mix(in oklab,var(--warning) 55%,var(--border))}
+  .tag{align-self:flex-start;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;margin-bottom:10px;letter-spacing:.03em}
+  .b{background:color-mix(in oklab,var(--brand) 18%,transparent);color:var(--brand)}
+  .g{background:color-mix(in oklab,var(--success) 18%,transparent);color:var(--success)}
+  .p{background:color-mix(in oklab,var(--purple) 18%,transparent);color:var(--purple)}
+  .a{background:color-mix(in oklab,var(--priority) 20%,transparent);color:var(--priority)}
+  .m{background:color-mix(in oklab,var(--muted-foreground) 22%,transparent);color:var(--muted-foreground)}
+  .card h2{font-size:15.5px;margin:0 0 7px}
+  .card p{color:var(--muted-foreground);font-size:12.5px;margin:0 0 12px;flex:1}
+  .meta{font-size:11.5px;color:var(--muted-foreground);border-top:1px solid var(--border);padding-top:10px}
+  .rec-pill{position:absolute;top:14px;right:14px;font-size:10.5px;font-weight:700;color:var(--warning)}
+  .open{margin-top:12px;font-size:12.5px;color:var(--brand);font-weight:600}
+  .ref .card{opacity:.92}
+  .single{display:grid;grid-template-columns:1fr;gap:14px;margin-top:14px}
+  .note{margin-top:34px;background:var(--popover);border:1px solid var(--border);border-left:3px solid var(--brand);border-radius:var(--radius-md);padding:16px 20px;font-size:13px}
+  .note h3{margin:0 0 8px;font-size:13.5px;color:var(--brand)}
+  .note ul{margin:0;padding-left:20px;color:var(--muted-foreground)} .note li{margin:5px 0}
+  .note code{font-family:var(--font-mono);font-size:12px;background:var(--card);padding:1px 5px;border-radius:4px;color:var(--foreground)}
+  footer{margin-top:34px;color:var(--muted-foreground);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><svg class="anchor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg> Berth 2.0 · 交互设计方案</h1>
+  <p class="sub">港口管理 = 管理交付物（项目/任务），Agent 会话是出航执行的「船」 · 同套设计令牌与示例数据</p>
+
+  <p class="lead">
+    核心原则已校正：<b>任务（交付物）是主角，会话是次抛的执行工具</b>。所有第二轮版本都把
+    <b>任务置顶 + 可展开（进展摘要 + 关联会话）</b>，会话降级为
+    <b>📌Pin + 按 cwd 分组</b>（去掉活跃/已归档），保留 V1 外壳（项目切换栏 + 整屏终端 + 返回）、保留 Now/设置，
+    并把<b>无归属会话</b>做成独立页面（顺带承接全局搜索 + 导入目录）。
+  </p>
+
+  <div class="sectitle">★ 融合稿 V7 <span class="muted">（午夜靛蓝配色 · 统一 UI 约定 · 跨页一致 · 从这里看）</span></div>
+  <div class="grid" style="grid-template-columns:repeat(2,1fr)">
+    <a class="card rec" href="v7-project.html">
+      <span class="rec-pill">★ 当前方案</span>
+      <span class="tag b">V7 · 项目工作台</span>
+      <h2>任务为主 · 紧凑卡片 · 默认装载 · 看板激活列</h2>
+      <p>任务卡正常化(13px标题+左色条优先级)，▷启动在标题栏(收起态)、DDL 在脚注；任务 tag=<b>航线</b>；港湾概览(在跑/待查收/今日交付)；▷起会话→统一<b>装载台</b>装<b>货舱</b>；「<b>默认装载</b>」含 上下文文档 + 代码上下文 两个登记表；头部「项目小结」。</p>
+      <div class="meta">午夜靛蓝 · QA 一致性通过(0 must-fix)</div>
+      <div class="open">打开 V7 项目工作台 →</div>
+    </a>
+    <a class="card rec" href="v7-now.html">
+      <span class="rec-pill">★ 新增</span>
+      <span class="tag a">V7 · Now（跨项目收件箱）</span>
+      <h2>在航 / 靠岸·待查收 / 今日交付，按项目打标</h2>
+      <p>跨所有项目的「现在什么需要我」：顶部聚合港湾概览，下面 靠岸·待查收 / 在航 / 今日交付 / 最近 四栏，每行带项目标签 + CLI badge，复用与项目页相同的标准列表行。</p>
+      <div class="meta">单项目主页给不了的全局视图</div>
+      <div class="open">打开 V7 Now →</div>
+    </a>
+    <a class="card rec" href="v7-unassigned.html">
+      <span class="rec-pill">★ 已更新</span>
+      <span class="tag m">V7 · 无归属会话</span>
+      <h2>左侧常驻列表 + 右侧会话内容，点击即切换</h2>
+      <p>重做：午夜靛蓝配色 + 加密度(34px 标准列表行)，与项目页会话行完全一致；顶部搜索 + 导入目录；右侧带 slim 头 + 底部输入框；含 <code>~/.berth/scratch</code> 默认cwd 行。</p>
+      <div class="meta">承接被废「全部会话」页 · 切换一键到位</div>
+      <div class="open">打开 V7 无归属页 →</div>
+    </a>
+    <a class="card rec" href="v7-settings.html">
+      <span class="rec-pill">★ 新增</span>
+      <span class="tag m">V7 · 设置</span>
+      <h2>外观/配色 · 港务助手 · 启动Agents · 上下文 · 同步 · 任务字段</h2>
+      <p>六块：外观(主题+配色方案 swatches) / <b>港务助手 AI</b>(管理模型 + 主动提议 + 默认自动总结标题) / 启动 Agents(claude·codex·coco) / 上下文与文档(docsRoot + 导入目录) / 数据源·同步(Feishu 拉推) / 任务字段(状态·优先级)。</p>
+      <div class="meta">与全套同款 午夜靛蓝 + 登记表约定</div>
+      <div class="open">打开 V7 设置 →</div>
+    </a>
+    <a class="card" href="v7-ai-assist-demo.html">
+      <span class="rec-pill">交互参考</span>
+      <span class="tag a">V7 · 港务助手交互</span>
+      <h2>即时创建·后台完善 + C 建议(带触发条件)</h2>
+      <p>核心原则「不让你等待」：新建任务即时建卡、AI 后台原地完善标题+描述；C 建议在<b>会话返港且有产出</b>时出现，采纳/忽略 + 主动提议开关。（A 等待填表 / B 后台通知 已否决）</p>
+      <div class="meta">AI 交互范式参考稿</div>
+      <div class="open">打开 港务助手交互 →</div>
+    </a>
+    <a class="card" href="v7-drawer-options.html">
+      <span class="rec-pill">已定·留档</span>
+      <span class="tag g">V7 · 抽屉样式（已选样式2）</span>
+      <h2>会话点击 → 右侧抽屉，底部输入框</h2>
+      <p>已定 <b>样式2 不带卡片</b>(slim 头、无 ■/×、发送在航时变终止、点左暗区/Esc 收起) 并已并入项目页。此页留作两样式对比存档。</p>
+      <div class="meta">已并入 v7-project（60vw 抽屉 + 对话式内容）</div>
+      <div class="open">打开 抽屉样式对比 →</div>
+    </a>
+  </div>
+
+  <div class="sectitle">第二轮 · 任务优先 <span class="muted">（融合稿的来源，留作对比）</span></div>
+  <div class="grid">
+    <a class="card rec" href="v4-tasks-first.html">
+      <span class="rec-pill">★ 推荐基线</span>
+      <span class="tag b">V4 · 任务优先工作台</span>
+      <h2>Kanban 主角 + 会话 Pin/cwd 次级模块</h2>
+      <p>校正版 V1：任务看板置顶、卡片可展开看进展摘要+关联会话；会话降为下方轻量模块（Pin + 按 cwd 分组，带「执行工具」副标）。平衡——任务领衔，但扁平会话列表仍一眼可达。</p>
+      <div class="meta">契合度 5/5 · 新手清晰度 4/5 · 唯一同时满足「任务为主」与「随手起/找在跑的船」</div>
+      <div class="open">打开 V4 →</div>
+    </a>
+    <a class="card" href="v5-sessions-in-tasks.html">
+      <span class="tag g">V5 · 会话附于任务</span>
+      <h2>任务可展开列表 + 关联会话嵌套 + 泊位坞</h2>
+      <p>最贴合「会话服务于任务」：会话直接嵌在所属任务下，散会话进底部轻量「会话坞·泊位」。理念最纯，但在跑的会话只能展开任务才能找到，且坞占去近半屏。</p>
+      <div class="meta">契合度 4/5 · 新手清晰度 3/5 · 空状态文案最佳，可反哺 V4</div>
+      <div class="open">打开 V5 →</div>
+    </a>
+    <a class="card" href="v6-harbor.html">
+      <span class="tag a">V6 · 港湾隐喻</span>
+      <h2>V4 结构 + 港湾概览条 + 船只状态词</h2>
+      <p>V4 加叙事皮肤：顶部「⚓ 在跑 2 · 待查收 1 · 今日交付 1/3」概览条（很赞），会话行用 在航/靠岸·待查收/已停泊。隐喻能教会心智模型，但整套词汇认知成本偏高、易显花哨。</p>
+      <div class="meta">契合度 5/5 · 新手清晰度 3/5 · 「港湾概览条」是全场最佳单点，建议并入 V4</div>
+      <div class="open">打开 V6 →</div>
+    </a>
+  </div>
+
+  <div class="single">
+    <a class="card" href="unassigned-sessions.html">
+      <span class="tag m">共用 · 无归属会话页</span>
+      <h2>扁平会话列表 + 搜索 + 导入目录 + 归属到项目</h2>
+      <p>三版侧栏「无归属会话 (5)」都链到这里。承接被废弃的「全部会话」页独占的三件事：无归属桶、全局搜索、导入目录；含 <code>~/.berth/scratch</code> 默认 cwd 通道（非编程任务）。</p>
+      <div class="open">打开 无归属页 →</div>
+    </a>
+  </div>
+
+  <div class="note">
+    <h3>我的推荐：以 V4 为基线，并入两点</h3>
+    <ul>
+      <li>并入 <b>V6 的「港湾概览」注意力条</b>（在跑 / 待查收 / 今日交付）——全场最高价值的单点，把「船出海→带结果返港」可视化；但<b>船只状态词保持可选</b>，默认仍用 running/unread/idle，避免一屏两套词汇。</li>
+      <li>并入 <b>V5 的关联会话嵌套体验</b>：任务展开内嵌关联会话 + 三级面包屑（项目›任务›会话）+ 最佳空状态文案（「暂无关联会话 · 起一个会话来执行此任务」）。</li>
+      <li><b>不</b>采用 V5 的「常驻泊位坞」做默认（占屏、把在跑会话藏进任务展开里）——可作为设置项。</li>
+    </ul>
+  </div>
+
+  <div class="sectitle ref">第一轮 · 参考 <span class="muted">（旧框架：会话为主角，已被校正，仅留作对比）</span></div>
+  <div class="grid ref">
+    <a class="card" href="v1-worktable.html"><span class="tag m">V1 · 工作台（旧）</span><h2>会话为英雄区（已被 V4 校正）</h2><p>单栏 master–detail，会话置顶标「入口」、活跃/已归档分组。外壳与终端交互被第二轮继承，但层级与会话分组已废弃。</p><div class="open">打开 V1 →</div></a>
+    <a class="card" href="v2-ide-terminal.html"><span class="tag p">V2 · 双栏 IDE（旧）</span><h2>常驻终端</h2><p>首屏即终端，最劝退新手；作为后续「专家/分屏」布局开关留档。</p><div class="open">打开 V2 →</div></a>
+    <a class="card" href="v3-tab-hub.html"><span class="tag g">V3 · Tab Hub（旧）</span><h2>会话/任务/上下文 分页</h2><p>行级动作常驻、提示文案好；任务被收进 tab，会话仍为主角。文案可反哺。</p><div class="open">打开 V3 →</div></a>
+  </div>
+
+  <footer>同一套示例数据（项目 Berth：13 任务 / 7 会话 / 2 未读 / 3 个 CLI，2 个 cwd 上下文）· One Dark Pro 暗色令牌 · 每个文件自包含，可直接双击打开 · 任务展开看「进展摘要 + 关联会话」，点会话进整屏终端</footer>
+</div>
+</body>
+</html>

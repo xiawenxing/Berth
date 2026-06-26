@@ -20,6 +20,15 @@ CREATE TABLE IF NOT EXISTS attach (
 );
 CREATE TABLE IF NOT EXISTS pin ( session_id TEXT PRIMARY KEY REFERENCES logical_session(session_id) );
 CREATE TABLE IF NOT EXISTS title_override (session_id TEXT PRIMARY KEY, title TEXT NOT NULL);
+-- Cached 港务助手 项目小结, keyed by project id, so reopening the popover (or reloading) shows the
+-- last result without regenerating. Overwritten on 重新生成.
+CREATE TABLE IF NOT EXISTS project_summary (
+  project_id TEXT PRIMARY KEY, summary TEXT NOT NULL, generated_at INTEGER NOT NULL
+);
+-- Cached structured 任务进展详情 (headline + progress + TODO milestones), keyed by task id.
+CREATE TABLE IF NOT EXISTS task_summary (
+  task_id TEXT PRIMARY KEY, summary TEXT NOT NULL, generated_at INTEGER NOT NULL
+);
 -- populated in a later phase (copy-tracking / todo-edge); upsertSessions intentionally does not write these
 CREATE TABLE IF NOT EXISTS edge (
   todo_key TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY (todo_key, session_id)
@@ -32,11 +41,16 @@ CREATE TABLE IF NOT EXISTS launch_intent (
 CREATE TABLE IF NOT EXISTS archived_project ( project_id TEXT PRIMARY KEY );
 CREATE TABLE IF NOT EXISTS project_path (
   project_id TEXT NOT NULL, cwd TEXT NOT NULL, is_home INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (project_id, cwd)
 );
--- Directories explicitly imported into the 无归属 (unattached) session bucket. The scanned-session
--- universe is sessions whose cwd is under one of these (∪ project paths ∪ launch_intent cwds).
+-- Directories explicitly imported into the 无归属 (unattached) session bucket (the OLD vanilla app's
+-- 导入目录, still supported). KEPT as a surfacing root; project_path / launch_intent cwds are NOT.
 CREATE TABLE IF NOT EXISTS session_import_dir ( cwd TEXT PRIMARY KEY );
+-- Session-grained import: a session is explicitly in Berth's visible set. The new canonical way to
+-- surface a session — registering a 货舱 cwd (project_path) no longer surfaces all its sessions.
+CREATE TABLE IF NOT EXISTS session_import ( session_id TEXT PRIMARY KEY );
+CREATE TABLE IF NOT EXISTS session_hidden ( session_id TEXT PRIMARY KEY );
 `
 
 function cols(db: Database.Database, table: string): Set<string> {
@@ -94,6 +108,10 @@ export function openStore(path: string) {
   db.exec(DATA_SCHEMA)
   migrateDataSchema(db)
   migrateProjectRefs(db)
+  // M1: per-path 「默认装载」 toggle. The project_path rebuild in migrateProjectRefs is self-terminating
+  // (it drops the legacy `name` col), so it can never re-drop this column on a later boot.
+  if (!cols(db, 'project_path').has('enabled'))
+    db.exec('ALTER TABLE project_path ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1')
   const upsert = db.prepare(`INSERT INTO logical_session
     (session_id,cli,cwd,title,updated_at,content_source_path,resume_cli,resume_id,deleted)
     VALUES (@session_id,@cli,@cwd,@title,@updated_at,@content_source_path,@resume_cli,@resume_id,@deleted)
@@ -141,6 +159,24 @@ export function openStore(path: string) {
       for (const r of db.prepare('SELECT session_id, title FROM title_override').all() as any[]) m.set(r.session_id, r.title)
       return m
     },
+    setProjectSummary(projectId: string, summary: string, generatedAt: number) {
+      db.prepare(`INSERT INTO project_summary (project_id,summary,generated_at) VALUES (?,?,?)
+        ON CONFLICT(project_id) DO UPDATE SET summary=excluded.summary, generated_at=excluded.generated_at`)
+        .run(projectId, summary, generatedAt)
+    },
+    getProjectSummary(projectId: string): { summary: string; generatedAt: number } | null {
+      const r = db.prepare('SELECT summary, generated_at as generatedAt FROM project_summary WHERE project_id=?').get(projectId) as any
+      return r ?? null
+    },
+    setTaskSummary(taskId: string, summary: string, generatedAt: number) {
+      db.prepare(`INSERT INTO task_summary (task_id,summary,generated_at) VALUES (?,?,?)
+        ON CONFLICT(task_id) DO UPDATE SET summary=excluded.summary, generated_at=excluded.generated_at`)
+        .run(taskId, summary, generatedAt)
+    },
+    getTaskSummary(taskId: string): { summary: string; generatedAt: number } | null {
+      const r = db.prepare('SELECT summary, generated_at as generatedAt FROM task_summary WHERE task_id=?').get(taskId) as any
+      return r ?? null
+    },
     setArchived(projectId: string, on: boolean) {
       if (on) db.prepare('INSERT OR IGNORE INTO archived_project (project_id) VALUES (?)').run(projectId)
       else db.prepare('DELETE FROM archived_project WHERE project_id=?').run(projectId)
@@ -148,19 +184,28 @@ export function openStore(path: string) {
     allArchivedSet(): Set<string> {
       return new Set((db.prepare('SELECT project_id FROM archived_project').all() as any[]).map(r => r.project_id))
     },
-    addProjectPath(projectId: string, cwd: string, isHome = false) {
+    addProjectPath(projectId: string, cwd: string, isHome = false, enabled = true) {
       // A new home demotes any prior home for this project.
       if (isHome) db.prepare('UPDATE project_path SET is_home=0 WHERE project_id=?').run(projectId)
-      db.prepare(`INSERT INTO project_path (project_id,cwd,is_home) VALUES (?,?,?)
-        ON CONFLICT(project_id,cwd) DO UPDATE SET is_home=MAX(is_home, excluded.is_home)`).run(projectId, cwd, isHome ? 1 : 0)
+      db.prepare(`INSERT INTO project_path (project_id,cwd,is_home,enabled) VALUES (?,?,?,?)
+        ON CONFLICT(project_id,cwd) DO UPDATE SET is_home=MAX(is_home, excluded.is_home), enabled=excluded.enabled`)
+        .run(projectId, cwd, isHome ? 1 : 0, enabled ? 1 : 0)
     },
-    /** Map of projectId → { home: cwd|null, paths: cwd[] } from explicitly-stored project paths. */
-    allProjectPaths(): Map<string, { home: string | null; paths: string[] }> {
-      const m = new Map<string, { home: string | null; paths: string[] }>()
-      for (const r of db.prepare('SELECT project_id, cwd, is_home FROM project_path').all() as any[]) {
-        if (!m.has(r.project_id)) m.set(r.project_id, { home: null, paths: [] })
+    setPathEnabled(projectId: string, cwd: string, enabled: boolean) {
+      db.prepare('UPDATE project_path SET enabled=? WHERE project_id=? AND cwd=?').run(enabled ? 1 : 0, projectId, cwd)
+    },
+    removeProjectPath(projectId: string, cwd: string) {
+      db.prepare('DELETE FROM project_path WHERE project_id=? AND cwd=?').run(projectId, cwd)
+    },
+    /** projectId → { home: cwd|null, paths: cwd[], meta: {cwd,enabled}[] }. `paths` stays a bare
+     *  string[] for back-compat (old public/app.js + the React ApiProject); `meta` carries the toggle. */
+    allProjectPaths(): Map<string, { home: string | null; paths: string[]; meta: { cwd: string; enabled: boolean }[] }> {
+      const m = new Map<string, { home: string | null; paths: string[]; meta: { cwd: string; enabled: boolean }[] }>()
+      for (const r of db.prepare('SELECT project_id, cwd, is_home, enabled FROM project_path').all() as any[]) {
+        if (!m.has(r.project_id)) m.set(r.project_id, { home: null, paths: [], meta: [] })
         const e = m.get(r.project_id)!
         e.paths.push(r.cwd)
+        e.meta.push({ cwd: r.cwd, enabled: !!r.enabled })
         if (r.is_home) e.home = r.cwd
       }
       return m
@@ -198,10 +243,29 @@ export function openStore(path: string) {
     bindIntent(id: string, sessionId: string) {
       db.prepare('UPDATE launch_intent SET session_id=?, bound=1 WHERE id=?').run(sessionId, id)
     },
+    /** The real session id a (codex) launch intent was reconciled to, once bound — else null. Lets a
+     *  launch watcher resolve the intent's rollout file to read its deterministic turn-start signal. */
+    boundSessionForIntent(id: string): string | null {
+      const r = db.prepare('SELECT session_id FROM launch_intent WHERE id=? AND bound=1').get(id) as any
+      return r?.session_id ?? null
+    },
+    removeLaunchIntentsForSession(sessionId: string) {
+      db.prepare('DELETE FROM launch_intent WHERE session_id=? OR id=?').run(sessionId, sessionId)
+    },
     /** Distinct cwds of every launch intent (bound or not) — implicit session-import roots so any
      *  Berth-launched session surfaces even if its cwd was never explicitly imported. */
     allLaunchIntentCwds(): string[] {
       return (db.prepare('SELECT DISTINCT cwd FROM launch_intent WHERE cwd IS NOT NULL').all() as any[]).map(r => r.cwd)
+    },
+    /** sessionId → resolved launch cwd, for intents whose sessionId is already known (claude/coco at
+     *  launch, codex post-reconcile). Used to backfill a session's cwd for grouping while the CLI's
+     *  transcript has not yet recorded one — so a Berth launch lands under its project default dir
+     *  from the first render instead of falling into the phantom "(无目录)" group. */
+    launchIntentCwdBySession(): Map<string, string> {
+      const m = new Map<string, string>()
+      for (const r of db.prepare('SELECT session_id, cwd FROM launch_intent WHERE session_id IS NOT NULL AND cwd IS NOT NULL').all() as any[])
+        m.set(r.session_id, r.cwd)
+      return m
     },
     // ── Session import directories (the 无归属 import roots) ──
     addSessionImportDir(cwd: string) {
@@ -212,6 +276,31 @@ export function openStore(path: string) {
     },
     allSessionImportDirs(): string[] {
       return (db.prepare('SELECT cwd FROM session_import_dir ORDER BY cwd').all() as any[]).map(r => r.cwd)
+    },
+    // ── Session-grained import (the new canonical surfacing signal) ──
+    addSessionImport(sessionId: string) {
+      db.prepare('INSERT OR IGNORE INTO session_import (session_id) VALUES (?)').run(sessionId)
+      db.prepare('DELETE FROM session_hidden WHERE session_id=?').run(sessionId)
+    },
+    removeSessionImport(sessionId: string) {
+      db.prepare('DELETE FROM session_import WHERE session_id=?').run(sessionId)
+    },
+    allSessionImportSet(): Set<string> {
+      return new Set((db.prepare('SELECT session_id FROM session_import').all() as any[]).map(r => r.session_id))
+    },
+    hideSession(sessionId: string) {
+      db.prepare('INSERT OR IGNORE INTO session_hidden (session_id) VALUES (?)').run(sessionId)
+    },
+    unhideSession(sessionId: string) {
+      db.prepare('DELETE FROM session_hidden WHERE session_id=?').run(sessionId)
+    },
+    allHiddenSessionSet(): Set<string> {
+      return new Set((db.prepare('SELECT session_id FROM session_hidden').all() as any[]).map(r => r.session_id))
+    },
+    /** Session ids of bound launch intents — Berth-launched sessions surface per-session via this
+     *  (replacing launch_intent.cwd as a directory-wide import root). */
+    allBoundLaunchSessionIds(): Set<string> {
+      return new Set((db.prepare('SELECT session_id FROM launch_intent WHERE bound=1 AND session_id IS NOT NULL').all() as any[]).map(r => r.session_id))
     },
     ...dataMethods(db),
   }

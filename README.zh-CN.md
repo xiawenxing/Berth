@@ -65,18 +65,23 @@
 ## 快速开始
 
 ```bash
-npm install && npm start          # → http://localhost:7777
+npx @corusco/berth@latest start   # 无需构建，直接运行；自动打开 /app 上的 UI
 ```
 
-这是最快的路径。Berth 是一个**本地服务 + 浏览器 UI**，在同一套核心之上提供三种形态——按需选择：
+这是**使用** Berth 最快的路径。Berth 是一个**本地服务 + 浏览器 UI**，在同一套核心之上提供多种形态——按需选择：
 
 | 形态 | 适用场景 | 上手方式 |
 |---|---|---|
-| **源码运行** | 开发 Berth 本身 | `npm install && npm start` |
 | **CLI**（`berth start`） | 当作工具使用 | `npm install -g @corusco/berth` → `berth start` |
 | **桌面应用**（Electron） | 想要双击即开 | `npm run electron:dev` |
+| **源码运行（生产）** | 一条命令完整构建 + 运行 | `npm install && npm run prod` |
+| **源码运行（开发）** | 开发 Berth 本身 | `npm install && npm start`（后端）+ `cd web && npm run dev`（SPA） |
 
-三种形态共享 **`~/.berth`** 下的同一份状态——所以**别同时跑两个**（会争抢同一个 SQLite 库）。
+> UI 是 **`/app` 上的 React SPA**——`berth start` 和桌面应用都会直接打开它，服务也会把 `/` 重定向到
+> `/app`。`npm run prod` 是**一条命令**完成 SPA + 核心构建并由单进程统一提供服务。而 `npm start` 只是
+> **开发后端**（不构建 SPA）——开发时请配合 `cd web && npm run dev` 跑前端热更新。
+
+各形态共享 **`~/.berth`** 下的同一份状态——所以**别同时跑两个**（会争抢同一个 SQLite 库）。
 
 <details>
 <summary><b>CLI —— <code>berth start</code></b></summary>
@@ -136,6 +141,10 @@ berth project list | berth project add <名称>
 npm run electron:dev              # 构建并启动应用（在树内重建原生模块）
 npm run electron:release          # 或：在 release/ 产出安装包（macOS 为 .dmg）
 ```
+
+> **跨平台打包：** `electron:release` 只产出**当前操作系统**的安装包——macOS 出 `.dmg`/`.zip`，
+> Windows 出 `nsis` 的 `.exe`。在 **macOS 上构建 Windows 安装包**需要 wine/mono；实践中请在 Windows
+> 机器或按目标系统分别用 CI 构建。
 
 > **原生 ABI 注意：** `electron:dev` 会在树内为 Electron 重建原生模块（`better-sqlite3`、`node-pty`），
 > 这会让 `npm test` / `npm start` 失效，需用 `npm run rebuild:node` 还原。`electron:release` 在

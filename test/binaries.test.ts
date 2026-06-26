@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resolveAgentBinary, codexSupportsHookTrust } from '../src/pty/binaries'
+import { resolveAgentBinary, codexHookTrustSupportCached, codexSupportsHookTrust, warmCodexHookTrustSupport, warmCliHelp, cliFlagSupportedCached, clearAgentBinaryCachesForTest } from '../src/pty/binaries'
 import { resumeArgv } from '../src/pty/launch'
 describe('binaries + argv', () => {
   it('pins coco to ~/.local/bin and never returns the trae IDE launcher', { timeout: 25000 }, () => {
@@ -11,7 +11,7 @@ describe('binaries + argv', () => {
   })
   it('maps each cli to a resume argv template', () => {
     expect(resumeArgv('claude', 'U')).toEqual(['--resume', 'U'])
-    expect(resumeArgv('codex', 'U')).toEqual(['resume', 'U'])
+    expect(resumeArgv('codex', 'U')).toEqual(['resume', '--no-alt-screen', 'U'])
     expect(resumeArgv('coco', 'U')).toEqual(['--resume=U'])   // pflag optional-value: must use =id, see launch.test.ts
   })
 })
@@ -28,12 +28,49 @@ describe('codexSupportsHookTrust', () => {
     return bin
   }
   it('returns true when --help advertises the flag (modern codex)', () => {
-    expect(codexSupportsHookTrust(fakeCodex('Options:\n  --dangerously-bypass-hook-trust\n  --foo'))).toBe(true)
+    const bin = fakeCodex('Options:\n  --dangerously-bypass-hook-trust\n  --foo')
+    expect(codexSupportsHookTrust(bin)).toBe(true)
+    expect(codexHookTrustSupportCached(bin)).toBe(true)
   })
   it('returns false when the flag is absent (older codex)', () => {
-    expect(codexSupportsHookTrust(fakeCodex('Options:\n  --dangerously-bypass-approvals-and-sandbox\n  --foo'))).toBe(false)
+    const bin = fakeCodex('Options:\n  --dangerously-bypass-approvals-and-sandbox\n  --foo')
+    expect(codexSupportsHookTrust(bin)).toBe(false)
+    expect(codexHookTrustSupportCached(bin)).toBe(false)
   })
   it('returns false (degrades) when the probe binary cannot run', () => {
     expect(codexSupportsHookTrust(join(tmpdir(), 'no-such-codex-binary'))).toBe(false)
+  })
+  it('warms the cache asynchronously', async () => {
+    const bin = fakeCodex('Options:\n  --dangerously-bypass-hook-trust\n  --foo')
+    expect(codexHookTrustSupportCached(bin)).toBeUndefined()
+    await expect(warmCodexHookTrustSupport(bin)).resolves.toBe(true)
+    expect(codexHookTrustSupportCached(bin)).toBe(true)
+  })
+})
+
+describe('generic --help capability cache', () => {
+  const fakeCli = (help: string): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'berth-fakecli-'))
+    const bin = join(dir, 'agent')
+    writeFileSync(bin, `#!/bin/sh\ncat <<'EOF'\n${help}\nEOF\n`)
+    chmodSync(bin, 0o755)
+    return bin
+  }
+
+  it('returns undefined before warm, then a definitive answer per flag after warm', async () => {
+    clearAgentBinaryCachesForTest()
+    const bin = fakeCli('Usage:\n  --model <m>\n  --add-dir <d>')
+    expect(cliFlagSupportedCached(bin, '--model')).toBeUndefined()   // not probed yet (warms in bg)
+    await warmCliHelp(bin)
+    expect(cliFlagSupportedCached(bin, '--model')).toBe(true)
+    expect(cliFlagSupportedCached(bin, '--add-dir')).toBe(true)
+    expect(cliFlagSupportedCached(bin, '--append-system-prompt-file')).toBe(false)  // absent
+  })
+
+  it('does not cache a probe that cannot run (retries next time)', async () => {
+    clearAgentBinaryCachesForTest()
+    const missing = join(tmpdir(), 'no-such-agent-binary-xyz')
+    await warmCliHelp(missing)
+    expect(cliFlagSupportedCached(missing, '--model')).toBeUndefined()  // still unknown, not false
   })
 })

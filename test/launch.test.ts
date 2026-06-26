@@ -1,8 +1,41 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
+import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
-import { freshArgv, resumeArgv, ensureCodexBerthHookProfile } from '../src/pty/launch'
+import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd } from '../src/pty/launch'
+
+describe('ensureLaunchCwd', () => {
+  it('creates a Berth workspace cwd on demand (never falls back to homedir)', () => {
+    const home = mkdtempSync(join(tmpdir(), 'berth-home-'))
+    const prev = process.env.BERTH_HOME
+    process.env.BERTH_HOME = home
+    try {
+      const ws = join(home, 'workspaces', 'proj-xyz')
+      expect(existsSync(ws)).toBe(false)
+      expect(ensureLaunchCwd(ws)).toBe(ws)
+      expect(existsSync(ws)).toBe(true)
+    } finally {
+      prev === undefined ? delete process.env.BERTH_HOME : (process.env.BERTH_HOME = prev)
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+  it('falls back to homedir for a non-existent NON-workspace cwd, keeps an existing one', () => {
+    const real = mkdtempSync(join(tmpdir(), 'berth-cwd-'))
+    try {
+      expect(ensureLaunchCwd('/no/such/dir/xyz')).toBe(homedir())
+      expect(ensureLaunchCwd(real)).toBe(real)
+      expect(ensureLaunchCwd(null)).toBe(homedir())
+    } finally {
+      rmSync(real, { recursive: true, force: true })
+    }
+  })
+})
+
+// First-turn delivery is uniform: all three CLIs receive the first turn as their native positional
+// `[PROMPT]`, which each CLI queues and auto-submits once ITS OWN composer is ready (verified live for
+// claude/codex/coco — robust to slow startup). A previous claude-only "type after the bracketed-paste
+// readiness marker" path was reverted: claude emits that marker ~0.4s in during its welcome banner,
+// before the composer accepts input, so typing then raced startup and dropped the turn.
 
 // Fresh launches run in bypass-permissions mode (Berth-launched, unattended):
 //   claude --dangerously-skip-permissions · coco --yolo · codex --dangerously-bypass-approvals-and-sandbox
@@ -18,7 +51,7 @@ it('coco: resume uses the =id form so the id is never parsed as a positional pro
 
 it('claude/codex: resume takes the id space-separated', () => {
   expect(resumeArgv('claude', 'uuid-1')).toEqual(['--resume', 'uuid-1'])
-  expect(resumeArgv('codex', 'uuid-2')).toEqual(['resume', 'uuid-2'])
+  expect(resumeArgv('codex', 'uuid-2')).toEqual(['resume', '--no-alt-screen', 'uuid-2'])
 })
 
 it('claude: session-id + bypass + system-prompt-file + add-dir, no positional', () => {
@@ -33,7 +66,7 @@ it('coco: context-only launch stays idle; context is not submitted as a prompt',
 
 it('codex: context-only launch stays idle; context is not submitted as a prompt', () => {
   const a = freshArgv('codex', { cwd: '/c', injectFile: '/t/m.txt', addDirs: ['/vault'] })
-  expect(a).toEqual(['--profile', 'berth-launch', '--dangerously-bypass-hook-trust', '--dangerously-bypass-approvals-and-sandbox', '--add-dir', '/vault'])
+  expect(a).toEqual(['--profile', 'berth-launch', '--dangerously-bypass-hook-trust', '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', '--add-dir', '/vault'])
 })
 
 it('omits absent optional args cleanly (bypass still present)', () => {
@@ -47,7 +80,7 @@ it('claude: user prompt is appended as the positional arg, after `--`', () => {
 
 it('codex/coco: execution launches submit only the real first prompt; context is silent', () => {
   expect(freshArgv('codex', { cwd: '/c', injectFile: '/t/m.txt', initialPrompt: 'hello' }))
-    .toEqual(['--profile', 'berth-launch', '--dangerously-bypass-hook-trust', '--dangerously-bypass-approvals-and-sandbox', '--', 'hello'])
+    .toEqual(['--profile', 'berth-launch', '--dangerously-bypass-hook-trust', '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', '--', 'hello'])
   // coco's manifest now rides the session_start hook, not the prompt — the positional is just 'hello'.
   expect(freshArgv('coco', { cwd: '/c', sessionId: 'u', injectFile: '/t/m.txt', initialPrompt: 'hello' }))
     .toEqual(['--session-id', 'u', '--yolo', '--', 'hello'])
@@ -62,7 +95,7 @@ it('claude: model is passed as --model after the bypass flag', () => {
 
 it('codex: model is passed as --model', () => {
   const a = freshArgv('codex', { cwd: '/c', model: 'gpt-5' })
-  expect(a).toEqual(['--dangerously-bypass-approvals-and-sandbox', '--model', 'gpt-5'])
+  expect(a).toEqual(['--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', '--model', 'gpt-5'])
 })
 
 it('coco: model is never emitted (no --model flag)', () => {

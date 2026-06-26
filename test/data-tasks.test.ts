@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../src/agent/triage', () => ({ classifyProject: vi.fn() }))
+vi.mock('../src/agent/index', () => ({ generateTaskTitle: vi.fn() }))
+// Isolate updateTask from the status-change summary side effect (no agent spawns in this unit test).
+vi.mock('../src/data/task-summary', () => ({ triggerTaskSummary: vi.fn() }))
 
 import { openStore } from '../src/db/store'
 import { listTasks, createTask, updateTask, deleteTask } from '../src/data/tasks'
 import { createProject } from '../src/data/projects'
 import { classifyProject } from '../src/agent/triage'
+import { generateTaskTitle } from '../src/agent/index'
 
 // Minimal fake DocStore for the image path.
 function fakeDocStore() {
@@ -25,7 +29,11 @@ let nowVal = 1000
 const now = () => nowVal
 
 describe('data/tasks', () => {
-  beforeEach(() => { (classifyProject as any).mockReset(); nowVal = 1000 })
+  beforeEach(() => {
+    ;(classifyProject as any).mockReset()
+    ;(generateTaskTitle as any).mockReset()
+    nowVal = 1000
+  })
 
   it('creates a task with a uuid id + defaults when one high-confidence project matches', async () => {
     const store = openStore(':memory:')
@@ -59,6 +67,19 @@ describe('data/tasks', () => {
     ;(classifyProject as any).mockResolvedValue({ candidates: [{ name: 'Berth', confidence: 0.5 }, { name: 'meego', confidence: 0.45 }], needNewProject: false })
     const r = await createTask(store, fakeDocStore().store, '改点东西', {}, now)
     expect(r.status).toBe('needs-confirm')
+  })
+
+  it('uses an AI-generated title when autoTitle is enabled', async () => {
+    const store = openStore(':memory:')
+    ;(generateTaskTitle as any).mockResolvedValue('修复新建任务标题总结')
+    const r = await createTask(store, fakeDocStore().store, '新建任务时勾选 AI 自动总结任务标题，但是实际没有自动总结', { confirm: true, autoTitle: true }, now)
+    expect(r.status).toBe('created')
+    if (r.status === 'created') expect(r.record.title).toBe('修复新建任务标题总结')
+    expect(store.allTasks()[0].title).toBe('修复新建任务标题总结')
+    expect(generateTaskTitle).toHaveBeenCalledWith(
+      '新建任务时勾选 AI 自动总结任务标题，但是实际没有自动总结',
+      expect.anything(),
+    )
   })
 
   it('never writes an unlisted project unless createOption=true', async () => {

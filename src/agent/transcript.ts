@@ -127,6 +127,65 @@ export function extractUserGist(head: string): string {
   return ''
 }
 
+/**
+ * Extract a clean conversation digest from a raw transcript (JSONL): user queries and assistant
+ * TEXTUAL replies only, in order, up to ~maxChars. Tool calls, tool results/artifacts, and
+ * thinking/reasoning are dropped (none carry a top-level `.text`, so `extractContentText` already
+ * skips them); injected hook/system noise is stripped. Used to feed the task summary a faithful
+ * record of what was asked and answered, without the process noise.
+ */
+export function extractConversation(text: string, maxChars = 6000): string {
+  const out: string[] = []
+  let used = 0
+  const push = (role: 'USER' | 'ASSISTANT', raw: string) => {
+    const cleaned = cleanText(raw, 1000)
+    if (!cleaned) return
+    const line = `${role}: ${cleaned}`
+    out.push(line)
+    used += line.length + 1
+  }
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue
+    if (used >= maxChars) break
+
+    let o: any
+    try {
+      o = JSON.parse(line)
+    } catch {
+      // Truncated line (large embedded artifact) — salvage a user message via regex only.
+      if ((line.includes('"type":"user"') || line.includes('"type": "user"')) &&
+          (line.includes('"role":"user"') || line.includes('"role": "user"'))) {
+        const t = extractTextViaRegex(line)
+        if (t) push('USER', t)
+      }
+      continue
+    }
+
+    // Claude format
+    if (o.type === 'user' && o.message?.role === 'user') {
+      push('USER', extractContentText(o.message.content))
+      continue
+    }
+    if (o.type === 'assistant' && o.message?.role === 'assistant') {
+      push('ASSISTANT', extractContentText(o.message.content))
+      continue
+    }
+
+    // Codex format (response_item message; function_call / reasoning are ignored)
+    if (o.type === 'response_item' && o.payload?.type === 'message') {
+      const p = o.payload
+      const body = extractContentText(p.content)
+      if (p.role === 'user') {
+        // Skip the codex environment/instructions preamble (markdown headed with '#').
+        if (body && !body.trim().startsWith('#')) push('USER', body)
+      } else if (p.role === 'assistant') {
+        push('ASSISTANT', body)
+      }
+    }
+  }
+  return out.join('\n').slice(0, maxChars)
+}
+
 /** Flatten message content (string or array) into plain text. */
 export function extractContentText(content: any): string {
   if (typeof content === 'string') return content
@@ -145,7 +204,7 @@ export interface TitleContextSample {
 }
 
 function cleanText(raw: string, max = 700): string {
-  const cleaned = stripNoise(raw).replace(/\s+/g, ' ').trim()
+  const cleaned = stripNoise(raw).replace(/\[Image #[^\]]+\]\s*/g, '').replace(/\s+/g, ' ').trim()
   if (!cleaned || isInjectedText(cleaned)) return ''
   return cleaned.slice(0, max)
 }
@@ -201,11 +260,11 @@ function collectCodexPayload(payload: any, sample: TitleContextSample) {
   if (!payload) return
   if (payload.type === 'message' && payload.role === 'assistant') {
     pushDistinct(sample.assistants, cleanText(extractContentText(payload.content), 500), 3)
+  } else if (payload.type === 'agent_message') {
+    pushDistinct(sample.assistants, cleanText(payload.message ?? '', 500), 3)
   } else if (payload.type === 'function_call') {
     const detail = summarizeObject(payload.arguments ?? payload.input)
     pushDistinct(sample.tools, cleanText(`${payload.name ?? 'function_call'} ${detail}`, 500), 8)
-  } else if (payload.type === 'event_msg' || payload.type === 'task_started' || payload.type === 'task_complete') {
-    pushDistinct(sample.tools, cleanText(payload.type, 200), 8)
   }
 }
 
@@ -242,6 +301,16 @@ export function extractTitleContextSample(head: string): TitleContextSample {
       if (p?.type === 'message' && p.role === 'user') {
         const cleaned = cleanText(extractContentText(p.content), 700)
         if (cleaned && !cleaned.startsWith('#')) pushDistinct(sample.users, cleaned, 3)
+      } else {
+        collectCodexPayload(p, sample)
+      }
+      continue
+    }
+
+    if (o.type === 'event_msg') {
+      const p = o.payload
+      if (p?.type === 'user_message') {
+        pushDistinct(sample.users, cleanText(p.message ?? '', 700), 3)
       } else {
         collectCodexPayload(p, sample)
       }
@@ -298,10 +367,21 @@ export function titleInputFromTranscript(text: string): string {
   return fallback.slice(0, 5000)
 }
 
+function taskTitleFromBerthStartPrompt(text: string): string | null {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  const zh = normalized.match(/^请开始处理任务[：:]\s*「(.+?)」。?/)
+  if (zh?.[1]?.trim()) return zh[1].trim()
+  const en = normalized.match(/^Please start working on the task:\s*"(.+?)"\.?/)
+  if (en?.[1]?.trim()) return en[1].trim()
+  return null
+}
+
 export function deriveTitleFromTranscript(head: string): string | null {
   const sample = extractTitleContextSample(head)
   const firstUser = sample.users[0]
   if (!firstUser) return null
+  const berthTaskTitle = taskTitleFromBerthStartPrompt(firstUser)
+  if (berthTaskTitle) return berthTaskTitle
   const process = sample.tools[0] ?? sample.assistants[0] ?? ''
   if (!process) return firstUser
   return `${firstUser} / ${process}`

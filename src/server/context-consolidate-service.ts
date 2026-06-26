@@ -3,8 +3,9 @@
 // transcript, run the unified updater, and write the result back deterministically (then rotate).
 import { openSync, readSync, closeSync, existsSync, readFileSync } from 'node:fs'
 import type { DocStore } from '../data/docstore'
-import { ensureContextDoc, rotateContextDocOnDisk } from '../data/context-doc'
+import { ensureContextDoc, maintainContextDocOnDiskAsync } from '../data/context-doc'
 import { updateContext } from '../agent/context-update'
+import { summarizeCompactedContext } from '../agent/context-compact'
 import { headCommit } from '../data/doc-git'
 import { runAgent, type BerthAgent } from '../agent/index'
 import { type Locale } from '../i18n'
@@ -41,14 +42,14 @@ export function readTranscript(path: string | null | undefined, maxBytes = 200_0
 export interface ContextUpdateOutcome {
   ok: boolean; reason?: string
   changed?: string[]; added?: string[]; removed?: string[]
-  commit?: string | null; rotated?: boolean
+  commit?: string | null; rotated?: boolean; compacted?: boolean
 }
 
 /** Core: run the unified updater against a resolved context target, write + rotate, report the diff. */
 export async function runContextUpdate(args: {
   target: ContextTarget; docStore: DocStore; locale: Locale; agent: BerthAgent
   userInput?: string; transcript?: string; date: string
-  getCfg: () => { logMaxLines: number; logKeep: number }
+  getCfg: () => { logMaxLines: number; logKeep: number; docMaxChars: number; docKeepChars: number }
 }): Promise<ContextUpdateOutcome> {
   const { target, docStore, locale, agent } = args
   if (!args.userInput?.trim() && !args.transcript?.trim()) return { ok: false, reason: 'no input or transcript' }
@@ -63,16 +64,19 @@ export async function runContextUpdate(args: {
   docStore.writeDoc(target.abs, newDoc, { message: msg })
   const commit = headCommit(docStore.root)   // snapshot the doc-update commit BEFORE rotation may add more commits
   const cfg = args.getCfg()
-  // Note: if rotation fires below it adds further commits; `commit` intentionally points at the doc update so
-  // the revert affordance targets the user's change. Revert is best-effort if a rotation intervened.
-  const rotated = rotateContextDocOnDisk(docStore, target.abs, { maxLines: cfg.logMaxLines, keep: cfg.logKeep, locale })
-  return { ok: true, changed: diff.changed, added: diff.added, removed: diff.removed, commit, rotated }
+  // Note: if maintenance fires below it adds further commits; `commit` intentionally points at the doc update so
+  // the revert affordance targets the user's change. Revert is best-effort if maintenance intervened.
+  const maintained = await maintainContextDocOnDiskAsync(
+    docStore, target.abs, { ...cfg, locale, date: args.date },
+    (input) => summarizeCompactedContext(input, agent),
+  )
+  return { ok: true, changed: diff.changed, added: diff.added, removed: diff.removed, commit, ...maintained }
 }
 
 /** Session wrapper: resolve the session's target, read its transcript, run the update. */
 export async function runConsolidation(args: {
   session: SessionLite; task: TaskLite | null; docStore: DocStore; locale: Locale; agent: BerthAgent
-  getCfg: () => { logMaxLines: number; logKeep: number }
+  getCfg: () => { logMaxLines: number; logKeep: number; docMaxChars: number; docKeepChars: number }
 }): Promise<ContextUpdateOutcome> {
   const target = resolveSessionContextTarget(args.session, args.task, args.docStore)
   if (!target) return { ok: false, reason: 'session not linked to a task or project' }

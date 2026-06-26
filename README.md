@@ -71,17 +71,23 @@ projects behind them a place to live.
 ## Quick start
 
 ```bash
-npm install && npm start          # → http://localhost:7777
+npx @corusco/berth@latest start   # → builds nothing, just runs; opens the UI at /app
 ```
 
-That's the fastest path. Berth is a **local server + browser UI** that comes in three forms over one
-shared core — pick the one that fits:
+That's the fastest path for **using** Berth. Berth is a **local server + browser UI** that comes in
+several forms over one shared core — pick the one that fits:
 
 | Form | Use it when | Get started |
 |---|---|---|
-| **From source** | hacking on Berth itself | `npm install && npm start` |
 | **CLI** (`berth start`) | running it as a tool | `npm install -g @corusco/berth` → `berth start` |
 | **Desktop app** (Electron) | you want a double-click app | `npm run electron:dev` |
+| **From source (prod)** | a one-command full build + run | `npm install && npm run prod` |
+| **From source (dev)** | hacking on Berth itself | `npm install && npm start` (backend) + `cd web && npm run dev` (SPA) |
+
+> The UI is the **React SPA at `/app`** — `berth start` and the desktop app open it directly, and the
+> server redirects `/` → `/app`. `npm run prod` is the **single command** that builds the SPA + core
+> and serves the whole thing from one process. Plain `npm start` is the **dev backend only** (no SPA
+> build) — pair it with `cd web && npm run dev` for the live-reloading frontend.
 
 All three share the same state under **`~/.berth`** — so **don't run two at once** (they'd contend on
 the same SQLite db).
@@ -145,6 +151,10 @@ berth project list | berth project add <name>
 npm run electron:dev              # build + launch the app (rebuilds natives in-tree)
 npm run electron:release          # OR: produce an installer in release/ (.dmg on macOS)
 ```
+
+> **Cross-platform builds:** `electron:release` builds installers for the host OS — a `.dmg`/`.zip` on
+> macOS, the `nsis` `.exe` on Windows. Building the **Windows** installer **from macOS** needs
+> wine/mono; in practice build it on a Windows machine or a CI runner per target OS.
 
 > **Native-ABI gotcha:** `electron:dev` rebuilds native addons (`better-sqlite3`, `node-pty`) **in-tree**
 > for Electron, which breaks `npm test` / `npm start` until you restore them with `npm run rebuild:node`.

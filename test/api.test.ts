@@ -4,6 +4,14 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+const mockExecFile = vi.hoisted(() => vi.fn())
+const mockGenerateTaskTitle = vi.hoisted(() => vi.fn(async (..._a: any[]) => '智能任务标题'))
+
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  execFile: (...a: any[]) => mockExecFile(...a),
+}))
+
 // ── Mock store-singleton so tests control getStore() + getCache() ─────────────
 // These must be declared before any imports that pull in api.ts
 const mockEdgesByTodo = vi.fn(() => new Map<string, string[]>())
@@ -11,8 +19,15 @@ const mockTodoKeyForSession = vi.fn((_id: string) => null as string | null)
 const mockRemoveEdgesForSession = vi.fn((..._a: any[]) => {})
 const mockAddEdge = vi.fn((..._a: any[]) => {})
 const mockSetAttach = vi.fn((..._a: any[]) => {})
+const mockSetPin = vi.fn((..._a: any[]) => {})
 const mockSetTitleOverride = vi.fn((..._a: any[]) => {})
 const mockAddProjectPath = vi.fn((..._a: any[]) => {})
+const mockSetPathEnabled = vi.fn((..._a: any[]) => {})
+const mockRemoveProjectPath = vi.fn((..._a: any[]) => {})
+const mockAddSessionImport = vi.fn((..._a: any[]) => {})
+const mockRemoveSessionImport = vi.fn((..._a: any[]) => {})
+const mockRemoveLaunchIntentsForSession = vi.fn((..._a: any[]) => {})
+const mockHideSession = vi.fn((..._a: any[]) => {})
 const mockUpdateTaskFields = vi.fn((..._a: any[]) => {})
 const mockSetTaskDdl = vi.fn((..._a: any[]) => {})
 const mockTaskDdls = new Map<string, string>()
@@ -20,7 +35,8 @@ const mockGetStore = vi.fn((..._a: any[]) => ({
   allPinnedSet: () => new Set<string>(),
   allAttachMap: () => new Map(),
   allTitleOverrides: () => new Map(),
-  setPin: vi.fn(),
+  launchIntentCwdBySession: () => new Map<string, string>(),
+  setPin: mockSetPin,
   setAttach: mockSetAttach,
   setTitleOverride: mockSetTitleOverride,
   edgesByTodo: mockEdgesByTodo,
@@ -31,6 +47,16 @@ const mockGetStore = vi.fn((..._a: any[]) => ({
   setArchived: vi.fn(),
   allProjectPaths: () => new Map(),
   addProjectPath: mockAddProjectPath,
+  setPathEnabled: mockSetPathEnabled,
+  removeProjectPath: mockRemoveProjectPath,
+  addSessionImport: mockAddSessionImport,
+  removeSessionImport: mockRemoveSessionImport,
+  removeLaunchIntentsForSession: mockRemoveLaunchIntentsForSession,
+  allSessionImportSet: () => new Set<string>(),
+  hideSession: mockHideSession,
+  unhideSession: vi.fn(),
+  allHiddenSessionSet: () => new Set<string>(),
+  allBoundLaunchSessionIds: () => new Set<string>(),
   updateTaskFields: mockUpdateTaskFields,
   setTaskDdl: mockSetTaskDdl,
   allTaskDdls: () => mockTaskDdls,
@@ -56,16 +82,18 @@ const mockCreateTask = vi.fn(async (..._a: any[]) => ({
   status: 'created' as const,
   record: { id: 'r', title: 'test', project: 'Berth' },
 }))
+const mockUpdateTask = vi.fn((...a: any[]) => {
+  const patch = a[2]
+  const has = ['title', 'priority', 'status', 'progress'].some(k => patch?.[k] !== undefined)
+  if (!has) throw new Error('no editable fields in patch')
+  return { ok: true }
+})
 
 vi.mock('../src/data/tasks', () => ({
   listTasks: (...a: any[]) => mockListTasks(...a),
   createTask: (...a: any[]) => mockCreateTask(...a),
   // Mirror the real updateTask: it throws when the patch carries no editable TaskField.
-  updateTask: vi.fn((_store: any, _id: string, patch: any) => {
-    const has = ['title', 'priority', 'status', 'progress'].some(k => patch?.[k] !== undefined)
-    if (!has) throw new Error('no editable fields in patch')
-    return { ok: true }
-  }),
+  updateTask: (...a: any[]) => mockUpdateTask(...a),
   deleteTask: vi.fn(),
 }))
 
@@ -80,7 +108,8 @@ vi.mock('../src/data/projects', () => ({
 // ── Mock agent modules ────────────────────────────────────────────────────────
 vi.mock('../src/agent/index', () => ({
   generateTitle: vi.fn(async () => 'mocked title'),
-  generateProgressSummary: vi.fn(async () => 'mocked summary'),
+  generateTaskTitle: (...a: any[]) => mockGenerateTaskTitle(...a),
+  parseStructuredSummary: vi.fn((raw: string) => ({ headline: raw, progress: [], milestones: [] })),
 }))
 vi.mock('../src/agent/transcript', () => ({
   extractTitleContext: vi.fn(() => ''),
@@ -146,17 +175,59 @@ function fakePty() {
 }
 
 beforeEach(() => {
+  mockExecFile.mockReset()
   mockEdgesByTodo.mockReturnValue(new Map<string, string[]>())
   mockTodoKeyForSession.mockReturnValue(null)
   mockGetCache.mockReturnValue([])
   mockListTasks.mockReturnValue([])
   mockCreateTask.mockResolvedValue({ status: 'created', record: { id: 'r', title: 'test', project: 'Berth' } })
+  mockUpdateTask.mockClear()
+  mockGenerateTaskTitle.mockReset().mockResolvedValue('智能任务标题')
   mockSetTitleOverride.mockClear()
   mockSettings.clear()
   mockImportDirs.clear()
   mockRunContextUpdate.mockReset().mockResolvedValue({ ok: true, changed: [], added: [], removed: [], commit: null, rotated: false })
   mockReadTranscript.mockReset().mockReturnValue('transcript text')
   mockRevertCommit.mockReset().mockReturnValue({ ok: true })
+})
+
+describe('pick-folder API', () => {
+  it('treats AppleScript cancel as a cancellation without retrying', async () => {
+    mockExecFile.mockImplementationOnce((_bin: string, _args: string[], _opts: any, cb: Function) => {
+      const err = Object.assign(new Error('execution error: User canceled. (-128)'), { code: 1 })
+      cb(err, '', 'execution error: User canceled. (-128)')
+    })
+
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/pick-folder`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ default: '/missing/default' }),
+    })
+
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ cancelled: true })
+    expect(mockExecFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries without the default location when the default path is invalid', async () => {
+    mockExecFile
+      .mockImplementationOnce((_bin: string, _args: string[], _opts: any, cb: Function) => {
+        cb(new Error('Can’t get POSIX file "/missing/default".'), '', 'Can’t get POSIX file')
+      })
+      .mockImplementationOnce((_bin: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, '/Users/me/work/\n', '')
+      })
+
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/pick-folder`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ default: '/missing/default' }),
+    })
+
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ path: '/Users/me/work' })
+    expect(mockExecFile).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('session-dirs API', () => {
@@ -186,6 +257,125 @@ describe('session-dirs API', () => {
     const r = await fetch(`http://localhost:${port}/api/session-dirs`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cwd: '   ' }),
+    })
+    expect(r.status).toBe(400)
+  })
+})
+
+describe('货舱 path + session-import API', () => {
+  beforeEach(() => {
+    mockSetPathEnabled.mockClear(); mockRemoveProjectPath.mockClear()
+    mockAddSessionImport.mockClear(); mockSetAttach.mockClear(); mockAddProjectPath.mockClear()
+  })
+  const J = { 'Content-Type': 'application/json' }
+
+  it('toggles a path enabled flag', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/projects/path/toggle`, {
+      method: 'POST', headers: J, body: JSON.stringify({ projectId: 'P', cwd: '/x', enabled: false }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockSetPathEnabled).toHaveBeenCalledWith('P', '/x', false)
+  })
+
+  it('rejects a toggle without a boolean enabled', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/projects/path/toggle`, {
+      method: 'POST', headers: J, body: JSON.stringify({ projectId: 'P', cwd: '/x' }),
+    })
+    expect(r.status).toBe(400)
+  })
+
+  it('removes a registered path (collision-free POST, not shadowed by DELETE /projects/:id)', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/projects/path/remove`, {
+      method: 'POST', headers: J, body: JSON.stringify({ projectId: 'P', cwd: '/x' }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockRemoveProjectPath).toHaveBeenCalledWith('P', '/x')
+  })
+
+  it('add-path defaults enabled to true, honors explicit false', async () => {
+    const port = await listen()
+    const base = `http://localhost:${port}/api/projects/add-path`
+    await fetch(base, { method: 'POST', headers: J, body: JSON.stringify({ projectId: 'P', cwd: '/a' }) })
+    expect(mockAddProjectPath).toHaveBeenCalledWith('P', '/a', false, true)
+    await fetch(base, { method: 'POST', headers: J, body: JSON.stringify({ projectId: 'P', cwd: '/b', enabled: false }) })
+    expect(mockAddProjectPath).toHaveBeenCalledWith('P', '/b', false, false)
+  })
+
+  it('imports sessions into a project (addSessionImport + attach)', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/session-import`, {
+      method: 'POST', headers: J, body: JSON.stringify({ ids: ['s1', 's2'], projectId: 'P' }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockAddSessionImport).toHaveBeenCalledWith('s1')
+    expect(mockAddSessionImport).toHaveBeenCalledWith('s2')
+    expect(mockSetAttach).toHaveBeenCalledWith('s1', 'P', 'confirmed')
+  })
+
+  it('project-less import marks session_import but does NOT attach', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/session-import`, {
+      method: 'POST', headers: J, body: JSON.stringify({ ids: ['s9'] }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockAddSessionImport).toHaveBeenCalledWith('s9')
+    expect(mockSetAttach).not.toHaveBeenCalled()
+  })
+})
+
+describe('session removal API (detach / un-import)', () => {
+  beforeEach(() => {
+    mockSetAttach.mockClear()
+    mockRemoveSessionImport.mockClear()
+    mockRemoveEdgesForSession.mockClear()
+    mockSetPin.mockClear()
+    mockRemoveLaunchIntentsForSession.mockClear()
+    mockHideSession.mockClear()
+  })
+  const J = { 'Content-Type': 'application/json' }
+
+  it('detaches sessions from their project and task (attach → null, edge cleared)', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/sessions/detach`, {
+      method: 'POST', headers: J, body: JSON.stringify({ ids: ['s1', 's2'] }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockRemoveEdgesForSession).toHaveBeenCalledWith('s1')
+    expect(mockRemoveEdgesForSession).toHaveBeenCalledWith('s2')
+    expect(mockSetAttach).toHaveBeenCalledWith('s1', null, 'confirmed')
+    expect(mockSetAttach).toHaveBeenCalledWith('s2', null, 'confirmed')
+    expect(mockRemoveSessionImport).not.toHaveBeenCalled()
+  })
+
+  it('rejects detach with no ids', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/sessions/detach`, {
+      method: 'POST', headers: J, body: JSON.stringify({ ids: [] }),
+    })
+    expect(r.status).toBe(400)
+  })
+
+  it('un-imports sessions (remove visible/organized signals + detach)', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/session-import/remove`, {
+      method: 'POST', headers: J, body: JSON.stringify({ ids: ['s1'] }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockRemoveSessionImport).toHaveBeenCalledWith('s1')
+    expect(mockRemoveEdgesForSession).toHaveBeenCalledWith('s1')
+    expect(mockSetPin).toHaveBeenCalledWith('s1', false)
+    expect(mockSetAttach).toHaveBeenCalledWith('s1', null, 'confirmed')
+    expect(mockRemoveLaunchIntentsForSession).toHaveBeenCalledWith('s1')
+    expect(mockHideSession).toHaveBeenCalledWith('s1')
+  })
+
+  it('rejects un-import with no ids', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/session-import/remove`, {
+      method: 'POST', headers: J, body: JSON.stringify({}),
     })
     expect(r.status).toBe(400)
   })
@@ -467,7 +657,7 @@ describe('POST /api/todos', () => {
     expect(res.status).toBe(502)
   })
 
-  it('forwards projectId, confirm, createOption from body', async () => {
+  it('forwards projectId, confirm, createOption, and autoTitle from body', async () => {
     const port = await listen()
     const base = `http://localhost:${port}/api`
 
@@ -476,13 +666,46 @@ describe('POST /api/todos', () => {
     await fetch(`${base}/todos`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: 'x', projectId: 'P', confirm: true, createOption: false }),
+      body: JSON.stringify({ text: 'x', projectId: 'P', confirm: true, createOption: false, autoTitle: true }),
     })
     // createTask(store, docStore, text, opts)
     expect(mockCreateTask).toHaveBeenCalledWith(
       expect.anything(), expect.anything(), 'x',
-      expect.objectContaining({ projectId: 'P', confirm: true, createOption: false }),
+      expect.objectContaining({ projectId: 'P', confirm: true, createOption: false, autoTitle: true }),
     )
+  })
+})
+
+describe('POST /api/todos/:id/title', () => {
+  it('generates a task title from task clues and linked session titles, then persists it', async () => {
+    mockListTasks.mockReturnValue([
+      { id: 't1', title: '原始任务标题', status: '待办', priority: 'P1', projectId: 'p1', project: 'Berth', progress: '已有进展', detailDoc: null },
+    ])
+    mockEdgesByTodo.mockReturnValueOnce(new Map([['t1', ['s1', 's2']]]))
+    mockGetCache.mockReturnValue([
+      { sessionId: 's1', cli: 'claude', cwd: '/x', title: '修复任务菜单标题生成', updatedAt: 100, deleted: false, copies: [] },
+      { sessionId: 's2', cli: 'codex', cwd: '/x', title: '保留双击手动编辑', updatedAt: 90, deleted: false, copies: [] },
+    ])
+    const port = await listen()
+
+    const res = await fetch(`http://localhost:${port}/api/todos/t1/title`, { method: 'POST' })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ title: '智能任务标题' })
+    const input = String(mockGenerateTaskTitle.mock.calls[0][0])
+    expect(input).toContain('Current title: 原始任务标题')
+    expect(input).toContain('Progress summary: 已有进展')
+    expect(input).toContain('修复任务菜单标题生成')
+    expect(input).toContain('保留双击手动编辑')
+    expect(mockUpdateTask).toHaveBeenCalledWith(expect.anything(), 't1', { title: '智能任务标题' })
+  })
+
+  it('returns 404 for an unknown task', async () => {
+    mockListTasks.mockReturnValue([])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/missing/title`, { method: 'POST' })
+    expect(res.status).toBe(404)
+    expect(mockGenerateTaskTitle).not.toHaveBeenCalled()
   })
 })
 

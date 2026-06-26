@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>会话列表 · 重新设计 · Berth 2.0</title>
+<style>
+  /* ---- Berth 2.0 tokens (午夜靛蓝 dark = default here) ---- */
+  :root, .dark {
+    --background:#141b2e; --foreground:#b3bcd4; --card:#1f2940; --card-fg:#c7cfe3;
+    --popover:#283450; --muted:#2c3852; --muted-fg:#8089a3; --secondary:#2c3852;
+    --accent:#2c3852; --accent-fg:#dbe1f0; --border:#3a4768; --brand:#56b6ff;
+    --success:#7ed4a6; --warning:#f0c773; --priority:#e0a060; --purple:#b88cf0;
+    --info:#5ec5d6; --destructive:#f0707f; --text-dim:#6b7280;
+  }
+  .light {
+    --background:#f6f8fb; --foreground:#1f2733; --card:#ffffff; --card-fg:#1f2733;
+    --popover:#ffffff; --muted:#eef1f6; --muted-fg:#6b7689; --secondary:#eef1f6;
+    --accent:#e9edf3; --accent-fg:#1f2733; --border:#dde3ec; --brand:#2f6fed;
+    --success:#2a9d63; --warning:#b9831b; --priority:#c2730a; --purple:#8b46c9;
+    --info:#0e9aae; --destructive:#dc4338; --text-dim:#97a1b0;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--background); color:var(--foreground);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font-size:13px; line-height:1.5; -webkit-font-smoothing:antialiased; padding:28px 0 80px;
+  }
+  .mono { font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; }
+  .wrap { max-width:880px; margin:0 auto; padding:0 24px; }
+  h1 { font-size:18px; margin:0 0 4px; color:var(--foreground); }
+  .sub { color:var(--muted-fg); font-size:12.5px; margin:0 0 22px; }
+  h2 { font-size:13px; color:var(--muted-fg); font-weight:600; letter-spacing:.02em;
+       text-transform:uppercase; margin:30px 0 10px; }
+  .note { color:var(--text-dim); font-size:11.5px; margin:6px 2px 0; }
+  .topbar { display:flex; gap:8px; align-items:center; margin-bottom:18px; }
+  .tbtn { border:1px solid var(--border); background:transparent; color:var(--muted-fg);
+          border-radius:8px; padding:5px 12px; font-size:12px; cursor:pointer; }
+  .tbtn:hover { background:var(--accent); color:var(--foreground); }
+
+  /* ---- card / module chrome ---- */
+  .module-head { display:flex; align-items:center; gap:8px; margin:0 0 12px; }
+  .module-head .h { font-size:13px; font-weight:600; color:var(--muted-fg); }
+  .pill-ship { border-radius:10px; background:var(--muted); color:var(--muted-fg);
+               padding:1px 8px; font-size:11px; font-weight:500; }
+  .card { border:1px solid var(--border); background:var(--card); border-radius:8px;
+          overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.18); }
+
+  .sec-head { display:flex; align-items:center; gap:8px; padding:10px 14px; width:100%;
+              font-size:12px; font-weight:600; color:var(--muted-fg); }
+  .sec-head .cnt { font-weight:400; color:var(--text-dim); }
+  .sec-head .ico { color:var(--brand); opacity:.7; }
+
+  /* ---- the redesigned session row ---- */
+  .srow { display:flex; align-items:center; gap:10px; height:40px; padding:0 14px;
+          border-top:1px solid color-mix(in oklab, var(--border) 55%, transparent);
+          cursor:pointer; position:relative; }
+  .srow:first-child { border-top:0; }
+  .srow:hover { background:var(--accent); }
+
+  /* status lamp — the SINGLE source of status truth (replaces dot+pill duplication) */
+  .lamp { width:9px; height:9px; border-radius:50%; flex:none; position:relative; }
+  .lamp.sail   { background:var(--success); box-shadow:0 0 0 3px color-mix(in oklab,var(--success) 26%,transparent); animation:pulse 1.6s ease-in-out infinite; }
+  .lamp.unread { background:var(--destructive); box-shadow:0 0 0 3px color-mix(in oklab,var(--destructive) 22%,transparent); }
+  .lamp.read   { background:transparent; border:1.5px solid var(--text-dim); width:8px; height:8px; opacity:.5; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+
+  .cli { flex:none; font-size:10px; font-weight:700; letter-spacing:.02em; padding:1px 5px;
+         border-radius:4px; text-transform:lowercase; }
+  .cli.claude { background:color-mix(in oklab,var(--priority) 20%,transparent); color:var(--priority); }
+  .cli.codex  { background:color-mix(in oklab,var(--info) 20%,transparent); color:var(--info); }
+  .cli.coco   { background:color-mix(in oklab,var(--purple) 20%,transparent); color:var(--purple); }
+
+  .title { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+           font-size:13px; color:var(--card-fg); }
+  .title.unread { font-weight:600; color:var(--foreground); }
+  .title.read   { color:var(--muted-fg); }
+
+  /* aggregate unread red dot for project nodes / task cards (sessions use the lamp itself) */
+  .reddot { width:7px; height:7px; border-radius:50%; flex:none; background:var(--destructive);
+            box-shadow:0 0 0 3px color-mix(in oklab,var(--destructive) 20%,transparent); }
+
+  /* task tag — now an interactive control (was a passive label) */
+  .tasktag { flex:none; display:inline-flex; align-items:center; gap:4px; max-width:160px;
+             padding:2px 8px; border-radius:6px; font-size:11px; cursor:pointer;
+             border:1px solid transparent; }
+  .tasktag.linked { background:color-mix(in oklab,var(--brand) 14%,transparent); color:var(--brand);
+                    border-color:color-mix(in oklab,var(--brand) 30%,transparent); }
+  .tasktag.linked:hover { background:color-mix(in oklab,var(--brand) 22%,transparent); }
+  .tasktag .tt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* unlinked: ghost "+ 关联任务", appears on row hover only */
+  .tasktag.empty { color:var(--text-dim); border:1px dashed var(--border); background:transparent;
+                   opacity:0; }
+  .srow:hover .tasktag.empty { opacity:1; }
+  .tasktag.empty:hover { color:var(--brand); border-color:color-mix(in oklab,var(--brand) 45%,transparent); }
+
+  .spacer { flex:1 1 auto; }
+  .cwd { flex:none; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+         text-align:right; font-size:11px; color:var(--text-dim); }
+  .time { flex:none; font-size:11px; color:var(--muted-fg); white-space:nowrap; min-width:30px; text-align:right; }
+
+  /* hover actions */
+  .acts { flex:none; display:flex; align-items:center; gap:2px; }
+  .iconbtn { width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+             border-radius:5px; color:var(--text-dim); cursor:pointer; border:0; background:transparent;
+             opacity:0; }
+  .srow:hover .iconbtn { opacity:1; }
+  .iconbtn:hover { background:var(--secondary); color:var(--foreground); }
+  .iconbtn.pinned { color:var(--priority); opacity:1; }
+  svg { display:block; }
+
+  /* ---- popovers ---- */
+  .pop { position:absolute; z-index:30; margin-top:6px; border:1px solid var(--border);
+         background:var(--popover); border-radius:8px; box-shadow:0 8px 28px rgba(0,0,0,.32);
+         padding:6px; width:268px; }
+  .pop .lbl { font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+              color:var(--text-dim); padding:4px 8px 5px; }
+  .pop .search { width:100%; border:1px solid var(--border); background:var(--background);
+                 color:var(--foreground); border-radius:6px; padding:6px 9px; font-size:12px;
+                 margin:0 0 6px; outline:none; }
+  .pop .search:focus { border-color:var(--brand); }
+  .mi { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
+        font-size:12.5px; color:var(--foreground); cursor:pointer; }
+  .mi:hover { background:var(--accent); }
+  .mi .bullet { width:6px; height:6px; border-radius:50%; flex:none; background:transparent; }
+  .mi.on .bullet { background:var(--brand); }
+  .mi .tx { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mi .pri { flex:none; width:6px; height:6px; border-radius:50%; }
+  .mi.danger { color:var(--destructive); }
+  .mi.danger:hover { background:color-mix(in oklab,var(--destructive) 12%,transparent); }
+  .sep { height:1px; background:var(--border); margin:5px 4px; }
+  .pop.mini { width:170px; }
+  .mi .ck { margin-left:auto; color:var(--brand); }
+
+  /* layout for the demo rows that carry an open popover */
+  .rowhost { position:relative; }
+
+  .legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; }
+  .legend .it { display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--muted-fg); }
+  .callout { border-left:3px solid var(--brand); background:color-mix(in oklab,var(--brand) 8%,transparent);
+             padding:10px 14px; border-radius:0 6px 6px 0; font-size:12px; color:var(--card-fg); margin:6px 0 0; }
+  .callout b { color:var(--foreground); }
+  .force-hover { background:var(--accent) !important; }
+  .force-hover .iconbtn { opacity:1; }
+  .force-hover .tasktag.empty { opacity:1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <button class="tbtn" onclick="document.documentElement.classList.toggle('light');document.documentElement.classList.toggle('dark')">◐ 切换 明/暗</button>
+    <span class="note">同一套 Berth 2.0 token，可对照 v7-project.html</span>
+  </div>
+
+  <h1>会话列表 · 重新设计</h1>
+  <p class="sub">三个改动：① 关联任务从「更多菜单」移到可点击的任务标记；② 更多菜单只留 标为已读/未读；③ 状态彻底去文字 —— 一盏信号灯承载全部状态，未读红点贯穿各列表。</p>
+
+  <!-- ============== unread red dot across lists ============== -->
+  <h2>未读红点 · 贯穿各列表（项目 / 任务 / 会话）</h2>
+  <div style="display:flex; gap:14px; flex-wrap:wrap">
+    <!-- project nav -->
+    <div class="card" style="width:240px; padding:6px">
+      <div class="lbl" style="font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-dim);padding:4px 8px 5px">项目</div>
+      <div class="mi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2" style="opacity:.7"><path d="M12 22V8M5 12H2a10 10 0 0020 0h-3"/></svg><span class="tx">Berth</span><span class="reddot" style="margin-left:auto"></span></div>
+      <div class="mi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2" style="opacity:.7"><path d="M12 22V8M5 12H2a10 10 0 0020 0h-3"/></svg><span class="tx">数据中台</span></div>
+    </div>
+    <!-- task card -->
+    <div class="card" style="width:220px; padding:10px 12px">
+      <div style="display:flex;align-items:center;gap:7px">
+        <span class="pri" style="width:7px;height:7px;border-radius:50%;background:var(--destructive)"></span>
+        <span style="font-size:12.5px;font-weight:600;color:var(--foreground);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">会话列表 UI 重新设计</span>
+        <span class="reddot"></span>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px;display:flex;gap:6px;align-items:center">
+        <span class="cli claude">claude</span><span class="cli codex">codex</span>
+        <span style="margin-left:auto">2 会话</span>
+      </div>
+    </div>
+    <!-- session row mini -->
+    <div class="card" style="width:300px; padding:0">
+      <div class="srow" style="cursor:default">
+        <span class="lamp unread"></span>
+        <span class="cli codex">codex</span>
+        <span class="title unread">修复 reconcile 绑定竞态</span>
+        <span class="spacer"></span><span class="time">22m</span>
+      </div>
+    </div>
+  </div>
+  <p class="note">红点 = 有未读。会话行用信号灯本体变红；项目节点 / 任务卡用右侧聚合红点（其下任一会话未读即亮）。点进去读完即灭。</p>
+
+  <!-- ============== AFTER ============== -->
+  <h2>改后 · 项目工作区「会话」模块</h2>
+  <div class="module-head">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-fg)" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8l4 4-4 4M12 16h6"/></svg>
+    <span class="h">会话</span><span class="pill-ship">船只</span>
+  </div>
+
+  <div class="card">
+    <div class="sec-head">
+      <svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22V8M5 12H2a10 10 0 0020 0h-3M12 8a3 3 0 100-6 3 3 0 000 6z"/></svg>
+      <span style="color:var(--foreground)">~/Code/berth</span><span class="cnt">5</span>
+    </div>
+
+    <!-- 1. 在航 (running) -->
+    <div class="srow">
+      <span class="lamp sail" title="在航"></span>
+      <span class="cli claude">claude</span>
+      <span class="title unread">重构持久化 PTY 注册表</span>
+      <span class="spacer"></span>
+      <span class="tasktag linked" title="持久化 PTY 注册表与会话重连模型（tmux 化）"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 17H7A5 5 0 017 7h2M15 7h2a5 5 0 010 10h-2M8 12h8"/></svg><span class="tt">持久化 PTY 注册表与会话重连模型（tmux 化）</span></span>
+      <span class="time">3m</span>
+      <span class="acts">
+        <button class="iconbtn" title="智能生成标题"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4zM19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></button>
+        <button class="iconbtn" title="更多"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+        <button class="iconbtn pinned" title="取消 Pin"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5"><path d="M12 2l2.5 7H21l-5 4 2 7-6-4-6 4 2-7-5-4h6.5z"/></svg></button>
+      </span>
+    </div>
+
+    <!-- 2. 未读 (dock) — red lamp + bold title -->
+    <div class="srow">
+      <span class="lamp unread" title="待查收 · 有未读"></span>
+      <span class="cli codex">codex</span>
+      <span class="title unread">修复 codex reconcile 绑定竞态</span>
+      <span class="spacer"></span>
+      <span class="tasktag linked" title="数据层解耦 · 飞书适配"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 17H7A5 5 0 017 7h2M15 7h2a5 5 0 010 10h-2M8 12h8"/></svg><span class="tt">数据层解耦</span></span>
+      <span class="time">22m</span>
+      <span class="acts">
+        <button class="iconbtn" title="智能生成标题"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4zM19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></button>
+        <button class="iconbtn" title="更多"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+        <button class="iconbtn" title="Pin"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.5 7H21l-5 4 2 7-6-4-6 4 2-7-5-4h6.5z"/></svg></button>
+      </span>
+    </div>
+
+    <!-- 3. 已停泊·已读 — hollow lamp, muted, NO statword, unlinked (hover shows +关联任务) -->
+    <div class="srow force-hover">
+      <span class="lamp read" title="已停泊"></span>
+      <span class="cli coco">coco</span>
+      <span class="title read">整理 docs/ARCHITECTURE 落地</span>
+      <span class="spacer"></span>
+      <span class="cwd mono">~/Code/berth</span>
+      <span class="tasktag empty" title="关联到任务">+ 关联任务</span>
+      <span class="time">2d</span>
+      <span class="acts">
+        <button class="iconbtn" title="智能生成标题"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4zM19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></button>
+        <button class="iconbtn" title="更多"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+        <button class="iconbtn" title="Pin"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.5 7H21l-5 4 2 7-6-4-6 4 2-7-5-4h6.5z"/></svg></button>
+      </span>
+    </div>
+
+    <!-- 4. 已读，无关联，普通 hover off -->
+    <div class="srow">
+      <span class="lamp read" title="已停泊"></span>
+      <span class="cli claude">claude</span>
+      <span class="title read">调研 xterm viewport 主题适配</span>
+      <span class="spacer"></span>
+      <span class="cwd mono">~/Code/berth</span>
+      <span class="time">3d</span>
+      <span class="acts">
+        <button class="iconbtn" title="智能生成标题"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4zM19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></button>
+        <button class="iconbtn" title="更多"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+        <button class="iconbtn" title="Pin"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.5 7H21l-5 4 2 7-6-4-6 4 2-7-5-4h6.5z"/></svg></button>
+      </span>
+    </div>
+
+    <!-- 5. 创建中 pending -->
+    <div class="srow" style="cursor:default">
+      <span class="lamp" style="background:transparent"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2" style="animation:pulse 1s linear infinite"><path d="M21 12a9 9 0 11-6.2-8.5"/></svg></span>
+      <span class="cli claude">claude</span>
+      <span class="title read">创建中…</span>
+      <span class="statword" style="color:var(--text-dim);background:var(--muted);padding:1px 7px;border-radius:5px">创建中</span>
+      <span class="spacer"></span>
+      <span class="time">now</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="it"><span class="lamp sail" style="margin:0"></span>在航（运行中，绿灯脉冲）</span>
+    <span class="it"><span class="lamp unread" style="margin:0"></span>待查收（有未读，红点）</span>
+    <span class="it"><span class="lamp read" style="margin:0"></span>已停泊（已读，空心）</span>
+  </div>
+
+  <!-- ============== popover A: link task ============== -->
+  <h2>点「+ 关联任务 / 任务标记」→ 任务选择器（带搜索，解决「任务太多」）</h2>
+  <div class="card rowhost" style="padding-bottom:130px">
+    <div class="srow force-hover">
+      <span class="lamp read"></span>
+      <span class="cli claude">claude</span>
+      <span class="title read">整理 docs/ARCHITECTURE 落地</span>
+      <span class="spacer"></span>
+      <span class="tasktag empty" style="opacity:1;color:var(--brand);border-color:color-mix(in oklab,var(--brand) 45%,transparent)">+ 关联任务</span>
+      <span class="time">2d</span>
+      <span class="acts"><button class="iconbtn" style="opacity:1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/></svg></button></span>
+    </div>
+    <div class="pop" style="right:40px; top:34px">
+      <input class="search" placeholder="搜索任务…" value="" />
+      <div class="lbl">项目任务</div>
+      <div class="mi on"><span class="pri" style="background:var(--destructive)"></span><span class="tx">会话列表 UI 重新设计</span><svg class="ck" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg></div>
+      <div class="mi"><span class="pri" style="background:var(--priority)"></span><span class="tx">数据层解耦 · 飞书适配</span></div>
+      <div class="mi"><span class="pri" style="background:var(--warning)"></span><span class="tx">上下文管理规范 AGENTMD</span></div>
+      <div class="mi"><span class="pri" style="background:var(--text-dim)"></span><span class="tx">未读红点（各列表）</span></div>
+    </div>
+  </div>
+  <p class="callout"><b>关键改进：</b>任务列表带搜索框、显示优先级色点，且只在点开时出现——不再把几十条任务塞进常驻的「更多」菜单里。已关联项打勾置顶。</p>
+
+  <!-- ============== popover B: linked task detail ============== -->
+  <h2>点「已关联的任务标记」→ 查看 / 更换 / 取消关联</h2>
+  <div class="card rowhost" style="padding-bottom:120px">
+    <div class="srow force-hover">
+      <span class="lamp unread"></span>
+      <span class="cli codex">codex</span>
+      <span class="title unread">修复 codex reconcile 绑定竞态</span>
+      <span class="spacer"></span>
+      <span class="tasktag linked" title="数据层解耦 · 飞书适配" style="background:color-mix(in oklab,var(--brand) 22%,transparent)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 17H7A5 5 0 017 7h2M15 7h2a5 5 0 010 10h-2M8 12h8"/></svg><span class="tt">数据层解耦</span></span>
+      <span class="time">22m</span>
+    </div>
+    <div class="pop" style="right:40px; top:34px">
+      <div class="lbl">已关联任务</div>
+      <div class="mi"><span class="pri" style="background:var(--priority)"></span><span class="tx" style="color:var(--foreground);font-weight:600">数据层解耦 · 飞书适配</span></div>
+      <div class="mi" style="color:var(--brand)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>前往任务</div>
+      <div class="mi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>更换任务…</div>
+      <div class="sep"></div>
+      <div class="mi danger"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>取消关联</div>
+    </div>
+  </div>
+
+  <!-- ============== popover C: more menu ============== -->
+  <h2>「更多」菜单 ⋯ —— 现在只剩读/未读</h2>
+  <div class="card rowhost" style="padding-bottom:90px">
+    <div class="srow force-hover">
+      <span class="lamp unread"></span>
+      <span class="cli claude">claude</span>
+      <span class="title unread">重构持久化 PTY 注册表</span>
+      <span class="spacer"></span>
+      <span class="tasktag linked" title="数据层解耦 · 飞书适配"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 17H7A5 5 0 017 7h2M15 7h2a5 5 0 010 10h-2M8 12h8"/></svg><span class="tt">会话持久化模型</span></span>
+      <span class="time">3m</span>
+      <span class="acts">
+        <button class="iconbtn" style="opacity:1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/></svg></button>
+        <button class="iconbtn" style="opacity:1;background:var(--secondary);color:var(--foreground)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+        <button class="iconbtn" style="opacity:1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.5 7H21l-5 4 2 7-6-4-6 4 2-7-5-4h6.5z"/></svg></button>
+      </span>
+    </div>
+    <div class="pop mini" style="right:14px; top:34px">
+      <div class="mi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>标为已读</div>
+      <div class="mi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>标为未读</div>
+    </div>
+  </div>
+  <p class="callout"><b>说明：</b>当前是未读态 → 主操作是「标为已读」；已读态时则显示「标为未读」。生成标题 ✨ 与 Pin 📌 仍是独立按钮，不进菜单。</p>
+
+  <!-- ============== before, for contrast ============== -->
+  <h2 style="margin-top:38px">改前（对照）· 同一行</h2>
+  <div class="card">
+    <div class="srow" style="cursor:default" onmouseover="this.classList.add('force-hover')">
+      <span class="lamp sail" title="在航"></span>
+      <span class="cli claude">claude</span>
+      <span class="title" style="flex:0 1 auto">重构持久化 PTY 注册表</span>
+      <span style="flex:none;background:color-mix(in oklab,var(--success) 15%,transparent);color:var(--success);font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:5px">在航</span>
+      <span style="flex:none;display:inline-flex;align-items:center;gap:3px;background:var(--muted);color:var(--text-dim);font-size:10px;padding:1px 6px;border-radius:5px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 17H7A5 5 0 017 7h2M15 7h2a5 5 0 010 10h-2M8 12h8"/></svg>已关联任务</span>
+      <span class="spacer"></span>
+      <span class="cwd mono">~/Code/berth</span>
+      <span class="time">3m</span>
+      <span class="acts">
+        <button class="iconbtn" style="opacity:1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4z"/></svg></button>
+        <button class="iconbtn" style="opacity:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+        <button class="iconbtn pinned"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.5 7H21l-5 4 2 7-6-4-6 4 2-7-5-4h6.5z"/></svg></button>
+      </span>
+    </div>
+  </div>
+  <p class="note">改前：① 信号灯点 + 「在航」彩色 pill 重复表达状态；② 「已关联任务」只是死标签；③ ⋯ 菜单里塞着整列项目任务做关联。三者叠在一行 → 「有点乱」。</p>
+</div>
+</body>
+</html>

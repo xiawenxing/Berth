@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Berth · 优先级样式预览</title>
+<style>
+:root{
+  --background:#f6f8fb; --foreground:#1f2733; --card:#ffffff; --card-foreground:#1f2733;
+  --popover:#ffffff; --muted:#eef1f6; --muted-foreground:#6b7689; --secondary:#eef1f6;
+  --accent:#e9edf3; --accent-foreground:#1f2733; --border:#dde3ec; --brand:#2f6fed;
+  --sidebar-accent:#e3e8f1; --success:#2a9d63; --warning:#b9831b; --priority:#c2730a;
+  --purple:#8b46c9; --destructive:#dc4338; --text-dim:#97a1b0;
+  --radius-sm:6px; --shadow:0 1px 2px rgba(20,30,60,.06);
+}
+body.dark{
+  --background:#141b2e; --foreground:#b3bcd4; --card:#1f2940; --card-foreground:#c7cfe3;
+  --popover:#283450; --muted:#2c3852; --muted-foreground:#8089a3; --secondary:#2c3852;
+  --accent:#2c3852; --accent-foreground:#dbe1f0; --border:#3a4768; --brand:#56b6ff;
+  --sidebar-accent:#1f2940; --success:#7ed4a6; --warning:#f0c773; --priority:#e0a060;
+  --purple:#b88cf0; --destructive:#f0707f; --text-dim:#6b7280; --shadow:0 1px 2px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--background);color:var(--foreground);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.5;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:22px 26px 60px}
+h1{font-size:18px;margin:0 0 4px}
+.sub{color:var(--muted-foreground);font-size:12.5px;margin:0 0 18px}
+.toggle{position:fixed;top:16px;right:20px;z-index:30;border:1px solid var(--border);background:var(--card);
+  color:var(--foreground);border-radius:var(--radius-sm);padding:6px 11px;font-size:12px;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.variant{border:1px solid var(--border);border-radius:10px;background:var(--card);overflow:hidden}
+.vhead{padding:11px 14px;border-bottom:1px solid var(--border)}
+.vname{font-size:13px;font-weight:700}
+.vdesc{font-size:11.5px;color:var(--muted-foreground);margin-top:3px;line-height:1.45}
+.vbadge{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;margin-left:6px;vertical-align:middle;
+  background:color-mix(in oklab,var(--brand) 16%,transparent);color:var(--brand)}
+.col-body{padding:11px;display:flex;flex-direction:column;gap:8px;background:color-mix(in oklab,var(--card) 100%,transparent)}
+
+/* shared card chrome (matches the app) */
+.kcard{position:relative;background:var(--background);border:1px solid var(--border);border-radius:var(--radius-sm);
+  box-shadow:var(--shadow);overflow:hidden}
+body.dark .kcard{background:var(--background)}
+body:not(.dark) .kcard{background:var(--sidebar-accent)}
+.kcard.active-card{background:var(--sidebar-accent)}
+body.dark .kcard.active-card{background:var(--background)}
+.kcard:hover{border-color:var(--muted-foreground)}
+.kcard-head{display:flex;align-items:center;gap:6px;padding:7px 10px 7px 13px}
+.kcard.compact .kcard-head{padding:6px 9px 6px 13px}
+.kcard-title{font-size:13px;font-weight:600;color:var(--card-foreground);line-height:1.35;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kcard.done .kcard-title{color:var(--muted-foreground);font-weight:500}
+.kcard-go{display:inline-flex;align-items:center;gap:3px;height:18px;padding:0 6px;border:none;background:transparent;
+  border-radius:4px;color:var(--muted-foreground);font-size:10.5px;font-weight:600;flex:none;cursor:pointer}
+.kcard-go:hover{background:var(--secondary);color:var(--success)}
+.kcard-chev{width:16px;height:16px;color:var(--text-dim);flex:none}
+.kcard-foot{display:flex;align-items:center;gap:6px;padding:0 8px 6px 13px;margin-top:-1px}
+.foot-spacer{flex:1}
+.kcard-ddl{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:500;color:var(--text-dim);opacity:.6}
+.kcard-more{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;
+  border-radius:4px;color:var(--muted-foreground);flex:none;cursor:pointer}
+.kcard-more:hover{background:var(--secondary);color:var(--foreground)}
+svg{display:block}
+
+/* ---- left priority bar ---- */
+.kcard-bar{position:absolute;left:0;top:0;bottom:0;width:4px;border:none;padding:0;cursor:pointer;z-index:1}
+
+/* VARIANT A — softened bar (only P0 loud) + clickable chip */
+.va .kcard[data-prio=P0] .kcard-bar{background:var(--destructive)}
+.va .kcard[data-prio=P1] .kcard-bar{background:color-mix(in oklab,var(--priority) 50%,transparent);width:3px}
+.va .kcard[data-prio=P2] .kcard-bar{background:color-mix(in oklab,var(--border) 70%,transparent);width:3px}
+
+/* VARIANT B — NO bar, colored clickable chip only */
+.vb .kcard-bar{display:none}
+.vb .kcard-head{padding-left:10px}.vb .kcard.compact .kcard-head{padding-left:9px}
+.vb .kcard-foot{padding-left:10px}
+
+/* VARIANT C — faithful v7 (loud solid bar) + chip */
+.vc .kcard[data-prio=P0] .kcard-bar{background:var(--destructive)}
+.vc .kcard[data-prio=P1] .kcard-bar{background:var(--priority)}
+.vc .kcard[data-prio=P2] .kcard-bar{background:color-mix(in oklab,var(--border) 70%,transparent)}
+
+/* ---- the clickable priority chip (new) ---- */
+.prio-chip{display:inline-flex;align-items:center;gap:3px;height:18px;padding:0 6px;border-radius:5px;border:none;
+  font-size:10px;font-weight:700;letter-spacing:.3px;cursor:pointer;flex:none}
+.prio-chip[data-p=P0]{background:color-mix(in oklab,var(--destructive) 15%,transparent);color:var(--destructive)}
+.prio-chip[data-p=P1]{background:color-mix(in oklab,var(--priority) 15%,transparent);color:var(--priority)}
+.prio-chip[data-p=P2]{background:var(--muted);color:var(--muted-foreground)}
+.prio-chip:hover{filter:brightness(1.06);outline:1px solid color-mix(in oklab,currentColor 35%,transparent)}
+
+/* mini popover demo */
+.pop{position:absolute;z-index:20;width:150px;background:var(--popover);border:1px solid var(--border);
+  border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:5px;font-size:12px}
+.pop .pl{font-size:9.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--text-dim);padding:4px 6px 2px}
+.pop button{display:flex;width:100%;align-items:center;gap:8px;border:none;background:transparent;border-radius:5px;
+  padding:5px 6px;font-size:12px;color:var(--foreground);cursor:pointer;text-align:left}
+.pop button:hover{background:var(--accent)}
+.pop .dot{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--brand)}
+
+.legend{margin-top:26px;font-size:12px;color:var(--muted-foreground)}
+.legend b{color:var(--foreground)}
+.note{margin-top:8px;font-size:11.5px;color:var(--text-dim);line-height:1.6}
+</style>
+</head>
+<body>
+<button class="toggle" onclick="document.body.classList.toggle('dark')">日间 / 夜间</button>
+<div class="wrap">
+  <h1>优先级样式预览 — 左色条 vs 标签</h1>
+  <p class="sub">同一组任务（P0 / P1 / P1 / P2）在三种方案下的样子。每张卡都带 <b>可点击的优先级标签</b>（点击弹出 P0/P1/P2 切换，A 方案已画出弹层示意）。</p>
+
+  <div class="grid">
+
+    <!-- VARIANT A -->
+    <section class="variant va">
+      <div class="vhead"><span class="vname">A · 弱化色条 + 标签</span><span class="vbadge">推荐</span>
+        <div class="vdesc">只有 P0 红条醒目；P1 橙降到 50%、更细；P2 极淡。色条做「环境扫视」，footer 标签做「明示+点击改」。</div></div>
+      <div class="col-body">
+        <!-- active card with open popover -->
+        <div class="kcard active-card" data-prio=P1 style="position:relative">
+          <button class="kcard-bar"></button>
+          <div class="kcard-head">
+            <span class="dotlive" style="width:6px;height:6px;border-radius:50%;background:var(--success);flex:none"></span>
+            <span class="kcard-title">一方知识库清洗流水线</span>
+            <button class="kcard-go">▷ 启动</button>
+            <svg class="kcard-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <div class="kcard-foot">
+            <button class="prio-chip" data-p=P1>P1</button>
+            <span class="kcard-ddl">📅 截止</span>
+            <span class="foot-spacer"></span>
+            <button class="kcard-more">···</button>
+          </div>
+          <div class="pop" style="left:13px;top:54px">
+            <div class="pl">优先级</div>
+            <button><span class="prio-chip" data-p=P0 style="cursor:default">P0</span> 高</button>
+            <button><span class="prio-chip" data-p=P1 style="cursor:default">P1</span> 中 <span class="dot"></span></button>
+            <button><span class="prio-chip" data-p=P2 style="cursor:default">P2</span> 低</button>
+          </div>
+          <div style="height:60px"></div>
+        </div>
+        <div class="kcard compact" data-prio=P0><button class="kcard-bar"></button><div class="kcard-head"><span class="kcard-title">版本兼容治理（P0 示例）</span><button class="prio-chip" data-p=P0>P0</button></div></div>
+        <div class="kcard compact" data-prio=P1><button class="kcard-bar"></button><div class="kcard-head"><span class="kcard-title">海外开发者知识库 MCP 接入</span><button class="prio-chip" data-p=P1>P1</button></div></div>
+        <div class="kcard compact" data-prio=P1><button class="kcard-bar"></button><div class="kcard-head"><span class="kcard-title">三方集成知识库清洗流水线</span><button class="prio-chip" data-p=P1>P1</button></div></div>
+        <div class="kcard compact" data-prio=P2><button class="kcard-bar"></button><div class="kcard-head"><span class="kcard-title">学习：transport 鉴权差异</span><button class="prio-chip" data-p=P2>P2</button></div></div>
+      </div>
+    </section>
+
+    <!-- VARIANT B -->
+    <section class="variant vb">
+      <div class="vhead"><span class="vname">B · 去色条 · 仅标签</span>
+        <div class="vdesc">完全去掉左色条，优先级只用一个彩色标签呈现。最干净，彻底消灭「一片橙条」；点击标签改优先级。</div></div>
+      <div class="col-body">
+        <div class="kcard active-card" data-prio=P1>
+          <div class="kcard-head">
+            <span class="dotlive" style="width:6px;height:6px;border-radius:50%;background:var(--success);flex:none"></span>
+            <span class="kcard-title">一方知识库清洗流水线</span>
+            <button class="kcard-go">▷ 启动</button>
+            <svg class="kcard-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <div class="kcard-foot">
+            <button class="prio-chip" data-p=P1>P1</button>
+            <span class="kcard-ddl">📅 截止</span>
+            <span class="foot-spacer"></span>
+            <button class="kcard-more">···</button>
+          </div>
+        </div>
+        <div class="kcard compact" data-prio=P0><div class="kcard-head"><span class="kcard-title">版本兼容治理（P0 示例）</span><button class="prio-chip" data-p=P0>P0</button></div></div>
+        <div class="kcard compact" data-prio=P1><div class="kcard-head"><span class="kcard-title">海外开发者知识库 MCP 接入</span><button class="prio-chip" data-p=P1>P1</button></div></div>
+        <div class="kcard compact" data-prio=P1><div class="kcard-head"><span class="kcard-title">三方集成知识库清洗流水线</span><button class="prio-chip" data-p=P1>P1</button></div></div>
+        <div class="kcard compact" data-prio=P2><div class="kcard-head"><span class="kcard-title">学习：transport 鉴权差异</span><button class="prio-chip" data-p=P2>P2</button></div></div>
+      </div>
+    </section>
+
+    <!-- VARIANT C -->
+    <section class="variant vc">
+      <div class="vhead"><span class="vname">C · 忠实 v7 实色条 + 标签</span>
+        <div class="vdesc">保持 v7 的 4px 实色左条（P1 满橙），再加可点击标签。色条最醒目，但 P1 多时仍会「一片橙」。</div></div>
+      <div class="col-body">
+        <div class="kcard active-card" data-prio=P1>
+          <button class="kcard-bar"></button>
+          <div class="kcard-head">
+            <span class="dotlive" style="width:6px;height:6px;border-radius:50%;background:var(--success);flex:none"></span>
+            <span class="kcard-title">一方知识库清洗流水线</span>
+            <button class="kcard-go">▷ 启动</button>
+            <svg class="kcard-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <div class="kcard-foot">
+            <button class="prio-chip" data-p=P1>P1</button>
+            <span class="kcard-ddl">📅 截止</span>
+            <span class="foot-spacer"></span>
+            <button class="kcard-more">···</button>
+          </div>
+        </div>
+        <div class="kcard compact" data-prio=P0><button class="kcard-bar"></button><div class="kcard-head"><span class="kcard-title">版本兼容治理（P0 示例）</span><button class="prio-chip" data-p=P0>P0</button></div></div>
+        <div class="kcard compact" data-prio=P1><button class="kcard-bar"></button><div class="kcard-head"><span class="kcard-title">海外开发者知识库 MCP 接入</span><button class="prio-chip" data-p=P1>P1</button></div></div>
+        <div class="kcard compact" data-prio=P1><button class="kcard-bar"></button><div class="kcard-head"><span class="kcard-title">三方集成知识库清洗流水线</span><button class="prio-chip" data-p=P1>P1</button></div></div>
+        <div class="kcard compact" data-prio=P2><button class="kcard-bar"></button><div class="kcard-head"><span class="kcard-title">学习：transport 鉴权差异</span><button class="prio-chip" data-p=P2>P2</button></div></div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="legend">
+    <b>标签</b>：P0 红 / P1 橙 / P2 灰，三色一目了然；<b>点击标签</b>即弹优先级菜单（A 已画示意），不必再进 ⋯ 菜单。<br>
+    <span class="note">我的建议：<b>A 方案</b>。左条保留「环境扫视」价值但弱化（一屏 P1 也平静），P0 仍醒目作告警；标签补回明示与一键改优先级。<br>
+    如果你更想彻底干净，就 <b>B</b>（去条只留标签）。点右上角可切夜间看对比。</span>
+  </div>
+</div>
+</body>
+</html>

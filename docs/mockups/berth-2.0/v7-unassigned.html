@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Berth 2.0 · V7 无归属会话</title>
+<style>
+:root{
+  color-scheme:dark;
+  /* 午夜靛蓝 (midnight indigo) — chosen dark palette */
+  --background:#141b2e; --foreground:#b3bcd4; --card:#1f2940; --card-foreground:#c7cfe3;
+  --popover:#283450; --secondary:#2c3852; --muted:#2c3852; --muted-foreground:#8089a3;
+  --accent:#2c3852; --accent-foreground:#dbe1f0; --border:#3a4768; --input:#3a4768; --ring:#56b6ff;
+  --sidebar:#101526; --sidebar-accent:#1f2940; --canvas:#0d1220;
+  --brand:#56b6ff; --brand-foreground:#0d1220;
+  --success:#7ed4a6; --warning:#f0c773; --priority:#e0a060; --purple:#b88cf0; --destructive:#f0707f;
+  --info:var(--brand);
+  --radius:0.625rem; --radius-md:0.5rem; --radius-sm:0.375rem; --text-dim:#6b7280;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --font-mono:'SF Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 2px 8px rgba(0,0,0,.18);
+}
+*{box-sizing:border-box}
+body{ background:var(--background); color:var(--foreground); font:13px/1.5 var(--font-sans); margin:0 }
+
+/* light theme overrides (the toggle in the rail) */
+body.light{
+  --background:#fafafa; --foreground:#383a42; --card:#fff; --card-foreground:#383a42;
+  --popover:#fff; --secondary:#eaecef; --muted:#eaecef; --muted-foreground:#6b7280;
+  --accent:#eaecef; --accent-foreground:#383a42; --border:#e0e2e6; --input:#e0e2e6;
+  --sidebar:#f0f1f3; --sidebar-accent:#e6e8eb; --canvas:#f0f1f3; --text-dim:#9aa0aa;
+  --shadow:0 1px 2px rgba(0,0,0,.08),0 2px 8px rgba(0,0,0,.06);
+}
+
+button{font-family:inherit;color:inherit;cursor:pointer}
+input{font-family:inherit}
+a{color:inherit;text-decoration:none}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--muted-foreground);background-clip:padding-box}
+:focus-visible{outline:2px solid var(--ring);outline-offset:1px;border-radius:var(--radius-sm)}
+
+.icon{display:inline-flex;vertical-align:middle;flex:none}
+
+/* ============ LAYOUT ============ */
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* ---- LEFT RAIL (same chrome as the rest of the set) ---- */
+.rail{
+  width:260px;flex:none;background:var(--sidebar);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;height:100vh;
+}
+.rail-head{display:flex;align-items:center;gap:9px;padding:14px 16px 12px}
+.wordmark{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;letter-spacing:.2px;color:var(--foreground)}
+.wordmark .icon{color:var(--brand)}
+.rail-head .theme-btn{margin-left:auto;width:28px;height:28px;border:1px solid var(--border);background:transparent;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--muted-foreground)}
+.rail-head .theme-btn:hover{background:var(--sidebar-accent);color:var(--foreground)}
+
+.nav{display:flex;flex-direction:column;gap:2px;padding:4px 8px}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:var(--radius-sm);
+  color:var(--muted-foreground);background:transparent;border:none;width:100%;text-align:left;font-size:13px;position:relative;
+}
+.nav-item:hover{background:var(--sidebar-accent);color:var(--foreground)}
+.nav-item.active{background:var(--sidebar-accent);color:var(--accent-foreground);font-weight:600}
+.nav-item.active::before{content:"";position:absolute;left:-8px;top:6px;bottom:6px;width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
+.nav-item .dot-unread{margin-left:auto;width:7px;height:7px;border-radius:50%;border:1.5px solid var(--brand);background:transparent;box-sizing:border-box}
+
+.rail-divider{height:1px;background:var(--border);margin:8px 14px}
+
+.switcher{flex:1;overflow-y:auto;padding:2px 8px 8px}
+.sw-group{margin-top:8px}
+.sw-group-head{
+  display:flex;align-items:center;gap:5px;width:100%;background:none;border:none;
+  padding:5px 6px;color:var(--text-dim);font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;
+}
+.sw-group-head .icon{transition:transform .15s;color:var(--text-dim)}
+.sw-group-head:hover{color:var(--muted-foreground)}
+.sw-group.collapsed .sw-group-body{display:none}
+.sw-group.collapsed .sw-group-head .chev{transform:rotate(-90deg)}
+.sw-count{margin-left:auto;color:var(--text-dim);font-weight:500}
+
+.proj{
+  display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:var(--radius-sm);
+  background:transparent;border:none;width:100%;text-align:left;position:relative;
+}
+.proj:hover{background:var(--sidebar-accent)}
+.proj.selected{background:var(--sidebar-accent)}
+.proj.selected::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:3px;border-radius:3px;background:var(--brand)}
+.proj-status{margin-top:4px;width:8px;height:8px;flex:none;border-radius:50%}
+.proj-status.running{background:var(--success);box-shadow:0 0 0 0 rgba(126,212,166,.5);animation:pulse 2s infinite}
+.proj-status.idle{background:var(--border)}
+.proj-main{min-width:0;flex:1}
+.proj-name{display:block;font-size:13px;font-weight:600;color:var(--foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj.selected .proj-name{color:var(--accent-foreground)}
+.proj-meta{display:block;font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+
+/* the 无归属会话 rail entry — here it is the ACTIVE page */
+.sw-special{
+  margin-top:10px;display:flex;align-items:center;gap:9px;padding:8px;border-radius:var(--radius-sm);
+  background:transparent;border:1px dashed var(--border);width:100%;text-align:left;color:var(--muted-foreground);position:relative;
+}
+.sw-special:hover{background:var(--sidebar-accent);color:var(--foreground);border-style:solid}
+.sw-special .icon{color:var(--muted-foreground)}
+.sw-special .badge-n{margin-left:auto;font-size:11px;background:var(--muted);color:var(--muted-foreground);padding:1px 7px;border-radius:10px}
+.sw-special.active{background:var(--sidebar-accent);color:var(--accent-foreground);border-style:solid;border-color:color-mix(in oklab,var(--brand) 45%,var(--border));font-weight:600}
+.sw-special.active .icon{color:var(--brand)}
+.sw-special.active::before{content:"";position:absolute;left:-8px;top:7px;bottom:7px;width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
+.sw-special.active .badge-n{background:color-mix(in oklab,var(--brand) 20%,transparent);color:var(--brand)}
+
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(126,212,166,.45)}70%{box-shadow:0 0 0 5px rgba(126,212,166,0)}100%{box-shadow:0 0 0 0 rgba(126,212,166,0)}}
+@keyframes blink{0%,50%{opacity:1}50.01%,100%{opacity:0}}
+
+/* ============ MAIN — TWO-PANE: list (left) + content (right) ============ */
+.main{flex:1;min-width:0;height:100vh;display:flex;overflow:hidden;background:var(--background)}
+
+/* ---- pane A: persistent session list ---- */
+.list-pane{
+  width:340px;flex:none;height:100vh;display:flex;flex-direction:column;
+  border-right:1px solid var(--border);background:var(--background);
+}
+.lp-head{flex:none;padding:13px 14px 10px;border-bottom:1px solid var(--border)}
+.lp-title-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.lp-icon{width:24px;height:24px;flex:none;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;
+  background:color-mix(in oklab,var(--brand) 14%,transparent);color:var(--brand)}
+.lp-title{font-size:13px;font-weight:600;color:var(--foreground)}
+.lp-title .n{color:var(--text-dim);font-weight:500;margin-left:4px}
+.lp-hint{margin-left:auto;font-size:11px;color:var(--text-dim)}
+
+.lp-tools{display:flex;align-items:center;gap:8px}
+.search{
+  flex:1;min-width:0;display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:6px 9px;
+}
+.search .icon{color:var(--text-dim)}
+.search input{background:transparent;border:none;outline:none;color:var(--foreground);font-size:12.5px;width:100%;min-width:0}
+.search input::placeholder{color:var(--text-dim)}
+.btn{
+  display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:var(--radius-sm);
+  border:1px solid var(--border);background:var(--card);color:var(--foreground);font-size:12.5px;font-weight:500;white-space:nowrap;
+}
+.btn:hover{background:var(--accent);border-color:var(--muted-foreground)}
+.btn .icon{color:var(--muted-foreground)}
+.btn:hover .icon{color:var(--foreground)}
+
+/* the scrollable list body */
+.lp-body{flex:1;overflow-y:auto;padding:4px 0 60px}
+
+/* light cwd group header — thin 11px muted + count, now COLLAPSIBLE */
+.cwd-head{
+  display:flex;align-items:center;gap:7px;padding:11px 14px 4px;color:var(--text-dim);font-size:11px;font-weight:600;letter-spacing:.2px;
+  width:100%;background:none;border:none;text-align:left;
+}
+.cwd-head:hover{color:var(--muted-foreground)}
+.cwd-head:hover .cwd-path{color:var(--foreground)}
+.cwd-head .chev{color:var(--text-dim);transition:transform .15s;flex:none}
+.cwd-head .icon{color:var(--text-dim)}
+.cwd-head .cwd-path{font-family:var(--font-mono);font-size:11px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cwd-head .cwd-tag{font-family:var(--font-sans);font-size:10px;font-weight:500;color:var(--warning);background:color-mix(in oklab,var(--warning) 14%,transparent);padding:1px 6px;border-radius:8px;flex:none}
+.cwd-head .cwd-n{margin-left:auto;color:var(--text-dim);font-weight:500;flex:none}
+/* collapsed: hide all rows + the show-more line, rotate chevron */
+.cwd-block.collapsed .cwd-rows{display:none}
+.cwd-block.collapsed .cwd-head .chev{transform:rotate(-90deg)}
+
+/* show-more / show-less link — indented to align with row title text */
+.show-more{
+  display:block;width:100%;background:none;border:none;text-align:left;
+  padding:5px 14px 7px;padding-left:44px;color:var(--brand);font-size:11px;font-weight:500;
+}
+.show-more:hover{text-decoration:underline}
+/* when a long group is NOT expanded, hide the overflow rows */
+.cwd-rows:not(.expanded) .srow.extra{display:none}
+
+/* ---- STANDARD LIST ROW: [glyph][cli badge][title flex][right time] ---- */
+.srow{
+  display:flex;align-items:center;gap:9px;padding:0 14px;min-height:34px;height:34px;
+  cursor:pointer;position:relative;
+}
+.srow:hover{background:var(--sidebar-accent)}
+.srow.selected{background:var(--sidebar-accent)}
+.srow.selected::before{content:"";position:absolute;left:0;top:5px;bottom:5px;width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
+
+/* status glyph at left */
+.s-glyph{width:12px;flex:none;display:flex;align-items:center;justify-content:center}
+.dot-running{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 0 rgba(126,212,166,.5);animation:pulse 2s infinite}
+.ring-unread{width:9px;height:9px;border-radius:50%;border:2px solid var(--brand);box-sizing:border-box}
+.dot-idle{width:7px;height:7px;border-radius:50%;background:var(--border)}
+
+/* cli badge */
+.badge{font-size:10.5px;font-weight:700;letter-spacing:.3px;padding:1.5px 7px;border-radius:5px;flex:none;text-transform:lowercase;line-height:1.4}
+.badge.claude{color:var(--brand);background:color-mix(in oklab,var(--brand) 18%,transparent)}
+.badge.codex{color:var(--success);background:color-mix(in oklab,var(--success) 18%,transparent)}
+.badge.coco{color:var(--purple);background:color-mix(in oklab,var(--purple) 18%,transparent)}
+
+.s-title{font-size:13px;font-weight:500;color:var(--foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.srow.selected .s-title{color:var(--accent-foreground)}
+
+.s-right{flex:none;display:flex;align-items:center;gap:1px}
+.s-time{font-size:11px;color:var(--muted-foreground);white-space:nowrap}
+
+/* hover actions replace the timestamp */
+.s-actions{display:none;align-items:center;gap:1px;flex:none}
+.srow:hover .s-actions{display:flex}
+.srow:hover .s-time{display:none}
+.iconbtn{
+  width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;
+  border-radius:var(--radius-sm);color:var(--muted-foreground);
+}
+.iconbtn:hover{background:var(--secondary);color:var(--foreground)}
+.iconbtn.on{color:var(--priority)}
+.iconbtn.danger:hover{color:var(--destructive);background:color-mix(in oklab,var(--destructive) 14%,transparent)}
+
+/* empty-state hint */
+.empty-hint{
+  display:none;flex-direction:column;align-items:center;gap:8px;text-align:center;
+  margin:60px 14px;color:var(--text-dim);
+}
+.empty-hint .icon{color:var(--border);width:34px;height:34px}
+.empty-hint b{color:var(--muted-foreground);font-weight:600;font-size:13px}
+.empty-hint div{font-size:11px}
+
+/* ---- pane B: session content for the selected session ---- */
+.term-pane{flex:1;min-width:0;height:100vh;display:flex;flex-direction:column;background:var(--background)}
+.term-head{
+  flex:none;display:flex;align-items:center;gap:9px;padding:11px 18px;border-bottom:1px solid var(--border);background:var(--background);
+}
+.th-badge{font-size:10.5px;font-weight:700;letter-spacing:.3px;padding:1.5px 7px;border-radius:5px;flex:none;text-transform:lowercase}
+.th-badge.claude{color:var(--brand);background:color-mix(in oklab,var(--brand) 18%,transparent)}
+.th-badge.codex{color:var(--success);background:color-mix(in oklab,var(--success) 18%,transparent)}
+.th-badge.coco{color:var(--purple);background:color-mix(in oklab,var(--purple) 18%,transparent)}
+.th-meta{display:flex;align-items:center;gap:8px;min-width:0}
+.th-title{font-size:13px;font-weight:600;color:var(--foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.th-meta .sep{color:var(--text-dim);flex:none}
+.th-cwd{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);white-space:nowrap;flex:none}
+.th-cwd .default-tag{font-family:var(--font-sans);color:var(--warning);background:color-mix(in oklab,var(--warning) 14%,transparent);padding:0 5px;border-radius:5px;margin-left:5px;font-size:9.5px}
+.th-ship{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:5px;flex:none;display:inline-flex;align-items:center;gap:5px}
+.th-ship.sail{color:var(--success);background:color-mix(in oklab,var(--success) 14%,transparent)}
+.th-ship.sail .gdot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 0 0 rgba(126,212,166,.5);animation:pulse 2s infinite}
+.th-ship.dock{color:var(--brand);background:color-mix(in oklab,var(--brand) 14%,transparent)}
+.th-ship.dock .gdot{width:8px;height:8px;border-radius:50%;border:2px solid var(--brand);box-sizing:border-box}
+.th-ship.moored{color:var(--muted-foreground);background:color-mix(in oklab,var(--muted-foreground) 13%,transparent)}
+.th-ship.moored .gdot{width:6px;height:6px;border-radius:50%;background:var(--border)}
+.th-btns{margin-left:auto;display:flex;gap:6px;flex:none}
+.th-btns .iconbtn{width:28px;height:28px;border:1px solid var(--border);background:var(--card)}
+.th-btns .iconbtn:hover{background:var(--accent)}
+.th-btns .iconbtn.danger:hover{color:var(--destructive);background:color-mix(in oklab,var(--destructive) 14%,transparent);border-color:color-mix(in oklab,var(--destructive) 35%,var(--border))}
+
+/* ============ CHAT TRANSCRIPT (codex/ChatGPT style, replaces raw terminal dump) ============ */
+.chat{flex:1;overflow-y:auto;padding:18px 20px 8px;display:flex;flex-direction:column;gap:16px;min-height:0;
+  font-family:var(--font-sans);font-size:13px;line-height:1.6;color:var(--foreground)}
+.chat .turn{display:flex;flex-direction:column;max-width:100%}
+
+/* USER — right-aligned subtle rounded bubble */
+.chat .turn.user{align-items:flex-end}
+.chat .bubble{
+  max-width:72%;background:var(--secondary);color:var(--accent-foreground);
+  border:1px solid var(--border);border-radius:var(--radius-md);padding:9px 13px;
+  white-space:pre-wrap;word-break:break-word;
+}
+
+/* AGENT — left-aligned, NO bubble, plain rich text on surface */
+.chat .turn.agent{align-items:flex-start}
+.chat .agent .body{max-width:88%}
+.chat .agent .body p{margin:0 0 7px}
+.chat .agent .body p:last-child{margin-bottom:0}
+.chat .agent .body ol,.chat .agent .body ul{margin:4px 0 7px;padding-left:20px}
+.chat .agent .body li{margin:2px 0}
+.chat .ts{font-size:11px;color:var(--text-dim);margin-top:6px}
+
+/* inline code chip */
+.chat code.chip{font-family:var(--font-mono);font-size:12px;background:color-mix(in oklab,var(--muted-foreground) 16%,transparent);
+  color:var(--accent-foreground);padding:1px 5px;border-radius:5px}
+
+/* code block — mono, canvas bg, border, top-right 复制 */
+.chat .codeblock{position:relative;margin:8px 0 4px;background:var(--canvas);border:1px solid var(--border);
+  border-radius:var(--radius-md);overflow:hidden;max-width:88%}
+.chat .codeblock pre{margin:0;padding:12px 14px;font-family:var(--font-mono);font-size:12px;line-height:1.65;
+  color:#c8d0e4;overflow-x:auto;white-space:pre}
+.chat .codeblock .copy{position:absolute;top:7px;right:7px;display:inline-flex;align-items:center;gap:5px;
+  padding:3px 8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--popover);
+  color:var(--muted-foreground);font-size:11px;line-height:1}
+.chat .codeblock .copy:hover{color:var(--foreground);border-color:var(--muted-foreground)}
+
+/* collapsible 执行过程 — one-line summary, collapsed by default */
+.chat .proc{margin:2px 0;max-width:88%}
+.chat .proc-head{display:inline-flex;align-items:center;gap:6px;background:none;border:none;padding:3px 0;
+  color:var(--muted-foreground);font-size:12px;font-family:var(--font-sans)}
+.chat .proc-head:hover{color:var(--foreground)}
+.chat .proc-head .chev{transition:transform .15s;color:var(--text-dim)}
+.chat .proc.open .proc-head .chev{transform:rotate(90deg)}
+.chat .proc-body{display:none;margin-top:6px;padding:9px 12px;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius-md)}
+.chat .proc.open .proc-body{display:block}
+.chat .proc-step{font-family:var(--font-mono);font-size:11.5px;line-height:1.6;color:var(--text-dim);white-space:pre-wrap}
+.chat .proc-step .run{color:var(--success)}
+.chat .proc-step.out{color:var(--muted-foreground)}
+
+/* file-edit card */
+.chat .filecard{display:flex;align-items:center;gap:9px;margin:8px 0 4px;max-width:88%;
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:8px 12px}
+.chat .filecard .icon{color:var(--muted-foreground);flex:none}
+.chat .filecard .fc-path{font-family:var(--font-mono);font-size:12px;color:var(--foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat .filecard .fc-add{color:var(--success);font-family:var(--font-mono);font-size:11.5px;flex:none}
+.chat .filecard .fc-del{color:var(--destructive);font-family:var(--font-mono);font-size:11.5px;flex:none}
+.chat .filecard .fc-view{margin-left:auto;color:var(--brand);font-size:12px;flex:none}
+.chat .filecard .fc-view:hover{text-decoration:underline}
+
+/* bottom input box — textarea + ONE action button (发送 ▷ / 终止 ■) */
+.term-input{
+  flex:none;margin:0 18px 16px;display:flex;align-items:flex-end;gap:9px;
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:8px 10px 8px 12px;
+}
+.term-input textarea{
+  flex:1;min-width:0;background:transparent;border:none;outline:none;resize:none;
+  color:var(--foreground);font-family:var(--font-sans);font-size:12.5px;line-height:1.5;
+  min-height:20px;max-height:120px;padding:3px 0;
+}
+.term-input textarea::placeholder{color:var(--text-dim)}
+.term-input .ti-action{
+  flex:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 13px;
+  border-radius:var(--radius-sm);border:none;font-size:12.5px;font-weight:600;white-space:nowrap;
+  background:var(--brand);color:var(--brand-foreground);
+}
+.term-input .ti-action:hover{filter:brightness(1.08)}
+.term-input .ti-action.stop{background:var(--destructive);color:#fff}
+
+/* ---- popover menu (归属到项目 ▾ etc.) ---- */
+.menu{
+  position:fixed;z-index:120;background:var(--popover);border:1px solid var(--border);border-radius:var(--radius-md);
+  box-shadow:0 8px 24px rgba(0,0,0,.4);padding:5px;min-width:208px;display:none;
+}
+.menu.open{display:block}
+.menu-head{padding:6px 9px 5px;color:var(--text-dim);font-size:10.5px;font-weight:600;letter-spacing:.4px;text-transform:uppercase}
+.menu-item{
+  display:flex;align-items:center;gap:9px;width:100%;background:none;border:none;text-align:left;
+  padding:7px 9px;border-radius:var(--radius-sm);color:var(--foreground);font-size:12.5px;
+}
+.menu-item:hover{background:var(--accent)}
+.menu-item .icon{color:var(--muted-foreground)}
+.menu-item .pst{width:8px;height:8px;border-radius:50%;flex:none}
+.menu-item .pst.running{background:var(--success)}
+.menu-item .pst.idle{background:var(--border)}
+.menu-item.danger{color:var(--destructive)}
+.menu-item.danger .icon{color:var(--destructive)}
+.menu-sep{height:1px;background:var(--border);margin:4px 2px}
+
+/* ---- caption chip ---- */
+.caption{
+  position:fixed;right:14px;bottom:14px;z-index:200;background:var(--popover);border:1px solid var(--border);
+  border-radius:999px;padding:6px 13px;font-size:11.5px;color:var(--muted-foreground);box-shadow:0 6px 20px rgba(0,0,0,.35);
+  display:flex;align-items:center;gap:7px;
+}
+.caption .cdot{width:7px;height:7px;border-radius:50%;background:var(--brand)}
+.caption b{color:var(--foreground);font-weight:600}
+
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);z-index:300;
+  background:var(--popover);border:1px solid var(--border);border-radius:var(--radius-md);padding:9px 16px;
+  font-size:12.5px;color:var(--foreground);box-shadow:0 8px 24px rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:.22s;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ LEFT RAIL ============ -->
+  <aside class="rail">
+    <div class="rail-head">
+      <div class="wordmark"><span class="icon" data-i="anchor"></span> Berth</div>
+      <button class="theme-btn" id="themeToggle" title="切换主题"><span class="icon" data-i="sun"></span></button>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item" title="Now · 跨项目收件箱">
+        <span class="icon" data-i="inbox"></span> Now
+        <span class="dot-unread" title="有未读"></span>
+      </button>
+      <button class="nav-item" title="项目">
+        <span class="icon" data-i="folder"></span> 项目
+      </button>
+    </nav>
+
+    <div class="rail-divider"></div>
+
+    <!-- PROJECT SWITCHER -->
+    <div class="switcher">
+      <div class="sw-group" id="g-pinned">
+        <button class="sw-group-head" data-grp="g-pinned"><span class="icon chev" data-i="chevronDown"></span> 置顶项目</button>
+        <div class="sw-group-body">
+          <button class="proj" title="Berth — ~/Code/berth">
+            <span class="proj-status running"></span>
+            <span class="proj-main">
+              <span class="proj-name">Berth</span>
+              <span class="proj-meta">13 任务 · 3 进行中 · 7 会话 · 2 未读</span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div class="sw-group" id="g-active">
+        <button class="sw-group-head" data-grp="g-active"><span class="icon chev" data-i="chevronDown"></span> 活跃项目 <span class="sw-count">3</span></button>
+        <div class="sw-group-body">
+          <button class="proj" title="berth test"><span class="proj-status idle"></span><span class="proj-main"><span class="proj-name">berth test</span><span class="proj-meta">0 任务 · 0 会话</span></span></button>
+          <button class="proj" title="Zhang Shuai conversation"><span class="proj-status idle"></span><span class="proj-main"><span class="proj-name">Zhang Shuai conversation</span><span class="proj-meta">2 已完成 · 1 会话</span></span></button>
+          <button class="proj" title="dotfiles"><span class="proj-status idle"></span><span class="proj-main"><span class="proj-name">dotfiles</span><span class="proj-meta">4 任务 · 2 会话</span></span></button>
+        </div>
+      </div>
+
+      <div class="sw-group collapsed" id="g-archived">
+        <button class="sw-group-head" data-grp="g-archived"><span class="icon chev" data-i="chevronDown"></span> 已归档项目 <span class="sw-count">1</span></button>
+        <div class="sw-group-body">
+          <button class="proj" title="old-prototype"><span class="proj-status idle"></span><span class="proj-main"><span class="proj-name">old-prototype</span><span class="proj-meta">已归档</span></span></button>
+        </div>
+      </div>
+
+      <!-- the 无归属会话 entry — ACTIVE here -->
+      <a class="sw-special active" href="#" title="无归属会话 — 不属于任何项目的会话">
+        <span class="icon" data-i="terminal"></span>
+        无归属会话
+        <span class="badge-n">10</span>
+      </a>
+    </div>
+
+    <nav class="nav" style="padding-bottom:12px">
+      <div class="rail-divider"></div>
+      <button class="nav-item" title="设置"><span class="icon" data-i="settings"></span> 设置</button>
+    </nav>
+  </aside>
+
+  <!-- ============ MAIN — TWO-PANE ============ -->
+  <main class="main">
+
+    <!-- ---- pane A: persistent session list ---- -->
+    <section class="list-pane">
+      <div class="lp-head">
+        <div class="lp-title-row">
+          <span class="lp-icon"><span class="icon" data-i="terminal"></span></span>
+          <span class="lp-title">无归属会话<span class="n">10</span></span>
+          <span class="lp-hint">按 cwd 分组</span>
+        </div>
+        <div class="lp-tools">
+          <div class="search">
+            <span class="icon" data-i="search"></span>
+            <input id="searchInput" type="text" placeholder="搜索标题 / cwd / CLI">
+          </div>
+          <button class="btn" id="importBtn" title="导入目录 — 把一个目录里散落的会话收编进来">
+            <span class="icon" data-i="folderInput"></span> 导入目录
+          </button>
+        </div>
+      </div>
+
+      <div class="lp-body" id="listBody">
+        <!-- groups + rows rendered by JS from SESSIONS -->
+        <div class="empty-hint" id="emptyHint">
+          <span class="icon" data-i="inbox"></span>
+          <b>没有无归属会话</b>
+          <div>所有会话都已归属到项目。<br>用 <span style="color:var(--brand)">导入目录</span> 收编散落在磁盘上的旧会话。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---- pane B: session content for the selected session ---- -->
+    <section class="term-pane">
+      <!-- SLIM HEADER: cli · title · cwd · status — NO ■停止 / ×关闭 buttons -->
+      <div class="term-head">
+        <span class="th-badge claude" id="thBadge">claude</span>
+        <div class="th-meta">
+          <span class="th-title" id="thTitle">调研 xterm 主题</span>
+          <span class="sep">·</span>
+          <span class="th-cwd" id="thCwd">~/scratch</span>
+        </div>
+        <span class="th-ship moored" id="thShip" style="margin-left:8px"><span class="gdot"></span><span class="lbl">已停泊</span></span>
+      </div>
+
+      <!-- CHAT transcript (codex/ChatGPT style) — rendered by JS per selected session -->
+      <div class="chat" id="chat"></div>
+
+      <!-- BOTTOM INPUT: textarea + ONE action button (发送 ▷ default / 终止 ■ when 在航) -->
+      <div class="term-input">
+        <textarea id="termInputBox" rows="1" placeholder="输入消息发送给 agent…"></textarea>
+        <button class="ti-action" id="termAction" title="发送">发送 <span class="icon" data-i="send"></span></button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- 归属到项目 ▾ + ⋯ popover menu -->
+<div class="menu" id="menu"></div>
+
+<!-- caption chip -->
+<div class="caption"><span class="cdot"></span> <b>v7</b> · 无归属会话</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== inline-SVG icon set ===== */
+const ICONS = {
+  anchor:"<path d='M12 22V8'/><path d='M5 12H2a10 10 0 0 0 20 0h-3'/><circle cx='12' cy='5' r='3'/>",
+  inbox:"<polyline points='22 12 16 12 14 15 10 15 8 12 2 12'/><path d='M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'/>",
+  folder:"<path d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/>",
+  settings:"<circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/>",
+  pin:"<path d='M12 17v5'/><path d='M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z'/>",
+  terminal:"<path d='m7 11 2-2-2-2'/><path d='M11 13h4'/><rect width='18' height='18' x='3' y='3' rx='2'/>",
+  link:"<path d='M9 17H7A5 5 0 0 1 7 7h2'/><path d='M15 7h2a5 5 0 1 1 0 10h-2'/><line x1='8' x2='16' y1='12' y2='12'/>",
+  pencil:"<path d='M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/>",
+  more:"<circle cx='12' cy='12' r='1'/><circle cx='19' cy='12' r='1'/><circle cx='5' cy='12' r='1'/>",
+  chevronDown:"<path d='m6 9 6 6 6-6'/>",
+  chevronRight:"<path d='m9 18 6-6-6-6'/>",
+  copy:"<rect width='14' height='14' x='8' y='8' rx='2' ry='2'/><path d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/>",
+  fileEdit:"<path d='M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10'/><path d='M14 2v4a2 2 0 0 0 2 2h4'/><path d='M10.4 12.6a2 2 0 1 1 3 3L8 21l-4 1 1-4Z'/>",
+  x:"<path d='M18 6 6 18'/><path d='m6 6 12 12'/>",
+  square:"<rect width='18' height='18' x='3' y='3' rx='2'/>",
+  plus:"<path d='M5 12h14'/><path d='M12 5v14'/>",
+  search:"<circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/>",
+  folderInput:"<path d='M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1'/><path d='M2 13h10'/><path d='m9 16 3-3-3-3'/>",
+  folderPlain:"<path d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/>",
+  send:"<path d='M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z'/><path d='m21.854 2.147-10.94 10.939'/>",
+  sun:"<circle cx='12' cy='12' r='4'/><path d='M12 2v2'/><path d='M12 20v2'/><path d='m4.93 4.93 1.41 1.41'/><path d='m17.66 17.66 1.41 1.41'/><path d='M2 12h2'/><path d='M20 12h2'/><path d='m6.34 17.66-1.41 1.41'/><path d='m19.07 4.93-1.41 1.41'/>"
+};
+function svg(name,sz){
+  sz=sz||14;
+  return "<svg viewBox='0 0 24 24' width='"+sz+"' height='"+sz+"' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>"+(ICONS[name]||"")+"</svg>";
+}
+function paintIcons(root){ (root||document).querySelectorAll('[data-i]').forEach(el=>{ el.innerHTML = svg(el.getAttribute('data-i')); }); }
+
+/* ===== the unassigned sessions (~10; ~/scratch holds 6 → 4 show + 2 hide) ===== */
+const SESSIONS = [
+  { id:'s1', cli:'claude', title:'调研 xterm 主题', cwd:'~/scratch', cwdTag:'', time:'1天前',
+    state:'moored', stateLabel:'已停泊', pinned:false,
+    lines:[
+      ['t-dim','$ claude'],
+      ['t-blue','◆ Berth · ~/scratch'],
+      ['','> 帮我对比 xterm.js 几套配色，挑一个贴近午夜靛蓝的'],
+      ['t-dim','正在读取 public/vendor/xterm/ …'],
+      ['','我看了 4 个主题，最接近的是 ','t-amber','midnight-indigo','：背景 #141b2e、'],
+      ['','前景 #b3bcd4，与设计令牌一致。要我把它写进 themes.ts 吗？'],
+      ['prompt','› ','cursor']
+    ]
+  },
+  { id:'s6', cli:'codex', title:'清理 node_modules 体积', cwd:'~/scratch', cwdTag:'', time:'1天前',
+    state:'sail', stateLabel:'在航', pinned:false,
+    lines:[
+      ['t-dim','$ codex'],
+      ['t-green','● codex · ~/scratch'],
+      ['','> 帮我找出 node_modules 里最占空间的包'],
+      ['t-dim','du -sh node_modules/* | sort -h …（运行中）'],
+      ['t-amber','  电脑还在统计，已扫描 1.2GB / 估算 3GB …'],
+      ['prompt','› ','cursor']
+    ]
+  },
+  { id:'s7', cli:'coco', title:'解释一段正则', cwd:'~/scratch', cwdTag:'', time:'2天前',
+    state:'dock', stateLabel:'靠岸·待查收', pinned:false,
+    lines:[
+      ['t-dim','$ coco'],
+      ['t-purple','✦ coco · ~/scratch'],
+      ['','> /(?<=\\$\\{)[^}]+(?=\\})/g 这个正则在匹配什么'],
+      ['t-dim','解析正则 …'],
+      ['','它用前后断言抓 ${...} 里的变量名，本体不含花括号。'],
+      ['','例如 ${FOO_BAR} 命中 FOO_BAR。要我给几个测试用例吗？'],
+      ['prompt','› ','cursor']
+    ]
+  },
+  { id:'s8', cli:'claude', title:'草拟 commit message', cwd:'~/scratch', cwdTag:'', time:'2天前',
+    state:'moored', stateLabel:'已停泊', pinned:false,
+    lines:[
+      ['t-dim','$ claude'],
+      ['t-blue','◆ Berth · ~/scratch'],
+      ['','> 根据 staged diff 给我写个 conventional commit'],
+      ['t-dim','读取 git diff --cached …'],
+      ['','feat(list): collapsible cwd groups + show-more in long groups'],
+      ['','要不要我把改动点拆成 body 里的要点列表？'],
+      ['prompt','› ','cursor']
+    ]
+  },
+  { id:'s9', cli:'codex', title:'临时 SQL 拼查询', cwd:'~/scratch', cwdTag:'', time:'3天前',
+    state:'moored', stateLabel:'已停泊', pinned:false,
+    lines:[
+      ['t-dim','$ codex'],
+      ['t-green','● codex · ~/scratch'],
+      ['','> 写个 SQL：按天统计上周每天的活跃会话数'],
+      ['t-dim','生成查询 …'],
+      ['t-green','SELECT date(started_at) d, count(distinct id) FROM sessions'],
+      ['t-green','WHERE started_at >= date(\'now\',\'-7 day\') GROUP BY d ORDER BY d;'],
+      ['','要我顺手加上环比上一周的对比列吗？'],
+      ['prompt','› ','cursor']
+    ]
+  },
+  { id:'s10', cli:'coco', title:'解读一段栈回溯', cwd:'~/scratch', cwdTag:'', time:'4天前',
+    state:'moored', stateLabel:'已停泊', pinned:false,
+    lines:[
+      ['t-dim','$ coco'],
+      ['t-purple','✦ coco · ~/scratch'],
+      ['','> 这段 stack trace 指向哪一层'],
+      ['t-dim','解析 trace …'],
+      ['','顶帧在 reconcile()，但根因在上层 readStore() 返回了 undefined。'],
+      ['','建议在 readStore 出口加断言。要我给补丁吗？'],
+      ['prompt','› ','cursor']
+    ]
+  },
+  { id:'s2', cli:'codex', title:'临时脚本 重命名批处理', cwd:'~/tmp/rename', cwdTag:'', time:'2天前',
+    state:'dock', stateLabel:'靠岸·待查收', pinned:false,
+    lines:[
+      ['t-dim','$ codex'],
+      ['t-green','● codex · ~/tmp/rename'],
+      ['','> 把这个目录里 IMG_*.jpg 按拍摄时间重命名'],
+      ['t-dim','扫描 312 个文件，读取 EXIF …'],
+      ['t-green','✓ 生成 rename.sh（dry-run），预览前 3 条：'],
+      ['t-amber','  IMG_4821.jpg → 2024-03-02_14-08-11.jpg'],
+      ['t-amber','  IMG_4822.jpg → 2024-03-02_14-09-40.jpg'],
+      ['','要我直接执行，还是先给你看完整 diff？'],
+      ['prompt','› ','cursor']
+    ]
+  },
+  { id:'s3', cli:'coco', title:'看一段日志', cwd:'~/Downloads', cwdTag:'', time:'3天前',
+    state:'moored', stateLabel:'已停泊', pinned:false,
+    lines:[
+      ['t-dim','$ coco'],
+      ['t-purple','✦ coco · ~/Downloads'],
+      ['','> server-2024.log 里这段 panic 是什么意思'],
+      ['t-dim','读取 server-2024.log（最后 2000 行）…'],
+      ['t-red','panic: runtime error: invalid memory address or nil pointer'],
+      ['','你的 reconcile() 在 sessions[id] 不存在时解引用了它。'],
+      ['','加一个 nil 判空就能修。要看具体行号吗？'],
+      ['prompt','› ','cursor']
+    ]
+  },
+  { id:'s4', cli:'claude', title:'写周报', cwd:'~/.berth/scratch', cwdTag:'默认cwd', time:'4天前',
+    state:'moored', stateLabel:'已停泊', pinned:false,
+    lines:[
+      ['t-dim','$ claude'],
+      ['t-blue','◆ Berth · ~/.berth/scratch'],
+      ['','> 根据我这周的 commit 帮我起一份周报'],
+      ['t-dim','读取 git log（本周 23 次提交）…'],
+      ['','本周主线：Berth 2.0 交互重构。三块产出：'],
+      ['','  1. 会话列表改 pin + cwd 分组  2. 废弃全部会话页  3. 数据层解耦 review'],
+      ['','要我按「进展 / 风险 / 下周计划」三段展开吗？'],
+      ['prompt','› ','cursor']
+    ]
+  },
+  { id:'s5', cli:'codex', title:'测试 codex hook', cwd:'~/Code/sandbox', cwdTag:'', time:'上周',
+    state:'moored', stateLabel:'已停泊', pinned:false,
+    lines:[
+      ['t-dim','$ codex'],
+      ['t-green','● codex · ~/Code/sandbox'],
+      ['','> 验证 trust dialog 预置在旧版 codex 下会不会注入失败'],
+      ['t-dim','启动 codex@0.9.2（旧版）…'],
+      ['t-amber','⚠ 该版本不支持 context injection，已跳过并提示用户'],
+      ['t-green','✓ 行为符合预期：静默降级，无报错'],
+      ['prompt','› ','cursor']
+    ]
+  }
+];
+
+let activeId = SESSIONS[0].id;
+
+/* per-cwd UI state (persists in JS across re-renders): collapsed + show-more expanded */
+const SHOW_MORE_LIMIT = 4;          // first N rows always visible in a long group
+const collapsed = {};               // { [cwd]: true } when the group is folded shut
+const expanded  = {};               // { [cwd]: true } when show-more has been clicked
+
+/* ===== render the list (grouped by cwd) ===== */
+function groupByCwd(list){
+  const order=[]; const map={};
+  list.forEach(s=>{
+    const key=s.cwd;
+    if(!map[key]){ map[key]={cwd:s.cwd, cwdTag:s.cwdTag, rows:[]}; order.push(key); }
+    map[key].rows.push(s);
+  });
+  return order.map(k=>map[k]);
+}
+
+function rowHTML(s, extra){
+  /* IDLE-DOT RULE: glyph ONLY for 在航 (running) and 靠岸·待查收 (unread).
+     已停泊 (idle) rows show NO status dot — keep the row clean. */
+  const glyph = s.state==='dock' ? "<span class='ring-unread' title='靠岸·待查收'></span>"
+              : s.state==='sail' ? "<span class='dot-running' title='在航'></span>"
+              : "";   // moored → no glyph (s-glyph slot stays for alignment)
+  return ""
+    + "<div class='srow"+(s.id===activeId?' selected':'')+(extra?' extra':'')+"' data-id='"+s.id+"' title='"+s.title+" — "+s.cwd+"'>"
+    +   "<span class='s-glyph'>"+glyph+"</span>"
+    +   "<span class='badge "+s.cli+"'>"+s.cli+"</span>"
+    +   "<span class='s-title'>"+s.title+"</span>"
+    +   "<span class='s-right'>"
+    +     "<span class='s-time'>"+s.time+"</span>"
+    +     "<span class='s-actions'>"
+    +       "<button class='iconbtn"+(s.pinned?' on':'')+"' data-act='pin' title='置顶'>"+svg('pin')+"</button>"
+    +       "<button class='iconbtn' data-act='rename' title='重命名'>"+svg('pencil')+"</button>"
+    +       "<button class='iconbtn' data-act='more' title='更多 — 归属到项目 / 停止'>"+svg('more')+"</button>"
+    +     "</span>"
+    +   "</span>"
+    + "</div>";
+}
+
+function renderList(filter){
+  filter = (filter||'').trim().toLowerCase();
+  const visible = SESSIONS.filter(s=>{
+    if(!filter) return true;
+    return (s.title+' '+s.cwd+' '+s.cli).toLowerCase().includes(filter);
+  });
+  const body=document.getElementById('listBody');
+  const hint=document.getElementById('emptyHint');
+  [...body.querySelectorAll('.cwd-block')].forEach(n=>n.remove());
+
+  if(visible.length===0){ hint.style.display='flex'; return; }
+  hint.style.display='none';
+
+  const groups=groupByCwd(visible);
+  const frag=document.createDocumentFragment();
+  groups.forEach(g=>{
+    const block=document.createElement('div');
+    const isCollapsed = !!collapsed[g.cwd];
+    const isExpanded  = !!expanded[g.cwd];
+    block.className='cwd-block'+(isCollapsed?' collapsed':'');
+
+    const tag = g.cwdTag ? "<span class='cwd-tag'>"+g.cwdTag+"</span>" : "";
+    const overflow = g.rows.length - SHOW_MORE_LIMIT;   // >0 ⇒ needs show-more
+    const rowsHTML = g.rows.map((s,i)=>rowHTML(s, overflow>0 && i>=SHOW_MORE_LIMIT)).join('');
+    let moreHTML='';
+    if(overflow>0){
+      moreHTML = isExpanded
+        ? "<button class='show-more' data-more='"+g.cwd+"'>收起</button>"
+        : "<button class='show-more' data-more='"+g.cwd+"'>展开更多 ("+overflow+")</button>";
+    }
+
+    block.innerHTML =
+        "<button class='cwd-head' data-cwd='"+g.cwd+"'>"
+      +   "<span class='icon chev'>"+svg('chevronDown',12)+"</span>"
+      +   svg('folderPlain',12)
+      +   "<span class='cwd-path'>"+g.cwd+"</span>"+tag
+      +   "<span class='cwd-n'>"+g.rows.length+"</span>"
+      + "</button>"
+      + "<div class='cwd-rows"+(isExpanded?' expanded':'')+"'>"+rowsHTML+moreHTML+"</div>";
+    frag.appendChild(block);
+  });
+  body.insertBefore(frag, hint);
+  bindGroups();
+  bindRows();
+}
+
+/* ===== cwd group: collapse toggle + show-more toggle ===== */
+function bindGroups(){
+  document.querySelectorAll('.cwd-head').forEach(h=>{
+    h.addEventListener('click',()=>{
+      const cwd=h.dataset.cwd;
+      collapsed[cwd]=!collapsed[cwd];
+      h.closest('.cwd-block').classList.toggle('collapsed', !!collapsed[cwd]);
+    });
+  });
+  document.querySelectorAll('.show-more').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const cwd=b.dataset.more;
+      expanded[cwd]=!expanded[cwd];
+      renderList(document.getElementById('searchInput').value);
+    });
+  });
+}
+
+/* ===== content swap (no navigation, highlight moves) ===== */
+function selectSession(id){
+  const s=SESSIONS.find(x=>x.id===id); if(!s) return;
+  activeId=id;
+  document.querySelectorAll('.srow').forEach(r=>r.classList.toggle('selected', r.dataset.id===id));
+  const badge=document.getElementById('thBadge');
+  badge.className='th-badge '+s.cli; badge.textContent=s.cli;
+  document.getElementById('thTitle').textContent=s.title;
+  document.getElementById('thCwd').innerHTML=s.cwd+(s.cwdTag?"<span class='default-tag'>"+s.cwdTag+"</span>":'');
+  const sh=document.getElementById('thShip');
+  sh.className='th-ship '+s.state;
+  sh.querySelector('.lbl').textContent=s.stateLabel;
+  syncActionButton(s);
+  renderChat(s);
+}
+function escapeHTML(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ===== CHAT transcript renderer (codex/ChatGPT style) =====
+   ~2 user turns (right) + ~2 agent turns (left), with ONE collapsible 执行过程,
+   ONE code block, and ONE file-edit card. The opening user message is swapped per
+   session (nice touch); the rest is a shared Berth-2.0-flavoured conversation. */
+function firstUserMsg(s){
+  // pull the first '> …' prompt line out of the legacy terminal lines as the opener
+  for(const parts of s.lines){
+    const txt = parts[parts.length-1];
+    if(typeof txt==='string' && txt.trim().startsWith('>')) return txt.replace(/^\s*>\s?/,'');
+  }
+  return '继续';
+}
+function renderChat(s){
+  const chat=document.getElementById('chat');
+  const opener = escapeHTML(firstUserMsg(s));
+  chat.innerHTML =
+    // turn 1 — user (swapped per session)
+      "<div class='turn user'><div class='bubble'>"+opener+"</div></div>"
+
+    // turn 2 — agent: collapsible 执行过程 + prose + a numbered plan
+    + "<div class='turn agent'><div class='body'>"
+    +   "<div class='proc'>"
+    +     "<button class='proc-head'><span class='icon chev'>"+svg('chevronRight',13)+"</span>执行过程 · 用时 1m28s</button>"
+    +     "<div class='proc-body'>"
+    +       "<div class='proc-step'><span class='run'>$ rg -n \"全部会话\" public/</span></div>"
+    +       "<div class='proc-step out'>public/app.js:412  挂载 #all-sessions 视图</div>"
+    +       "<div class='proc-step out'>public/index.html:88  &lt;nav&gt; 里的「全部会话」入口</div>"
+    +       "<div class='proc-step'><span class='run'>$ npm test</span></div>"
+    +       "<div class='proc-step out'>Tests: 142 passed, 0 failed (3.1s)</div>"
+    +     "</div>"
+    +   "</div>"
+    +   "<p>看完了。2.0 的 IA 把入口收敛成 <code class='chip'>Now</code> + <code class='chip'>项目</code> 两个，"
+    +   "原来的「全部会话」页要废弃，散落的会话走「无归属会话」这一处收编。建议分三步：</p>"
+    +   "<ol><li>把「全部会话」入口从 <code class='chip'>nav</code> 摘掉，路由重定向到 Now</li>"
+    +   "<li>会话按 <code class='chip'>cwd</code> 分组，沿用列表行约定</li>"
+    +   "<li>空态引导用户用「导入目录」收编旧会话</li></ol>"
+    + "</div><div class='ts'>11:03</div></div>"
+
+    // turn 3 — user follow-up
+    + "<div class='turn user'><div class='bubble'>第 1 步先做，把入口摘掉并加重定向。改完跑一下测试。</div></div>"
+
+    // turn 4 — agent: prose + code block + file-edit card
+    + "<div class='turn agent'><div class='body'>"
+    +   "<p>已摘掉入口，并把旧路径 <code class='chip'>#all-sessions</code> 重定向到 Now：</p>"
+    +   "<div class='codeblock'><button class='copy'>"+svg('copy',12)+" 复制</button>"
+    +     "<pre>// router.js — 旧入口收敛到 Now\n"
+    +     "route('/all-sessions', () => {\n"
+    +     "  redirect('/now');            // 2.0：废弃全部会话页\n"
+    +     "});</pre>"
+    +   "</div>"
+    +   "<div class='filecard'><span class='icon' data-i='fileEdit'></span>"
+    +     "<span class='fc-path'>已编辑 public/app.js</span>"
+    +     "<span class='fc-add'>+12</span><span class='fc-del'>−3</span>"
+    +     "<a class='fc-view' href='#'>查看</a></div>"
+    +   "<p>测试全绿（142 passed）。要不要我接着做第 2 步的 cwd 分组？</p>"
+    + "</div><div class='ts'>11:06</div></div>";
+
+  paintIcons(chat);
+  bindChat(chat);
+  chat.scrollTop=0;
+}
+function bindChat(root){
+  root.querySelectorAll('.proc-head').forEach(h=>{
+    h.addEventListener('click', ()=> h.closest('.proc').classList.toggle('open'));
+  });
+  root.querySelectorAll('.codeblock .copy').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const code=b.parentElement.querySelector('pre').textContent;
+      if(navigator.clipboard) navigator.clipboard.writeText(code).catch(()=>{});
+      toast('已复制代码');
+    });
+  });
+}
+
+/* ===== row interactions ===== */
+function bindRows(){
+  document.querySelectorAll('.srow').forEach(row=>{
+    row.addEventListener('click', e=>{
+      if(e.target.closest('.iconbtn')) return;
+      selectSession(row.dataset.id);
+    });
+  });
+  document.querySelectorAll('.srow .iconbtn').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      e.stopPropagation();
+      const act=btn.dataset.act;
+      const id=btn.closest('.srow').dataset.id;
+      const s=SESSIONS.find(x=>x.id===id);
+      if(act==='pin'){ s.pinned=!s.pinned; btn.classList.toggle('on'); toast(s.pinned?'已置顶':'已取消置顶'); }
+      else if(act==='rename'){ toast('重命名 “'+s.title+'”（演示）'); }
+      else if(act==='more'){ openRowMenu(btn, s); }
+    });
+  });
+}
+
+/* ===== ⋯ menu (归属到项目 ▾, kill) ===== */
+const PROJECTS=[
+  {name:'Berth', state:'running', meta:'~/Code/berth'},
+  {name:'dotfiles', state:'idle', meta:'~/dotfiles'},
+  {name:'Zhang Shuai conversation', state:'idle', meta:''}
+];
+function openRowMenu(anchor, s){
+  const menu=document.getElementById('menu');
+  menu.innerHTML =
+      "<div class='menu-head'>归属到项目 ▾</div>"
+    + PROJECTS.map(p=>"<button class='menu-item' data-assign='"+p.name+"'><span class='pst "+p.state+"'></span>"+p.name+"</button>").join('')
+    + "<button class='menu-item' data-assign='__new'>"+svg('plus')+"新建项目并归属…</button>"
+    + "<div class='menu-sep'></div>"
+    + "<button class='menu-item danger' data-kill='1'>"+svg('square')+"停止会话</button>";
+  const r=anchor.getBoundingClientRect();
+  menu.style.display='block';
+  let top=r.bottom+6, left=r.right-208;
+  if(left<8) left=8;
+  if(top+menu.offsetHeight>window.innerHeight-8) top=r.top-menu.offsetHeight-6;
+  menu.style.top=top+'px'; menu.style.left=left+'px';
+  menu.classList.add('open');
+  menu.querySelectorAll('[data-assign]').forEach(b=>b.addEventListener('click',()=>{
+    const v=b.getAttribute('data-assign');
+    closeMenu();
+    toast(v==='__new' ? '新建项目并归属 “'+s.title+'”（演示）' : '已归属 “'+s.title+'” → '+v);
+  }));
+  menu.querySelector('[data-kill]').addEventListener('click',()=>{ closeMenu(); toast('已停止 “'+s.title+'”（演示）'); });
+}
+function closeMenu(){ const m=document.getElementById('menu'); m.classList.remove('open'); m.style.display='none'; }
+document.addEventListener('click', e=>{ if(!e.target.closest('#menu') && !e.target.closest('[data-act=more]')) closeMenu(); });
+
+/* ===== bottom input — ONE action button: 发送 ▷ (default) / 终止 ■ (when 在航) ===== */
+function syncActionButton(s){
+  const btn=document.getElementById('termAction');
+  if(s.state==='sail'){           // running → button becomes 终止 ■
+    btn.classList.add('stop');
+    btn.innerHTML='终止 '+svg('square');
+    btn.title='终止会话';
+  }else{                          // otherwise → 发送 ▷
+    btn.classList.remove('stop');
+    btn.innerHTML='发送 '+svg('send');
+    btn.title='发送';
+  }
+}
+function doAction(){
+  const s=SESSIONS.find(x=>x.id===activeId); if(!s) return;
+  const box=document.getElementById('termInputBox');
+  if(s.state==='sail'){           // 终止 — stop the running session
+    s.state='moored'; s.stateLabel='已停泊';
+    selectSession(activeId);      // refresh header + button
+    renderList(document.getElementById('searchInput').value);
+    toast('已终止 “'+s.title+'”（演示）');
+    return;
+  }
+  const v=box.value.trim(); if(!v) return;     // 发送
+  toast('已发送：'+v+'（演示）'); box.value='';
+}
+document.getElementById('termAction').addEventListener('click', doAction);
+document.getElementById('termInputBox').addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); doAction(); }
+});
+
+/* ===== search ===== */
+document.getElementById('searchInput').addEventListener('input', e=>renderList(e.target.value));
+
+/* ===== import dir ===== */
+document.getElementById('importBtn').addEventListener('click',()=>toast('导入目录 — 收编磁盘上散落的旧会话（演示）'));
+
+/* ===== toast ===== */
+let toastTimer;
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),1600);
+}
+
+/* ===== theme toggle ===== */
+document.getElementById('themeToggle').addEventListener('click',()=>{
+  document.body.classList.toggle('light');
+  toast(document.body.classList.contains('light')?'浅色主题':'深色主题');
+});
+
+/* ===== sidebar group collapse ===== */
+document.querySelectorAll('.sw-group-head').forEach(h=>{
+  h.addEventListener('click',()=>{ document.getElementById(h.dataset.grp).classList.toggle('collapsed'); });
+});
+
+/* ===== boot ===== */
+paintIcons();
+renderList('');
+selectSession(SESSIONS[0].id);
+</script>
+</body>
+</html>

@@ -38,10 +38,17 @@ export function curatedSessionIds(
   pinned: Iterable<string>,
   attachMap: Map<string, { projectId: string | null }>,
   edges: Iterable<string[]>,
+  sessionImport: Iterable<string> = [],
+  boundLaunch: Iterable<string> = [],
 ): Set<string> {
   const ids = new Set<string>(pinned)
   for (const [id, a] of attachMap) if (a.projectId) ids.add(id)
   for (const sids of edges) for (const id of sids) ids.add(id)
+  // Session-grained import: the new canonical surfacing signal (registering a 货舱 cwd no longer
+  // surfaces all its sessions — only those explicitly imported land here).
+  for (const id of sessionImport) ids.add(id)
+  // Berth-launched sessions surface per-session (was: launch_intent.cwd as a directory-wide root).
+  for (const id of boundLaunch) ids.add(id)
   return ids
 }
 
@@ -57,10 +64,13 @@ export function filterImportedSessions(
   sessions: LogicalSession[],
   roots: string[],
   curatedIds: Set<string>,
+  hiddenIds: Set<string> = new Set(),
 ): LogicalSession[] {
   const rootSet = new Set(roots.map(normDir))
   return sessions.filter(s =>
-    curatedIds.has(s.sessionId) ||
-    (s.cwd != null && rootSet.has(normDir(s.cwd))),
+    !hiddenIds.has(s.sessionId) && (
+      curatedIds.has(s.sessionId) ||
+      (s.cwd != null && rootSet.has(normDir(s.cwd)))
+    ),
   )
 }

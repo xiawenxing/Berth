@@ -1,8 +1,9 @@
-import { readFileSync, writeFileSync, realpathSync } from 'node:fs'
+import { readFileSync, writeFileSync, realpathSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 const CLAUDE_CONFIG = join(homedir(), '.claude.json')
+const codexConfig = () => join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'config.toml')
 
 /**
  * Pure: return `config` with `projects[realCwd].hasTrustDialogAccepted = true`, creating the
@@ -43,6 +44,44 @@ export function ensureClaudeTrust(cwd: string, configPath: string = CLAUDE_CONFI
     if (config?.projects?.[real]?.hasTrustDialogAccepted === true) return
 
     writeFileSync(configPath, JSON.stringify(withTrustedProject(config, real), null, 2))
+  } catch {
+    // best-effort; never block a launch on trust-seeding
+  }
+}
+
+/**
+ * Pure: return `toml` text with a trusted `[projects."<realCwd>"]` table, or null if no change is
+ * needed. codex stores per-directory trust as `[projects."<path>"]\ntrust_level = "trusted"` in
+ * config.toml; if that table header already exists we leave it alone (codex owns it — adding a
+ * duplicate would be invalid TOML), otherwise we APPEND a fresh table. Appending (vs full rewrite)
+ * preserves every existing setting and minimizes clobbering a concurrent codex write.
+ */
+export function withTrustedCodexProject(toml: string, realCwd: string): string | null {
+  const header = `[projects."${realCwd}"]`
+  if (toml.includes(header)) return null
+  return toml.replace(/\n*$/, '\n') + `\n${header}\ntrust_level = "trusted"\n`
+}
+
+/**
+ * Best-effort: mark `cwd` as a trusted codex directory so an interactive (PTY) launch does not block
+ * on the "Do you trust the contents of this directory?" dialog. Same rationale as ensureClaudeTrust:
+ * Berth runs codex unattended in a PTY, so nothing answers the dialog and the positional prompt never
+ * fires. `--dangerously-bypass-approvals-and-sandbox` does NOT clear this gate (verified: the dialog
+ * still appears with it set). codex keys trust by the RESOLVED real path. Never throws.
+ */
+export function ensureCodexTrust(cwd: string, configPath: string = codexConfig()): void {
+  try {
+    let real = cwd
+    try { real = realpathSync(cwd) } catch {}
+
+    let toml = ''
+    try { toml = readFileSync(configPath, 'utf8') } catch {}
+
+    const updated = withTrustedCodexProject(toml, real)
+    if (updated == null) return   // already has a [projects."<real>"] table
+
+    mkdirSync(dirname(configPath), { recursive: true })
+    writeFileSync(configPath, updated)
   } catch {
     // best-effort; never block a launch on trust-seeding
   }

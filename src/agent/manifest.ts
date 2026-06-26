@@ -8,21 +8,25 @@ const TOTAL_BUDGET = 3000     // max chars for total manifest text
 export interface TaskManifestInput {
   kind: 'task'
   projectName: string
+  projectId?: string | null
   docsRoot: string            // absolute Berth docs root; detail refs are relative to it
   todo: Task
   contextDocPath?: string | null
   protocolPath?: string | null
   compactRules?: string[]
+  include?: { project?: boolean; task?: boolean }
 }
 
 export interface ProjectManifestInput {
   kind: 'project'
   projectName: string
+  projectId?: string | null
   docsRoot: string
   projectTodos: Pick<Task, 'title' | 'detailDoc'>[]
   contextDocPath?: string | null
   protocolPath?: string | null
   compactRules?: string[]
+  include?: { project?: boolean; task?: boolean }
 }
 
 export type ManifestInput = TaskManifestInput | ProjectManifestInput
@@ -50,6 +54,7 @@ export function buildManifest(input: ManifestInput, locale: Locale = DEFAULT_LOC
   const m = manifestStrings(locale)
 
   const lines: string[] = []
+  const incl = { project: input.include?.project ?? true, task: input.include?.task ?? true }
 
   // Opening framing line
   const kindLabel = input.kind === 'task' ? m.kindTask : m.kindProject
@@ -57,41 +62,53 @@ export function buildManifest(input: ManifestInput, locale: Locale = DEFAULT_LOC
   lines.push('')
 
   if (input.kind === 'task') {
-    const { todo, projectName } = input
+    if (incl.task) {
+      const { todo, projectName } = input
 
-    lines.push(m.sectionTask)
-    lines.push(`${m.labelTitle}${todo.title}`)
-    lines.push(`${m.labelStatus}${todo.status ?? '—'}`)
-    lines.push(`${m.labelPriority}${todo.priority ?? '—'}`)
-    lines.push(`${m.labelProject}${projectName}`)
+      lines.push(m.sectionTask)
+      lines.push(`${m.labelTitle}${todo.title}`)
+      lines.push(`${m.labelStatus}${todo.status ?? '—'}`)
+      lines.push(`${m.labelPriority}${todo.priority ?? '—'}`)
+      lines.push(`${m.labelProject}${projectName}`)
+      if (input.projectId) lines.push(`${m.labelProjectId}${input.projectId}`)
 
-    if (todo.detailDoc) {
-      const detailPath = detailRefToPath(todo.detailDoc, docsRoot)
-      if (detailPath) {
-        lines.push(`${m.labelDetailDoc}${detailPath}`)
-      }
-    }
-
-  } else {
-    // project kind
-    const { projectName, projectTodos } = input
-
-    lines.push(m.projectHeading(projectName))
-    lines.push('')
-    lines.push(m.pendingDetailDocs)
-
-    for (const todo of projectTodos) {
       if (todo.detailDoc) {
         const detailPath = detailRefToPath(todo.detailDoc, docsRoot)
         if (detailPath) {
-          lines.push(`- ${todo.title}: ${detailPath}`)
+          lines.push(`${m.labelDetailDoc}${detailPath}`)
+        }
+      }
+    }
+  } else {
+    // project kind
+    if (incl.project) {
+      const { projectName, projectTodos } = input
+
+      lines.push(m.projectHeading(projectName))
+      if (input.projectId) lines.push(`${m.labelProjectId}${input.projectId}`)
+      lines.push('')
+      lines.push(m.pendingDetailDocs)
+
+      for (const todo of projectTodos) {
+        if (todo.detailDoc) {
+          const detailPath = detailRefToPath(todo.detailDoc, docsRoot)
+          if (detailPath) {
+            lines.push(`- ${todo.title}: ${detailPath}`)
+          } else {
+            lines.push(`- ${todo.title}: ${m.noDetailDoc}`)
+          }
         } else {
           lines.push(`- ${todo.title}: ${m.noDetailDoc}`)
         }
-      } else {
-        lines.push(`- ${todo.title}: ${m.noDetailDoc}`)
       }
     }
+  }
+
+  // Project scope follows the project gate, independent of the task gate (the three-level model).
+  if (incl.project && input.projectName && input.projectName !== '—') {
+    lines.push('')
+    lines.push('## Berth project scope')
+    for (const r of m.projectScopeRules(input.projectName, input.projectId)) lines.push(`- ${r}`)
   }
 
   // Maintenance block (the §6 compact rules + context/protocol paths) + footer form a PROTECTED tail:

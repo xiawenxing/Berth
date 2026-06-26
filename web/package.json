@@ -1,0 +1,39 @@
+{
+  "name": "berth-web",
+  "private": true,
+  "type": "module",
+  "description": "Berth 2.0 frontend — React SPA (v7 design). Talks to the Node server over /api + /pty + /status.",
+  "scripts": {
+    "dev": "vite",
+    "dev:clean": "BERTH_WEB_PORT=\"${BERTH_WEB_PORT:-5174}\" BERTH_API_PORT=\"${BERTH_API_PORT:-7788}\" vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/xterm": "^5.5.0",
+    "clsx": "^2.1.1",
+    "dompurify": "^3.4.11",
+    "lucide-react": "^0.469.0",
+    "marked": "^18.0.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.2",
+    "tailwind-merge": "^2.6.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^25.0.1",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  }
+}
