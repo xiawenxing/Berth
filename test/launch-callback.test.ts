@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseLaunchCallback } from '../src/server/launch-callback'
+import { openStore } from '../src/db/store'
+import { ingestCallback } from '../src/server/launch-callback-watch'
 
 // The real envelope captured from codex 0.142.0's SessionStart hook stdin (probe result).
 const REAL = JSON.stringify({
@@ -33,9 +35,6 @@ describe('parseLaunchCallback', () => {
     expect(parseLaunchCallback(JSON.stringify({ hook_event_name: 'SessionStart', session_id: null, cwd: '/y' }))).toBeNull()
   })
 })
-
-import { openStore } from '../src/db/store'
-import { ingestCallback } from '../src/server/launch-callback-watch'
 
 describe('ingestCallback', () => {
   it('binds the pending codex intent named by the token', () => {
