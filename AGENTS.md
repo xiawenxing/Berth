@@ -50,6 +50,19 @@ git worktree remove ../berth-<task>      # after it's merged back
   working tree — working there gets your uncommitted changes swept into someone else's commit, or
   your branch yanked out from under you. This has happened repeatedly. An isolated worktree is the
   only safe posture.
+- **The controlling session must not camp in the main checkout either — not even for "just looking".**
+  The repo's primary clone (`…/berth`) is a *communal* tree any session may switch out from under you;
+  if your shell's default cwd lives there and you run even read-only `git log/branch/status` there,
+  you'll keep seeing it lurch between branches. So the **first** thing a session does for any work is
+  create its own worktree, then run **all** operations from inside it — inspection git commands
+  included. Treat the primary clone as a no-camp public entrance, not a workspace. (Even this doc edit
+  was made from a dedicated worktree.)
+- **Caveat — a worktree isolates the working dir + index + HEAD, NOT the ref namespace.** All worktrees
+  share one `.git`; branches/refs are global. A worktree protects *your files and which branch your dir
+  is on*, but a concurrent session can still `branch -f` / `reset` / delete any branch (including the
+  one you're on), visible everywhere. Worktrees *reduce* cross-session interference; they don't
+  eliminate it. Corollary: **never force-update or delete a branch another worktree/session has checked
+  out**, and don't be surprised that refs move globally.
 - Worktree setup: symlink `node_modules` (+ `web/node_modules`) and use **Node 20** (better-sqlite3
   ABI) or you'll hit phantom test failures.
 
