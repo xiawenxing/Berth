@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, LogOut, Trash2, Check, CircleDot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/Spinner'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
-import { useLive } from '@/lib/live'
+import { useLiveActions } from '@/lib/live'
 import { useShowMore } from '@/lib/paging'
 import { imagePathPlaceholderText } from '@/lib/format'
 import { ShowMoreToggle } from '@/components/ui/ShowMoreToggle'
@@ -113,19 +113,7 @@ function TaskTag({
   )
 }
 
-/** A session row — faithful to v7 .srow: glyph · cli · title · ship pill · linked · cwd(right) ·
- *  time · hover actions(pin). Whole row opens the session; the pin toggle stops propagation. */
-function Row({
-  s,
-  showCwd,
-  onOpen,
-  onPin,
-  tasks,
-  onGenerateTitle,
-  onLinkTask,
-  onDetach,
-  onUnimport,
-}: {
+interface RowProps {
   s: SessionRow
   showCwd?: boolean
   onOpen?: (s: SessionRow) => void
@@ -135,8 +123,47 @@ function Row({
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
   onDetach?: (id: string) => void // 移出项目 (detach → 无归属)
   onUnimport?: (id: string) => void // 取消导入 (remove from Berth's visible set)
-}) {
-  const live = useLive()
+}
+
+/** React.memo comparator: a single session's /status transition bumps live.rev, which rebuilds EVERY
+ *  row object (new `s`, new handler closures) even though only one row's visible data changed. Compare
+ *  the DISPLAY-affecting fields so unchanged rows skip the re-render. Handler identities are ignored on
+ *  purpose — they're id-based and behaviorally stable; comparing them would defeat the memo since the
+ *  parent makes fresh closures every render. (Returns true ⇒ props equal ⇒ skip re-render.) */
+export function rowPropsEqual(a: RowProps, b: RowProps): boolean {
+  if (a.showCwd !== b.showCwd) return false
+  if (a.tasks !== b.tasks) return false // by ref — ProjectWorkspace memoizes the options array
+  const x = a.s, y = b.s
+  return (
+    x.id === y.id &&
+    x.cli === y.cli &&
+    x.title === y.title &&
+    x.cwd === y.cwd &&
+    x.time === y.time &&
+    x.status === y.status &&
+    x.linkedTask === y.linkedTask &&
+    x.taskId === y.taskId &&
+    x.pinned === y.pinned &&
+    x.titleGenerating === y.titleGenerating &&
+    x.pending === y.pending &&
+    x.pendingOpenable === y.pendingOpenable
+  )
+}
+
+/** A session row — faithful to v7 .srow: glyph · cli · title · ship pill · linked · cwd(right) ·
+ *  time · hover actions(pin). Whole row opens the session; the pin toggle stops propagation. */
+function RowImpl({
+  s,
+  showCwd,
+  onOpen,
+  onPin,
+  tasks,
+  onGenerateTitle,
+  onLinkTask,
+  onDetach,
+  onUnimport,
+}: RowProps) {
+  const actions = useLiveActions()
   const ship: ShipStatus = s.status === 'idle' ? 'moored' : s.status
   const moreBtnRef = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -200,12 +227,12 @@ function Row({
   const markRead = (e: React.MouseEvent) => {
     e.stopPropagation()
     setMenuOpen(false)
-    live.markSeen(s.id)
+    actions.markSeen(s.id)
   }
   const markUnread = (e: React.MouseEvent) => {
     e.stopPropagation()
     setMenuOpen(false)
-    live.markUnread(s.id)
+    actions.markUnread(s.id)
   }
   const displayTitle = imagePathPlaceholderText(s.title)
 
@@ -334,6 +361,10 @@ function Row({
     </div>
   )
 }
+
+/** Memoized: only re-renders a row when its own display data changes (see rowPropsEqual), so one
+ *  session's live-status transition no longer re-renders the entire session list. */
+const Row = memo(RowImpl, rowPropsEqual)
 
 /** A collapsible section (Pin or a cwd group) with a header and optional show-more. */
 function Section({

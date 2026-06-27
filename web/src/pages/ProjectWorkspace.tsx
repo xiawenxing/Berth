@@ -98,6 +98,9 @@ export function ProjectWorkspace() {
   )
   const [tasks, setTasks] = useState<Task[]>(realTasks)
   useEffect(() => setTasks(realTasks), [realTasks])
+  // Stable identity so memoized session Rows (rowPropsEqual compares tasks by ref) only re-render
+  // when the task option list actually changes, not on every parent render.
+  const sessionTaskOptions = useMemo(() => realTasks.map((t) => ({ id: t.id, title: t.title })), [realTasks])
 
   // Resolve each task's linked session IDs (ApiTask.sessions) to real sessions for the card's
   // expansion. Kept SEPARATE from the editable `tasks` state so live-status ticks refresh links
@@ -581,7 +584,7 @@ export function ProjectWorkspace() {
           pin={pin}
           groups={groups}
           pending={pendingRows}
-          tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))}
+          tasks={sessionTaskOptions}
           onLaunch={() => launch('')}
           onResync={doResync}
           syncing={syncing}
@@ -594,7 +597,7 @@ export function ProjectWorkspace() {
           onDetach={onDetach}
           onDetachGroup={onDetachGroup}
         />
-        <CargoDefaults paths={project?.pathsMeta ?? []} tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
+        <CargoDefaults paths={project?.pathsMeta ?? []} tasks={sessionTaskOptions} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
       </div>
 
       <NewTaskDialog

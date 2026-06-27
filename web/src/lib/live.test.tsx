@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { LiveProvider, useLive, type LiveState } from './live'
+import { LiveProvider, useLive, useLiveActions, type LiveActions, type LiveState } from './live'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -69,6 +69,55 @@ async function mountLive(): Promise<{ live: () => LiveState; cleanup: () => void
     cleanup: () => { act(() => root.unmount()); host.remove() },
   }
 }
+
+async function mountBoth(): Promise<{ live: () => LiveState; actions: () => LiveActions; cleanup: () => void }> {
+  let live: LiveState | null = null
+  let actions: LiveActions | null = null
+  function Probe() {
+    live = useLive()
+    actions = useLiveActions()
+    return null
+  }
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  await act(async () => { root.render(<LiveProvider><Probe /></LiveProvider>) })
+  await act(async () => { await Promise.resolve() })
+  return {
+    live: () => live!,
+    actions: () => actions!,
+    cleanup: () => { act(() => root.unmount()); host.remove() },
+  }
+}
+
+describe('useLiveActions — stable slice (session-list re-render storm fix)', () => {
+  // Row consumes ONLY the actions (markSeen/markUnread); it must not re-render on every /status `act`
+  // frame. React.memo can't help while a component subscribes to a context whose value changes each
+  // bump, so the actions live in their own context with a stable identity across activity bumps.
+  it('keeps the same actions object identity after an act frame bumps live state', async () => {
+    const { actions, cleanup } = await mountBoth()
+    try {
+      const before = actions()
+      act(() => FakeWS.last!.emit({ t: 'act', sessionId: 'unrelated', state: 'running' }))
+      const after = actions()
+      expect(after).toBe(before) // identity unchanged ⇒ memoized rows skip the re-render
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('the stable actions still drive unread state', async () => {
+    const { live, actions, cleanup } = await mountBoth()
+    try {
+      act(() => actions().markUnread('z'))
+      expect(live().shipStatus('z', 0)).toBe('dock')
+      act(() => actions().markSeen('z'))
+      expect(live().shipStatus('z', 0)).toBe('moored')
+    } finally {
+      cleanup()
+    }
+  })
+})
 
 describe('seed from server on mount', () => {
   it('renders unread for a session newer than the server epoch', async () => {

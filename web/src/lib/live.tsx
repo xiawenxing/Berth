@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ShipStatus } from './types'
 import { UNREAD_EPOCH_KEY, resolveShipStatus } from './unread'
 import { api } from './api'
@@ -32,7 +32,15 @@ export interface LiveState {
   shipStatus: (sessionId: string, fallbackUpdatedAt?: number) => ShipStatus
 }
 
+/** The mutation half of LiveState — markSeen/markUnread/etc. These are ref-backed and have a STABLE
+ *  identity across activity bumps, so a component that needs only to ACT (e.g. a session-list row's
+ *  标为已读/未读) can subscribe to them without re-rendering on every /status frame. (React.memo can't
+ *  shield a component that subscribes to a context whose value changes each render, so the actions get
+ *  their own context — see useLiveActions.) */
+export type LiveActions = Pick<LiveState, 'markSeen' | 'markSeenMany' | 'markUnread' | 'setActiveSession'>
+
 const Ctx = createContext<LiveState | null>(null)
+const ActionsCtx = createContext<LiveActions | null>(null)
 
 const SEEN_KEY = 'berth-last-seen'
 const UNREAD_KEY = 'berth-unread' // explicit "标为未读" overrides (session ids), independent of activity
@@ -73,7 +81,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // not the pre-POST server snapshot, is the truth.
   const touched = useRef(new Set<string>())
   const [rev, setRev] = useState(0)
-  const bump = () => setRev((n) => n + 1)
+  const bump = useCallback(() => setRev((n) => n + 1), [])
   // Stable so the drawer can register/clear the active session from an effect without re-firing it.
   const setActiveSession = useCallback((sessionId: string | null) => {
     activeSession.current = sessionId
@@ -165,51 +173,75 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const value: LiveState = {
-    activity,
-    updatedAt: updatedAt.current,
-    rev,
-    markSeen: (sessionId) => {
-      touched.current.add(sessionId)
-      const now = Math.floor(Date.now() / 1000)
-      seen.current[sessionId] = now
-      if (unread.current[sessionId]) delete unread.current[sessionId]
-      void api.markSeen([sessionId], now).catch(() => {})
-      bump()
-    },
-    markSeenMany: (sessionIds) => {
-      if (sessionIds.length === 0) return
-      const now = Math.floor(Date.now() / 1000)
-      for (const id of sessionIds) {
-        touched.current.add(id)
-        seen.current[id] = now
-        if (unread.current[id]) delete unread.current[id]
-      }
-      void api.markSeen(sessionIds, now).catch(() => {})
-      bump()
-    },
-    markUnread: (sessionId) => {
-      touched.current.add(sessionId)
-      unread.current[sessionId] = true
-      void api.markUnread(sessionId).catch(() => {})
-      bump()
-    },
-    setActiveSession,
-    shipStatus: (sessionId, fallbackUpdatedAt) => {
-      return resolveShipStatus({
-        activity: activity.get(sessionId),
-        explicitUnread: !!unread.current[sessionId],
-        updatedAt: updatedAt.current.get(sessionId) ?? fallbackUpdatedAt,
-        lastSeen: seen.current[sessionId],
-        unreadEpoch: unreadEpoch.current,
-      })
-    },
-  }
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+  const markSeen = useCallback((sessionId: string) => {
+    touched.current.add(sessionId)
+    const now = Math.floor(Date.now() / 1000)
+    seen.current[sessionId] = now
+    if (unread.current[sessionId]) delete unread.current[sessionId]
+    void api.markSeen([sessionId], now).catch(() => {})
+    bump()
+  }, [bump])
+  const markSeenMany = useCallback((sessionIds: string[]) => {
+    if (sessionIds.length === 0) return
+    const now = Math.floor(Date.now() / 1000)
+    for (const id of sessionIds) {
+      touched.current.add(id)
+      seen.current[id] = now
+      if (unread.current[id]) delete unread.current[id]
+    }
+    void api.markSeen(sessionIds, now).catch(() => {})
+    bump()
+  }, [bump])
+  const markUnread = useCallback((sessionId: string) => {
+    touched.current.add(sessionId)
+    unread.current[sessionId] = true
+    void api.markUnread(sessionId).catch(() => {})
+    bump()
+  }, [bump])
+
+  // Stable across bumps — every dep is itself stable (useCallback). Row subscribes to THIS, so a
+  // /status frame that bumps `rev` no longer re-renders the whole session list, only the rows whose
+  // own data actually changed (see SessionModule's memoized Row).
+  const actions = useMemo<LiveActions>(
+    () => ({ markSeen, markSeenMany, markUnread, setActiveSession }),
+    [markSeen, markSeenMany, markUnread, setActiveSession],
+  )
+
+  // The volatile half: changes each bump (rev / activity), so status-deriving consumers re-read.
+  const value = useMemo<LiveState>(
+    () => ({
+      activity,
+      updatedAt: updatedAt.current,
+      rev,
+      ...actions,
+      shipStatus: (sessionId, fallbackUpdatedAt) =>
+        resolveShipStatus({
+          activity: activity.get(sessionId),
+          explicitUnread: !!unread.current[sessionId],
+          updatedAt: updatedAt.current.get(sessionId) ?? fallbackUpdatedAt,
+          lastSeen: seen.current[sessionId],
+          unreadEpoch: unreadEpoch.current,
+        }),
+    }),
+    [activity, rev, actions],
+  )
+  return (
+    <ActionsCtx.Provider value={actions}>
+      <Ctx.Provider value={value}>{children}</Ctx.Provider>
+    </ActionsCtx.Provider>
+  )
 }
 
 export function useLive(): LiveState {
   const v = useContext(Ctx)
   if (!v) throw new Error('useLive must be used within LiveProvider')
+  return v
+}
+
+/** Subscribe ONLY to the stable mutation actions (markSeen/markUnread/…). Unlike useLive, this does
+ *  NOT re-render its consumer when activity/rev bumps — use it in hot list rows that only need to act. */
+export function useLiveActions(): LiveActions {
+  const v = useContext(ActionsCtx)
+  if (!v) throw new Error('useLiveActions must be used within LiveProvider')
   return v
 }
