@@ -52,6 +52,9 @@ export interface ApiSession {
   activity?: string | null
   deleted?: boolean
   titleGenerating?: boolean // server is generating this session's title right now (drives the spinner)
+  /** Server-side in-flight launch: a live PTY that hasn't written its jsonl yet, surfaced so a closed
+   *  drawer / page reload keeps it (reopening reattaches to the same process). Shown as 启动中…. */
+  launching?: boolean
   /** Client-only: an optimistic in-flight launch placeholder (创建中…), never sent by the server. */
   __pending?: boolean
   __pendingOpenable?: boolean
