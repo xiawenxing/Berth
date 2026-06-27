@@ -101,9 +101,10 @@ instead of an eventually-consistent 40s-window reconcile.
 - Watch `~/.codex/sessions/**` for new `rollout-*.jsonl` creation.
 - On create, read the first line `session_meta` → `{session_id, cwd, timestamp}`.
 - Correlate to a pending intent by `normPath(cwd) == intent.cwd` AND
-  `session_meta.timestamp ∈ [intent.createdAt, intent.createdAt + Δ]`. Because the create event fires
-  within ms of launch, the time window is tiny → mis-bind essentially eliminated vs today's
-  "newest in cwd". Then write the same edge.
+  `session_meta.timestamp ∈ [intent.createdAt, intent.createdAt + Δ]`, **Δ = 90s**, taking the
+  **earliest** rollout in the window. Because the create event fires within ms of launch, the window
+  effectively bind-matches the launch → mis-bind essentially eliminated vs today's "newest in cwd";
+  any genuine ambiguity is corrected by Channel A's launchToken (A wins). Then write the same edge.
 - Always fires (codex must write the rollout), so this alone closes the data-loss hole even if every
   hook path is disabled.
 
@@ -145,15 +146,29 @@ sweep — for a `bound=1` launch whose **pty is dead** AND **sessionId has no js
 older than a grace period** (avoid deleting a session still in its boot window), drop both the intent
 and its dangling edge. Keep the grace period generous so a slow-but-real launch is never swept.
 
-## Open questions / to verify before coding
-- Exact emit mechanism for Channel A: file-drop (berth fs.watch on `launch-callbacks/`) vs localhost
-  HTTP. File-drop avoids needing the hook to know berth's port; lean file-drop.
-- `session_meta.timestamp` is the session's own start time — confirm its clock vs `intent.createdAt`
-  (both wall-clock seconds) and pick Δ generously (e.g. 120s) but bounded.
-- fs.watch on a deep dated tree (`sessions/YYYY/MM/DD/`) — recursive watch portability on macOS
-  (`fs.watch(recursive:true)` is supported on darwin) vs a small poll of the newest day dir.
-- Whether to also key Channel B precisely by injecting a berth marker codex records in `session_meta`
-  (none available today) — if not, A provides the precision, B provides the guarantee.
+## Decisions (locked 2026-06-27)
+1. **Channel A emit = file-drop.** Hook writes `$BERTH_HOME/launch-callbacks/<launchToken>.json`;
+   berth `fs.watch`es that dir, binds, then deletes the file. No localhost HTTP — the hook need not
+   know berth's port, needs no `curl` in its narrow PATH, and a callback dropped while berth is down
+   is picked up by a startup scan of the dir. Inject `BERTH_LAUNCH_TOKEN` into the codex env next to
+   the existing `BERTH_CONTEXT_FILE`.
+2. **Channel B window Δ = 90s**, take the **earliest** rollout in `[intent.createdAt, +Δ]`. Clocks:
+   `intent.createdAt` = berth wall-clock seconds; `session_meta.timestamp` = codex's ISO start time,
+   same machine, naturally a bit later than the intent → window absorbs it.
+3. **Channel B watch = today's dated dir + re-point at midnight**, NOT recursive watch (avoids
+   `fs.watch(recursive)` portability) and NOT a deep tree watch. The watch is **only armed while there
+   is ≥1 pending (unbound) codex intent** — idle otherwise, zero overhead. Lazily ensure/create the
+   day dir if absent before watching.
+4. **Polling fallback (when fs.watch fails to arm) = 5s interval, and ONLY while pending codex intents
+   exist.** Deliberately coarse — this is a safety net behind the watch, not a hot loop; do not set it
+   sub-second (perf). Stops the moment no intent is pending.
+5. **Channel B stays cwd+time correlated (not precise).** No berth marker reaches `session_meta`
+   today; precision is Channel A's job (launchToken), guarantee is Channel B's job. Not pursued.
+
+## Still to verify before coding (mechanics, not decisions)
+- Whether `BERTH_LAUNCH_TOKEN` injected via launch env actually reaches the hook process (the probe
+  confirmed `BERTH_CONTEXT_FILE` does, so high confidence — verify once during impl).
+- macOS `fs.watch` event shape for a new file in the day dir (rename vs change) — handle both.
 
 ## Test plan
 - Unit: pure correlation fns (launchToken→intent; session_meta+timewindow→intent); idempotent
