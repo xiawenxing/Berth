@@ -1136,6 +1136,17 @@ describe('open-local API', () => {
     expect(mockExecFile).not.toHaveBeenCalled()
   })
 
+  it('rejects a non-JSON content-type with 415', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain', Origin: 'http://127.0.0.1:7777' },
+      body: 'target=/etc/hosts',
+    })
+    expect(r.status).toBe(415)
+    expect(mockExecFile).not.toHaveBeenCalled()
+  })
+
   it('returns 404 for a non-existent file target', async () => {
     const port = await listen()
     const r = await fetch(`http://localhost:${port}/api/open-local`, {

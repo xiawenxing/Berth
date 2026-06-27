@@ -32,7 +32,7 @@ import { snapshotActivity, liveCount } from './pty-registry'
 import { ingestDiag, collectDiagForExport } from './diag'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { parseTranscriptChatTurns, parseTranscriptTurns } from './transcript-turns'
-import { resolveOpenTarget, openCommand, isAllowedOrigin } from './open-local'
+import { resolveOpenTarget, openCommand, isAllowedOrigin, type OpenTarget } from './open-local'
 import { parseClaudeJsonlTurns } from '../agent/normalize/claude-jsonl'
 import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd, berthHome } from '../paths'
@@ -279,12 +279,14 @@ api.post('/pick-folder', (req, res) => {
 // the host (this server runs on the user's machine) opens it with the OS default app. Loopback +
 // Origin check + JSON-only (CORS preflight) keep other local pages from abusing this.
 api.post('/open-local', (req, res) => {
+  if (!req.is('application/json'))
+    return res.status(415).json({ ok: false, error: 'content-type must be application/json' })
   if (!isAllowedOrigin(req.get('origin') ?? undefined))
     return res.status(403).json({ ok: false, error: 'forbidden origin' })
   const target = req.body?.target
   if (typeof target !== 'string' || target.trim() === '')
     return res.status(400).json({ ok: false, error: 'target required' })
-  let resolved
+  let resolved: OpenTarget
   try { resolved = resolveOpenTarget(target) }
   catch { return res.status(400).json({ ok: false, error: 'unsupported target' }) }
   if (resolved.kind === 'file' && !existsSync(resolved.value))
