@@ -46,7 +46,7 @@ export function getCache(): LogicalSession[] { return cache }
 export function visibleSessions(): LogicalSession[] {
   const real = cache
   const intents = store.allLaunchIntents()
-  const synth = synthLaunchingSessions(intents, new Set(real.map(s => s.sessionId)), hasLivePty)
+  const synth = synthLaunchingSessions(intents, new Set(real.map(s => s.sessionId)), hasLivePty, store.allHiddenSessionSet())
   return synth.length ? [...real, ...synth] : real
 }
 

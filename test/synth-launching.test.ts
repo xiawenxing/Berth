@@ -40,4 +40,8 @@ describe('synthLaunchingSessions (the live-PTY arm of session visibility)', () =
     const rows = synthLaunchingSessions([intent({ createdAt: 12345 })], new Set(), () => true)
     expect(rows[0].updatedAt).toBe(12345)
   })
+
+  it('honors the session_hidden veto (same as the disk arm)', () => {
+    expect(synthLaunchingSessions([intent({})], new Set(), () => true, new Set(['s1']))).toHaveLength(0)
+  })
 })
