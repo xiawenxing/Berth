@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare } from 'lucide-react'
+import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare, LifeBuoy, Download } from 'lucide-react'
+import { exportDiagLog } from '@/lib/diag'
 import { cn } from '@/lib/utils'
 import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
 import { useData } from '@/lib/data'
@@ -180,6 +181,10 @@ export function Settings() {
           </Row>
         </Card>
 
+        <Card icon={<LifeBuoy size={14} />} title="诊断日志" hint="会话启动 / 连接 / 时序的埋点；遇到问题导出后发给维护者排查">
+          <DiagnosticsRow />
+        </Card>
+
         {/* 数据源 / 同步——暂时隐藏 */}
         {false && (
         <Card icon={<RefreshCw size={14} />} title="数据源 / 同步" hint="任务/项目可双向同步到外部系统">
@@ -353,6 +358,35 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex items-center gap-3">
       <span className="w-32 flex-none text-[12px] text-muted-foreground">{label}</span>
       <div className="flex flex-1 items-center gap-2">{children}</div>
+    </div>
+  )
+}
+function DiagnosticsRow() {
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  const onExport = async () => {
+    setBusy(true)
+    setDone(false)
+    try {
+      await exportDiagLog()
+      setDone(true)
+      window.setTimeout(() => setDone(false), 2500)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        onClick={onExport}
+        disabled={busy}
+        className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[12px] hover:bg-accent disabled:opacity-50"
+      >
+        <Download size={13} /> {busy ? '导出中…' : '导出诊断日志'}
+      </button>
+      <span className="text-[11px] text-text-dim">
+        {done ? '已导出 ✓' : '下载一个 JSON 文件（前后端事件时间线），可直接发给维护者'}
+      </span>
     </div>
   )
 }
