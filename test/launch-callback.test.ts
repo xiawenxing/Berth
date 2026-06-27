@@ -28,5 +28,8 @@ describe('parseLaunchCallback', () => {
   it('returns null when session_id or cwd is missing', () => {
     expect(parseLaunchCallback(JSON.stringify({ hook_event_name: 'SessionStart', cwd: '/y' }))).toBeNull()
     expect(parseLaunchCallback(JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'x' }))).toBeNull()
+    expect(parseLaunchCallback(JSON.stringify({ hook_event_name: 'SessionStart', session_id: '', cwd: '/y' }))).toBeNull()
+    expect(parseLaunchCallback(JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'x', cwd: '' }))).toBeNull()
+    expect(parseLaunchCallback(JSON.stringify({ hook_event_name: 'SessionStart', session_id: null, cwd: '/y' }))).toBeNull()
   })
 })
