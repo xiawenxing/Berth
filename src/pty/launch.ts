@@ -70,7 +70,7 @@ export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
 
 export interface FreshOpts {
   cwd: string; sessionId?: string; injectFile?: string
-  launchToken?: string     // channel A: intent id → hook drops codex envelope to <token>.json
+  callbackToken?: string   // channel A: intent id → hook drops codex envelope to <token>.json
   initialPrompt?: string   // the user's first message (positional prompt)
   model?: string           // per-CLI default model (claude/codex only; coco has no --model flag)
   addDirs?: string[]; cols?: number; rows?: number
@@ -267,8 +267,10 @@ export function launchFresh(cli: AgentCli, o: FreshOpts, flags: { minimal?: bool
     env.BERTH_CONTEXT_FILE = opts.injectFile            // codex hook cats raw text as context
     // Channel A: the SessionStart hook drops codex's envelope (real session_id) to <token>.json so
     // Berth binds the task↔session edge the moment codex starts — token = the launch intent id.
-    if (opts.sessionId === undefined && opts.launchToken) {
-      env.BERTH_LAUNCH_TOKEN = opts.launchToken
+    // sessionId is only pre-minted for claude/coco; codex never gets one until the SessionStart
+    // envelope arrives via the hook — so this check is always true here, kept explicit for clarity.
+    if (opts.sessionId === undefined && opts.callbackToken) {
+      env.BERTH_LAUNCH_TOKEN = opts.callbackToken
       env.BERTH_CALLBACK_DIR = codexCallbackDir()
     }
   }

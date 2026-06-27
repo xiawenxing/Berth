@@ -152,4 +152,12 @@ describe('codex SessionStart hook → callback file (channel A)', () => {
     expect(toml).toContain('$BERTH_LAUNCH_TOKEN')
     expect(toml).toContain('$BERTH_CONTEXT_FILE')   // context injection must NOT regress
   })
+
+  it('codexCallbackDir resolves under BERTH_HOME', () => {
+    const prev = process.env.BERTH_HOME
+    const tmp = mkdtempSync(join(tmpdir(), 'berth-home-'))
+    process.env.BERTH_HOME = tmp
+    try { expect(codexCallbackDir()).toBe(join(tmp, 'launch-callbacks')) }
+    finally { if (prev === undefined) delete process.env.BERTH_HOME; else process.env.BERTH_HOME = prev; rmSync(tmp, { recursive: true, force: true }) }
+  })
 })

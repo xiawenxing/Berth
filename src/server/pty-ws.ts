@@ -521,7 +521,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       cwd,
       sessionId: plan.sessionId ?? undefined,
       injectFile,
-      launchToken: cli === 'codex' ? plan.intent.id : undefined,  // channel A: token = intent id
+      callbackToken: cli === 'codex' ? plan.intent.id : undefined,  // channel A: token = intent id
       initialPrompt: initialPrompt ?? undefined,
       model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
       addDirs: finalAddDirs,
