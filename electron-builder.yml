@@ -25,6 +25,17 @@ mac:
     - dmg
     - zip
   category: public.app-category.developer-tools
+  # Finder/LaunchServices starts the app with NO locale env, so libc/CoreFoundation fall back to the
+  # `C` locale whose macOS system encoding is Mac OS Roman. That makes Chromium write the legacy
+  # `«class TEXT»` clipboard flavor as the UTF-8 bytes reinterpreted as Mac Roman → pasting Berth output
+  # into apps that read that flavor (e.g. Feishu) yields mojibake. Seeding a UTF-8 locale BEFORE launch
+  # (LSEnvironment is applied by LaunchServices pre-exec, so CoreFoundation reads it at init) makes the
+  # system encoding UTF-8 and the flavor correct. A UTF-8 LC_CTYPE overrides the otherwise-inherited
+  # Mac-Roman __CF_USER_TEXT_ENCODING (verified against the macOS pasteboard).
+  extendInfo:
+    LSEnvironment:
+      LANG: en_US.UTF-8
+      LC_CTYPE: en_US.UTF-8
   # Publicly downloaded macOS builds must be Developer ID signed and notarized, otherwise Gatekeeper
   # reports the app as damaged after download. The release script preflights the required credentials.
   forceCodeSigning: true

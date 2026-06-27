@@ -7,6 +7,7 @@ import { resolveAgentBinary, codexHookTrustSupportOrWarm } from './binaries'
 import { gateArgvForBinary, stripAllDegradable } from './flag-gate'
 import { ensureClaudeTrust, ensureCodexTrust } from './trust'
 import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
+import { withUtf8Locale } from './locale'
 import { berthHome } from '../paths'
 import type { AgentCli, LogicalSession } from '../types'
 
@@ -64,7 +65,7 @@ export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
   if (cli === 'claude') ensureClaudeTrust(cwd)
   else if (cli === 'codex') ensureCodexTrust(cwd)
   return spawn(bin, gated(cli, bin, resumeArgv(cli, id)), {
-    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: process.env as any,
+    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: withUtf8Locale(process.env) as any,
   })
 }
 
@@ -170,7 +171,7 @@ export function launchFreshStream(o: FreshOpts): ChildProcess {
   const cwd = ensureLaunchCwd(o.cwd)
   const bin = resolveAgentBinary('claude')
   ensureClaudeTrust(cwd)
-  const env = { ...(process.env as any) }
+  const env = withUtf8Locale({ ...process.env }) as any
   // detached:true → the child leads its own process group, so the registry's process.kill(-pid)
   // reaps the whole tree (MCP/sub-procs). Verified (task smoke test C1).
   return spawnChild(bin, gated('claude', bin, freshArgvStream('claude', o)), { cwd, env, detached: true, stdio: STREAM_STDIO })
@@ -183,7 +184,7 @@ export function resumeSessionStream(s: LogicalSession, o: { model?: string } = {
   const cwd = ensureLaunchCwd(s.cwd)
   const bin = resolveAgentBinary(cli)
   ensureClaudeTrust(cwd)
-  return spawnChild(bin, gated(cli, bin, resumeArgvStream(cli, id, o)), { cwd, env: { ...(process.env as any) }, detached: true, stdio: STREAM_STDIO })
+  return spawnChild(bin, gated(cli, bin, resumeArgvStream(cli, id, o)), { cwd, env: withUtf8Locale({ ...process.env }) as any, detached: true, stdio: STREAM_STDIO })
 }
 
 // ─── Model B per-turn spawn for codex + coco (single-turn-then-exit: each user turn is a fresh
@@ -214,7 +215,7 @@ export function spawnPerTurn(cli: AgentCli, o: PerTurnOpts): ChildProcess {
       : (() => { throw new Error(`per-turn stream not supported for ${cli}`) })()
   // stdin is 'ignore' (prompt rides argv) so codex never blocks on "Reading additional input from
   // stdin…"; detached:true makes the child a group leader for the registry's process.kill(-pid).
-  return spawnChild(bin, gated(cli, bin, argv), { cwd, env: { ...(process.env as any) }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  return spawnChild(bin, gated(cli, bin, argv), { cwd, env: withUtf8Locale({ ...process.env }) as any, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
 export function ensureCodexBerthHookProfile() {
@@ -247,7 +248,7 @@ export function launchFresh(cli: AgentCli, o: FreshOpts, flags: { minimal?: bool
   if (cli === 'codex' && opts.injectFile && codexHookTrustSupportOrWarm(bin) !== true) {
     opts = { ...opts, injectFile: undefined }
   }
-  const env = { ...(process.env as any) }
+  const env = withUtf8Locale({ ...process.env }) as any
   if (cli === 'codex' && opts.injectFile) {
     ensureCodexBerthHookProfile()
     env.BERTH_CONTEXT_FILE = opts.injectFile            // codex hook cats raw text as context
