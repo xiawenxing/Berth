@@ -26,12 +26,13 @@ import { summarizeCompactedContext } from '../agent/context-compact'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { isGeneratingTitle, triggerSessionTitle, titleGist } from './title-service'
 import type { Locale } from '../i18n'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync, statSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { snapshotActivity, liveCount } from './pty-registry'
 import { ingestDiag, collectDiagForExport } from './diag'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { parseTranscriptChatTurns, parseTranscriptTurns } from './transcript-turns'
+import { resolveOpenTarget, openCommand, isAllowedOrigin } from './open-local'
 import { parseClaudeJsonlTurns } from '../agent/normalize/claude-jsonl'
 import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd, berthHome } from '../paths'
@@ -271,6 +272,28 @@ api.post('/pick-folder', (req, res) => {
       cancelled,
     ),
   )
+})
+
+// Open a local-file hyperlink (file:// / absolute path / ~ / custom scheme) clicked in rendered
+// markdown. Browsers block file:// navigation from an http page, so the click is routed here and
+// the host (this server runs on the user's machine) opens it with the OS default app. Loopback +
+// Origin check + JSON-only (CORS preflight) keep other local pages from abusing this.
+api.post('/open-local', (req, res) => {
+  if (!isAllowedOrigin(req.get('origin') ?? undefined))
+    return res.status(403).json({ ok: false, error: 'forbidden origin' })
+  const target = req.body?.target
+  if (typeof target !== 'string' || target.trim() === '')
+    return res.status(400).json({ ok: false, error: 'target required' })
+  let resolved
+  try { resolved = resolveOpenTarget(target) }
+  catch { return res.status(400).json({ ok: false, error: 'unsupported target' }) }
+  if (resolved.kind === 'file' && !existsSync(resolved.value))
+    return res.status(404).json({ ok: false, error: 'file not found' })
+  const { bin, args } = openCommand(process.platform, resolved.value)
+  execFile(bin, args, { timeout: 10000 }, (err) => {
+    if (err) return res.status(500).json({ ok: false, error: String((err as any)?.message ?? err) })
+    res.json({ ok: true })
+  })
 })
 
 api.get('/projects', (_req, res) => {

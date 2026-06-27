@@ -1082,3 +1082,66 @@ describe('POST /api/doc/revert', () => {
     expect((await res.json() as any).error).toBe('invalid commit')
   })
 })
+
+describe('open-local API', () => {
+  beforeEach(() => { mockExecFile.mockReset() })
+
+  // local header const (avoid shadowing the module-level `J`): JSON + loopback Origin.
+  const HDR = { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:7777' }
+
+  it('opens a file target via the platform command and returns ok', async () => {
+    // file existence is checked for kind:'file' — use a path we know exists: this test file's dir.
+    const existing = process.cwd()
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: any, cb: Function) => cb(null, '', ''))
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST', headers: HDR, body: JSON.stringify({ target: existing }),
+    })
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ ok: true })
+    expect(mockExecFile).toHaveBeenCalledTimes(1)
+    const [bin, args] = mockExecFile.mock.calls[0]
+    if (process.platform === 'darwin') { expect(bin).toBe('open'); expect(args).toEqual([existing]) }
+  })
+
+  it('passes a custom scheme through without an existence check', async () => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: any, cb: Function) => cb(null, '', ''))
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST', headers: HDR, body: JSON.stringify({ target: 'obsidian://open?file=x' }),
+    })
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ ok: true })
+    const [, args] = mockExecFile.mock.calls[0]
+    expect(args).toContain('obsidian://open?file=x')
+  })
+
+  it('rejects a missing target with 400', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST', headers: HDR, body: JSON.stringify({}),
+    })
+    expect(r.status).toBe(400)
+    expect(mockExecFile).not.toHaveBeenCalled()
+  })
+
+  it('rejects a foreign origin with 403', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example.com' },
+      body: JSON.stringify({ target: process.cwd() }),
+    })
+    expect(r.status).toBe(403)
+    expect(mockExecFile).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for a non-existent file target', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST', headers: HDR, body: JSON.stringify({ target: '/no/such/path/xyz-123.md' }),
+    })
+    expect(r.status).toBe(404)
+    expect(mockExecFile).not.toHaveBeenCalled()
+  })
+})
