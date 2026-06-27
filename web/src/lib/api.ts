@@ -95,6 +95,17 @@ export interface PreviewSession {
   updatedAt: number
 }
 
+export interface ReadState {
+  lastSeen: Record<string, number>
+  unread: Record<string, true>
+  epoch: number
+}
+export interface ReadStateImport {
+  seen?: Record<string, number>
+  unread?: Record<string, true>
+  epoch?: number
+}
+
 async function getJSON<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: { Accept: 'application/json' } })
   if (!res.ok) throw new Error(`GET ${url} → ${res.status}`)
@@ -200,4 +211,12 @@ export const api = {
   // Context doc read/write (docstore-relative `path`/ref; POST guards on baseMtime).
   readDoc: (path: string) => getJSON<{ content: string; mtime?: number }>(`/api/doc?path=${encodeURIComponent(path)}`),
   saveDoc: (path: string, content: string, baseMtime?: number) => send('POST', '/api/doc', { path, content, baseMtime }),
+  // ── Read-state (dock unread dot), server-authoritative. last_seen is unix SECONDS. ──
+  readState: () => getJSON<ReadState>('/api/read-state'),
+  markSeen: (sessionIds: string[], ts?: number) =>
+    send('POST', '/api/read-state/seen', { sessionIds, ts }),
+  markUnread: (sessionId: string) =>
+    send('POST', '/api/read-state/unread', { sessionId }),
+  importReadState: (payload: ReadStateImport) =>
+    send('POST', '/api/read-state/import', payload),
 }
