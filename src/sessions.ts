@@ -3,7 +3,7 @@ import { listCodexSessions, loadImportLedger } from './adapters/codex'
 import { listCocoSessions } from './adapters/coco'
 import { mergeSessions } from './dedup/identity'
 import { canonicalPathKey } from './path-normalize'
-import type { LogicalSession } from './types'
+import type { LogicalSession, LaunchIntent } from './types'
 
 export interface StoreRoots { claudeRoot: string; codexRoot: string; cocoRoot: string }
 
@@ -73,4 +73,37 @@ export function filterImportedSessions(
       (s.cwd != null && rootSet.has(normDir(s.cwd)))
     ),
   )
+}
+
+/**
+ * The session-visibility model has two arms; `filterImportedSessions` above is the **disk arm** (a
+ * registered/imported session, resolved from the on-disk scan). This is the **live-PTY arm**: an
+ * in-flight Berth launch whose CLI hasn't written its jsonl yet (a jsonl needs a completed turn), so
+ * it's absent from the disk scan. Without it, closing the drawer / reloading the page would strand a
+ * running-but-unlisted agent (the "wedged in 创建中, lost on reload" bug).
+ *
+ * We synthesize a transient `LogicalSession` for each launch intent that (a) has a LIVE pty — gate, so
+ * a dead launch shows no non-recoverable ghost — and (b) isn't already on disk (the real row wins the
+ * moment the jsonl lands). Keyed by the **launch key**: the minted sessionId for claude/coco, or the
+ * intent id for codex (whose real id is unknown until reconcile — so this arm covers codex pre-bind
+ * too, which the curated set alone does NOT). These rows are NEVER persisted; they live only in the
+ * in-memory visible set. Pure (hasLivePty injected).
+ */
+export function synthLaunchingSessions(
+  intents: LaunchIntent[],
+  onDiskIds: Set<string>,
+  hasLivePty: (key: string) => boolean,
+): LogicalSession[] {
+  const out: LogicalSession[] = []
+  const seen = new Set<string>()
+  for (const i of intents) {
+    const key = i.sessionId ?? i.id
+    if (onDiskIds.has(key) || seen.has(key) || !hasLivePty(key)) continue
+    seen.add(key)
+    out.push({
+      sessionId: key, cli: i.cli, cwd: i.cwd, title: null,
+      updatedAt: i.createdAt, contentSourcePath: null, copies: [], deleted: false, launching: true,
+    })
+  }
+  return out
 }

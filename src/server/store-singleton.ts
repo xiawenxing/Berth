@@ -2,8 +2,9 @@ import { homedir } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { openStore } from '../db/store'
-import { collectLogicalSessions, filterImportedSessions, curatedSessionIds as computeCuratedIds } from '../sessions'
+import { collectLogicalSessions, filterImportedSessions, curatedSessionIds as computeCuratedIds, synthLaunchingSessions } from '../sessions'
 import { reconcileLaunchIntents } from './reconcile'
+import { hasLivePty } from './pty-registry'
 import { ensureBootstrap } from '../data/bootstrap'
 import { seedOnboarding } from '../data/onboarding'
 import { migrateIdentitiesOnce } from '../data/migrate'
@@ -34,6 +35,20 @@ let cache: LogicalSession[] = []
 
 export function getStore() { return store }
 export function getCache(): LogicalSession[] { return cache }
+
+/**
+ * The UI's visible session set = the on-disk cache (the disk arm) PLUS in-flight Berth launches that
+ * have a live pty but no jsonl yet (the live-PTY arm; see `synthLaunchingSessions`). This — not
+ * `getCache()` — is what `/api/sessions` lists, so a launch survives a closed drawer / page reload and
+ * reopening reattaches to the live process. `getCache()` stays the pure on-disk truth used by the
+ * resume / title / warm-pool / first-turn paths, which deliberately must see only real sessions.
+ */
+export function visibleSessions(): LogicalSession[] {
+  const real = cache
+  const intents = store.allLaunchIntents()
+  const synth = synthLaunchingSessions(intents, new Set(real.map(s => s.sessionId)), hasLivePty)
+  return synth.length ? [...real, ...synth] : real
+}
 
 // Let the data-layer task summarizer reach the in-memory session cache (which only the server knows
 // about) without a data→server import: for each session linked to the task (edges), read its raw

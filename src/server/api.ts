@@ -1,9 +1,9 @@
 import { Router } from 'express'
 import { execFile } from 'node:child_process'
-import { getStore, getCache, refresh, storeRoots } from './store-singleton'
+import { getStore, getCache, visibleSessions, refresh, storeRoots } from './store-singleton'
 import { collectLogicalSessions } from '../sessions'
 import { toPreview, previewByCli, previewByIds } from './import-preview'
-import type { AgentCli, LaunchIntent } from '../types'
+import type { AgentCli } from '../types'
 import { canonicalPathKey } from '../path-normalize'
 import { listProjects, createProject, updateProject, deleteProject } from '../data/projects'
 import { listTasks, createTask, updateTask, deleteTask } from '../data/tasks'
@@ -28,7 +28,7 @@ import { isGeneratingTitle, triggerSessionTitle, titleGist } from './title-servi
 import type { Locale } from '../i18n'
 import { readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { snapshotActivity, liveCount, hasLivePty } from './pty-registry'
+import { snapshotActivity, liveCount } from './pty-registry'
 import { ingestDiag, collectDiagForExport } from './diag'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { parseTranscriptChatTurns, parseTranscriptTurns } from './transcript-turns'
@@ -74,54 +74,6 @@ export interface ApiSession {
   activity: 'running' | 'settled' | null   // live PTY status (null = no live process / external session)
   titleGenerating?: boolean                // 港务助手 is generating this session's title right now
   launching?: boolean                      // in-flight fresh launch: live PTY but no jsonl on disk yet
-}
-
-/**
- * In-flight launches that have a live PTY but have NOT yet written a jsonl (so they're absent from the
- * disk-scanned cache). Before this overlay such a launch only lived as a frontend "创建中" placeholder:
- * closing the drawer or reloading the page dropped it, leaving the agent running but invisible (the
- * "session wedges in 创建中 then vanishes on reload" bug — root cause: no turn → no jsonl → never
- * surfaces). We synthesize a durable session row from the bound launch intent + live registry so the
- * launch survives a reload and reopening reattaches to the same process. Gated on `isLive`: a launch
- * whose pty has exited is genuinely gone and must not show a non-recoverable ghost. Pure (deps injected).
- */
-export function launchingOverlay(
-  intents: LaunchIntent[],
-  surfacedIds: Set<string>,
-  isLive: (key: string) => boolean,
-  deps: {
-    pins: Set<string>
-    attach: Map<string, { projectId: string | null; state: string }>
-    projectNames: Map<string, string>
-    todoKeyFor: (sessionId: string) => string | null
-    activity: Map<string, 'running' | 'settled'>
-  },
-): ApiSession[] {
-  const out: ApiSession[] = []
-  const seen = new Set<string>()
-  for (const intent of intents) {
-    const launchKey = intent.sessionId ?? intent.id   // claude/coco minted id; codex intent id pre-reconcile
-    if (surfacedIds.has(launchKey) || seen.has(launchKey)) continue   // already a real row, or dup intent
-    if (!isLive(launchKey)) continue                                  // dead launch → not recoverable, skip
-    seen.add(launchKey)
-    const projectId = attachProjectId(deps.attach, launchKey) ?? intent.projectId
-    out.push({
-      sessionId: launchKey, cli: intent.cli, cwd: intent.cwd, title: null,
-      updatedAt: intent.createdAt, deleted: false, copies: 0,
-      pinned: deps.pins.has(launchKey),
-      projectId,
-      project: projectId ? deps.projectNames.get(projectId) ?? null : null,
-      attachState: deps.attach.get(launchKey)?.state ?? 'confirmed',
-      todoKey: deps.todoKeyFor(launchKey) ?? intent.todoKey,
-      activity: deps.activity.get(launchKey) ?? 'running',   // a fresh launch is mid-boot → running
-      launching: true,
-    })
-  }
-  return out
-}
-
-function attachProjectId(attach: Map<string, { projectId: string | null; state: string }>, id: string): string | null {
-  return attach.get(id)?.projectId ?? null
 }
 
 /**
@@ -172,7 +124,11 @@ function serialize(): ApiSession[] {
   }
   const canonCache = new Map<string, string>()
   const canon = (p: string) => { let v = canonCache.get(p); if (v === undefined) { v = canonicalPathKey(p); canonCache.set(p, v) } return v }
-  const real = getCache().map(s => {
+  // The list source is `visibleSessions()` = the on-disk cache (disk arm) ∪ in-flight Berth launches
+  // with a live pty but no jsonl yet (live-PTY arm; carries `launching:true`). Both flow through the
+  // SAME mapping below — a launching row resolves its project/task/activity from the same attach/edge/
+  // registry maps as a real row, the only difference being its content isn't on disk yet.
+  return visibleSessions().map(s => {
     const projectId = attach.get(s.sessionId)?.projectId ?? null
     // Fill an init-window null cwd from the launch intent, then collapse a symlink-variant of the
     // project workspace dir back to its canonical form so it groups under 项目默认目录.
@@ -187,18 +143,9 @@ function serialize(): ApiSession[] {
     todoKey: reverseMap.get(s.sessionId) ?? null,
     activity: activityMap.get(s.sessionId) ?? null,
     titleGenerating: isGeneratingTitle(s.sessionId),   // drives the live spinner on the generate-title icon
+    launching: s.launching,   // in-flight launch surfaced from the live-PTY arm (undefined for real rows)
     }
-  })
-  // Overlay in-flight launches that haven't written a jsonl yet (live pty, absent from the disk scan),
-  // so a closed drawer / page reload keeps them instead of stranding an invisible running agent.
-  const surfacedIds = new Set(real.map(s => s.sessionId))
-  const allIntents = typeof (store as any).allLaunchIntents === 'function' ? store.allLaunchIntents() : []
-  const launching = launchingOverlay(allIntents, surfacedIds, hasLivePty, {
-    pins, attach, projectNames,
-    todoKeyFor: (sid) => reverseMap.get(sid) ?? null,
-    activity: activityMap,
-  })
-  return [...real, ...launching].sort((a, b) => b.updatedAt - a.updatedAt)
+  }).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export const api = Router()
