@@ -171,14 +171,14 @@ export function refresh(): LogicalSession[] {
   }
   // Channel B: arm/disarm the rollout-dir watch based on whether any codex launch is still unbound.
   syncRolloutWatch(store)
-  // P2: sweep dangling claude/coco edges whose eagerly-bound session never materialized. 10-min grace
-  // keeps a slow-but-real launch (cold start / trust dialog) safe; cache is the post-filter scan so a
-  // surfaced session counts as "exists".
-  const cacheIds = new Set(cache.map(s => s.sessionId))
+  // P2: sweep dangling claude/coco edges whose eagerly-bound session never materialized. "Exists" =
+  // present in the UNFILTERED disk scan (all), so a real-but-hidden/uncurated bound session is never
+  // swept; 10-min grace keeps a slow-but-real launch (cold start / trust dialog) safe.
+  const allIds = new Set(all.map(s => s.sessionId))
   const boundLaunches = store.allLaunchIntents().filter(i => i.bound && i.sessionId)
     .map(i => ({ id: i.id, sessionId: i.sessionId, createdAt: i.createdAt }))
   const nowSec = Math.floor(Date.now() / 1000)
-  for (const id of selectOrphanLaunches(boundLaunches, { nowSec, graceSec: 600, hasLivePty, sessionExists: (sid) => cacheIds.has(sid) })) {
+  for (const id of selectOrphanLaunches(boundLaunches, { nowSec, graceSec: 600, hasLivePty, sessionExists: (sid) => allIds.has(sid) })) {
     const orphan = boundLaunches.find(b => b.id === id)
     if (orphan?.sessionId) store.removeEdgesForSession(orphan.sessionId)
     store.deleteLaunchIntent(id)
