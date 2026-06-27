@@ -23,6 +23,7 @@ import { berthHome } from '../paths'
 import { scanLaunchCallbacks, startLaunchCallbackWatch } from './launch-callback-watch'
 import { codexCallbackDir } from '../pty/launch'
 import { syncRolloutWatch } from './rollout-watch'
+import { selectOrphanLaunches } from './orphan-sweep'
 import type { LogicalSession } from '../types'
 
 const DB_DIR = berthHome()
@@ -170,5 +171,17 @@ export function refresh(): LogicalSession[] {
   }
   // Channel B: arm/disarm the rollout-dir watch based on whether any codex launch is still unbound.
   syncRolloutWatch(store)
+  // P2: sweep dangling claude/coco edges whose eagerly-bound session never materialized. 10-min grace
+  // keeps a slow-but-real launch (cold start / trust dialog) safe; cache is the post-filter scan so a
+  // surfaced session counts as "exists".
+  const cacheIds = new Set(cache.map(s => s.sessionId))
+  const boundLaunches = store.allLaunchIntents().filter(i => i.bound && i.sessionId)
+    .map(i => ({ id: i.id, sessionId: i.sessionId, createdAt: i.createdAt }))
+  const nowSec = Math.floor(Date.now() / 1000)
+  for (const id of selectOrphanLaunches(boundLaunches, { nowSec, graceSec: 600, hasLivePty, sessionExists: (sid) => cacheIds.has(sid) })) {
+    const orphan = boundLaunches.find(b => b.id === id)
+    if (orphan?.sessionId) store.removeEdgesForSession(orphan.sessionId)
+    store.deleteLaunchIntent(id)
+  }
   return cache
 }
