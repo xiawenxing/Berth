@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openStore } from '../src/db/store'
-import { scanLaunchCallbacks } from '../src/server/launch-callback-watch'
+import { scanLaunchCallbacks, startLaunchCallbackWatch } from '../src/server/launch-callback-watch'
 
 const envelope = (sessionId: string, cwd: string) =>
   JSON.stringify({ session_id: sessionId, cwd, hook_event_name: 'SessionStart' })
@@ -39,5 +39,23 @@ describe('scanLaunchCallbacks', () => {
       scanLaunchCallbacks(s, dir)
       expect(existsSync(join(dir, 'gone.json'))).toBe(false)   // no accumulation
     } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('binds when a callback file appears after the watcher is armed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'berth-cbw-'))
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'tok-w', cli: 'codex', cwd: '/proj', projectId: null, todoKey: 'task-W', sessionId: null, createdAt: 1000, bound: false })
+    const stop = startLaunchCallbackWatch(s, dir)
+    try {
+      writeFileSync(join(dir, 'tok-w.json'), envelope('w-sid', '/proj'))
+      const deadline = Date.now() + 2000
+      while (s.todoKeyForSession('w-sid') === null && Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 15))
+      }
+      expect(s.todoKeyForSession('w-sid')).toBe('task-W')
+    } finally {
+      stop()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

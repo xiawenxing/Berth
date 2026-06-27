@@ -99,7 +99,7 @@ export async function initData(): Promise<void> {
   // Channel A: pick up any callbacks dropped while Berth was down, then watch for new ones.
   const cbDir = codexCallbackDir()
   scanLaunchCallbacks(store, cbDir)
-  startLaunchCallbackWatch(store, cbDir)
+  startLaunchCallbackWatch(store, cbDir)  // process-lifetime watcher; stop fn intentionally not stored (unref'd, no shutdown path)
 }
 
 /**

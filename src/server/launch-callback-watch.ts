@@ -33,11 +33,15 @@ export function ingestCallback(
  * once the hook finishes writing. A parseable file is removed whether or not it bound — a callback
  * with no matching pending intent is stale/redundant (channel B may have already bound it), so we
  * don't let the dir accumulate. Best-effort throughout: never throws into the watcher.
+ *
+ * A file whose content never becomes a valid SessionStart envelope (a permanently-malformed drop)
+ * therefore persists until manually cleared — but channel B (reconcile) binds the session regardless,
+ * so this stray file is harmless and the trade-off is acceptable.
  */
 function processCallbackFile(store: Store, dir: string, file: string): void {
   if (!file.endsWith('.json')) return
   const path = join(dir, file)
-  let cb
+  let cb: ReturnType<typeof parseLaunchCallback>
   try { cb = parseLaunchCallback(readFileSync(path, 'utf8')) } catch { return }
   if (!cb) return   // partial write / not yet flushed — leave for the next event or the scan
   const token = file.slice(0, -'.json'.length)
@@ -45,7 +49,7 @@ function processCallbackFile(store: Store, dir: string, file: string): void {
     if (ingestCallback(store, token, cb, { rekey: rekeyPty }))
       logDiag({ category: 'reconcile', event: 'callback_bind', sessionId: cb.sessionId, cli: 'codex', intentId: token })
   } catch { /* binding is best-effort */ }
-  try { rmSync(path, { force: true }) } catch {}
+  try { rmSync(path, { force: true }) } catch { /* best-effort */ }
 }
 
 /** Scan any callback files already on disk (dropped while Berth was down). Call once at startup. */
@@ -62,6 +66,6 @@ export function startLaunchCallbackWatch(store: Store, dir: string): () => void 
   const w = watch(dir, (_event, filename) => {
     if (filename) processCallbackFile(store, dir, filename.toString())
   })
-  ;(w as { unref?: () => void }).unref?.()
+  w.unref()
   return () => w.close()
 }
