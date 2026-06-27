@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { runAgent, generateTitle, parseStructuredSummary } from '../src/agent/index'
+import { buildManifest } from '../src/agent/manifest'
 
 describe('agent module', () => {
   it('exports runAgent and generateTitle as functions', () => {
@@ -35,6 +36,26 @@ describe('parseStructuredSummary', () => {
     expect(r.headline).toBe('just a plain sentence with no json')
     expect(r.progress).toEqual([])
     expect(r.milestones).toEqual([])
+  })
+})
+
+describe('manifest finish-protocol', () => {
+  const base = {
+    kind: 'task' as const, projectName: 'P', docsRoot: '/tmp/docs',
+    todo: { id: 'task-xyz', title: 'T', status: '进行中', priority: 'P1', detailDoc: null, projectId: null } as any,
+    statuses: ['待办', '进行中', '阻塞', '待验证', '已完成', '已取消'],
+  }
+  it('includes the task id, the sentinel line spec, and an id-filled command', () => {
+    const { text } = buildManifest(base)
+    expect(text).toContain('task-xyz')
+    expect(text).toContain('BERTH_TASK_STATUS: task-xyz')
+    expect(text).toContain('berth task done task-xyz')
+  })
+  it('omits the finish-protocol for a project launch', () => {
+    const { text } = buildManifest({
+      kind: 'project', projectName: 'P', docsRoot: '/tmp/docs', projectTodos: [],
+    } as any)
+    expect(text).not.toContain('BERTH_TASK_STATUS')
   })
 })
 

@@ -422,7 +422,11 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
         try { ws.send(`\r\n[berth] context init skipped: ${e?.message ?? e}\r\n`) } catch {}
       }
     }
-    const enriched = { ...enrichManifestForContext(plan.manifestInput, ctxInjection), include: { project: gates.project, task: gates.task } }
+    const enriched = {
+      ...enrichManifestForContext(plan.manifestInput, ctxInjection),
+      include: { project: gates.project, task: gates.task },
+      statuses: getTaskFieldConfig(store).statuses,
+    }
     const { text, addDirs } = buildManifest(enriched, locale)
     mkdirSync(INJECT_DIR, { recursive: true })
     const injectFilePath = join(INJECT_DIR, `${plan.intent.id}.txt`)
