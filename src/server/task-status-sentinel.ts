@@ -29,5 +29,5 @@ export function decideTaskStatusReconcile(args: {
 }): string | null {
   const { currentStatus, inProgress, sentinelStatus } = args
   if (!inProgress || currentStatus !== inProgress) return null
-  return sentinelStatus ?? null
+  return sentinelStatus
 }

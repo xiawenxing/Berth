@@ -11,7 +11,15 @@ import { logDiag } from './diag'
 
 export interface SessionRef { sessionId: string; cli: AgentCli; contentSourcePath: string | null }
 
-/** Read the latest agent turn's text from a session transcript (empty string if none). */
+/**
+ * Read the latest agent turn's text from a session transcript (empty string if none).
+ *
+ * CONSTRAINT: `parseTranscriptTurns` truncates each turn's text to the first 8000 chars (see
+ * `clean()` / MAX_TURN_CHARS in transcript-turns.ts). A sentinel that falls AFTER the first 8000
+ * chars of the final agent message will therefore be dropped. Whoever authors the agent prompt must
+ * ensure the `BERTH_TASK_STATUS:` line lands within the first 8000 chars of the final turn. We do
+ * NOT scan the raw transcript instead — matching Chinese status words inside raw JSON is unreliable.
+ */
 function latestAgentText(cli: AgentCli, contentSourcePath: string | null): string {
   const turns = parseTranscriptTurns(cli, contentSourcePath)
   for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === 'agent') return turns[i].text
@@ -45,7 +53,9 @@ export function reconcileTaskStatusForSession(args: {
   const decided = decideTaskStatusReconcile({ currentStatus: task.status, inProgress, sentinelStatus })
   if (decided && decided !== task.status) {
     updateTask(store, todoKey, { status: decided }, args.now ?? Date.now)
-    logDiag({ category: 'reconcile', event: 'task_status_flow', sessionId, todoKey, status: decided } as any)
+    // logDiag accepts arbitrary extra fields (DiagEvent has a `[k: string]: unknown` index sig), so
+    // todoKey/status pass without a cast.
+    logDiag({ category: 'reconcile', event: 'task_status_flow', sessionId, todoKey, status: decided })
   }
 }
 
@@ -64,15 +74,39 @@ export function startTaskStatusFlow(args: {
   const unsub = subscribeActivity(e => {
     if (e.kind !== 'state') return
     const sid = e.sessionId
-    if (e.state === 'running') { const x = timers.get(sid); if (x) { clearTimeout(x); timers.delete(sid) } ; return }
+
+    // A new turn started: cancel any pending settle-debounce so we don't reconcile mid-turn (the
+    // agent may still move the task itself via Path A). This timer-cancel is the critical invariant.
+    if (e.state === 'running') {
+      const pending = timers.get(sid)
+      if (pending) {
+        clearTimeout(pending)
+        timers.delete(sid)
+      }
+      return
+    }
+
+    // Only a turn boundary (settle) or process exit triggers a reconcile. Note: an `exited` that
+    // follows a `settled` may arm a SECOND reconcile — that is harmless because reconcile is
+    // idempotent (the fast-path short-circuits once the status has moved off in-progress).
     if (e.state !== 'settled' && e.state !== 'exited') return
-    const prev = timers.get(sid); if (prev) clearTimeout(prev)
+
+    const prev = timers.get(sid)
+    if (prev) clearTimeout(prev)
     timers.set(sid, setTimeout(() => {
       timers.delete(sid)
-      try { reconcileTaskStatusForSession({ store, sessionId: sid, getSession }) } catch (err: any) {
-        logDiag({ category: 'reconcile', event: 'task_status_flow_error', sessionId: sid, level: 'warn', message: String(err?.message ?? err) } as any)
+      try {
+        reconcileTaskStatusForSession({ store, sessionId: sid, getSession })
+      } catch (err: any) {
+        // Reconcile (and its logging) must never throw out of the subscriber, or one bad session
+        // would kill the activity subscription for every session.
+        logDiag({ category: 'reconcile', event: 'task_status_flow_error', sessionId: sid, level: 'warn', message: String(err?.message ?? err) })
       }
     }, debounceMs))
   })
-  return () => { for (const t of timers.values()) clearTimeout(t); timers.clear(); unsub() }
+  return () => {
+    for (const t of timers.values()) clearTimeout(t)
+    timers.clear()
+    unsub()
+  }
 }

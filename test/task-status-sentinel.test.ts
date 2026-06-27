@@ -21,6 +21,12 @@ describe('parseStatusSentinel', () => {
   it('returns null when no sentinel is present', () => {
     expect(parseStatusSentinel('no marker here', 'task-123', VOCAB)).toBeNull()
   })
+  it('accepts a markdown quote-prefixed sentinel', () => {
+    expect(parseStatusSentinel('> BERTH_TASK_STATUS: task-123 已完成', 'task-123', VOCAB)).toBe('已完成')
+  })
+  it('accepts a list-item-prefixed sentinel', () => {
+    expect(parseStatusSentinel('- BERTH_TASK_STATUS: task-123 阻塞', 'task-123', VOCAB)).toBe('阻塞')
+  })
 })
 
 describe('decideTaskStatusReconcile', () => {
@@ -32,5 +38,8 @@ describe('decideTaskStatusReconcile', () => {
   })
   it('leaves in progress when there is no sentinel', () => {
     expect(decideTaskStatusReconcile({ currentStatus: '进行中', inProgress: '进行中', sentinelStatus: null })).toBeNull()
+  })
+  it('no-ops when currentStatus is null', () => {
+    expect(decideTaskStatusReconcile({ currentStatus: null, inProgress: '进行中', sentinelStatus: '已完成' })).toBeNull()
   })
 })
