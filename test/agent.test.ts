@@ -49,7 +49,7 @@ describe('manifest finish-protocol', () => {
     const { text } = buildManifest(base)
     expect(text).toContain('task-xyz')
     expect(text).toContain('BERTH_TASK_STATUS: task-xyz')
-    expect(text).toContain('berth task done task-xyz')
+    expect(text).toContain('berth task done --id task-xyz')
   })
   it('omits the finish-protocol for a project launch', () => {
     const { text } = buildManifest({
