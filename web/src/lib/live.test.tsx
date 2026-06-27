@@ -129,6 +129,37 @@ describe('mutations mirror to the server', () => {
   })
 })
 
+describe('mount hydration does not clobber an in-flight mutation', () => {
+  it('keeps a session marked read locally even if the GET response predates it', async () => {
+    // Defer the GET so we can mutate before it resolves.
+    let resolveGet: (v: any) => void = () => {}
+    const getPromise = new Promise((r) => { resolveGet = r })
+    ;(globalThis as any).fetch = vi.fn(async (url: string, init?: any) => {
+      const method = init?.method ?? 'GET'
+      if (method === 'GET' && url === '/api/read-state')
+        return { ok: true, json: async () => getPromise } as any
+      return { ok: true, json: async () => ({}) } as any
+    })
+    // Server snapshot says sess-a is NOT seen (would be unread).
+    const serverSnapshot = { lastSeen: {}, unread: {}, epoch: 100 }
+
+    let latest: LiveState | null = null
+    function Probe() { latest = useLive(); return null }
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    await act(async () => { root.render(<LiveProvider><Probe /></LiveProvider>) })
+
+    // Mutate while the GET is still pending, then let it resolve.
+    await act(async () => { latest!.markSeen('sess-a') })
+    await act(async () => { resolveGet(serverSnapshot); await Promise.resolve() })
+
+    // Local "seen" must survive the hydration merge.
+    expect(latest!.shipStatus('sess-a', 100000)).toBe('moored')
+    act(() => root.unmount()); host.remove()
+  })
+})
+
 describe('active session stays read', () => {
   it('keeps the active session read when an act frame bumps its updatedAt', async () => {
     const { live, cleanup } = await mountLive()

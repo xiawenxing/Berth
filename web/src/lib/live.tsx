@@ -18,7 +18,7 @@ export interface LiveState {
    *  ref-backed and don't change `activity`'s reference, so they'd otherwise go stale. */
   rev: number
   markSeen: (sessionId: string) => void
-  /** Batch markSeen for many ids at once (one localStorage write + one bump). Used on import so a
+  /** Batch markSeen for many ids at once (one server POST + one bump). Used on import so a
    *  freshly imported session defaults to READ — importing is an explicit acknowledgment, and a
    *  historical session that happens to post-date the unread-epoch baseline shouldn't surface as
    *  unread just because it was brought into Berth. */
@@ -68,6 +68,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const unread = useRef<Record<string, boolean>>({})
   const unreadEpoch = useRef(0)
   const activeSession = useRef<string | null>(null)
+  // Session ids the user has acted on locally this mount. The mount-time server hydration must not
+  // clobber these — a mutation can land before the initial GET resolves, and its in-flight POST,
+  // not the pre-POST server snapshot, is the truth.
+  const touched = useRef(new Set<string>())
   const [rev, setRev] = useState(0)
   const bump = () => setRev((n) => n + 1)
   // Stable so the drawer can register/clear the active session from an effect without re-firing it.
@@ -84,8 +88,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       try {
         const st = await api.readState()
         if (cancelled) return
-        seen.current = { ...st.lastSeen }
-        unread.current = Object.fromEntries(Object.keys(st.unread).map((k) => [k, true]))
+        for (const [k, v] of Object.entries(st.lastSeen)) {
+          if (!touched.current.has(k)) seen.current[k] = v
+        }
+        for (const k of Object.keys(st.unread)) {
+          if (!touched.current.has(k)) unread.current[k] = true
+        }
         unreadEpoch.current = st.epoch
         bump()
       } catch { /* offline / failed GET → leave refs empty (everything moored); reload re-fetches */ }
@@ -124,6 +132,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             // lastSeen, not the explicit 标为未读 flag, so a manual mark-unread on the open session
             // still sticks.
             if (activeSession.current === m.sessionId) {
+              touched.current.add(m.sessionId)
               const next = Math.max(seen.current[m.sessionId] ?? 0, m.updatedAt)
               seen.current[m.sessionId] = next
               void api.markSeen([m.sessionId], next).catch(() => {})
@@ -161,6 +170,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     updatedAt: updatedAt.current,
     rev,
     markSeen: (sessionId) => {
+      touched.current.add(sessionId)
       const now = Math.floor(Date.now() / 1000)
       seen.current[sessionId] = now
       if (unread.current[sessionId]) delete unread.current[sessionId]
@@ -171,6 +181,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       if (sessionIds.length === 0) return
       const now = Math.floor(Date.now() / 1000)
       for (const id of sessionIds) {
+        touched.current.add(id)
         seen.current[id] = now
         if (unread.current[id]) delete unread.current[id]
       }
@@ -178,6 +189,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       bump()
     },
     markUnread: (sessionId) => {
+      touched.current.add(sessionId)
       unread.current[sessionId] = true
       void api.markUnread(sessionId).catch(() => {})
       bump()
