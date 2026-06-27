@@ -30,8 +30,6 @@ import { shouldArmFirstTurnNudge, armFirstTurnNudge } from './launch-firstturn'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
 
-export { resolveStatusRoles } from '../data/task-config'
-
 type Store = ReturnType<typeof getStore>
 const INJECT_DIR = join(berthHome(), 'inject')
 const FRESH_LAUNCH_DEDUPE_TTL_MS = 60_000

@@ -48,7 +48,12 @@ export function reconcileTaskStatusForSession(args: {
   if (!inProgress || task.status !== inProgress) return
 
   const session = getSession(sessionId)
-  if (!session?.contentSourcePath) return
+  if (!session?.contentSourcePath) {
+    // A bound, still-in-progress task ended but we have no transcript to read — this is exactly the
+    // "task stuck in 进行中" case this feature exists to fix, so leave a breadcrumb for triage.
+    logDiag({ category: 'reconcile', event: 'task_status_flow_no_transcript', sessionId, todoKey, level: 'warn' })
+    return
+  }
   const sentinelStatus = parseStatusSentinel(latestAgentText(session.cli, session.contentSourcePath), todoKey, cfg.statuses)
   const decided = decideTaskStatusReconcile({ currentStatus: task.status, inProgress, sentinelStatus })
   if (decided && decided !== task.status) {
@@ -56,6 +61,10 @@ export function reconcileTaskStatusForSession(args: {
     // logDiag accepts arbitrary extra fields (DiagEvent has a `[k: string]: unknown` index sig), so
     // todoKey/status pass without a cast.
     logDiag({ category: 'reconcile', event: 'task_status_flow', sessionId, todoKey, status: decided })
+  } else {
+    // Bound + still in-progress, but no sentinel found → the task remains stuck. Record it so a
+    // missing/late sentinel is diagnosable instead of silent.
+    logDiag({ category: 'reconcile', event: 'task_status_flow_no_decision', sessionId, todoKey })
   }
 }
 
@@ -86,9 +95,11 @@ export function startTaskStatusFlow(args: {
       return
     }
 
-    // Only a turn boundary (settle) or process exit triggers a reconcile. Note: an `exited` that
-    // follows a `settled` may arm a SECOND reconcile — that is harmless because reconcile is
-    // idempotent (the fast-path short-circuits once the status has moved off in-progress).
+    // Only a turn boundary (settle) or process exit triggers a reconcile. Back-to-back terminal
+    // events (e.g. a `settled` immediately followed by `exited`) collapse to ONE timer — we
+    // clearTimeout(prev) and replace it below. A second reconcile only happens if the first already
+    // fired, and that is harmless because reconcile is idempotent (the fast-path short-circuits once
+    // the status has moved off in-progress).
     if (e.state !== 'settled' && e.state !== 'exited') return
 
     const prev = timers.get(sid)

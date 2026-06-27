@@ -43,6 +43,19 @@ function writeClaudeTranscript(taskId: string, status: string): string {
   return file
 }
 
+// Minimal codex rollout jsonl whose final assistant turn carries a sentinel. Shape mirrors the codex
+// fixtures in test/codex.test.ts: { type: 'response_item', payload: { type: 'message', role, content } }.
+function writeCodexTranscript(taskId: string, status: string): string {
+  const dir = mkdtempSync(join(tmpdir(), 'berth-flow-codex-'))
+  const file = join(dir, 'rollout.jsonl')
+  const lines = [
+    JSON.stringify({ timestamp: '2026-06-15T00:01:00Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'do the thing' }] } }),
+    JSON.stringify({ timestamp: '2026-06-15T00:02:00Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `done\nBERTH_TASK_STATUS: ${taskId} ${status}` }] } }),
+  ]
+  writeFileSync(file, lines.join('\n') + '\n')
+  return file
+}
+
 const find = (store: any, id: string) => listTasks(store).find((x: any) => x.id === id)
 
 describe('reconcileTaskStatusForSession', () => {
@@ -90,6 +103,18 @@ describe('reconcileTaskStatusForSession', () => {
       store, sessionId: 'unbound',
       getSession: () => ({ sessionId: 'unbound', cli: 'claude', contentSourcePath: null }),
     })).not.toThrow()
+  })
+
+  it('applies the sentinel from a codex rollout transcript (cross-CLI Path B)', () => {
+    const store = openStore(':memory:')
+    seedTask(store, 'task-cx', '进行中')
+    store.addEdge('task-cx', 'sess-cx')
+    const path = writeCodexTranscript('task-cx', '已完成')
+    reconcileTaskStatusForSession({
+      store, sessionId: 'sess-cx',
+      getSession: () => ({ sessionId: 'sess-cx', cli: 'codex', contentSourcePath: path }),
+    })
+    expect(find(store, 'task-cx')?.status).toBe('已完成')
   })
 
   it('no-ops (no throw) for a bound task when getSession returns null', () => {
@@ -170,6 +195,24 @@ describe('startTaskStatusFlow', () => {
     activityBus.emit({ kind: 'state', sessionId: 'sess-ok', state: 'settled' })
     vi.advanceTimersByTime(60)
     expect(find(store, 'task-ok')?.status).toBe('已完成')      // the good session still works
+    stop()
+  })
+
+  it('an `exited` event also arms a reconcile (both terminal states trigger)', () => {
+    vi.useFakeTimers()
+    const store = openStore(':memory:')
+    seedTask(store, 'task-x', '进行中')
+    store.addEdge('task-x', 'sess-x')
+    const path = writeClaudeTranscript('task-x', '已完成')
+    const stop = startTaskStatusFlow({
+      store, debounceMs: 50,
+      getSession: () => ({ sessionId: 'sess-x', cli: 'claude', contentSourcePath: path }),
+    })
+
+    activityBus.emit({ kind: 'state', sessionId: 'sess-x', state: 'exited' })
+    vi.advanceTimersByTime(60)
+
+    expect(find(store, 'task-x')?.status).toBe('已完成')
     stop()
   })
 
