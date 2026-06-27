@@ -73,6 +73,9 @@ const mockGetCache = vi.fn((..._a: any[]) => [] as any[])
 vi.mock('../src/server/store-singleton', () => ({
   getStore: (...a: any[]) => mockGetStore(...a),
   getCache: (...a: any[]) => mockGetCache(...a),
+  // visibleSessions = on-disk cache ∪ in-flight launches; these tests exercise the disk arm, so it
+  // mirrors getCache(). The live-PTY arm is unit-tested directly via synthLaunchingSessions.
+  visibleSessions: (...a: any[]) => mockGetCache(...a),
   refresh: vi.fn(),
 }))
 
