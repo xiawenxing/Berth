@@ -25,6 +25,22 @@ describe('bindFromRollout', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  it('rekeys with (intentId, sessionId) and no-ops on a second call (idempotent)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'berth-rollout-'))
+    try {
+      const s = openStore(':memory:')
+      s.addLaunchIntent({ id: 'i1', cli: 'codex', cwd: dir, projectId: null, todoKey: 'task-A', sessionId: null, createdAt: 1000, bound: false })
+      const path = join(dir, 'rollout-z.jsonl')
+      writeFileSync(path, JSON.stringify({ type: 'session_meta', payload: { session_id: 'sid-z', cwd: dir, timestamp: new Date(1005_000).toISOString() } }) + '\n')
+      const rekeyed: Array<[string, string]> = []
+      expect(bindFromRollout(s, path, { rekey: (a, b) => rekeyed.push([a, b]) })).toBe(true)
+      expect(rekeyed).toEqual([['i1', 'sid-z']])
+      // second call: intent already bound → no match → false, no extra rekey
+      expect(bindFromRollout(s, path, { rekey: (a, b) => rekeyed.push([a, b]) })).toBe(false)
+      expect(rekeyed).toEqual([['i1', 'sid-z']])
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('does not bind when the rollout cwd matches no pending intent', () => {
     const dir = mkdtempSync(join(tmpdir(), 'berth-rollout-'))
     try {
