@@ -26,6 +26,7 @@ import { ensureContextDoc, maintainContextDocOnDiskAsync } from '../data/context
 import { summarizeCompactedContext } from '../agent/context-compact'
 import { getLocale, promptStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
 import { logDiag } from './diag'
+import { shouldArmFirstTurnNudge, armFirstTurnNudge } from './launch-firstturn'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
 
@@ -550,6 +551,18 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
         pathFor: (sid) => getCache().find(s => s.sessionId === sid)?.contentSourcePath ?? null,
         alive: (sid) => hasLivePty(sid),
         emit: (sid) => broadcastControl(sid, { __berth: 'turnStarted', sessionId: sid }),
+      })
+    }
+    // claude/coco: nudge the pre-filled positional prompt's Enter if the composer's slow-cold-start
+    // auto-submit missed it (gotcha #15). Guarded against double-submit by the surfaced() check —
+    // skips the instant a jsonl exists (a turn already ran). See launch-firstturn.ts.
+    if (shouldArmFirstTurnNudge({ cli, mode: 'tui', hasInitialPrompt: !!initialPrompt })) {
+      logDiag({ category: 'firstturn', event: 'nudge_armed', sessionId: launchKey, cli })
+      armFirstTurnNudge({
+        alive: () => hasLivePty(launchKey),
+        surfaced: () => { refresh(); return !!getCache().find(s => s.sessionId === launchKey) },
+        sendEnter: () => { try { pty.write('\r') } catch {} },
+        onAttempt: (fired, i) => { if (fired) logDiag({ category: 'firstturn', event: 'nudge_fired', sessionId: launchKey, cli, attempt: i }) },
       })
     }
   }
