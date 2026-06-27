@@ -18,4 +18,10 @@ describe('isLocalHref', () => {
     expect(isLocalHref('//cdn.example.com/x')).toBe(false)
     expect(isLocalHref('')).toBe(false)
   })
+  it('handles edge cases: whitespace, uppercase file://, query/hash on a local path', () => {
+    expect(isLocalHref('  /Users/me/x.md  ')).toBe(true)   // trimmed
+    expect(isLocalHref('FILE:///Users/me/x.md')).toBe(true) // case-insensitive scheme
+    expect(isLocalHref('/Users/me/x.md#heading')).toBe(true)
+    expect(isLocalHref('   ')).toBe(false)                  // whitespace-only
+  })
 })

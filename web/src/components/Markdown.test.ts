@@ -67,4 +67,24 @@ describe('handleMarkdownClick', () => {
     expect(preventDefault).not.toHaveBeenCalled()
     expect(openLocal).not.toHaveBeenCalled()
   })
+
+  it('intercepts ~/ and custom-scheme local links', () => {
+    expect(clickOn('~/notes/x.md').openLocal).toHaveBeenCalledWith('~/notes/x.md')
+    expect(clickOn('obsidian://open?file=x').openLocal).toHaveBeenCalledWith('obsidian://open?file=x')
+  })
+
+  it('resolves the enclosing <a> when the click lands on a nested element', () => {
+    // The whole point of closest('a'): a click on <code> inside the link still intercepts.
+    const div = document.createElement('div')
+    const a = document.createElement('a')
+    a.setAttribute('href', '/Users/me/x.md')
+    const code = document.createElement('code')
+    code.textContent = 'x.md'
+    a.appendChild(code)
+    div.appendChild(a)
+    const preventDefault = vi.fn(); const openLocal = vi.fn()
+    handleMarkdownClick({ target: code, preventDefault }, openLocal)
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(openLocal).toHaveBeenCalledWith('/Users/me/x.md')
+  })
 })

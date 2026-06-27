@@ -12,8 +12,13 @@ export type OpenTarget = { kind: 'file'; value: string } | { kind: 'scheme'; val
  * - `scheme://…`      → passed through untouched  (kind: 'scheme')  e.g. obsidian://, vscode://
  * Anything else (relative path, http/https) is not a local target → throws.
  */
-export function resolveOpenTarget(target: string): OpenTarget {
-  if (target.startsWith('file://')) return { kind: 'file', value: fileURLToPath(target) }
+export function resolveOpenTarget(rawTarget: string): OpenTarget {
+  // Trim defensively: the frontend classifier (isLocalHref) trims before deciding a link is local,
+  // so trim here too or the two halves disagree on a whitespace-padded href (classified local →
+  // sent verbatim → would fall through to the throw). Whole-string whitespace is never part of a
+  // real path/URL, so this is safe.
+  const target = rawTarget.trim()
+  if (/^file:\/\//i.test(target)) return { kind: 'file', value: fileURLToPath(target) }
   if (target === '~' || target.startsWith('~/')) return { kind: 'file', value: join(homedir(), target.slice(1).replace(/^\/+/, '')) }
   if (target.startsWith('/') && !target.startsWith('//')) return { kind: 'file', value: target }
   if (/^https?:\/\//i.test(target)) throw new Error('http(s) is not a local target')

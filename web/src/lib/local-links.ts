@@ -11,7 +11,7 @@ export function isLocalHref(href: string): boolean {
   if (h.startsWith('#')) return false
   if (/^https?:\/\//i.test(h)) return false
   if (/^(mailto|tel):/i.test(h)) return false
-  if (h.startsWith('file://')) return true
+  if (/^file:\/\//i.test(h)) return true
   if (h === '~' || h.startsWith('~/')) return true
   if (h.startsWith('/') && !h.startsWith('//')) return true
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(h)) return true // custom scheme://

@@ -20,6 +20,12 @@ describe('resolveOpenTarget', () => {
     expect(() => resolveOpenTarget('relative/path')).toThrow()
     expect(() => resolveOpenTarget('https://example.com')).toThrow()
   })
+  it('trims surrounding whitespace before classifying', () => {
+    expect(resolveOpenTarget('  /Users/me/x.md  ')).toEqual({ kind: 'file', value: '/Users/me/x.md' })
+  })
+  it('matches file:// case-insensitively (decodes to a path)', () => {
+    expect(resolveOpenTarget('FILE:///Users/me/x.md')).toEqual({ kind: 'file', value: '/Users/me/x.md' })
+  })
 })
 
 describe('openCommand', () => {
