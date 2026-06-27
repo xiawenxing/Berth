@@ -167,7 +167,9 @@ function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void
   const ship = live.shipStatus(s.sessionId, s.updatedAt)
   const pending = !!s.__pending
   const pendingOpenable = pending && !!s.__pendingOpenable
-  const displayTitle = imagePathPlaceholderText(s.title, s.sessionId)
+  // A server-surfaced in-flight launch (launching) has no title yet; label it 启动中… like the
+  // optimistic placeholder, but it's a real, fully-openable session row (reopen reattaches the pty).
+  const displayTitle = s.launching && !s.title ? '启动中…' : imagePathPlaceholderText(s.title, s.sessionId)
 
   return (
     <div

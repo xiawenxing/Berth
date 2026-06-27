@@ -358,6 +358,19 @@ export function openStore(path: string) {
     allBoundLaunchSessionIds(): Set<string> {
       return new Set((db.prepare('SELECT session_id FROM launch_intent WHERE bound=1 AND session_id IS NOT NULL').all() as any[]).map(r => r.session_id))
     },
+    /** Every launch intent (bound or not). Drives the in-flight "启动中" overlay: a launch with a live
+     *  PTY but no jsonl on disk yet is surfaced from here so it survives a reload and a closed drawer. */
+    allLaunchIntents(): LaunchIntent[] {
+      return (db.prepare('SELECT * FROM launch_intent ORDER BY created_at DESC').all() as any[]).map(r => ({
+        id: r.id, cli: r.cli, cwd: r.cwd, projectId: r.project_id, todoKey: r.todo_key,
+        sessionId: r.session_id, createdAt: r.created_at, bound: !!r.bound,
+      }))
+    },
+    /** Drop a launch intent outright — used to sweep a dead orphan (pty gone, never surfaced). Distinct
+     *  from removeLaunchIntentsForSession (which clears by the bound session id). */
+    deleteLaunchIntent(id: string) {
+      db.prepare('DELETE FROM launch_intent WHERE id=?').run(id)
+    },
     ...dataMethods(db),
   }
 }

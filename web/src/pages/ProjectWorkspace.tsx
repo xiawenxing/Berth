@@ -123,7 +123,9 @@ export function ProjectWorkspace() {
   const toRow = (s: (typeof projSessions)[number], pinned: boolean): SessionRow => ({
     id: s.sessionId,
     cli: s.cli,
-    title: imagePathPlaceholderText(s.title, '(未命名)'),
+    // A server-surfaced in-flight launch has no title yet → label it 启动中… (still fully openable;
+    // reopening reattaches to the live pty). Real titled sessions keep the normal placeholder fallback.
+    title: s.launching && !s.title ? '启动中…' : imagePathPlaceholderText(s.title, '(未命名)'),
     cwd: shortCwd(s.cwd),
     time: relTime(s.updatedAt),
     updatedAt: s.updatedAt,
