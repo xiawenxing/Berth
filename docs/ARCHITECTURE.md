@@ -123,6 +123,21 @@ live-reloading SPA. `npm test` = unit; `*.live.test.ts` are gated behind `BERTH_
 - `server/reconcile.ts` — binds pending codex launch-intents to their real session id on refresh and
   **rekeys the live pty** so a later click reattaches instead of spawning a parallel resume.
 
+- `server/launch-firstturn.ts` — Model-A first-turn safety net. claude/coco TUI launches deliver
+  the first turn as the native positional prompt; on a slow cold start the composer auto-submit can
+  miss (gotcha #15), pre-filling without the Enter. `armFirstTurnNudge` schedules up to two delayed
+  `\r` writes that submit the pre-filled prompt IF the session still hasn't surfaced (guarded against
+  double-submit by a `surfaced()` check; codex/Model-B excluded). Pure decision + injectable scheduler.
+
+**Diagnostics (`server/diag.ts` + `web/src/lib/diag.ts`):** a structured event log of the launch /
+connection / surfacing lifecycle, for troubleshooting intermittent launch failures on users' machines.
+Both sides emit events keyed by `launchToken`/`sessionId`; the browser flushes to `POST /api/diag` so
+the export is ONE correlated timeline. Server buffers in a ring + appends rotating JSONL under
+`BERTH_HOME/logs`; `GET /api/diag/export` downloads the merged bundle (Settings → 诊断日志 → 导出).
+Prompt text is redacted to len+hash; image payloads dropped. Best-effort: logging never throws into a
+launch. Key signals: `launch/pending_expired` (a placeholder aged out without surfacing — the failure
+mode), `pty/exit` with viewer count, `firstturn/nudge_fired`.
+
 **Wiring:** `server/index.ts` (express + ws, JSON limit 30mb for pasted images), `server/api.ts`
 (all REST routes), `bin/berth-serve.ts` (entry).
 
@@ -394,6 +409,15 @@ is the session-grained model that replaced the old directory-grained one (where 
     `pty/trust.ts`, so the positional reliably reaches it.
     - Image launches are unaffected (their first turn rides the client prime socket; server
       `initialPrompt` is undefined there, so no double-submission). Model B (stream) delivers its own turn.
+16. **`/api/sessions` is NOT just `getCache()` — it overlays in-flight launches** (`launchingOverlay`
+    in `api.ts`). A fresh launch surfaces normally only once the CLI writes a jsonl (needs a completed
+    turn); before that it's absent from the disk scan. Such a launch (bound `launch_intent` + a LIVE
+    pty, keyed by `intent.sessionId ?? intent.id`) is synthesized as a `launching:true` row so closing
+    the drawer / reloading the page can't strand a running-but-invisible agent (the "wedged in 创建中,
+    lost on reload" bug). Gated on `hasLivePty` — a dead launch shows no ghost. Paired with the resume
+    branch reattaching (not killing) an in-flight launch whose id isn't in the cache yet, and the
+    first-turn nudge (`launch-firstturn.ts`). So: a `/api/sessions` row need not be in `getCache()`;
+    don't assume the two are 1:1.
 
 ---
 
