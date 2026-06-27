@@ -24,4 +24,10 @@ describe('isLocalHref', () => {
     expect(isLocalHref('/Users/me/x.md#heading')).toBe(true)
     expect(isLocalHref('   ')).toBe(false)                  // whitespace-only
   })
+  it('only treats allowlisted schemes as local (not arbitrary scheme://)', () => {
+    // The sanitizer can only safely admit a fixed scheme set, so the classifier matches it.
+    expect(isLocalHref('zed://file/x')).toBe(false)
+    expect(isLocalHref('ftp://host/x')).toBe(false)
+    expect(isLocalHref('javascript://%0aalert(1)')).toBe(false)
+  })
 })

@@ -28,6 +28,24 @@ describe('mdToSafeHtml', () => {
   it('preserves single newlines as <br> (gfm breaks)', () => {
     expect(mdToSafeHtml('line1\nline2')).toContain('<br>')
   })
+
+  // Regression for the C1 integration gap: DOMPurify's DEFAULT URI allowlist strips href for file://
+  // and app schemes, which silently killed local links downstream of the click handler. The widened
+  // ALLOWED_URI_REGEXP must KEEP these hrefs through the real marked→sanitize pipeline...
+  it('preserves href for file:// and allowlisted app schemes (local links stay clickable)', () => {
+    expect(mdToSafeHtml('[a](file:///Users/me/x.md)')).toContain('href="file:///Users/me/x.md"')
+    expect(mdToSafeHtml('[a](obsidian://open?file=x)')).toContain('href="obsidian://open?file=x"')
+    expect(mdToSafeHtml('[a](vscode://file/Users/me/x)')).toContain('href="vscode://file/Users/me/x"')
+    expect(mdToSafeHtml('[a](/Users/me/x.md)')).toContain('href="/Users/me/x.md"') // absolute still works
+  })
+
+  // ...while NOT re-admitting dangerous schemes the widening could have leaked (incl. the javascript://
+  // comment-bypass). These must still be stripped.
+  it('still strips javascript:/data: hrefs after widening the allowlist (no XSS)', () => {
+    expect(mdToSafeHtml('[a](javascript:alert(1))')).not.toContain('javascript:')
+    expect(mdToSafeHtml('[a](javascript://%0aalert(1))')).not.toContain('alert')
+    expect(mdToSafeHtml('[a](data:text/html,<script>alert(1)</script>)')).not.toContain('data:text/html')
+  })
 })
 
 describe('handleMarkdownClick', () => {

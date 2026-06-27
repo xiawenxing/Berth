@@ -158,8 +158,18 @@ export const api = {
   // Native macOS folder picker → absolute path (or cancelled).
   pickFolder: () => send('POST', '/api/pick-folder', {}) as Promise<{ path?: string; cancelled?: boolean }>,
   // Ask the host (this Berth server, on the user's machine) to open a local-file link with the OS
-  // default app — browsers block file:// / absolute-path navigation from an http page.
-  openLocal: (target: string) => send('POST', '/api/open-local', { target }) as Promise<{ ok: boolean; error?: string }>,
+  // default app — browsers block file:// / absolute-path navigation from an http page. Unlike `send`
+  // (which throws on non-2xx and drops the body), this resolves the structured {ok,error} body even
+  // on 4xx/5xx, so callers can surface the server's reason (e.g. 404 "file not found"). Only a
+  // network-level failure rejects.
+  openLocal: async (target: string): Promise<{ ok: boolean; error?: string }> => {
+    const res = await fetch('/api/open-local', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target }),
+    })
+    return res.json().catch(() => ({ ok: res.ok })) as Promise<{ ok: boolean; error?: string }>
+  },
   // Preview the sessions a candidate dir would surface (no state mutation).
   previewDir: (cwd: string) =>
     send('POST', '/api/session-dirs/preview', { cwd }) as Promise<{ sessions: PreviewSession[] }>,
