@@ -33,3 +33,26 @@ describe('parseLaunchCallback', () => {
     expect(parseLaunchCallback(JSON.stringify({ hook_event_name: 'SessionStart', session_id: null, cwd: '/y' }))).toBeNull()
   })
 })
+
+import { openStore } from '../src/db/store'
+import { ingestCallback } from '../src/server/launch-callback-watch'
+
+describe('ingestCallback', () => {
+  it('binds the pending codex intent named by the token', () => {
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'tok-1', cli: 'codex', cwd: '/proj', projectId: 'P', todoKey: 'task-A', sessionId: null, createdAt: 1000, bound: false })
+    const rekeyed: Array<[string, string]> = []
+    const ok = ingestCallback(s, 'tok-1', { sessionId: 'real-sid', cwd: '/proj' }, { rekey: (a, b) => rekeyed.push([a, b]) })
+    expect(ok).toBe(true)
+    expect(s.todoKeyForSession('real-sid')).toBe('task-A')
+    expect(s.pendingIntents()).toEqual([])
+    expect(rekeyed).toEqual([['tok-1', 'real-sid']])
+  })
+
+  it('no-ops for an unknown token or an already-bound intent', () => {
+    const s = openStore(':memory:')
+    expect(ingestCallback(s, 'missing', { sessionId: 'x', cwd: '/p' }, { rekey: () => {} })).toBe(false)
+    s.addLaunchIntent({ id: 'tok-2', cli: 'codex', cwd: '/proj', projectId: null, todoKey: null, sessionId: 'already', createdAt: 1000, bound: true })
+    expect(ingestCallback(s, 'tok-2', { sessionId: 'real', cwd: '/proj' }, { rekey: () => {} })).toBe(false)
+  })
+})
