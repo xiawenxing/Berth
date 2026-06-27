@@ -3,9 +3,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { createServer, type Server } from 'node:http'
 import { api } from './api'
-import { refresh, getCache, initData } from './store-singleton'
+import { refresh, getCache, getStore, initData } from './store-singleton'
 import { createPtyWss } from './pty-ws'
 import { createStatusWss } from './status-ws'
+import { startTaskStatusFlow } from './task-status-flow'
 import { killAllPtys } from './pty-registry'
 import { resolvePublicDir, resolveWebDistDir } from './public-dir'
 import { warmAgentBinaryCaches } from '../pty/binaries'
@@ -80,6 +81,14 @@ export async function start(
   installShutdownCleanup()
   const server = createServer(createApp())
   attachWebSockets(server)   // /pty terminals + /status live-activity broadcast, one upgrade router
+  // Path B of the session→task status flow: on settle, debounce, then apply the agent's decision.
+  startTaskStatusFlow({
+    store: getStore(),
+    getSession: (sid) => {
+      const s = getCache().find(x => x.sessionId === sid)
+      return s ? { sessionId: s.sessionId, cli: s.cli, contentSourcePath: s.contentSourcePath ?? null } : null
+    },
+  })
   const hasWeb = !!WEB_DIST   // 2.0 SPA built and served at /app → callers open /app/ directly
   return new Promise<{ port: number; hasWeb: boolean }>((resolve, reject) => {
     const onListenError = (error: Error) => reject(error)
