@@ -22,6 +22,7 @@ import { extractConversation } from '../agent/transcript'
 import { berthHome } from '../paths'
 import { scanLaunchCallbacks, startLaunchCallbackWatch } from './launch-callback-watch'
 import { codexCallbackDir } from '../pty/launch'
+import { syncRolloutWatch } from './rollout-watch'
 import type { LogicalSession } from '../types'
 
 const DB_DIR = berthHome()
@@ -167,5 +168,7 @@ export function refresh(): LogicalSession[] {
       void syncSource(store, s, { docsRoot: getDocsRoot(store) }, { push: false }).catch(() => {})
     }
   }
+  // Channel B: arm/disarm the rollout-dir watch based on whether any codex launch is still unbound.
+  syncRolloutWatch(store)
   return cache
 }
