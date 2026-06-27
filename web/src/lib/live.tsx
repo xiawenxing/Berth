@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ShipStatus } from './types'
 import { UNREAD_EPOCH_KEY, resolveShipStatus } from './unread'
+import { api } from './api'
 
 // Live per-session activity from the /status WS (running / settled), plus a local
 // lastSeen map. Ship status: running→在航(sail); settled & newer than lastSeen→靠岸·待查收(dock);
@@ -35,6 +36,22 @@ const Ctx = createContext<LiveState | null>(null)
 
 const SEEN_KEY = 'berth-last-seen'
 const UNREAD_KEY = 'berth-unread' // explicit "标为未读" overrides (session ids), independent of activity
+const MIGRATED_KEY = 'berth-read-migrated'
+
+// One-time, per-origin: push any legacy localStorage read-state up to the server, then never again.
+// Returns once the import POST (if any) has been attempted.
+async function migrateLegacyReadState(): Promise<void> {
+  try {
+    if (localStorage.getItem(MIGRATED_KEY)) return
+    const seen = loadJson<Record<string, number>>(SEEN_KEY, {})
+    const unread = loadJson<Record<string, true>>(UNREAD_KEY, {})
+    const epochRaw = Number(localStorage.getItem(UNREAD_EPOCH_KEY) || 0)
+    const epoch = Number.isFinite(epochRaw) && epochRaw > 0 ? epochRaw : undefined
+    const hasLegacy = Object.keys(seen).length > 0 || Object.keys(unread).length > 0 || epoch !== undefined
+    if (hasLegacy) await api.importReadState({ seen, unread, epoch })
+    localStorage.setItem(MIGRATED_KEY, '1')
+  } catch { /* best-effort: a failed migration just retries on the next load */ }
+}
 
 function loadJson<T>(key: string, fallback: T): T {
   try {
@@ -44,30 +61,36 @@ function loadJson<T>(key: string, fallback: T): T {
   }
 }
 
-function loadUnreadEpoch(): number {
-  try {
-    const existing = Number(localStorage.getItem(UNREAD_EPOCH_KEY) || 0)
-    if (Number.isFinite(existing) && existing > 0) return existing
-    const now = Math.floor(Date.now() / 1000)
-    localStorage.setItem(UNREAD_EPOCH_KEY, String(now))
-    return now
-  } catch {
-    return Math.floor(Date.now() / 1000)
-  }
-}
-
 export function LiveProvider({ children }: { children: ReactNode }) {
   const [activity, setActivity] = useState<Map<string, Activity>>(new Map())
   const updatedAt = useRef(new Map<string, number>())
-  const seen = useRef<Record<string, number>>(loadJson(SEEN_KEY, {}))
-  const unread = useRef<Record<string, boolean>>(loadJson(UNREAD_KEY, {}))
-  const unreadEpoch = useRef(loadUnreadEpoch())
+  const seen = useRef<Record<string, number>>({})
+  const unread = useRef<Record<string, boolean>>({})
+  const unreadEpoch = useRef(0)
   const activeSession = useRef<string | null>(null)
   const [rev, setRev] = useState(0)
   const bump = () => setRev((n) => n + 1)
   // Stable so the drawer can register/clear the active session from an effect without re-firing it.
   const setActiveSession = useCallback((sessionId: string | null) => {
     activeSession.current = sessionId
+  }, [])
+
+  // Seed read-state from the server (migrating any legacy localStorage first). Server is the source
+  // of truth now — origin-independent, so the CLI browser and the Electron app share unread markers.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      await migrateLegacyReadState()
+      try {
+        const st = await api.readState()
+        if (cancelled) return
+        seen.current = { ...st.lastSeen }
+        unread.current = Object.fromEntries(Object.keys(st.unread).map((k) => [k, true]))
+        unreadEpoch.current = st.epoch
+        bump()
+      } catch { /* offline / failed GET → leave refs empty (everything moored); reload re-fetches */ }
+    })()
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -101,12 +124,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             // lastSeen, not the explicit 标为未读 flag, so a manual mark-unread on the open session
             // still sticks.
             if (activeSession.current === m.sessionId) {
-              seen.current[m.sessionId] = Math.max(seen.current[m.sessionId] ?? 0, m.updatedAt)
-              try {
-                localStorage.setItem(SEEN_KEY, JSON.stringify(seen.current))
-              } catch {
-                /* ignore quota */
-              }
+              const next = Math.max(seen.current[m.sessionId] ?? 0, m.updatedAt)
+              seen.current[m.sessionId] = next
+              void api.markSeen([m.sessionId], next).catch(() => {})
             }
           }
           bump()
@@ -141,45 +161,25 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     updatedAt: updatedAt.current,
     rev,
     markSeen: (sessionId) => {
-      seen.current[sessionId] = Math.floor(Date.now() / 1000)
-      if (unread.current[sessionId]) {
-        delete unread.current[sessionId] // opening / reading clears an explicit unread flag
-        try {
-          localStorage.setItem(UNREAD_KEY, JSON.stringify(unread.current))
-        } catch {
-          /* ignore quota */
-        }
-      }
-      try {
-        localStorage.setItem(SEEN_KEY, JSON.stringify(seen.current))
-      } catch {
-        /* ignore quota */
-      }
+      const now = Math.floor(Date.now() / 1000)
+      seen.current[sessionId] = now
+      if (unread.current[sessionId]) delete unread.current[sessionId]
+      void api.markSeen([sessionId], now).catch(() => {})
       bump()
     },
     markSeenMany: (sessionIds) => {
       if (sessionIds.length === 0) return
       const now = Math.floor(Date.now() / 1000)
-      let unreadChanged = false
       for (const id of sessionIds) {
         seen.current[id] = now
-        if (unread.current[id]) { delete unread.current[id]; unreadChanged = true }
+        if (unread.current[id]) delete unread.current[id]
       }
-      try {
-        localStorage.setItem(SEEN_KEY, JSON.stringify(seen.current))
-        if (unreadChanged) localStorage.setItem(UNREAD_KEY, JSON.stringify(unread.current))
-      } catch {
-        /* ignore quota */
-      }
+      void api.markSeen(sessionIds, now).catch(() => {})
       bump()
     },
     markUnread: (sessionId) => {
       unread.current[sessionId] = true
-      try {
-        localStorage.setItem(UNREAD_KEY, JSON.stringify(unread.current))
-      } catch {
-        /* ignore quota */
-      }
+      void api.markUnread(sessionId).catch(() => {})
       bump()
     },
     setActiveSession,
