@@ -3,6 +3,7 @@ import type { WebSocket } from 'ws'
 import { ActivityHub, type ActivityEvent, type HoldRunning } from './activity'
 import type { Inbound, SessionDriver } from './session-driver'
 import { TuiDriver } from './tui-driver'
+import { logDiag } from './diag'
 
 /**
  * A live agent process, decoupled from any viewer. The driver keeps running regardless of how many
@@ -93,6 +94,10 @@ export function registerSession(key: string, driver: SessionDriver, opts?: { run
   driver.onActivity(() => activity.data(key))
   driver.onExit(() => {
     entry.exited = true
+    // A process exit during the launch window (no viewers / very short-lived) is the signature of a
+    // launch that died before writing its jsonl — the "session vanished" failure. Log the key + how
+    // many viewers were attached so the export shows whether the user was even watching.
+    logDiag({ category: 'pty', event: 'exit', sessionId: key, viewers: entry.attached.size })
     for (const ws of entry.attached) { try { ws.close() } catch {} }
     registry.delete(key)
     activity.exit(key)
@@ -179,4 +184,5 @@ export function rekeyPty(oldKey: string, newKey: string): void {
   try { entry.driver.rekey?.(newKey) } catch {}
   registry.set(newKey, entry)
   activity.rekey(oldKey, newKey)
+  logDiag({ category: 'reconcile', event: 'rekey', sessionId: newKey, from: oldKey })
 }
