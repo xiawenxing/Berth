@@ -152,12 +152,13 @@ export function openStore(path: string) {
     allPinnedSet(): Set<string> {
       return new Set((db.prepare('SELECT session_id FROM pin').all() as any[]).map(r => r.session_id))
     },
-    markSeen(ids: string[], ts: number) {
+    markSeen(ids: string[], tsSeconds: number) {
+      if (ids.length === 0) return
       const stmt = db.prepare(`INSERT INTO session_read (session_id,last_seen,explicit_unread)
         VALUES (?,?,0)
         ON CONFLICT(session_id) DO UPDATE SET
           last_seen=max(last_seen, excluded.last_seen), explicit_unread=0`)
-      const tx = db.transaction((rows: string[]) => { for (const id of rows) stmt.run(id, ts) })
+      const tx = db.transaction((rows: string[]) => { for (const id of rows) stmt.run(id, tsSeconds) })
       tx(ids)
     },
     markUnread(id: string) {
@@ -181,18 +182,20 @@ export function openStore(path: string) {
       return { lastSeen, unread, epoch }
     },
     importReadState(input: { seen?: Record<string, number>; unread?: Record<string, true>; epoch?: number }) {
+      const seenStmt = db.prepare(`INSERT INTO session_read (session_id,last_seen,explicit_unread)
+        VALUES (?,?,0) ON CONFLICT(session_id) DO UPDATE SET last_seen=max(last_seen, excluded.last_seen)`)
+      const unreadStmt = db.prepare(`INSERT INTO session_read (session_id,last_seen,explicit_unread)
+        VALUES (?,0,1) ON CONFLICT(session_id) DO UPDATE SET explicit_unread=1`)
+      const epochSelectStmt = db.prepare(`SELECT value FROM app_setting WHERE key='unread-epoch'`)
+      const epochUpsertStmt = db.prepare(`INSERT INTO app_setting (key,value) VALUES ('unread-epoch',?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
       const tx = db.transaction(() => {
-        const seenStmt = db.prepare(`INSERT INTO session_read (session_id,last_seen,explicit_unread)
-          VALUES (?,?,0) ON CONFLICT(session_id) DO UPDATE SET last_seen=max(last_seen, excluded.last_seen)`)
         for (const [id, ts] of Object.entries(input.seen ?? {})) seenStmt.run(id, Number(ts) || 0)
-        const unreadStmt = db.prepare(`INSERT INTO session_read (session_id,last_seen,explicit_unread)
-          VALUES (?,0,1) ON CONFLICT(session_id) DO UPDATE SET explicit_unread=1`)
         for (const id of Object.keys(input.unread ?? {})) unreadStmt.run(id)
         if (input.epoch && input.epoch > 0) {
-          const cur = Number(((db.prepare(`SELECT value FROM app_setting WHERE key='unread-epoch'`).get() as any)?.value) ?? 0)
+          const cur = Number(((epochSelectStmt.get() as any)?.value) ?? 0)
           const next = cur > 0 ? Math.min(cur, input.epoch) : input.epoch
-          db.prepare(`INSERT INTO app_setting (key,value) VALUES ('unread-epoch',?)
-            ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(String(next))
+          epochUpsertStmt.run(String(next))
         }
       })
       tx()

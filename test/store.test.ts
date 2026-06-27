@@ -241,4 +241,10 @@ describe('read-state', () => {
     expect(st.unread['s3']).toBe(true)
     expect(st.epoch).toBe(42)                 // min(now, 42)
   })
+
+  it('importReadState adopts the incoming epoch when none exists yet', () => {
+    const db = openStore(':memory:')
+    db.importReadState({ epoch: 42 })   // no prior readState() → no stored epoch
+    expect(db.readState().epoch).toBe(42)
+  })
 })
