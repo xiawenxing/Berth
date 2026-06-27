@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -14,10 +15,19 @@ const SPIN_PERIOD_MS = 1000
  * look. The fix is a negative `animation-delay` equal to the current offset into the period: an
  * element mounting at wall-time T lands on phase (T % period), which is identical for every spinner
  * regardless of when it mounted. Same period + same phase ⇒ they stay synchronized forever.
+ *
+ * The phase is captured ONCE at mount in a ref. Running-session rows re-render on every /status WS
+ * `act` message (live.rev bump); reading performance.now() on each render re-seeded animationDelay
+ * and jolted the CSS rotation, so the spinner visibly jumped ("闪动跳动"). The mount-time phase is
+ * still wall-clock-aligned, so spinners stay in lockstep without re-seeding on every render.
  */
 export function Spinner({ size = 12, className, label }: { size?: number; className?: string; label?: string }) {
-  const now = typeof performance !== 'undefined' ? performance.now() : 0
-  const style = { animationDelay: `-${now % SPIN_PERIOD_MS}ms` }
+  const delayRef = useRef<string>()
+  if (delayRef.current === undefined) {
+    const now = typeof performance !== 'undefined' ? performance.now() : 0
+    delayRef.current = `-${now % SPIN_PERIOD_MS}ms`
+  }
+  const style = { animationDelay: delayRef.current }
   return (
     <Loader2
       size={size}
