@@ -17,7 +17,7 @@ import { markOpened } from './warm-pool'
 import { buildManifest, type ManifestInput } from '../agent/manifest'
 import { listTasks, updateTask } from '../data/tasks'
 import { listProjects } from '../data/projects'
-import { getTaskFieldConfig, type TaskFieldConfig } from '../data/task-config'
+import { getTaskFieldConfig, resolveStatusRoles, type TaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getDocsRoot, getDocStore } from '../data/docstore'
 import { getContextConfig } from '../data/context-config'
@@ -29,6 +29,8 @@ import { logDiag } from './diag'
 import { shouldArmFirstTurnNudge, armFirstTurnNudge } from './launch-firstturn'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
+
+export { resolveStatusRoles } from '../data/task-config'
 
 type Store = ReturnType<typeof getStore>
 const INJECT_DIR = join(berthHome(), 'inject')
@@ -166,19 +168,6 @@ export function planFreshLaunch(
   return { sessionId, intent, bindNow, manifestInput, initialPrompt }
 }
 
-/**
- * Resolve the "pending"/"in-progress" status roles from the configured vocabulary, by position:
- * pending = the default (new-task) status; in-progress = the status right after it in the list.
- * This keeps launch auto-advance working for ANY vocabulary (zh-CN 待办→进行中, English Todo→In
- * Progress, …) instead of hard-comparing literal Chinese values. Returns inProgress=null when there
- * is no "next" status (single-status list), in which case nothing advances.
- */
-export function resolveStatusRoles(cfg: TaskFieldConfig): { pending: string; inProgress: string | null } {
-  const pending = cfg.defaultStatus
-  const idx = cfg.statuses.indexOf(pending)
-  const inProgress = idx >= 0 && idx + 1 < cfg.statuses.length ? cfg.statuses[idx + 1] : null
-  return { pending, inProgress }
-}
 
 /**
  * A task launch should move only genuinely pending tasks forward. This is intentionally a

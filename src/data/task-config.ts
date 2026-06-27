@@ -57,6 +57,14 @@ export function getTaskFieldConfig(store: Store): TaskFieldConfig {
   }
 }
 
+/** Map the configured vocabulary to its pending / next-in-progress roles. */
+export function resolveStatusRoles(cfg: TaskFieldConfig): { pending: string; inProgress: string | null } {
+  const pending = cfg.defaultStatus
+  const idx = cfg.statuses.indexOf(pending)
+  const inProgress = idx >= 0 && idx + 1 < cfg.statuses.length ? cfg.statuses[idx + 1] : null
+  return { pending, inProgress }
+}
+
 /** Validate a candidate list: non-empty array of non-empty, trimmed, unique strings. */
 function clean(list: unknown, label: string): string[] {
   if (!Array.isArray(list)) throw new Error(`${label} must be an array`)
