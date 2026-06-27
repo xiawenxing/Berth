@@ -4,7 +4,7 @@
 
 export interface ParsedFlags { flags: Record<string, string | boolean>; pos: string[] }
 
-const BOOL_FLAGS = new Set(['json', 'confirm', 'create-option', 'print'])
+const BOOL_FLAGS = new Set(['json', 'confirm', 'create-option', 'print', 'id'])
 
 /** Tiny flag parser: `--key val`, `--bool`, and positionals. Side-effect-free. */
 export function parseFlags(argv: string[]): ParsedFlags {
@@ -27,11 +27,14 @@ export interface TaskLite { id: string; title: string; status: string | null; pr
  * Resolve a human-typed task reference to matching tasks. Tries: exact id, id-prefix (≥6 chars),
  * then case-insensitive title substring. Returns ALL matches so the caller can disambiguate.
  */
-export function selectTask<T extends TaskLite>(tasks: T[], query: string): T[] {
+export function selectTask<T extends TaskLite>(tasks: T[], query: string, opts?: { idOnly?: boolean }): T[] {
   const q = query.trim()
   if (!q) return []
   const exact = tasks.find(t => t.id === q)
   if (exact) return [exact]
+  if (opts?.idOnly) {
+    return q.length >= 6 ? tasks.filter(t => t.id.startsWith(q)) : []
+  }
   if (q.length >= 6) {
     const byPrefix = tasks.filter(t => t.id.startsWith(q))
     if (byPrefix.length) return byPrefix
@@ -124,8 +127,8 @@ const del = (b: string, p: string) => api(b, p, { method: 'DELETE' })
 async function getTasks(base: string): Promise<TaskLite[]> {
   return (await json(base, '/api/todos')).todos ?? []
 }
-async function resolveOne(base: string, query: string): Promise<TaskLite> {
-  const matches = selectTask(await getTasks(base), query)
+async function resolveOne(base: string, query: string, opts?: { idOnly?: boolean }): Promise<TaskLite> {
+  const matches = selectTask(await getTasks(base), query, opts)
   if (matches.length === 0) throw new Error(`未找到匹配的任务：「${query}」`)
   if (matches.length > 1) {
     throw new Error(`「${query}」匹配到多个任务，请用更精确的标题或 id：\n` + formatTaskTable(matches))
@@ -157,7 +160,8 @@ const TASK_HELP = `berth task — manage tasks (talks to a running \`berth start
   berth task rm <id|title>                                Delete a task
   berth task sync [--source ID]                           Push local edits + pull external changes
 
-  --port N / --host H   Reach a server not on 127.0.0.1:7777 (or $PORT)`
+  --port N / --host H   Reach a server not on 127.0.0.1:7777 (or $PORT)
+  --id                  Resolve <id|title> as an exact task id only (no title match)`
 
 export async function runTaskCli(argv: string[]): Promise<void> {
   const sub = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'list'
@@ -189,7 +193,7 @@ export async function runTaskCli(argv: string[]): Promise<void> {
       return
     }
     case 'done': {
-      const t = await resolveOne(base, pos.join(' '))
+      const t = await resolveOne(base, pos.join(' '), { idOnly: !!flags.id })
       const statuses = (await json(base, '/api/settings')).statuses ?? []
       const done = pickDoneStatus(statuses)
       if (!done) throw new Error('未配置任何状态，无法标记完成。')
@@ -199,13 +203,13 @@ export async function runTaskCli(argv: string[]): Promise<void> {
     }
     case 'status': {
       const status = pos[pos.length - 1]
-      const t = await resolveOne(base, pos.slice(0, -1).join(' '))
+      const t = await resolveOne(base, pos.slice(0, -1).join(' '), { idOnly: !!flags.id })
       await patch(base, `/api/todos/${encodeURIComponent(t.id)}`, { status })
       console.log(`✓ ${t.title} → ${status}`)
       return
     }
     case 'set': {
-      const t = await resolveOne(base, pos.join(' '))
+      const t = await resolveOne(base, pos.join(' '), { idOnly: !!flags.id })
       const body: any = {}
       if (flags.title) body.title = flags.title
       if (flags.status) body.status = flags.status
