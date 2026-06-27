@@ -93,12 +93,15 @@ export function synthLaunchingSessions(
   intents: LaunchIntent[],
   onDiskIds: Set<string>,
   hasLivePty: (key: string) => boolean,
+  hiddenIds: Set<string> = new Set(),
 ): LogicalSession[] {
   const out: LogicalSession[] = []
   const seen = new Set<string>()
   for (const i of intents) {
     const key = i.sessionId ?? i.id
-    if (onDiskIds.has(key) || seen.has(key) || !hasLivePty(key)) continue
+    // Same `session_hidden` veto the disk arm applies — both arms honor an explicit hide so a tombstoned
+    // session can't reappear through the live-PTY path.
+    if (onDiskIds.has(key) || seen.has(key) || hiddenIds.has(key) || !hasLivePty(key)) continue
     seen.add(key)
     out.push({
       sessionId: key, cli: i.cli, cwd: i.cwd, title: null,
