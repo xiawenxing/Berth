@@ -48,6 +48,7 @@ function readHead(path: string, bytes = 65536): string {
 /** Pull the real cwd (recorded in the transcript) and a human title from sampled session context. */
 function extractMeta(path: string): { cwd: string | null; title: string | null } {
   let cwd: string | null = null
+  let aiTitle: string | null = null
   let head: string
   try { head = readHead(path) } catch { return { cwd, title: null } }
   const title = deriveTitleFromTranscript(head)
@@ -56,7 +57,14 @@ function extractMeta(path: string): { cwd: string | null; title: string | null }
     let o: any
     try { o = JSON.parse(line) } catch { continue }
     if (!cwd && typeof o.cwd === 'string') cwd = o.cwd
-    if (cwd) break
+    // Claude persists the session title (the one shown in /resume) as an `ai-title` record. It's the
+    // CLI's own native name for the session, so it takes precedence over Berth's content-derived
+    // guess — and rescues sessions whose first user turn isn't in the sampled head (those would
+    // otherwise render as "(未命名)"). The Berth rename override, applied at display time, still wins
+    // over both.
+    if (!aiTitle && o.type === 'ai-title' && typeof o.aiTitle === 'string' && o.aiTitle.trim())
+      aiTitle = o.aiTitle.trim()
+    if (cwd && aiTitle) break
   }
-  return { cwd, title }
+  return { cwd, title: aiTitle ?? title }
 }

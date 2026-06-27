@@ -391,10 +391,11 @@ api.post('/session-dirs/preview', (req, res) => {
   if (!cwd) return res.status(400).json({ error: 'cwd required' })
   const target = normDirForMatch(cwd)
   const all = collectLogicalSessions(storeRoots())
+  const overrides = getStore().allTitleOverrides()
   const sessions = all
     .filter(s => s.cwd != null && normDirForMatch(s.cwd) === target)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map(toPreview)
+    .map(s => toPreview(s, overrides))
   res.json({ sessions })
 })
 
@@ -405,7 +406,7 @@ api.post('/sessions/preview-by-cli', (req, res) => {
   const cli = req.body?.cli
   if (typeof cli !== 'string' || !IMPORT_CLIS.has(cli as AgentCli))
     return res.status(400).json({ error: 'cli must be one of claude|codex|coco' })
-  res.json({ sessions: previewByCli(collectLogicalSessions(storeRoots()), cli as AgentCli) })
+  res.json({ sessions: previewByCli(collectLogicalSessions(storeRoots()), cli as AgentCli, getStore().allTitleOverrides()) })
 })
 
 // 导入会话 chooser — by-id source. Looks the given ids up across all stores so the paste-ids flow can
@@ -413,7 +414,7 @@ api.post('/sessions/preview-by-cli', (req, res) => {
 api.post('/sessions/preview-by-ids', (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
   if (ids.length === 0) return res.status(400).json({ error: 'ids:string[] required' })
-  res.json(previewByIds(collectLogicalSessions(storeRoots()), ids))
+  res.json(previewByIds(collectLogicalSessions(storeRoots()), ids, getStore().allTitleOverrides()))
 })
 
 api.delete('/session-dirs', (req, res) => {
