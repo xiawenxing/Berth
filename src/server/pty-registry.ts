@@ -60,7 +60,13 @@ function terminateTree(driver: SessionDriver): void {
  * Per-session live activity (running ⇄ settled), inferred from the frames this registry sees for
  * every session regardless of viewers. This is what drives the in-list spinner / red dot.
  */
-export const IDLE_MS = 1200   // silence after which a running session is considered settled
+// Silence (no visible output) after which a RUNNING turn is considered settled. This only governs
+// TUI sessions — stream drivers hold themselves running across thinking gaps via holdRunning. It was
+// 1200ms, but real TUI agents pause 2-4s mid-turn for tool calls / thinking; at 1200ms every such
+// pause flipped the list lamp 在航(转圈)⇄待查收(红点) and re-rendered the whole session list ("item
+// 重刷闪烁" + 卡顿). 4000ms tolerates normal intra-turn pauses; a genuinely-done turn still settles
+// (lights 待查收) within ~4s, which is fine for a glanceable list.
+export const IDLE_MS = 4000
 const activity = new ActivityHub({ idleMs: IDLE_MS })
 export function subscribeActivity(cb: (e: ActivityEvent) => void): () => void { return activity.subscribe(cb) }
 export function snapshotActivity(): { sessionId: string; state: 'running' | 'settled' }[] { return activity.snapshot() }
