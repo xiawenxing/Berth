@@ -6,11 +6,11 @@ vi.mock('node:fs', async (o) => ({ ...(await o() as object), existsSync: vi.fn((
 beforeEach(async () => { const fs = await import('node:fs'); (fs.existsSync as any).mockImplementation(() => true) })
 
 const claude: PhysicalSession = { cli:'claude', physicalId:'cccc1111-1111-4111-8111-111111111111',
-  storePath:'/Users/me/.claude/projects/enc/cccc1111.jsonl', cwd:'/Users/me/Code/y', title:'real talk',
+  storePath:'/Users/me/.claude/projects/enc/cccc1111-1111-4111-8111-111111111111.jsonl', cwd:'/Users/me/Code/y', title:'real talk',
   updatedAt: 200, kind:'native' }
 const codexStub: PhysicalSession = { cli:'codex', physicalId:'019ea000-0000-7000-8000-000000000002',
   storePath:'/Users/me/.codex/sessions/...0002.jsonl', cwd:'/Users/me/Code/y', title:null,
-  updatedAt: 150, kind:'import-stub', importedFromPath:'/Users/me/.claude/projects/enc/cccc1111.jsonl' }
+  updatedAt: 150, kind:'import-stub', importedFromPath:'/Users/me/.claude/projects/enc/cccc1111-1111-4111-8111-111111111111.jsonl' }
 const codexNative: PhysicalSession = { cli:'codex', physicalId:'019ea000-0000-7000-8000-000000000001',
   storePath:'/Users/me/.codex/sessions/...0001.jsonl', cwd:'/Users/me/Code/x', title:'codex thread',
   updatedAt: 100, kind:'native' }
@@ -41,6 +41,14 @@ describe('mergeSessions', () => {
     expect(merged[0].deleted).toBe(true)
     expect(merged[0].contentSourcePath).toBe(null)
   })
+  it('keeps the source UUID as the logical id for an orphaned stub (so title_override survives)', () => {
+    // Claude source file not among scanned natives (deleted/archived/unscanned). The logical id
+    // MUST stay the source UUID — title overrides, pins and attach are keyed on it. Falling back to
+    // the filesystem path orphans the rename and the session renders as "(未命名)".
+    const merged = mergeSessions([codexStub], ledger, {})
+    expect(merged).toHaveLength(1)
+    expect(merged[0].sessionId).toBe(claude.physicalId)
+  })
   it('is order-independent: stub-before-claude yields the same merge as claude-first', () => {
     const map = { '/Users/me/.codex/sessions/...0002.jsonl': claude.storePath }
     const a = mergeSessions([claude, codexStub, codexNative], ledger, map)
@@ -52,7 +60,7 @@ describe('mergeSessions', () => {
     expect(db.resume).toEqual(da.resume)
   })
   it('merges across a non-byte-identical but equivalent source path', () => {
-    const nearMiss = '/Users/me/.claude/projects/enc/../enc/cccc1111.jsonl' // resolves to claude.storePath
+    const nearMiss = '/Users/me/.claude/projects/enc/../enc/cccc1111-1111-4111-8111-111111111111.jsonl' // resolves to claude.storePath
     const stub2 = { ...codexStub, importedFromPath: nearMiss }
     const merged = mergeSessions([claude, stub2], [], {})
     expect(merged).toHaveLength(1)
