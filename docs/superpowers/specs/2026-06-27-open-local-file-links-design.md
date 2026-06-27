@@ -57,18 +57,20 @@ Berth 渲染的 markdown(聊天记录、任务上下文文档等)里若包含指
   - 服务已绑 loopback(`127.0.0.1`)。
   - 校验请求 `Origin` 头的 **hostname 为 loopback**(`127.0.0.1` / `localhost` / `::1`,**端口不限**),否则返回 `403`;缺失 `Origin`(非浏览器客户端如 curl/Electron)放行。**有意放宽到「任意 loopback 端口」**而非精确 origin:开发态前端跑在 Vite(`localhost:5173`)、API 在另一端口,精确匹配会打断 dev。跨端口的其它本地网页仍被下一条 `application/json` 预检挡住。
   - 端点**显式只接受 `application/json`**(路由内 `req.is('application/json')` 校验,非则 `415`)。这既是防御纵深,也不再依赖「`express.json` 是唯一 body parser」这一隐式前提:`application/json` 属非简单请求,跨站调用会触发浏览器 CORS 预检,而本服务不应答预检 → 被浏览器拦下。
+  - **威胁模型备注**:`open` 是「启动」能力而非「仅定位」——`open /Applications/X.app` 会**运行**该 app,`open obsidian://…` 会拉起协议处理器。因此本端点等价于「让页面请求在宿主机启动任意已注册目标」。控制点就是上面三层(loopback Origin + JSON 预检 + execFile 数组传参)+ 用户**主动点击**;前端 DOMPurify 白名单又把可点击的 scheme 限死在 `LOCAL_OPEN_SCHEMES`。这是该功能的固有属性,接受。
 
-### ② 前端:Markdown 链接点击拦截
+### ② 前端:Markdown 渲染白名单 + 链接点击拦截
 
-- 位置:`web/src/components/Markdown.tsx`。
+- 位置:`web/src/components/Markdown.tsx`(渲染 + 点击)、`web/src/lib/local-links.ts`(判定 + scheme 白名单)。
+- **⚠️ 关键前置:放宽 DOMPurify 的 URI 白名单。** `mdToSafeHtml` 用 marked→DOMPurify 清洗后注入。DOMPurify **默认只放行 http(s)/mailto/tel/ftp 等**,会把 `file://`、`obsidian://`、`vscode://` 的 `href` **整个剥掉**——点击处理器根本拿不到 href,本机链接静默失效(这是首版集成漏掉的 Critical)。故须把 DOMPurify 的 `ALLOWED_URI_REGEXP` 在默认基础上**追加** `LOCAL_OPEN_SCHEMES`。**绝不可用 `ALLOW_UNKNOWN_PROTOCOLS`**——那会把 `javascript:`/`data:`(含 `javascript://%0a…` 注释绕过)重新放进来形成 XSS。绝对路径 `/…` 与 `~…` 本就走默认 `[^a-z]` 分支,无需放行。
+- **scheme 走显式白名单 `LOCAL_OPEN_SCHEMES = ['file','obsidian','vscode']`**(`local-links.ts` 导出,判定函数与上面 DOMPurify 正则同源构造,二者不会漂移)。不采用「任意 scheme://」:因为 sanitizer 只能安全地放行固定集合;判定与 sanitizer 必须一致,否则会出现「判定为本机但 href 已被剥掉 → 点了没反应」的隐性死链。要支持新 app 协议(如 `cursor`/`zed`)在此常量加一项即可。
 - 在渲染容器上挂 `onClick` 事件委托:从 `event.target` 向上找最近的 `<a>`。
-- 判定「本机链接」依据 `anchor.getAttribute('href')`(**取原始 href**,避免浏览器把 `/Users/…` 解析成同源 URL):
-  - `file://` 开头 → 是
-  - `/…`(且非 `//`)或 `~/…` → 是
-  - 含 scheme 且 scheme **不属于** `http`/`https`/`mailto`/`tel`,且非 `#` 锚点 → 是(覆盖 `obsidian://`、`vscode://` 等)
-  - 其余 → 否(保持现状)
-- 命中:`event.preventDefault()`,`fetch('/api/open-local', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ target: 原始href }) })`。
-  - 失败(网络错误 / 非 2xx)→ 轻量提示(toast 或 console.warn),不阻断页面。
+- 判定「本机链接」(`isLocalHref`)依据 `anchor.getAttribute('href')`(**取原始 href**,避免浏览器把 `/Users/…` 解析成同源 URL):
+  - `/…`(且非 `//`)或 `~`/`~/…` → 是
+  - scheme(大小写不敏感)∈ `LOCAL_OPEN_SCHEMES` → 是(`file://`、`obsidian://`、`vscode://`)
+  - `http`/`https`/`mailto`/`tel`/`#` 锚点/其余 → 否(保持现状)
+- 命中:`event.preventDefault()`,调 `api.openLocal(原始href)`(内部 `fetch('/api/open-local', {POST, application/json, body:{target}})`)。
+  - `openLocal` **会读取结构化响应体**(即使 4xx/5xx 也 resolve `{ok,error}`,不像通用 `send` 抛错丢 body),失败时把后端原因(如 404「file not found」)打到 `console.warn`;**按设计不弹 toast**,不阻断页面。
 - 未命中(http/https):不拦截,保持现有「新标签页打开」行为。
 - 前端拦截后不再发生导航,故 Electron `setWindowOpenHandler` 不被触发,桌面 App 自动复用后端路径。
 
