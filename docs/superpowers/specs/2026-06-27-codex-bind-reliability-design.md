@@ -115,6 +115,36 @@ instead of an eventually-consistent 40s-window reconcile.
 - Old `watchCodexFirstTurn`/reconcile stays as a **last-ditch** fallback (demoted from critical
   path), and startup `refresh()` keeps running it for any pre-existing unbound intents.
 
+## claude/coco bind reliability (contrast) — the opposite failure, P2
+
+claude/coco are the **most** reliable of the three and need none of the above: `--session-id <uuid>`
+(no `--resume`) makes claude write `<id>.jsonl` at exactly that id and coco honor the pre-minted id
+(`launch.ts:149/203`, gotcha #6), and `pty-ws.ts:447-448` writes `edge(todoKey, sessionId)`
+**synchronously to SQLite at launch** (`bound=1`). Once a turn runs (jsonl exists), the bind is
+correct and durable across restart — no window, no reconcile, no cwd guessing.
+
+Their residual risk is the **inverse** of codex: the edge is written **optimistically, before the
+session is confirmed on disk**. If the launch never produces a jsonl (trust-dialog swallow gotcha #11,
+first-turn auto-submit miss gotcha #15, binary failure, immediate kill), the edge **dangles** — points
+at a session id that never materialized. `/api/todos` (`api.ts:690`) returns
+`sessions: edgesMap.get(t.id) ?? []` **unfiltered** against on-disk existence, so the phantom id stays
+in the task's `sessions[]`.
+
+Impact is **benign, not data-loss**: `/api/sessions` has no row for that id → the frontend can't
+render it → invisible cruft, not a wrong visible session.
+
+Fallback status:
+- **Source-side prevention exists and works**: trust pre-seed (`pty/trust.ts`), first-turn nudge
+  (`launch-firstturn.ts`) — these stop most "no jsonl" cases at the source.
+- **No dangling-edge cleanup**: `removeEdgesForSession` fires only on explicit detach/delete/hide
+  (`api.ts:260/500/514`); the "sweep a dead orphan" `deleteLaunchIntent` (`store.ts:313`) is **defined
+  but never wired**.
+
+**P2 fix (optional, fold into this branch or backlog):** wire `deleteLaunchIntent` into an orphan
+sweep — for a `bound=1` launch whose **pty is dead** AND **sessionId has no jsonl** AND the **intent is
+older than a grace period** (avoid deleting a session still in its boot window), drop both the intent
+and its dangling edge. Keep the grace period generous so a slow-but-real launch is never swept.
+
 ## Open questions / to verify before coding
 - Exact emit mechanism for Channel A: file-drop (berth fs.watch on `launch-callbacks/`) vs localhost
   HTTP. File-drop avoids needing the hook to know berth's port; lean file-drop.
