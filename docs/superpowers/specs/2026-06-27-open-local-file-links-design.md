@@ -27,7 +27,7 @@ Berth 渲染的 markdown(聊天记录、任务上下文文档等)里若包含指
 
 - 不做「在 Finder 中定位(reveal)」「指定用某编辑器打开」等可选行为——本期只做「系统默认 App 打开」。
 - 不改 `public/`(已冻结的 1.0 前端)。
-- 不为 Windows/Linux 做专门验收(按平台兜底实现,但仅在 macOS 验收)。
+- 不为 Windows/Linux 做专门验收(按平台兜底实现,但仅在 macOS 验收)。**已知缺口**:win32 的 `cmd /c start` 分支存在命令注入面(见后端 ② 设计内的 ⚠️ 说明),Windows 正式支持前必须先加固,勿当作已就绪。
 
 ## 方案
 
@@ -47,7 +47,7 @@ Berth 渲染的 markdown(聊天记录、任务上下文文档等)里若包含指
 - 打开:用 `execFile`(**数组传参,不经 shell**,杜绝命令注入):
   - darwin → `open <target>`
   - linux → `xdg-open <target>`
-  - win32 → `cmd /c start "" <target>`
+  - win32 → `cmd /c start "" <target>` ⚠️ **已知未验收缺口**:`cmd.exe` 会二次解析命令行,`<target>` 中的 `& | ^ "` 等元字符可越权执行——Windows 非本期验收平台(见非目标),此分支按兜底实现随包发布但**未做注入加固**。不能用「拒绝元字符」来挡,因为 `&` 等在 macOS(本期目标平台)是合法文件名字符,拒绝会误伤真实目标。Windows 正式支持时须改用不二次解析的打开方式(如 `Start-Process` 绑定参数)。
 - 校验与错误:
   - `target` 必须为非空字符串,否则 `400`。
   - 对文件路径形态(file:// / 绝对 / ~)做存在性检查,不存在返回 `404` 结构化错误;协议透传形态不检查存在性。
@@ -55,8 +55,8 @@ Berth 渲染的 markdown(聊天记录、任务上下文文档等)里若包含指
   - 成功返回 `{ ok:true }`。
 - **安全**:
   - 服务已绑 loopback(`127.0.0.1`)。
-  - 额外校验请求 `Origin` 头等于本应用 origin(`http://127.0.0.1:<port>` / `http://localhost:<port>`),不匹配返回 `403`。
-  - 端点只接受 `application/json`(非简单请求,触发浏览器 CORS 预检),挡掉其它本地网页未经授权的跨站调用。
+  - 校验请求 `Origin` 头的 **hostname 为 loopback**(`127.0.0.1` / `localhost` / `::1`,**端口不限**),否则返回 `403`;缺失 `Origin`(非浏览器客户端如 curl/Electron)放行。**有意放宽到「任意 loopback 端口」**而非精确 origin:开发态前端跑在 Vite(`localhost:5173`)、API 在另一端口,精确匹配会打断 dev。跨端口的其它本地网页仍被下一条 `application/json` 预检挡住。
+  - 端点**显式只接受 `application/json`**(路由内 `req.is('application/json')` 校验,非则 `415`)。这既是防御纵深,也不再依赖「`express.json` 是唯一 body parser」这一隐式前提:`application/json` 属非简单请求,跨站调用会触发浏览器 CORS 预检,而本服务不应答预检 → 被浏览器拦下。
 
 ### ② 前端:Markdown 链接点击拦截
 
