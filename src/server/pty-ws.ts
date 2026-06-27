@@ -25,6 +25,7 @@ import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
 import { ensureContextDoc, maintainContextDocOnDiskAsync } from '../data/context-doc'
 import { summarizeCompactedContext } from '../agent/context-compact'
 import { getLocale, promptStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
+import { logDiag } from './diag'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
 
@@ -281,14 +282,21 @@ export function createPtyWss(): WebSocketServer {
     const s = getCache().find(x => x.sessionId === sessionId)
     const wantStream = rendersStream(url, s?.cli)
     if (hasLivePty(sessionId)) {                  // already running (incl. a warm-pool pre-spawn)
-      if (liveDriverMode(sessionId) === (wantStream ? 'stream' : 'tui')) {
+      const liveMode = liveDriverMode(sessionId)
+      // Reattach when the modes match. Also reattach (never kill) when the session isn't in the disk
+      // cache yet: that's an in-flight launch (no jsonl written), whose render mode can't have been
+      // toggled — killing it here would destroy the still-running agent and is exactly the
+      // "reopen-loses-the-session" failure we're fixing. Only a known, cached session may A↔B respawn.
+      if (liveMode === (wantStream ? 'stream' : 'tui') || !s) {
         markOpened(sessionId)                     // user opened it → graduate out of the warm pool
+        logDiag({ category: 'resume', event: 'attach_live', sessionId, cli: s?.cli, mode: liveMode, inFlight: !s })
         attachViewer(sessionId, ws, { replayBytes }); return
       }
+      logDiag({ category: 'resume', event: 'mode_switch_kill', sessionId, cli: s?.cli, from: liveMode })
       killPty(sessionId)                          // mode switch (A↔B) → respawn in the requested mode below
     }
 
-    if (!s || !s.resume) { try { ws.send('\r\n[berth] session not found or not resumable\r\n') } catch {} ; ws.close(); return }
+    if (!s || !s.resume) { logDiag({ category: 'resume', event: 'not_resumable', sessionId, level: 'warn', cached: !!s }); try { ws.send('\r\n[berth] session not found or not resumable\r\n') } catch {} ; ws.close(); return }
     try {
       if (wantStream) spawnAndRegisterStream(s)                                 // Model B: stream-json resume (claude/codex/coco)
       else spawnAndRegister(s, { cols, rows })                                 // Model A: TUI resume
@@ -338,13 +346,22 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     try { ws.send(`\r\n[berth] agent "${cli}" is disabled\r\n`) } catch {} ; ws.close(); return
   }
 
+  const wantStreamLog = rendersStream(url, cli)
+  logDiag({
+    category: 'launch', event: 'fresh_start', launchToken: launchToken ?? undefined, cli, cwd,
+    todoKey: todoKey ?? undefined, projectId: projectId ?? undefined,
+    hasPrompt: !!explicitPrompt, mode: wantStreamLog ? 'stream' : 'tui',
+  })
+
   if (launchToken) {
     const existing = freshLaunchDedupe.get(launchToken)
     if (existing) {
       try {
         const result = await existing
+        logDiag({ category: 'launch', event: 'dedup_hit', launchToken, sessionId: result.launchKey, cli, mode: result.mode })
         sendLaunchFrame(ws, result)
         if (!attachViewer(result.launchKey, ws, { replayBytes: parsePtyReplayBytes(url.searchParams.get('historyBytes')) })) {
+          logDiag({ category: 'launch', event: 'dedup_pty_gone', launchToken, sessionId: result.launchKey, level: 'warn' })
           try { ws.send('\r\n[berth] launch exists but live pty is gone\r\n') } catch {}
           ws.close()
         }
@@ -542,10 +559,16 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // this frame, and sending it earlier races the registry and can attach the UI to stale transcript
   // state instead of the just-launched process.
   const launchResult: FreshLaunchResult = { launchKey, bound: !!plan.sessionId, cli, cwd, mode: wantStream ? 'stream' : 'tui' }
+  logDiag({
+    category: 'launch', event: 'spawned', launchToken: launchToken ?? undefined, sessionId: launchKey, cli,
+    bound: launchResult.bound, mode: launchResult.mode, hasInitialPrompt: !!initialPrompt,
+  })
   launchDeferred?.resolve(launchResult)
   sendLaunchFrame(ws, launchResult)
+  logDiag({ category: 'launch', event: 'launched_frame', launchToken: launchToken ?? undefined, sessionId: launchKey, cli })
   attachViewer(launchKey, ws, { replayBytes: parsePtyReplayBytes(url.searchParams.get('historyBytes')) })
   } catch (e) {
+    logDiag({ category: 'launch', event: 'error', launchToken: launchToken ?? undefined, cli, level: 'error', message: String((e as any)?.message ?? e) })
     launchDeferred?.reject(e)
     throw e
   }
