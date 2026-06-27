@@ -1,6 +1,11 @@
+import { mkdirSync, readdirSync, readFileSync, rmSync, watch } from 'node:fs'
+import { join } from 'node:path'
 import type { openStore } from '../db/store'
 import type { LaunchCallback } from './launch-callback'
 import { bindIntentToSession } from './bind'
+import { rekeyPty } from './pty-registry'
+import { logDiag } from './diag'
+import { parseLaunchCallback } from './launch-callback'
 
 type Store = ReturnType<typeof openStore>
 
@@ -20,4 +25,43 @@ export function ingestCallback(
   bindIntentToSession(store, intent, cb.sessionId)
   deps.rekey(intent.id, cb.sessionId)
   return true
+}
+
+/**
+ * Process one callback file (named <token>.json): parse, bind if a pending intent matches, remove.
+ * A partial/invalid file is LEFT in place so a later fs.watch event or the startup scan retries it
+ * once the hook finishes writing. A parseable file is removed whether or not it bound — a callback
+ * with no matching pending intent is stale/redundant (channel B may have already bound it), so we
+ * don't let the dir accumulate. Best-effort throughout: never throws into the watcher.
+ */
+function processCallbackFile(store: Store, dir: string, file: string): void {
+  if (!file.endsWith('.json')) return
+  const path = join(dir, file)
+  let cb
+  try { cb = parseLaunchCallback(readFileSync(path, 'utf8')) } catch { return }
+  if (!cb) return   // partial write / not yet flushed — leave for the next event or the scan
+  const token = file.slice(0, -'.json'.length)
+  try {
+    if (ingestCallback(store, token, cb, { rekey: rekeyPty }))
+      logDiag({ category: 'reconcile', event: 'callback_bind', sessionId: cb.sessionId, cli: 'codex', intentId: token })
+  } catch { /* binding is best-effort */ }
+  try { rmSync(path, { force: true }) } catch {}
+}
+
+/** Scan any callback files already on disk (dropped while Berth was down). Call once at startup. */
+export function scanLaunchCallbacks(store: Store, dir: string): void {
+  try { mkdirSync(dir, { recursive: true }) } catch {}
+  let files: string[] = []
+  try { files = readdirSync(dir) } catch { return }
+  for (const f of files) processCallbackFile(store, dir, f)
+}
+
+/** Watch the callback dir for new drops. Returns a stop fn. macOS fires 'rename' on create. */
+export function startLaunchCallbackWatch(store: Store, dir: string): () => void {
+  try { mkdirSync(dir, { recursive: true }) } catch {}
+  const w = watch(dir, (_event, filename) => {
+    if (filename) processCallbackFile(store, dir, filename.toString())
+  })
+  ;(w as { unref?: () => void }).unref?.()
+  return () => w.close()
 }

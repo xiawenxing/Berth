@@ -20,6 +20,8 @@ import { setTaskSessionDigestProvider } from '../data/task-summary'
 import { readTranscript } from './context-consolidate-service'
 import { extractConversation } from '../agent/transcript'
 import { berthHome } from '../paths'
+import { scanLaunchCallbacks, startLaunchCallbackWatch } from './launch-callback-watch'
+import { codexCallbackDir } from '../pty/launch'
 import type { LogicalSession } from '../types'
 
 const DB_DIR = berthHome()
@@ -94,6 +96,10 @@ export async function initData(): Promise<void> {
   // Guard the scan at the call site so we don't pay a full 3-store disk scan on every boot post-migration.
   if (!store.getSetting('session-import-migrated'))
     migrateSessionImportOnce(store, collectLogicalSessions(storeRoots()))
+  // Channel A: pick up any callbacks dropped while Berth was down, then watch for new ones.
+  const cbDir = codexCallbackDir()
+  scanLaunchCallbacks(store, cbDir)
+  startLaunchCallbackWatch(store, cbDir)
 }
 
 /**
