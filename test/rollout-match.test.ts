@@ -18,6 +18,9 @@ describe('parseSessionMeta', () => {
   it('returns null for non-session_meta or malformed lines', () => {
     expect(parseSessionMeta('nope')).toBeNull()
     expect(parseSessionMeta(JSON.stringify({ type: 'event_msg', payload: {} }))).toBeNull()
+    expect(parseSessionMeta(JSON.stringify({ type: 'session_meta' }))).toBeNull()                                   // no payload
+    expect(parseSessionMeta(JSON.stringify({ type: 'session_meta', payload: { session_id: 5, cwd: '/p', timestamp: '2026-06-27T04:35:27Z' } }))).toBeNull()  // non-string session_id
+    expect(parseSessionMeta(JSON.stringify({ type: 'session_meta', payload: { session_id: 's', cwd: '/p', timestamp: 'not-a-date' } }))).toBeNull()           // unparseable timestamp
   })
 })
 
@@ -45,5 +48,7 @@ describe('matchRolloutToIntent (Δ=90s, earliest in window)', () => {
   it('defaults the window to 90s when omitted', () => {
     expect(matchRolloutToIntent(intents, { cwd: '/proj', startedAtSec: 1089 })).toBe('i-early')
     expect(matchRolloutToIntent(intents, { cwd: '/proj', startedAtSec: 1091 })).toBeNull()
+    expect(matchRolloutToIntent(intents, { cwd: '/proj', startedAtSec: 1090 })).toBe('i-early') // exact upper edge (createdAt+90)
+    expect(matchRolloutToIntent(intents, { cwd: '/proj', startedAtSec: 1000 })).toBe('i-early') // exact lower edge (createdAt)
   })
 })
