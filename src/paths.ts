@@ -19,3 +19,9 @@ export function berthHome(): string {
 export function berthAgentCwd(): string {
   return join(berthHome(), 'agent-cwd')
 }
+
+/** Directory holding Berth's own diagnostic event logs (launch/connection lifecycle), exported for
+ *  user bug reports. Lives under BERTH_HOME so an isolated instance keeps its own logs. */
+export function berthLogsDir(): string {
+  return join(berthHome(), 'logs')
+}
