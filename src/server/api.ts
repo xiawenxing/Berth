@@ -28,7 +28,8 @@ import { isGeneratingTitle, triggerSessionTitle, titleGist } from './title-servi
 import type { Locale } from '../i18n'
 import { readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { snapshotActivity } from './pty-registry'
+import { snapshotActivity, liveCount } from './pty-registry'
+import { ingestDiag, collectDiagForExport } from './diag'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { parseTranscriptChatTurns, parseTranscriptTurns } from './transcript-turns'
 import { parseClaudeJsonlTurns } from '../agent/normalize/claude-jsonl'
@@ -144,6 +145,33 @@ function serialize(): ApiSession[] {
 export const api = Router()
 api.get('/sessions', (_req, res) => res.json(serialize()))
 api.post('/refresh', (_req, res) => { refresh(); res.json({ ok: true, count: getCache().length }) })
+
+// ── Diagnostics: launch/connection lifecycle event log (for user bug reports) ──
+// The browser flushes its event buffer here so the export bundles BOTH sides of every launch
+// handshake on one correlated timeline (keyed by launchToken/sessionId).
+api.post('/diag', (req, res) => {
+  const n = ingestDiag(req.body?.events)
+  res.json({ ok: true, ingested: n })
+})
+
+// Download the merged (server + browser) event log as a JSON bundle, plus a little machine context
+// so a report is self-describing. Content-Disposition makes the SPA's fetch→blob download name it.
+api.get('/diag/export', (_req, res) => {
+  const events = collectDiagForExport()
+  const bundle = {
+    generatedAt: Date.now(),
+    berthVersion: process.env.npm_package_version ?? null,
+    platform: process.platform,
+    nodeVersion: process.version,
+    liveSessions: liveCount(),
+    eventCount: events.length,
+    events,
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="berth-diag-${stamp}.json"`)
+  res.send(JSON.stringify(bundle, null, 2))
+})
 
 api.post('/pin', (req, res) => {
   const { sessionId, on } = req.body ?? {}
