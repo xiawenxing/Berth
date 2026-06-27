@@ -81,6 +81,9 @@ function TaskTag({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onClick={(e) => e.stopPropagation()}
+            // Keep keystrokes inside the search box: the parent row treats Space/Enter as
+            // "open session", and would also hijack the IME's Space-to-select. Don't let them bubble.
+            onKeyDown={(e) => e.stopPropagation()}
             placeholder="搜索任务…"
             className="mb-1.5 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-[12px] text-foreground outline-none focus:border-brand"
           />
