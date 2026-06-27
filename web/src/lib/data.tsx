@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, type AgentConfig, type ApiProject, type ApiSession, type ApiSettings, type ApiTask } from './api'
 import { DEFAULT_STATUSES } from './status'
+import { logDiag } from './diag'
 
 // A fresh launch in flight: shown as an optimistic "创建中…" placeholder in the lists until its
 // real session surfaces on disk (and in /api/sessions). Reconciled away by exact session id (claude/
@@ -149,14 +150,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!expired && needsTitleBackfill(p, surfaced)) {
           const updated = p.surfaced && p.sessionId === surfaced.sessionId ? p : { ...p, sessionId: surfaced.sessionId, surfaced: true }
           next.push(updated)
-          if (updated !== p) changed = true
+          if (updated !== p) { changed = true; logDiag('launch', 'surfaced', { launchToken: p.tempId, sessionId: surfaced.sessionId, cli: p.cli, ageMs: now - p.createdAt, titlePending: true }) }
         } else {
           changed = true
+          logDiag('launch', 'surfaced', { launchToken: p.tempId, sessionId: surfaced.sessionId, cli: p.cli, ageMs: now - p.createdAt })
         }
       } else if (!expired) {
         next.push(p)
       } else {
         changed = true
+        // Aged out without ever surfacing — the failure signature this whole effort targets. The
+        // durable launching-overlay should normally surface it first; if this still fires, the export
+        // shows whether a launched-frame ever arrived (hadLaunchedFrame) and how long it waited.
+        logDiag('launch', 'pending_expired', { launchToken: p.tempId, sessionId: p.sessionId ?? undefined, cli: p.cli, hadLaunchedFrame: !!p.sessionId, ageMs: now - p.createdAt, level: 'warn' })
       }
     }
     if (changed || next.length !== pending.length) setPending(next)

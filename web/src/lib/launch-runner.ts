@@ -1,6 +1,7 @@
 import type { AgentCli, ApiProject, ApiSession } from './api'
 import { shortCwd } from './format'
 import { deriveLaunch, type CargoState } from './launch-cargo'
+import { logDiag } from './diag'
 
 export interface LaunchImage {
   name: string
@@ -98,6 +99,9 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   const ws = new WebSocket(`${proto}://${location.host}/pty?${buildLaunchQuery(launch, stream).toString()}`)
   ws.binaryType = 'arraybuffer'
+  const tok = launch.launchToken
+  logDiag('connect', 'prime_open', { launchToken: tok, cli: launch.cli, hasImages, mode: stream ? 'stream' : 'tui' })
+  ws.onclose = () => logDiag('connect', 'prime_close', { launchToken: tok, cli: launch.cli, sessionId: launchedId ?? undefined })
   let launchedId: string | null = null
   let imagesSent = false
   let promptSent = false
@@ -161,6 +165,7 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
         const msg = JSON.parse(data)
         if (msg.__berth === 'launched' && msg.sessionId) {
           launchedId = msg.sessionId
+          logDiag('connect', 'prime_launched', { launchToken: tok, cli: launch.cli, sessionId: msg.sessionId, bound: msg.bound })
           void onLaunched?.(msg.sessionId)
           if (!hasImages) closeSoon()       // prompt rode the URL → server already fired it
           else sendImagePayload()           // Model B fires now; Model A waits for the marker below
@@ -176,7 +181,7 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
       else sendPromptModelA()   // a frame after the images = the CLI ack'd the paste → send the prompt now
     }
   }
-  ws.onerror = () => { try { ws.close() } catch {} }
+  ws.onerror = () => { logDiag('connect', 'prime_error', { launchToken: tok, cli: launch.cli, level: 'error', sessionId: launchedId ?? undefined }); try { ws.close() } catch {} }
   // Safety: never let an image-launch socket linger if the CLI never announces paste readiness.
   if (hasImages) setTimeout(() => { if (!imagesSent) { try { ws.close() } catch {} } }, PRIME_PAYLOAD_TIMEOUT_MS)
 }
@@ -190,6 +195,12 @@ export function startFreshLaunch(input: StartFreshLaunchInput): string {
   const pendingCwd = cwd || input.project?.workspaceCwd || ''
   const launchToken = input.makeLaunchToken?.() ?? crypto.randomUUID()
   const createdAt = input.now?.() ?? Date.now()
+
+  logDiag('launch', 'start', {
+    launchToken, cli: input.cli, dest: input.dest, projectId: input.projectId ?? undefined,
+    todoKey: input.todoKey ?? undefined, hasPrompt: !!(input.freeText || input.taskNote),
+    hasImages: !!input.images?.length,
+  })
 
   input.addPending({
     tempId: launchToken,

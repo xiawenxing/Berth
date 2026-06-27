@@ -7,6 +7,7 @@ import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
 import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
 import { cliReadiness, shouldMarkLaunchReady, shouldRevealLaunch } from '@/lib/launch-readiness'
+import { logDiag } from '@/lib/diag'
 import type { LaunchSpec } from '@/lib/ui-store'
 import '@xterm/xterm/css/xterm.css'
 
@@ -337,6 +338,9 @@ export function Terminal({
     }
     ws = new WebSocket(`${proto}://${location.host}/pty?${qs.toString()}`)
     ws.binaryType = 'arraybuffer'
+    const diagKind = launch ? 'launch' : 'resume'
+    ws.addEventListener('open', () => logDiag('connect', 'term_open', { kind: diagKind, cli: launch?.cli, sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken }), { once: true })
+    ws.addEventListener('error', () => logDiag('connect', 'term_error', { kind: diagKind, level: 'error', sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken }), { once: true })
 
     const pasteIsForThisTerminal = (e: Event) => {
       const shell = shellRef.current
@@ -425,6 +429,7 @@ export function Terminal({
             // The drawer-independent prime socket (lib/launch-runner) owns submitting the launch's
             // images+prompt, so closing the drawer mid-launch can't drop them. This viewer only binds
             // the drawer to the real session id.
+            logDiag('connect', 'term_launched', { launchToken: launch?.launchToken, sessionId: ctl.sessionId, cli: launch?.cli })
             onLaunched?.(ctl.sessionId)
           } else if (ctl.__berth === 'turnStarted' && launch) {
             // codex's DETERMINISTIC boot-complete signal (server read its rollout task_started). Drop
@@ -503,6 +508,7 @@ export function Terminal({
       disp.dispose()
       scrollDisp.dispose()
       disposeIme?.()
+      logDiag('connect', 'term_close', { kind: launch ? 'launch' : 'resume', cli: launch?.cli, sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken })
       ws?.close()
       webgl?.dispose()
       term.dispose()
