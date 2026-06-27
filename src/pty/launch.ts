@@ -70,7 +70,8 @@ export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
 
 export interface FreshOpts {
   cwd: string; sessionId?: string; injectFile?: string
-  callbackToken?: string   // channel A: intent id → hook drops codex envelope to <token>.json
+  callbackToken?: string   // channel A: = intent id; emitted to the hook as $BERTH_LAUNCH_TOKEN, names the
+                           // <token>.json drop. NOT diag's browser-side launchToken (a different correlation id).
   initialPrompt?: string   // the user's first message (positional prompt)
   model?: string           // per-CLI default model (claude/codex only; coco has no --model flag)
   addDirs?: string[]; cols?: number; rows?: number

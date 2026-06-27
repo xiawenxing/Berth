@@ -24,6 +24,7 @@ import { scanLaunchCallbacks, startLaunchCallbackWatch } from './launch-callback
 import { codexCallbackDir } from '../pty/launch'
 import { syncRolloutWatch } from './rollout-watch'
 import { selectOrphanLaunches } from './orphan-sweep'
+import { logDiag } from './diag'
 import type { LogicalSession } from '../types'
 
 const DB_DIR = berthHome()
@@ -180,6 +181,8 @@ export function refresh(): LogicalSession[] {
   const nowSec = Math.floor(Date.now() / 1000)
   for (const id of selectOrphanLaunches(boundLaunches, { nowSec, graceSec: 600, hasLivePty, sessionExists: (sid) => allIds.has(sid) })) {
     const orphan = boundLaunches.find(b => b.id === id)
+    // A destructive drop (edge + intent) — log it so "where did my task↔session edge go" stays debuggable.
+    logDiag({ category: 'reconcile', event: 'orphan_sweep', sessionId: orphan?.sessionId ?? undefined, intentId: id })
     if (orphan?.sessionId) store.removeEdgesForSession(orphan.sessionId)
     store.deleteLaunchIntent(id)
   }

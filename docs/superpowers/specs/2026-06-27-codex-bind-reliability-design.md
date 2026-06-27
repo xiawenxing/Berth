@@ -1,9 +1,31 @@
 # Codex task↔session bind reliability — design
 
-> Status: design draft (probe验证完成,未写代码)
+> Status: IMPLEMENTED (branch `release/codex-bind-reliability`, 17 commits + final review; suite green,
+> live E2E of Channel A proven). Two design follow-ups remain — see "Known residuals / follow-ups".
 > Branch: `release/codex-bind-reliability`
-> Related: launch/first-turn chain (see ARCHITECTURE.md gotcha #6/#12/#14/#15, `reconcile.ts`,
+> Related: launch/first-turn chain (see ARCHITECTURE.md gotcha #6/#12/#14/#15/#17, `reconcile.ts`,
 > `launch-ready.ts`, `launchingOverlay` in `api.ts`).
+
+## Known residuals / follow-ups (from the final holistic review — NOT blockers)
+
+1. **Unbound codex intents are never garbage-collected → Channel-B's 5s poll can run indefinitely.**
+   `pendingIntents()` is `WHERE bound=0` with no age bound, and nothing drops a stuck unbound intent
+   (the orphan sweep skips `sessionId===null`, i.e. codex pre-bind). A codex launch that never writes
+   a `session_meta` (binary missing / crash / trust-abort before start) leaves a permanently-pending
+   intent, so `syncRolloutWatch` keeps `hasPending===true` and the `unref`'d 5s interval never disarms.
+   Low frequency (codex writes `session_meta` at start almost always) and cheap, but it violates locked
+   decision §3/4 ("armed only while pending; idles to nothing"). **Fix (fast-follow):** an age-based TTL
+   so a generously-old unbound intent stops counting as pending (and gets dropped), bounding both the
+   poll and the reconcile retry. This is the codex analogue of the claude/coco orphan sweep.
+
+2. **Concurrent same-cwd, out-of-order rollout can mis-bind via Channel B, and A cannot correct it.**
+   `matchRolloutToIntent` binds a rollout to the earliest same-cwd pending intent. If two codex sessions
+   launch in the SAME cwd within 90s and the *later* one's rollout lands first, B binds it to the
+   *earlier* intent; A's `ingestCallback` then finds the intent already bound and no-ops — the wrong
+   edge stands. The spec's "Channel A's launchToken always corrects B" holds ONLY when A wins the race.
+   Narrow (two tasks sharing a cwd, B-before-A) and spec-accepted ("B errs toward matching"), but the
+   self-correction guarantee is overstated. **Fix (optional):** let A *re-bind* on a token-exact
+   mismatch (detect token→session disagreement with an existing B edge and rewrite) instead of no-op.
 
 ## Problem
 
