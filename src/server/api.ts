@@ -153,6 +153,39 @@ api.post('/pin', (req, res) => {
   res.json({ ok: true })
 })
 
+// ── Read-state (the dock unread dot). Server-authoritative; replaces per-origin localStorage so the
+// CLI browser and the Electron app share it. last_seen is unix SECONDS. ──
+api.get('/read-state', (_req, res) => {
+  res.json(getStore().readState())
+})
+
+api.post('/read-state/seen', (req, res) => {
+  const { sessionIds, ts } = req.body ?? {}
+  if (!Array.isArray(sessionIds) || !sessionIds.every(x => typeof x === 'string'))
+    return res.status(400).json({ error: 'sessionIds:string[] required' })
+  const when = typeof ts === 'number' && ts > 0 ? Math.floor(ts) : Math.floor(Date.now() / 1000)
+  getStore().markSeen(sessionIds, when)
+  res.json({ ok: true })
+})
+
+api.post('/read-state/unread', (req, res) => {
+  const { sessionId } = req.body ?? {}
+  if (typeof sessionId !== 'string' || sessionId === '')
+    return res.status(400).json({ error: 'sessionId required' })
+  getStore().markUnread(sessionId)
+  res.json({ ok: true })
+})
+
+api.post('/read-state/import', (req, res) => {
+  const { seen, unread, epoch } = req.body ?? {}
+  getStore().importReadState({
+    seen: seen && typeof seen === 'object' ? seen : {},
+    unread: unread && typeof unread === 'object' ? unread : {},
+    epoch: typeof epoch === 'number' ? epoch : undefined,
+  })
+  res.json({ ok: true })
+})
+
 api.post('/attach', (req, res) => {
   const { sessionId, projectId, state } = req.body ?? {}
   if (typeof sessionId !== 'string')
