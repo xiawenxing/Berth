@@ -157,6 +157,9 @@ export const api = {
     send('POST', '/api/edge', { sessionId, todoKey, projectId }),
   // Native macOS folder picker → absolute path (or cancelled).
   pickFolder: () => send('POST', '/api/pick-folder', {}) as Promise<{ path?: string; cancelled?: boolean }>,
+  // Ask the host (this Berth server, on the user's machine) to open a local-file link with the OS
+  // default app — browsers block file:// / absolute-path navigation from an http page.
+  openLocal: (target: string) => send('POST', '/api/open-local', { target }) as Promise<{ ok: boolean; error?: string }>,
   // Preview the sessions a candidate dir would surface (no state mutation).
   previewDir: (cwd: string) =>
     send('POST', '/api/session-dirs/preview', { cwd }) as Promise<{ sessions: PreviewSession[] }>,

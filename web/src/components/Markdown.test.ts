@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { mdToSafeHtml } from './Markdown'
+import { mdToSafeHtml, handleMarkdownClick } from './Markdown'
+import { vi } from 'vitest'
 
 describe('mdToSafeHtml', () => {
   it('renders common markdown (bold, inline code, headings, lists, fenced code)', () => {
@@ -26,5 +27,44 @@ describe('mdToSafeHtml', () => {
 
   it('preserves single newlines as <br> (gfm breaks)', () => {
     expect(mdToSafeHtml('line1\nline2')).toContain('<br>')
+  })
+})
+
+describe('handleMarkdownClick', () => {
+  function clickOn(href: string) {
+    const div = document.createElement('div')
+    const a = document.createElement('a')
+    a.setAttribute('href', href)
+    a.textContent = 'link'
+    div.appendChild(a)
+    const preventDefault = vi.fn()
+    const openLocal = vi.fn()
+    handleMarkdownClick({ target: a, preventDefault }, openLocal)
+    return { preventDefault, openLocal }
+  }
+
+  it('intercepts a local link: preventDefault + openLocal(rawHref)', () => {
+    const { preventDefault, openLocal } = clickOn('/Users/me/x.md')
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(openLocal).toHaveBeenCalledWith('/Users/me/x.md')
+  })
+
+  it('passes the file:// href through verbatim', () => {
+    const { openLocal } = clickOn('file:///Users/me/a%20b.md')
+    expect(openLocal).toHaveBeenCalledWith('file:///Users/me/a%20b.md')
+  })
+
+  it('ignores an http link (no preventDefault, no openLocal)', () => {
+    const { preventDefault, openLocal } = clickOn('https://example.com')
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(openLocal).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when the click is not on a link', () => {
+    const span = document.createElement('span')
+    const preventDefault = vi.fn(); const openLocal = vi.fn()
+    handleMarkdownClick({ target: span, preventDefault }, openLocal)
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(openLocal).not.toHaveBeenCalled()
   })
 })
