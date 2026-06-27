@@ -96,6 +96,21 @@ describe('seed from server on mount', () => {
   })
 })
 
+describe('GET failure falls back to a moored baseline', () => {
+  it('does not flash every session unread when the initial GET fails', async () => {
+    ;(globalThis as any).fetch = vi.fn(async (url: string, init?: any) => {
+      const method = init?.method ?? 'GET'
+      if (method === 'GET' && url === '/api/read-state') return { ok: false, json: async () => ({}) } as any
+      return { ok: true, json: async () => ({}) } as any
+    })
+    const { live, cleanup } = await mountLive()
+    try {
+      // No server state applied (GET failed). A session with output must NOT be unread.
+      expect(live().shipStatus('sess-a', 100000)).toBe('moored')
+    } finally { cleanup() }
+  })
+})
+
 describe('mutations mirror to the server', () => {
   it('markSeenMany flips to read and POSTs the ids', async () => {
     serverState = { lastSeen: {}, unread: {}, epoch: 100 }

@@ -182,7 +182,7 @@ api.get('/read-state', (_req, res) => {
 
 api.post('/read-state/seen', (req, res) => {
   const { sessionIds, ts } = req.body ?? {}
-  if (!Array.isArray(sessionIds) || !sessionIds.every(x => typeof x === 'string' && x !== ''))
+  if (!Array.isArray(sessionIds) || sessionIds.length === 0 || !sessionIds.every(x => typeof x === 'string' && x !== ''))
     return res.status(400).json({ error: 'sessionIds:string[] required' })
   const when = typeof ts === 'number' && Number.isFinite(ts) && ts > 0
     ? Math.floor(ts)
@@ -532,7 +532,7 @@ with:
 ```ts
   const seen = useRef<Record<string, number>>({})
   const unread = useRef<Record<string, boolean>>({})
-  const unreadEpoch = useRef(0)
+  const unreadEpoch = useRef(Math.floor(Date.now() / 1000))  // "now" baseline: 0 would flash everything unread pre-hydration / on GET failure
 ```
 
 - [ ] **Step 3: Load read-state from the server on mount**

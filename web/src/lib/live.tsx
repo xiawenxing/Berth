@@ -66,7 +66,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const updatedAt = useRef(new Map<string, number>())
   const seen = useRef<Record<string, number>>({})
   const unread = useRef<Record<string, boolean>>({})
-  const unreadEpoch = useRef(0)
+  const unreadEpoch = useRef(Math.floor(Date.now() / 1000))
   const activeSession = useRef<string | null>(null)
   // Session ids the user has acted on locally this mount. The mount-time server hydration must not
   // clobber these — a mutation can land before the initial GET resolves, and its in-flight POST,
