@@ -65,13 +65,41 @@ function streamRenderEnabled(): boolean {
   try { return localStorage.getItem('berth-render-mode') === 'B' } catch { return false }
 }
 
+/** The fields of a launch spec the first-turn routing depends on (shared by LaunchDrawerSession and
+ *  the drawer terminal's LaunchSpec). */
+export interface FirstTurnLaunch {
+  cli: string
+  prompt?: string
+  images?: { name: string; dataUrl: string }[]
+  todoKey?: string | null
+}
+
+// Model A only: claude/coco FREE launches submit their first turn over the prime socket (gated on the
+// CLI being ready), NOT via the CLI's native URL positional. The positional's cold-start auto-submit
+// has a rare miss that strands the typed query pre-filled-but-unsent in the composer. codex keeps the
+// positional (its submit is reliable); task launches keep it too so the user note composes with the
+// task directive the server injects as the positional.
+function wantsSocketTextSubmit(launch: FirstTurnLaunch): boolean {
+  if (!launch.prompt?.trim()) return false
+  if (launch.todoKey) return false
+  return launch.cli === 'claude' || launch.cli === 'coco'
+}
+
+/** Whether this launch's first-turn prompt rides the URL positional (vs. being submitted over the
+ *  prime socket once the CLI is ready). Shared with the drawer terminal so exactly one path submits. */
+export function launchPromptRidesUrl(launch: FirstTurnLaunch, renderStream: boolean): boolean {
+  if (!launch.prompt || launch.images?.length) return false // images can never ride a URL
+  if (renderStream) return true                              // Model B delivers the URL prompt over stdin
+  return !wantsSocketTextSubmit(launch)                      // Model A: claude/coco free → socket, else URL
+}
+
 function buildLaunchQuery(launch: LaunchDrawerSession['launch'], renderStream: boolean): URLSearchParams {
   const qs = new URLSearchParams({ new: '1', cli: launch.cli, cwd: launch.cwd, cols: '120', rows: '30' })
   if (renderStream) qs.set('render', 'stream-json')
   if (launch.launchToken) qs.set('launchToken', launch.launchToken)
   if (launch.projectId) qs.set('projectId', launch.projectId)
   if (launch.todoKey) qs.set('todoKey', launch.todoKey)
-  if (launch.prompt && !launch.images?.length) qs.set('prompt', launch.prompt)
+  if (launchPromptRidesUrl(launch, renderStream)) qs.set('prompt', launch.prompt!)
   if (launch.ctxProject === false) qs.set('ctxProject', '0')
   if (launch.ctxTask === false) qs.set('ctxTask', '0')
   for (const d of launch.addDirs ?? []) qs.append('addDirs', d)
@@ -79,6 +107,15 @@ function buildLaunchQuery(launch: LaunchDrawerSession['launch'], renderStream: b
 }
 
 const PRIME_PAYLOAD_TIMEOUT_MS = 60_000
+// The CLI's TUI announces bracketed-paste support (composer is up) with this marker.
+const BRACKETED_PASTE_READY = '\x1b[?2004h'
+// Claude/Codex echo the pasted image path back as an attachment chip ("[Image #1]") once it's truly
+// attached. That — not the next arbitrary redraw — is when the prompt's Enter is safe to send.
+const IMAGE_ATTACH_MARK = '[Image'
+// Fallbacks so a CLI that never echoes the expected marker still submits the first turn rather than
+// stranding it: after the image goes out, and after the launched frame for a text-only socket submit.
+const IMAGE_ATTACH_FALLBACK_MS = 3_000
+const TEXT_READY_FALLBACK_MS = 8_000
 
 /**
  * A drawer-INDEPENDENT socket that drives a fresh launch to completion so closing the drawer
@@ -96,6 +133,10 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
   const stream = streamRenderEnabled()
   const images = (launch.images ?? []).filter((img) => img.dataUrl)
   const hasImages = images.length > 0
+  const prompt = launch.prompt?.trim() ?? ''
+  // Model A claude/coco free launch: this socket owns the first-turn submit (the prompt did NOT ride
+  // the URL). For images, the prime socket always owns the submit (images can't ride a URL).
+  const socketText = !stream && !hasImages && wantsSocketTextSubmit(launch)
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   const ws = new WebSocket(`${proto}://${location.host}/pty?${buildLaunchQuery(launch, stream).toString()}`)
   ws.binaryType = 'arraybuffer'
@@ -105,7 +146,7 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
   let launchedId: string | null = null
   let imagesSent = false
   let promptSent = false
-  let promptFallback: ReturnType<typeof setTimeout> | undefined
+  let fallback: ReturnType<typeof setTimeout> | undefined
   let recentOutput = ''
 
   const closeSoon = () => setTimeout(() => { try { ws.close() } catch {} }, 100)
@@ -119,43 +160,49 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
     setTimeout(tick, 50)
   }
 
-  // Model A only: send the prompt as its own bracketed paste + Enter, exactly once. Split out from the
-  // image send because the CLI drops the prompt if it arrives in the same burst as the image — it's
-  // still attaching the just-pasted image when the prompt + Enter land, so only the image survives.
-  // We instead fire this on the CLI's next output frame (its image-paste ack), mirroring the gap a
-  // human leaves when they paste an image and then type. A fallback timer covers a silent CLI.
-  const sendPromptModelA = (): void => {
-    if (promptSent || !imagesSent || ws.readyState !== WebSocket.OPEN) return
+  // Submit the prompt as its own bracketed paste + Enter, exactly once. For image launches this MUST
+  // wait until the image is attached (imagesSent + the attach confirmation, see below) — sending the
+  // prompt + Enter while the CLI is still attaching makes it submit an image-less turn and strand the
+  // image in the composer (the reported bug). A fallback timer covers a CLI that never echoes a marker.
+  const submitPrompt = (): void => {
+    if (promptSent || ws.readyState !== WebSocket.OPEN) return
+    if (hasImages && !imagesSent) return
     promptSent = true
-    if (promptFallback) clearTimeout(promptFallback)
-    const prompt = launch.prompt?.trim()
+    if (fallback) clearTimeout(fallback)
     if (prompt) ws.send(JSON.stringify({ t: 'i', d: `\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~\r` }))
     else ws.send(JSON.stringify({ t: 'i', d: '\r' }))
     closeWhenFlushed()
   }
 
-  // Submit the image-backed first turn exactly once. Mirrors what the drawer terminal/chat used to do,
-  // now owned here. Returns false until it actually fires (Model A waits for bracketed-paste readiness).
-  const sendImagePayload = (): boolean => {
+  // Model B: deliver images + prompt as one structured turn the instant the session launches.
+  const sendStreamTurn = (): void => {
+    if (imagesSent || ws.readyState !== WebSocket.OPEN) return
+    imagesSent = true
+    promptSent = true
+    ws.send(JSON.stringify({ t: 'turn', text: prompt, images, clientTurnId: `launch_${launch.launchToken}` }))
+    closeWhenFlushed()
+  }
+
+  // Model A: paste the images once the CLI has enabled bracketed paste (else the escape markers echo
+  // as literal text during startup). The prompt follows only after the attach confirmation (pump()).
+  const sendImages = (): boolean => {
     if (imagesSent || !hasImages || ws.readyState !== WebSocket.OPEN) return false
-    const prompt = launch.prompt?.trim()
-    if (stream) {
-      // Model B: one structured turn carrying the images + prompt.
-      imagesSent = true
-      promptSent = true
-      ws.send(JSON.stringify({ t: 'turn', text: prompt ?? '', images, clientTurnId: `launch_${launch.launchToken}` }))
-      closeWhenFlushed()
-      return true
-    }
-    // Model A (TUI): wait until the CLI enables bracketed paste, else the escape markers echo as
-    // literal text during startup. Send only the images now — the prompt follows on the next frame
-    // (see onmessage), once the CLI has acknowledged the image paste.
-    if (!recentOutput.includes('\x1b[?2004h')) return false
+    if (!recentOutput.includes(BRACKETED_PASTE_READY)) return false
     imagesSent = true
     for (const img of images) ws.send(JSON.stringify({ t: 'img', name: img.name || 'paste', d: img.dataUrl }))
-    // Fallback: if the CLI emits no further frame, never strand the prompt.
-    promptFallback = setTimeout(sendPromptModelA, 1200)
+    fallback = setTimeout(submitPrompt, IMAGE_ATTACH_FALLBACK_MS)
     return true
+  }
+
+  // Model A driver: from the latest output, do whatever this launch still owes. Idempotent.
+  const pump = (): void => {
+    if (stream || !launchedId) return
+    if (hasImages) {
+      if (!imagesSent) { sendImages(); return }
+      if (!promptSent && recentOutput.includes(IMAGE_ATTACH_MARK)) submitPrompt()
+    } else if (socketText) {
+      if (!promptSent && recentOutput.includes(BRACKETED_PASTE_READY)) submitPrompt()
+    }
   }
 
   ws.onmessage = (e) => {
@@ -167,18 +214,26 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
           launchedId = msg.sessionId
           logDiag('connect', 'prime_launched', { launchToken: tok, cli: launch.cli, sessionId: msg.sessionId, bound: msg.bound })
           void onLaunched?.(msg.sessionId)
-          if (!hasImages) closeSoon()       // prompt rode the URL → server already fired it
-          else sendImagePayload()           // Model B fires now; Model A waits for the marker below
+          if (stream) {
+            if (hasImages) sendStreamTurn()   // Model B: one structured turn now
+            else closeSoon()                  // prompt rode the URL → server delivers it over stdin
+          } else if (hasImages || socketText) {
+            // Arm a safety fallback so a silent CLI never strands the first turn, then try now in case
+            // the readiness marker is already buffered.
+            if (socketText) fallback = setTimeout(submitPrompt, TEXT_READY_FALLBACK_MS)
+            pump()
+          } else {
+            closeSoon()                       // codex/task text rode the URL positional → server fired it
+          }
         }
         return
       } catch {
         /* not a control frame — fall through */
       }
     }
-    if (hasImages && !stream && launchedId) {
+    if (!stream && launchedId && (hasImages || socketText)) {
       recentOutput = (recentOutput + data).slice(-4096)
-      if (!imagesSent) sendImagePayload()
-      else sendPromptModelA()   // a frame after the images = the CLI ack'd the paste → send the prompt now
+      pump()
     }
   }
   ws.onerror = () => { logDiag('connect', 'prime_error', { launchToken: tok, cli: launch.cli, level: 'error', sessionId: launchedId ?? undefined }); try { ws.close() } catch {} }

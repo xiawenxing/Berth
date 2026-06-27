@@ -64,12 +64,36 @@ afterEach(() => {
 })
 
 describe('startFreshLaunch — drawer-independent launch submission', () => {
-  it('prompt-only: puts the prompt in the URL and never submits over the socket', () => {
+  it('text-only (claude, free): submits over the socket on bracketed-paste ready, not via the URL', () => {
     startFreshLaunch(baseInput({ freeText: 'do the thing' }))
+    const ws = FakeWS.instances[0]
+    expect(ws.url).not.toContain('prompt=') // no longer rides the URL positional (cold-start miss strands it)
+    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    expect(ws.sent).toEqual([])             // wait for the composer
+    ws.emit('startup banner, no marker yet')
+    expect(ws.sent).toEqual([])             // still waiting for the readiness marker
+    ws.emit(`ready ${BRACKETED_PASTE_READY} prompt>`)
+    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
+      { t: 'i', d: '\x1b[200~do the thing\x1b[201~\r' },
+    ])
+  })
+
+  it('text-only (codex, free): keeps the native URL positional (codex submit is reliable)', () => {
+    startFreshLaunch(baseInput({ cli: 'codex', freeText: 'do the thing' }))
     const ws = FakeWS.instances[0]
     expect(ws.url).toContain('prompt=do+the+thing')
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
-    expect(ws.sent).toEqual([]) // server fired the URL prompt at spawn; nothing to push
+    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
+    expect(ws.sent).toEqual([]) // server fired the URL positional at spawn; nothing to push over the socket
+  })
+
+  it('text-only (task): keeps the URL positional so it composes with the task directive', () => {
+    startFreshLaunch(baseInput({ dest: 'task', taskTitle: 'T', taskNote: 'do the thing', todoKey: 'todo-1' }))
+    const ws = FakeWS.instances[0]
+    expect(ws.url).toContain('prompt=do+the+thing')
+    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
+    expect(ws.sent).toEqual([])
   })
 
   it('resolves pending and resyncs from the prime socket without relying on the drawer viewer', () => {
@@ -103,13 +127,19 @@ describe('startFreshLaunch — drawer-independent launch submission', () => {
     expect(ws.sent).toEqual([]) // still waiting for the readiness marker
 
     // On the readiness frame only the image goes out. Sending the prompt in the same burst makes the
-    // CLI drop it (it's still attaching the image), so the prompt waits for the next frame.
+    // CLI drop it (it's still attaching the image), so the prompt waits for the attach confirmation.
     ws.emit(`ready ${BRACKETED_PASTE_READY} prompt>`)
     expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
       { t: 'img', name: 'shot.png', d: 'data:image/png;base64,AAAA' },
     ])
 
-    // The CLI re-renders to acknowledge the image paste; that frame is the cue to send the prompt.
+    // A plain redraw that is NOT the attach confirmation must NOT submit the prompt — firing here is
+    // the bug: the Enter lands before the image attaches, so a text-only turn ships and the image is
+    // stranded in the composer.
+    ws.emit('spinner redraw, still attaching')
+    expect(ws.sent.length).toBe(1)
+
+    // The image-attach confirmation ([Image …]) is the real cue to submit the prompt + Enter.
     ws.emit('[Image #1] attached')
     const msgs = ws.sent.map((s) => JSON.parse(s))
     expect(msgs[1]).toEqual({ t: 'i', d: '\x1b[200~look at this\x1b[201~\r' })
@@ -136,7 +166,7 @@ describe('startFreshLaunch — drawer-independent launch submission', () => {
     const ws = FakeWS.instances[0]
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
     ws.emit(`x ${BRACKETED_PASTE_READY}`)   // image
-    ws.emit('attached')                      // prompt
+    ws.emit('[Image #1] attached')           // attach confirmation → prompt
     const after = ws.sent.length
     expect(ws.sent.map((s) => JSON.parse(s).t)).toEqual(['img', 'i'])
     ws.emit('more output')

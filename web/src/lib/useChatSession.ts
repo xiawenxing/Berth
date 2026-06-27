@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { LaunchSpec } from './ui-store'
 import { api } from './api'
 import { applyChatFrame, chatBusy, chatThinking, clearsAwaiting, makeUserTurn, stopInFlightTurns, type ChatFrame, type ChatTurn } from './chat'
+import { launchPromptRidesUrl } from './launch-runner'
 
 export interface ChatSession {
   turns: ChatTurn[]
@@ -79,7 +80,7 @@ export function useChatSession({
       if (launch.launchToken) qs.set('launchToken', launch.launchToken)
       if (launch.projectId) qs.set('projectId', launch.projectId)
       if (launch.todoKey) qs.set('todoKey', launch.todoKey)
-      if (launch.prompt && !launch.images?.length) qs.set('prompt', launch.prompt)
+      if (launchPromptRidesUrl(launch, true)) qs.set('prompt', launch.prompt!) // Model B → renderStream true
       if (launch.ctxProject === false) qs.set('ctxProject', '0')
       if (launch.ctxTask === false) qs.set('ctxTask', '0')
       for (const d of launch.addDirs ?? []) qs.append('addDirs', d)
