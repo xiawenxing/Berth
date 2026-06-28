@@ -46,20 +46,24 @@ describe('data/task-from-session', () => {
     expect(listTasks(store)).toHaveLength(1)
   })
 
-  it('skips linking + summary when createTask returns a non-created branch (duplicate)', async () => {
+  it('still creates + links on a title collision (explicit create must not no-op as duplicate)', async () => {
     const store = openStore(':memory:')
-    // Pre-create a task whose title equals what the agent will return → createTask returns `duplicate`.
+    // Pre-create a task whose title equals what the agent will return.
     ;(classifyProject as any).mockResolvedValue({ candidates: [], needNewProject: true })
-    await createTask(store, fakeDocStore(), '已存在的标题', { confirm: true })
+    const existing = await createTask(store, fakeDocStore(), '已存在的标题', { confirm: true })
+    const existingId = (existing as any).record.id
     ;(generateTaskTitle as any).mockResolvedValue('已存在的标题')
 
+    // confirm:true inside createTaskFromSession → the collision does NOT block creation.
     const r = await createTaskFromSession(store, fakeDocStore(), 'sess-dup', 'USER: 随便聊聊', {})
 
-    expect(r.status).toBe('duplicate')
-    // session NOT linked to any task, and no summary fired, because the task wasn't created.
-    expect(store.edgesByTodo().size).toBe(0)
-    expect((triggerTaskSummary as any)).not.toHaveBeenCalled()
-    expect(listTasks(store)).toHaveLength(1)
+    expect(r.status).toBe('created')
+    if (r.status === 'created') {
+      expect(r.record.id).not.toBe(existingId)               // a brand-new task
+      expect(store.edgesByTodo().get(r.record.id)).toContain('sess-dup')   // linked to the NEW task
+      expect((triggerTaskSummary as any)).toHaveBeenCalledWith(store, r.record.id)
+    }
+    expect(listTasks(store)).toHaveLength(2)
   })
 
   it('throws on empty digest (no agent call, no task)', async () => {

@@ -24,8 +24,10 @@ export async function createTaskFromSession(
   const title = (await generateTaskTitle(text, resolveBerthAgent(store))).trim()
   if (!title) throw new Error('agent returned empty title')
 
-  const result = await createTask(store, docStore, title, { projectId: opts.projectId, autoTitle: false })
-  if (result.status !== 'created') return result
+  // confirm:true — the user explicitly clicked 一键创建任务, so an agent-title that happens to collide
+  // with an existing task's title must still create (and link), never silently no-op as `duplicate`.
+  const result = await createTask(store, docStore, title, { projectId: opts.projectId, autoTitle: false, confirm: true })
+  if (result.status !== 'created') return result   // defensive: e.g. an unlisted projectId needs-confirm
 
   store.removeEdgesForSession(sessionId)
   store.addEdge(result.record.id, sessionId)
