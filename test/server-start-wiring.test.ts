@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readServerFile } from '../src/server-discovery'
-import { getLocalServerAddress } from '../src/server/server-address'
+import { getLocalServerAddress } from '../src/server-address'
 
 let home: string
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'berth-start-')); process.env.BERTH_HOME = home })

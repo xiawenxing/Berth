@@ -12,9 +12,9 @@ import { warmAgentBinaryCaches } from '../pty/binaries'
 import { warmSessionPool } from './warm-pool'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { setLocalServerAddress } from './server-address'
+import { setLocalServerAddress } from '../server-address'
 import { writeServerFile, removeServerFile } from '../server-discovery'
-import { ensureAgentBerthShim } from './agent-shim'
+import { ensureAgentBerthShim } from '../pty/agent-shim'
 
 // Resolved by walking up to a public/index.html, so it works both in dev (tsx, src/server) and when
 // compiled (dist/server) with public/ shipped at the package root. See public-dir.ts.

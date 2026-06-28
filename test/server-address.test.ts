@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { setLocalServerAddress, getLocalServerAddress } from '../src/server/server-address'
+import { setLocalServerAddress, getLocalServerAddress } from '../src/server-address'
 
 describe('server-address', () => {
   it('records and returns the running server address', () => {

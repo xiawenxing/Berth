@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, statSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ensureAgentBerthShim } from '../src/server/agent-shim'
+import { ensureAgentBerthShim } from '../src/pty/agent-shim'
 
 let home: string
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'berth-shim-')); process.env.BERTH_HOME = home })
