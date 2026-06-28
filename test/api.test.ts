@@ -111,10 +111,12 @@ vi.mock('../src/agent/index', () => ({
   generateTaskTitle: (...a: any[]) => mockGenerateTaskTitle(...a),
   parseStructuredSummary: vi.fn((raw: string) => ({ headline: raw, progress: [], milestones: [] })),
 }))
+const mockExtractConversation = vi.hoisted(() => vi.fn((..._a: any[]) => ''))
 vi.mock('../src/agent/transcript', () => ({
   extractTitleContext: vi.fn(() => ''),
   extractUserGist: vi.fn(() => ''),
   titleInputFromTranscript: vi.fn((text: string) => text.trim() ? 'sampled title clue' : ''),
+  extractConversation: (...a: any[]) => mockExtractConversation(...a),
 }))
 
 // ── Mock pty-ws so its node-pty imports don't load (createApp never wires WS) ─
@@ -188,6 +190,7 @@ beforeEach(() => {
   mockImportDirs.clear()
   mockRunContextUpdate.mockReset().mockResolvedValue({ ok: true, changed: [], added: [], removed: [], commit: null, rotated: false })
   mockReadTranscript.mockReset().mockReturnValue('transcript text')
+  mockExtractConversation.mockReset().mockReturnValue('')
   mockRevertCommit.mockReset().mockReturnValue({ ok: true })
 })
 
@@ -867,7 +870,7 @@ describe('POST /api/todos/from-session', () => {
     expect(res.status).toBe(400)
   })
 
-  it('404 when the session has no readable transcript', async () => {
+  it('404 when the session is unknown', async () => {
     mockGetCache.mockReturnValue([])
     const port = await listen()
     const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
@@ -875,6 +878,32 @@ describe('POST /api/todos/from-session', () => {
       body: JSON.stringify({ sessionId: 'nope' }),
     })
     expect(res.status).toBe(404)
+  })
+
+  it('404 when the session exists but has no readable transcript', async () => {
+    mockGetCache.mockReturnValue([
+      { sessionId: 'sess-1', cli: 'claude', cwd: '/x', title: 't', updatedAt: 100, deleted: false, copies: [], contentSourcePath: null },
+    ])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'sess-1' }),
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('422 when the extracted digest is empty', async () => {
+    mockGetCache.mockReturnValue([
+      { sessionId: 'sess-1', cli: 'claude', cwd: '/x', title: 't', updatedAt: 100, deleted: false, copies: [], contentSourcePath: '/x.jsonl' },
+    ])
+    mockExtractConversation.mockReturnValueOnce('   ')
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'sess-1' }),
+    })
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({ error: 'empty session content' })
   })
 })
 
