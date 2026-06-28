@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { selectOrphanLaunches } from '../src/server/orphan-sweep'
+import { selectOrphanLaunches, selectExpiredUnboundIntents } from '../src/server/orphan-sweep'
 
 const base = { id: 'i', sessionId: 's', createdAt: 1000 }
 const opts = (over = {}) => ({ nowSec: 2000, graceSec: 300, hasLivePty: () => false, sessionExists: () => false, ...over })
@@ -19,5 +19,26 @@ describe('selectOrphanLaunches', () => {
   })
   it('skips intents with no sessionId (codex pre-bind)', () => {
     expect(selectOrphanLaunches([{ id: 'i', sessionId: null, createdAt: 1000 }], opts())).toEqual([])
+  })
+})
+
+describe('selectExpiredUnboundIntents', () => {
+  const pi = (over = {}) => ({ id: 'i', cli: 'codex', sessionId: null, createdAt: 1000, ...over })
+  const o = (over = {}) => ({ nowSec: 2000, ttlSec: 600, hasLivePty: () => false, ...over })
+
+  it('drops a codex unbound intent older than TTL whose pty is gone', () => {
+    expect(selectExpiredUnboundIntents([pi()], o())).toEqual(['i'])
+  })
+  it('keeps it while the pty is still alive (codex may yet write session_meta)', () => {
+    expect(selectExpiredUnboundIntents([pi()], o({ hasLivePty: (k: string) => k === 'i' }))).toEqual([])
+  })
+  it('keeps it inside the TTL window', () => {
+    expect(selectExpiredUnboundIntents([pi()], o({ nowSec: 1100 }))).toEqual([])
+  })
+  it('never drops a bound codex intent (sessionId set)', () => {
+    expect(selectExpiredUnboundIntents([pi({ sessionId: 'real' })], o())).toEqual([])
+  })
+  it('ignores non-codex intents', () => {
+    expect(selectExpiredUnboundIntents([pi({ cli: 'claude' })], o())).toEqual([])
   })
 })

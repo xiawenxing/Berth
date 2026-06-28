@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { openStore } from '../db/store'
 import type { LaunchCallback } from './launch-callback'
 import { bindIntentToSession } from './bind'
-import { rekeyPty } from './pty-registry'
+import { rekeyPty, hasLivePty } from './pty-registry'
 import { logDiag } from './diag'
 import { parseLaunchCallback } from './launch-callback'
 
@@ -11,19 +11,42 @@ type Store = ReturnType<typeof openStore>
 
 /**
  * Bind a codex launch from its SessionStart callback. `token` is the launch intent id (the callback
- * file is named <token>.json). Returns true iff a pending intent named by the token was bound.
- * `rekey` moves the live pty from the intent id to the real session id (injected for testability).
+ * file is named <token>.json) and {token → cb.sessionId} is GROUND TRUTH — the hook ran inside the
+ * real session's process, which was launched with BERTH_LAUNCH_TOKEN = this intent id. So channel A is
+ * AUTHORITATIVE over channel B's heuristic (per-cwd FIFO + 90s window): if B raced ahead and bound the
+ * intent to a DIFFERENT session (concurrent same-cwd, out-of-order rollouts), A corrects it. It makes the
+ * EDGES authoritative — drops the intent's stale edge AND any OTHER todo wrongly holding the true session
+ * (B's cross-edge, so a double-bind can't survive even if the sibling's A callback never fires) — then
+ * binds the true one. The live-pty rekey is best-effort and collision-safe: if a live pty already
+ * occupies the target session key (the rare both-callbacks concurrent swap), the rekey is SKIPPED rather
+ * than killing that sibling agent; live terminal routing may then point a task at its sibling's running
+ * agent until the next restart, but the durable edges are correct and routing self-heals on restart.
+ * Returns true iff it bound or corrected; false for an unknown token or an already-correct binding
+ * (idempotent). `rekey`/`isLive` are injected for testability.
  */
 export function ingestCallback(
   store: Store,
   token: string,
   cb: LaunchCallback,
-  deps: { rekey: (oldKey: string, newKey: string) => void },
+  deps: { rekey: (oldKey: string, newKey: string) => void; isLive: (key: string) => boolean },
 ): boolean {
-  const intent = store.pendingIntents().find(i => i.id === token && i.cli === 'codex')
-  if (!intent) return false
+  const intent = store.getLaunchIntent(token)
+  if (!intent || intent.cli !== 'codex') return false
+  if (intent.bound && intent.sessionId === cb.sessionId) return false   // already correct — idempotent
+  const correcting = intent.bound && !!intent.sessionId && intent.sessionId !== cb.sessionId
+  const oldKey = correcting ? intent.sessionId! : intent.id
+  if (correcting) {
+    // A is ground truth: {token → cb.sessionId}, and that session belongs to exactly this intent's
+    // todo. Drop the intent's stale edge AND any OTHER todo wrongly holding the true session (B's
+    // cross-edge), so neither a stale nor a double binding survives even if the sibling's A never fires.
+    if (intent.todoKey) store.removeEdge(intent.todoKey, intent.sessionId!)
+    store.removeEdgesForSession(cb.sessionId)
+  }
   bindIntentToSession(store, intent, cb.sessionId)
-  deps.rekey(intent.id, cb.sessionId)
+  // Move the live pty to the true key — but NEVER if a live pty already occupies it (a concurrent-swap
+  // collision): killing that sibling agent is worse than imperfect live routing, which self-heals on
+  // restart now that the edges are authoritative. First-bind: target key is a fresh session, never live.
+  if (oldKey !== cb.sessionId && !deps.isLive(cb.sessionId)) deps.rekey(oldKey, cb.sessionId)
   return true
 }
 
@@ -46,7 +69,7 @@ function processCallbackFile(store: Store, dir: string, file: string): void {
   if (!cb) return   // partial write / not yet flushed — leave for the next event or the scan
   const token = file.slice(0, -'.json'.length)
   try {
-    if (ingestCallback(store, token, cb, { rekey: rekeyPty }))
+    if (ingestCallback(store, token, cb, { rekey: rekeyPty, isLive: hasLivePty }))
       logDiag({ category: 'reconcile', event: 'callback_bind', sessionId: cb.sessionId, cli: 'codex', intentId: token })
   } catch { /* binding is best-effort */ }
   try { rmSync(path, { force: true }) } catch { /* best-effort */ }
