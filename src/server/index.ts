@@ -12,6 +12,9 @@ import { warmAgentBinaryCaches } from '../pty/binaries'
 import { warmSessionPool } from './warm-pool'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { setLocalServerAddress } from './server-address'
+import { writeServerFile, removeServerFile } from '../server-discovery'
+import { ensureAgentBerthShim } from './agent-shim'
 
 // Resolved by walking up to a public/index.html, so it works both in dev (tsx, src/server) and when
 // compiled (dist/server) with public/ shipped at the package root. See public-dir.ts.
@@ -81,7 +84,7 @@ export async function start(
   const server = createServer(createApp())
   attachWebSockets(server)   // /pty terminals + /status live-activity broadcast, one upgrade router
   const hasWeb = !!WEB_DIST   // 2.0 SPA built and served at /app → callers open /app/ directly
-  return new Promise<{ port: number; hasWeb: boolean }>((resolve, reject) => {
+  return new Promise<{ port: number; hasWeb: boolean; server: Server }>((resolve, reject) => {
     const onListenError = (error: Error) => reject(error)
     server.once('error', onListenError)
     server.listen(port, host, () => {
@@ -89,10 +92,19 @@ export async function start(
       const shown = host === '0.0.0.0' || host === '::' ? 'localhost' : host
       const realPort = (server.address() as any)?.port ?? port
       console.log(`Berth: ${getCache().length} sessions | http://${shown}:${realPort}${hasWeb ? '/app/' : ''}`)
+      setLocalServerAddress(realPort, host)
+      writeServerFile({ port: realPort, host, version: process.env.npm_package_version ?? undefined })
+      // CLI entry shipped beside the compiled server: dist/server/index.js → ../../bin/berth.mjs
+      // (in dev tsx: src/server/index.ts → ../../bin/berth.mjs → repo/bin/berth.mjs). Same relative path.
+      const cliEntry = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'berth.mjs')
+      ensureAgentBerthShim(cliEntry)
+      const cleanup = () => removeServerFile()
+      server.on('close', cleanup)
+      process.once('exit', cleanup)
       // Pre-spawn the top-K sessions off the request path so their first open is instant. Detached:
       // warming must never delay the listen, and a warm failure must never crash startup.
       void warmSessionPool().catch(() => {})
-      resolve({ port: realPort, hasWeb })
+      resolve({ port: realPort, hasWeb, server })
     })
   })
 }
