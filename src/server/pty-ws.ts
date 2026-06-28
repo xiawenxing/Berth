@@ -521,6 +521,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       cwd,
       sessionId: plan.sessionId ?? undefined,
       injectFile,
+      callbackToken: cli === 'codex' ? plan.intent.id : undefined,  // channel A: token = intent id
       initialPrompt: initialPrompt ?? undefined,
       model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
       safeMode: agentEntry.safeMode,           // per-CLI safe mode → freshArgv drops the bypass flag (Model A only)

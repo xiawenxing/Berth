@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
-import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd } from '../src/pty/launch'
+import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd, codexCallbackDir } from '../src/pty/launch'
 
 describe('ensureLaunchCwd', () => {
   it('creates a Berth workspace cwd on demand (never falls back to homedir)', () => {
@@ -165,4 +165,26 @@ it('addDirs + initialPrompt together: prompt is fenced behind `--`, never direct
     expect(a[a.length - 1]).toContain('do it')      // the user prompt is the final positional
     expect(a[a.length - 2]).toBe('--')              // and it sits immediately behind the fence
   }
+})
+
+describe('codex SessionStart hook → callback file (channel A)', () => {
+  let tmpHome = ''
+  beforeEach(() => { tmpHome = mkdtempSync(join(tmpdir(), 'berth-codexhome-')); process.env.CODEX_HOME = tmpHome })
+  afterEach(() => { rmSync(tmpHome, { recursive: true, force: true }); delete process.env.CODEX_HOME })
+
+  it('generated profile writes the stdin envelope to $BERTH_CALLBACK_DIR/$BERTH_LAUNCH_TOKEN.json and still cats context', () => {
+    ensureCodexBerthHookProfile()
+    const toml = readFileSync(join(process.env.CODEX_HOME || '', 'berth-launch.config.toml'), 'utf8')
+    expect(toml).toContain('$BERTH_CALLBACK_DIR')
+    expect(toml).toContain('$BERTH_LAUNCH_TOKEN')
+    expect(toml).toContain('$BERTH_CONTEXT_FILE')   // context injection must NOT regress
+  })
+
+  it('codexCallbackDir resolves under BERTH_HOME', () => {
+    const prev = process.env.BERTH_HOME
+    const tmp = mkdtempSync(join(tmpdir(), 'berth-home-'))
+    process.env.BERTH_HOME = tmp
+    try { expect(codexCallbackDir()).toBe(join(tmp, 'launch-callbacks')) }
+    finally { if (prev === undefined) delete process.env.BERTH_HOME; else process.env.BERTH_HOME = prev; rmSync(tmp, { recursive: true, force: true }) }
+  })
 })

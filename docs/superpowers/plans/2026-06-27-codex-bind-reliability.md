@@ -649,11 +649,13 @@ export function parseSessionMeta(firstLine: string): RolloutMeta | null {
 }
 
 /**
- * Find the pending codex intent a new rollout belongs to: same cwd (path-normalized) AND the rollout
- * start time within [intent.createdAt, intent.createdAt + windowSec]. When several windows overlap,
- * the EARLIEST-createdAt intent wins (it launched first, so its session surfaced first). Returns the
- * intent id, or null. Channel A's launchToken corrects any genuine ambiguity; this is the guaranteed
- * fallback, so it errs toward matching.
+ * Find the pending codex intent a new rollout belongs to. CORRECTION vs the original draft (which
+ * filtered-all-in-window then took earliest — that contradicted the Δ=90s test where a rollout outside
+ * the earliest intent's window must NOT fall through to a later intent). Shipped semantics are per-cwd
+ * **FIFO-earliest-only**: filter same-cwd intents, take the SINGLE earliest-createdAt one, and check
+ * ONLY its [createdAt, createdAt + windowSec] window — null if the rollout is outside it (intents are
+ * consumed in launch order; a later intent's rollout hasn't appeared yet). Channel A's launchToken
+ * handles the precise concurrent case; this guaranteed fallback must not mis-bind a younger intent.
  */
 export function matchRolloutToIntent(
   intents: PendingIntentLite[],
@@ -661,11 +663,12 @@ export function matchRolloutToIntent(
   windowSec = 90,
 ): string | null {
   const rc = canonicalPathKey(rollout.cwd)
-  const candidates = intents
+  const earliest = intents
     .filter(i => canonicalPathKey(i.cwd) === rc)
-    .filter(i => rollout.startedAtSec >= i.createdAt && rollout.startedAtSec <= i.createdAt + windowSec)
-    .sort((a, b) => a.createdAt - b.createdAt)
-  return candidates[0]?.id ?? null
+    .sort((a, b) => a.createdAt - b.createdAt)[0]
+  if (!earliest) return null
+  if (rollout.startedAtSec < earliest.createdAt || rollout.startedAtSec > earliest.createdAt + windowSec) return null
+  return earliest.id
 }
 ```
 

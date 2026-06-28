@@ -20,6 +20,11 @@ import { setTaskSessionDigestProvider } from '../data/task-summary'
 import { readTranscript } from './context-consolidate-service'
 import { extractConversation } from '../agent/transcript'
 import { berthHome } from '../paths'
+import { scanLaunchCallbacks, startLaunchCallbackWatch } from './launch-callback-watch'
+import { codexCallbackDir } from '../pty/launch'
+import { syncRolloutWatch } from './rollout-watch'
+import { selectOrphanLaunches } from './orphan-sweep'
+import { logDiag } from './diag'
 import type { LogicalSession } from '../types'
 
 const DB_DIR = berthHome()
@@ -94,6 +99,10 @@ export async function initData(): Promise<void> {
   // Guard the scan at the call site so we don't pay a full 3-store disk scan on every boot post-migration.
   if (!store.getSetting('session-import-migrated'))
     migrateSessionImportOnce(store, collectLogicalSessions(storeRoots()))
+  // Channel A: pick up any callbacks dropped while Berth was down, then watch for new ones.
+  const cbDir = codexCallbackDir()
+  scanLaunchCallbacks(store, cbDir)
+  startLaunchCallbackWatch(store, cbDir)  // process-lifetime watcher; stop fn intentionally not stored (unref'd, no shutdown path)
 }
 
 /**
@@ -160,6 +169,22 @@ export function refresh(): LogicalSession[] {
     if (s.enabled && s.pullMode === 'auto') {
       void syncSource(store, s, { docsRoot: getDocsRoot(store) }, { push: false }).catch(() => {})
     }
+  }
+  // Channel B: arm/disarm the rollout-dir watch based on whether any codex launch is still unbound.
+  syncRolloutWatch(store)
+  // P2: sweep dangling claude/coco edges whose eagerly-bound session never materialized. "Exists" =
+  // present in the UNFILTERED disk scan (all), so a real-but-hidden/uncurated bound session is never
+  // swept; 10-min grace keeps a slow-but-real launch (cold start / trust dialog) safe.
+  const allIds = new Set(all.map(s => s.sessionId))
+  const boundLaunches = store.allLaunchIntents().filter(i => i.bound && i.sessionId)
+    .map(i => ({ id: i.id, sessionId: i.sessionId, createdAt: i.createdAt }))
+  const nowSec = Math.floor(Date.now() / 1000)
+  for (const id of selectOrphanLaunches(boundLaunches, { nowSec, graceSec: 600, hasLivePty, sessionExists: (sid) => allIds.has(sid) })) {
+    const orphan = boundLaunches.find(b => b.id === id)
+    // A destructive drop (edge + intent) — log it so "where did my task↔session edge go" stays debuggable.
+    logDiag({ category: 'reconcile', event: 'orphan_sweep', sessionId: orphan?.sessionId ?? undefined, intentId: id })
+    if (orphan?.sessionId) store.removeEdgesForSession(orphan.sessionId)
+    store.deleteLaunchIntent(id)
   }
   return cache
 }
