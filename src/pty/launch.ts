@@ -2,16 +2,29 @@ import { spawn, type IPty } from 'node-pty'
 import { spawn as spawnChild, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { resolveAgentBinary, codexHookTrustSupportOrWarm } from './binaries'
 import { gateArgvForBinary, stripAllDegradable } from './flag-gate'
 import { ensureClaudeTrust, ensureCodexTrust } from './trust'
 import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
+import { agentSpawnEnv } from './agent-env'
+import { ensureAgentBerthShim } from './agent-shim'
+import { getLocalServerAddress } from '../server-address'
 import { berthHome } from '../paths'
 import type { AgentCli, LogicalSession } from '../types'
 
 const CODEX_BERTH_PROFILE = 'berth-launch'
 const codexHome = () => process.env.CODEX_HOME || join(homedir(), '.codex')
+
+/** Env for a Berth-spawned agent: PATH gets the berth-shim dir; BERTH_PORT/HOST point at our server. */
+function spawnEnv(): NodeJS.ProcessEnv {
+  const addr = getLocalServerAddress()
+  if (!addr) return agentSpawnEnv(process.env, null)
+  const cliEntry = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'berth.mjs')
+  const binDir = ensureAgentBerthShim(cliEntry)
+  return agentSpawnEnv(process.env, { port: addr.port, host: addr.host, binDir })
+}
 
 /**
  * Resolve a spawn cwd safely. A Berth project workspace dir (~/.berth/workspaces/<id>) is created
@@ -64,7 +77,7 @@ export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
   if (cli === 'claude') ensureClaudeTrust(cwd)
   else if (cli === 'codex') ensureCodexTrust(cwd)
   return spawn(bin, gated(cli, bin, resumeArgv(cli, id)), {
-    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: process.env as any,
+    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: spawnEnv() as any,
   })
 }
 
@@ -170,7 +183,7 @@ export function launchFreshStream(o: FreshOpts): ChildProcess {
   const cwd = ensureLaunchCwd(o.cwd)
   const bin = resolveAgentBinary('claude')
   ensureClaudeTrust(cwd)
-  const env = { ...(process.env as any) }
+  const env = spawnEnv() as any
   // detached:true → the child leads its own process group, so the registry's process.kill(-pid)
   // reaps the whole tree (MCP/sub-procs). Verified (task smoke test C1).
   return spawnChild(bin, gated('claude', bin, freshArgvStream('claude', o)), { cwd, env, detached: true, stdio: STREAM_STDIO })
@@ -183,7 +196,7 @@ export function resumeSessionStream(s: LogicalSession, o: { model?: string } = {
   const cwd = ensureLaunchCwd(s.cwd)
   const bin = resolveAgentBinary(cli)
   ensureClaudeTrust(cwd)
-  return spawnChild(bin, gated(cli, bin, resumeArgvStream(cli, id, o)), { cwd, env: { ...(process.env as any) }, detached: true, stdio: STREAM_STDIO })
+  return spawnChild(bin, gated(cli, bin, resumeArgvStream(cli, id, o)), { cwd, env: spawnEnv() as any, detached: true, stdio: STREAM_STDIO })
 }
 
 // ─── Model B per-turn spawn for codex + coco (single-turn-then-exit: each user turn is a fresh
@@ -214,7 +227,7 @@ export function spawnPerTurn(cli: AgentCli, o: PerTurnOpts): ChildProcess {
       : (() => { throw new Error(`per-turn stream not supported for ${cli}`) })()
   // stdin is 'ignore' (prompt rides argv) so codex never blocks on "Reading additional input from
   // stdin…"; detached:true makes the child a group leader for the registry's process.kill(-pid).
-  return spawnChild(bin, gated(cli, bin, argv), { cwd, env: { ...(process.env as any) }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  return spawnChild(bin, gated(cli, bin, argv), { cwd, env: spawnEnv() as any, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
 export function ensureCodexBerthHookProfile() {
@@ -247,7 +260,7 @@ export function launchFresh(cli: AgentCli, o: FreshOpts, flags: { minimal?: bool
   if (cli === 'codex' && opts.injectFile && codexHookTrustSupportOrWarm(bin) !== true) {
     opts = { ...opts, injectFile: undefined }
   }
-  const env = { ...(process.env as any) }
+  const env = spawnEnv() as any
   if (cli === 'codex' && opts.injectFile) {
     ensureCodexBerthHookProfile()
     env.BERTH_CONTEXT_FILE = opts.injectFile            // codex hook cats raw text as context
