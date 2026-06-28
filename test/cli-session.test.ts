@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { selectCurrentSession, type SessionLite } from '../src/cli-data'
+import { selectCurrentSession, runSessionCli, formatSessionLine, type SessionLite } from '../src/cli-data'
 
 const S = (over: Partial<SessionLite>): SessionLite =>
   ({ sessionId: 's', cli: 'claude', cwd: '/work', updatedAt: 1, todoKey: null, activity: null, ...over })
@@ -23,5 +23,32 @@ describe('selectCurrentSession', () => {
   })
   it('returns null when no session matches the cwd', () => {
     expect(selectCurrentSession(sessions, { cwd: '/nowhere', canon: id })).toBeNull()
+  })
+})
+
+describe('runSessionCli arg validation (no I/O)', () => {
+  it('bind with no task ref throws usage before any request', async () => {
+    await expect(runSessionCli(['bind'])).rejects.toThrow(/用法|usage/i)
+  })
+  it('unknown subcommand throws', async () => {
+    await expect(runSessionCli(['wat'])).rejects.toThrow(/未知子命令|session/i)
+  })
+})
+
+describe('formatSessionLine', () => {
+  it('renders cli, activity, bound task title, cwd and short id', () => {
+    const line = formatSessionLine(
+      { sessionId: 'abcdef12-9999', cli: 'codex', cwd: '/repo', updatedAt: 1, activity: 'running', todoKey: 'task-1' },
+      new Map([['task-1', '修复登录']]),
+    )
+    expect(line).toContain('codex')
+    expect(line).toContain('running')
+    expect(line).toContain('修复登录')
+    expect(line).toContain('/repo')
+    expect(line).toContain('[abcdef12]')
+  })
+  it('shows a dash for an unbound session', () => {
+    const line = formatSessionLine({ sessionId: 'x', cli: 'claude', cwd: null, updatedAt: 1, todoKey: null, activity: null }, new Map())
+    expect(line).toContain('-')
   })
 })
