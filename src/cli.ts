@@ -43,6 +43,7 @@ Usage:
   berth start [options]   Start the local server and open the UI in your browser
   berth task ...          Manage tasks (list/add/done/status/set/log/doc/rm/sync) — needs a running server
   berth project ...       Manage projects (list/add/rename/archive/rm) — needs a running server
+  berth session ...       Bind an existing session to a task (bind/unbind/list) — needs a running server
   berth skill install     Install the bundled Berth skill into your agents (use --force to overwrite)
   berth --help            Show this help
   berth --version         Show the version
@@ -121,11 +122,12 @@ async function installSkill(force: boolean): Promise<void> {
 export async function runCli(argv: string[], version: string): Promise<void> {
   // Data commands (task/project) talk to a running server over HTTP — dispatched before the start
   // parser so their flags (e.g. --status) aren't misread as server options.
-  if (argv[0] === 'task' || argv[0] === 'project') {
-    const { runTaskCli, runProjectCli } = await import('./cli-data')
+  if (argv[0] === 'task' || argv[0] === 'project' || argv[0] === 'session') {
+    const { runTaskCli, runProjectCli, runSessionCli } = await import('./cli-data')
     try {
       if (argv[0] === 'task') await runTaskCli(argv.slice(1))
-      else await runProjectCli(argv.slice(1))
+      else if (argv[0] === 'project') await runProjectCli(argv.slice(1))
+      else await runSessionCli(argv.slice(1))
     } catch (e: any) { console.error(`berth: ${e?.message ?? e}`); process.exit(1) }
     return
   }

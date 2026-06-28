@@ -395,6 +395,7 @@ const SESSION_HELP = `berth session — bind an existing session (running or fin
   berth session list [--task <id|title>] [--json]             List sessions and their bound task
 
   <sessionId> omitted → the current session (from $BERTH_SESSION_ID, else matched by cwd).
+  When omitting <sessionId>, quote a multi-word title: berth session bind "fix the login bug".
   --port N / --host H   Reach a server not on 127.0.0.1:7777 (or $PORT)`
 
 export async function runSessionCli(argv: string[]): Promise<void> {
