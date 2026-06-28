@@ -302,6 +302,8 @@ export function openStore(path: string) {
     allBoundLaunchSessionIds(): Set<string> {
       return new Set((db.prepare('SELECT session_id FROM launch_intent WHERE bound=1 AND session_id IS NOT NULL').all() as any[]).map(r => r.session_id))
     },
+    /** SQLite's data_version — bumps when ANOTHER connection/process commits. Same-connection writes do NOT bump it. */
+    dataVersion(): number { return db.pragma('data_version', { simple: true }) as number },
     ...dataMethods(db),
   }
 }
