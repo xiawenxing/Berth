@@ -269,6 +269,10 @@ export function openStore(path: string) {
     addEdge(todoKey: string, sessionId: string) {
       db.prepare('INSERT OR IGNORE INTO edge (todo_key, session_id) VALUES (?,?)').run(todoKey, sessionId)
     },
+    /** Remove ONE specific (todoKey, sessionId) edge — used when correcting a mis-binding. */
+    removeEdge(todoKey: string, sessionId: string) {
+      db.prepare('DELETE FROM edge WHERE todo_key=? AND session_id=?').run(todoKey, sessionId)
+    },
     removeEdgesForSession(sessionId: string) {
       db.prepare('DELETE FROM edge WHERE session_id=?').run(sessionId)
     },
@@ -295,6 +299,13 @@ export function openStore(path: string) {
         id: r.id, cli: r.cli, cwd: r.cwd, projectId: r.project_id, todoKey: r.todo_key,
         sessionId: r.session_id, createdAt: r.created_at, bound: !!r.bound,
       }))
+    },
+    /** Fetch one launch intent by id regardless of bound state (null if absent). */
+    getLaunchIntent(id: string): LaunchIntent | null {
+      const r = db.prepare('SELECT * FROM launch_intent WHERE id=?').get(id) as any
+      if (!r) return null
+      return { id: r.id, cli: r.cli, cwd: r.cwd, projectId: r.project_id, todoKey: r.todo_key,
+        sessionId: r.session_id, createdAt: r.created_at, bound: !!r.bound }
     },
     bindIntent(id: string, sessionId: string) {
       db.prepare('UPDATE launch_intent SET session_id=?, bound=1 WHERE id=?').run(sessionId, id)

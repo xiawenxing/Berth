@@ -48,10 +48,32 @@ describe('ingestCallback', () => {
     expect(rekeyed).toEqual([['tok-1', 'real-sid']])
   })
 
-  it('no-ops for an unknown token or an already-bound intent', () => {
+  it('no-ops for an unknown token', () => {
     const s = openStore(':memory:')
     expect(ingestCallback(s, 'missing', { sessionId: 'x', cwd: '/p' }, { rekey: () => {} })).toBe(false)
-    s.addLaunchIntent({ id: 'tok-2', cli: 'codex', cwd: '/proj', projectId: null, todoKey: null, sessionId: 'already', createdAt: 1000, bound: true })
-    expect(ingestCallback(s, 'tok-2', { sessionId: 'real', cwd: '/proj' }, { rekey: () => {} })).toBe(false)
+  })
+
+  it('no-ops when already bound to the SAME session (idempotent)', () => {
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'tok-2', cli: 'codex', cwd: '/proj', projectId: null, todoKey: 'task-A', sessionId: 'sid-1', createdAt: 1000, bound: true })
+    s.addEdge('task-A', 'sid-1')
+    const rekeyed: Array<[string, string]> = []
+    expect(ingestCallback(s, 'tok-2', { sessionId: 'sid-1', cwd: '/proj' }, { rekey: (a, b) => rekeyed.push([a, b]) })).toBe(false)
+    expect(rekeyed).toEqual([])
+  })
+
+  it('RE-BINDS (authoritative) when channel B bound the intent to the WRONG session', () => {
+    const s = openStore(':memory:')
+    // B mis-bound tok-3 (task-A) to the wrong session 'sid-wrong'.
+    s.addLaunchIntent({ id: 'tok-3', cli: 'codex', cwd: '/proj', projectId: 'P', todoKey: 'task-A', sessionId: 'sid-wrong', createdAt: 1000, bound: true })
+    s.addEdge('task-A', 'sid-wrong')
+    const rekeyed: Array<[string, string]> = []
+    // A's ground truth: tok-3 → sid-right.
+    expect(ingestCallback(s, 'tok-3', { sessionId: 'sid-right', cwd: '/proj' }, { rekey: (a, b) => rekeyed.push([a, b]) })).toBe(true)
+    // stale edge dropped, correct edge written
+    expect(s.edgesByTodo().get('task-A')).toEqual(['sid-right'])
+    expect(s.todoKeyForSession('sid-wrong')).toBeNull()
+    // pty re-keyed OFF the wrong session id onto the right one
+    expect(rekeyed).toEqual([['sid-wrong', 'sid-right']])
   })
 })

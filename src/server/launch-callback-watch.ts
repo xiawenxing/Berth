@@ -11,8 +11,13 @@ type Store = ReturnType<typeof openStore>
 
 /**
  * Bind a codex launch from its SessionStart callback. `token` is the launch intent id (the callback
- * file is named <token>.json). Returns true iff a pending intent named by the token was bound.
- * `rekey` moves the live pty from the intent id to the real session id (injected for testability).
+ * file is named <token>.json) and {token → cb.sessionId} is GROUND TRUTH — the hook ran inside the
+ * real session's process, which was launched with BERTH_LAUNCH_TOKEN = this intent id. So channel A is
+ * AUTHORITATIVE over channel B's heuristic (per-cwd FIFO + 90s window): if B raced ahead and bound the
+ * intent to a DIFFERENT session (concurrent same-cwd, out-of-order rollouts), A corrects it — drops the
+ * stale edge and re-keys the live pty off the wrong session id, then binds the true one. Returns true
+ * iff it bound or corrected; false for an unknown token or an already-correct binding (idempotent).
+ * `rekey` is injected for testability.
  */
 export function ingestCallback(
   store: Store,
@@ -20,10 +25,16 @@ export function ingestCallback(
   cb: LaunchCallback,
   deps: { rekey: (oldKey: string, newKey: string) => void },
 ): boolean {
-  const intent = store.pendingIntents().find(i => i.id === token && i.cli === 'codex')
-  if (!intent) return false
+  const intent = store.getLaunchIntent(token)
+  if (!intent || intent.cli !== 'codex') return false
+  if (intent.bound && intent.sessionId === cb.sessionId) return false   // already correctly bound — idempotent
+  // The pty currently lives under the wrong session id (if B mis-bound) or the intent id (not yet bound).
+  const oldKey = intent.bound && intent.sessionId ? intent.sessionId : intent.id
+  // Correcting a mis-binding: drop B's stale edge before writing the authoritative one.
+  if (intent.bound && intent.sessionId && intent.sessionId !== cb.sessionId && intent.todoKey)
+    store.removeEdge(intent.todoKey, intent.sessionId)
   bindIntentToSession(store, intent, cb.sessionId)
-  deps.rekey(intent.id, cb.sessionId)
+  deps.rekey(oldKey, cb.sessionId)
   return true
 }
 
