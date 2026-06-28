@@ -15,6 +15,7 @@ export interface TaskManifestInput {
   protocolPath?: string | null
   compactRules?: string[]
   include?: { project?: boolean; task?: boolean }
+  statuses?: string[]          // configured status vocab; drives the finish-protocol block
 }
 
 export interface ProjectManifestInput {
@@ -77,6 +78,10 @@ export function buildManifest(input: ManifestInput, locale: Locale = DEFAULT_LOC
         if (detailPath) {
           lines.push(`${m.labelDetailDoc}${detailPath}`)
         }
+      }
+
+      if (todo.id && input.statuses && input.statuses.length) {
+        for (const line of m.finishProtocol(todo.id, input.statuses)) lines.push(line)
       }
     }
   } else {

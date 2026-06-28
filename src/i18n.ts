@@ -35,6 +35,7 @@ export interface ManifestStrings {
   projectHeading: (name: string) => string
   pendingDetailDocs: string
   noDetailDoc: string
+  finishProtocol: (taskId: string, statuses: string[]) => string[]
   footer: string
   truncated: string
 }
@@ -67,6 +68,15 @@ const MANIFEST: Record<Locale, ManifestStrings> = {
     projectHeading: (n) => `## 项目: ${n}`,
     pendingDetailDocs: '### 待办详情文档',
     noDetailDoc: '(无详情文档)',
+    finishProtocol: (taskId, statuses) => [
+      '',
+      '## 收尾：声明任务下一步状态',
+      '完成本任务的工作后，判断它应进入的状态，并用下面两种方式各做一次（双保险）：',
+      `1. 若可用 berth CLI：运行  berth task done --id ${taskId}  （或  berth task status --id ${taskId} <状态>）`,
+      `2. 在你的最后一条消息里，单独占一行输出：  BERTH_TASK_STATUS: ${taskId} <状态>`,
+      `可选状态： ${statuses.join(' / ')}`,
+      '若你判断任务未完成（仍需继续/被阻塞/待人工验证），就声明对应状态；不要谎报已完成。',
+    ],
     footer: '> 以上为路径索引。如需完整内容，请用 Read 工具展开对应文件。',
     truncated: '\n…（超出预算，已截断）',
   },
@@ -89,6 +99,15 @@ const MANIFEST: Record<Locale, ManifestStrings> = {
     projectHeading: (n) => `## Project: ${n}`,
     pendingDetailDocs: '### Pending task detail docs',
     noDetailDoc: '(no detail doc)',
+    finishProtocol: (taskId, statuses) => [
+      '',
+      '## Wrap-up: declare the task\'s next status',
+      'After finishing this task, judge the status it should move to, and do BOTH of the following (double safety):',
+      `1. If the berth CLI is available, run:  berth task done --id ${taskId}  (or  berth task status --id ${taskId} <status>)`,
+      `2. In your final message, output on its own line:  BERTH_TASK_STATUS: ${taskId} <status>`,
+      `Allowed statuses: ${statuses.join(' / ')}`,
+      'If the task is not actually done (still going / blocked / needs human verification), declare that status — do not falsely claim completion.',
+    ],
     footer: '> The above is a path index. Use the Read tool to expand any file for its full content.',
     truncated: '\n…(over budget, truncated)',
   },

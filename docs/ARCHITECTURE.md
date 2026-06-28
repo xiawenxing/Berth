@@ -200,6 +200,18 @@ the top expands the requested `historyBytes` window and reconnects to replay a l
 Because xterm raw ANSI state cannot be safely prepended from an arbitrary byte boundary, this is a
 larger-tail replay rather than a seamless infinite-scroll prepend.
 
+### Session → task status flow (`src/server/task-status-flow.ts`)
+
+When Berth launches a task-linked session, it automatically advances task status through two lifecycle hooks:
+
+- **On launch**: `advanceTodoOnLaunch` fires once and moves the linked task from 待办 → 进行中 (one-shot; no-op if already past 待办).
+- **On session settle**: a ~5 s debounce (after the last PTY output line) triggers `reconcileTaskStatusForSession`, which updates status via one of two paths:
+  - **Path A** — the agent runs `berth task done --id <taskId>` or `berth task status --id <taskId> <status>`. The `--id` flag resolves by uuid only, so there is no title-mismatch risk. The command is injected into the agent's context via the manifest finish-protocol (`src/i18n.ts` `finishProtocol()`).
+  - **Path B** — the agent emits `BERTH_TASK_STATUS: <taskId> <status>` on its own line in the transcript. Berth parses this sentinel and applies the status — but only if the task is still at 进行中 (so Path A wins when both paths fire).
+- **No decision**: if neither path fires, the task stays at 进行中 — Berth never silently marks a task done.
+
+> Deferred: making the `berth` CLI reliably on PATH on agent-launched machines so Path A works without a global install. Path B is already CLI-independent and provides correctness guarantees either way.
+
 ---
 
 ## Data model & where state lives
