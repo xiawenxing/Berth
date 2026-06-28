@@ -856,6 +856,28 @@ describe('POST /api/edge', () => {
   })
 })
 
+// ── POST /api/todos/from-session: validation branches ────────────────────────
+describe('POST /api/todos/from-session', () => {
+  it('400 when sessionId missing', async () => {
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: 'P' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('404 when the session has no readable transcript', async () => {
+    mockGetCache.mockReturnValue([])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'nope' }),
+    })
+    expect(res.status).toBe(404)
+  })
+})
+
 // ── T9: POST /api/context ─────────────────────────────────────────────────────
 describe('POST /api/context', () => {
   it('ensures a project context file', async () => {

@@ -21,6 +21,8 @@ import { lastLogEntries } from '../data/context-log'
 import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
+import { extractConversation } from '../agent/transcript'
+import { createTaskFromSession } from '../data/task-from-session'
 import { parseStructuredSummary } from '../agent/index'
 import { summarizeCompactedContext } from '../agent/context-compact'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
@@ -179,6 +181,27 @@ api.post('/edge', (req, res) => {
   if (typeof projectId === 'string' && projectId !== '') store.setAttach(sessionId, projectId, 'confirmed')
   broadcastDataChanged()
   res.json({ ok: true })
+})
+
+// 一键据会话内容建任务并关联：读会话 transcript → 抽对话 digest → agent 生成标题 → 建任务 → 关联本会话。
+api.post('/todos/from-session', async (req, res) => {
+  const { sessionId, projectId } = req.body ?? {}
+  if (typeof sessionId !== 'string' || sessionId === '')
+    return res.status(400).json({ error: 'sessionId required' })
+  const s = getCache().find(x => x.sessionId === sessionId)
+  if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
+  const digest = extractConversation(readTranscript(s.contentSourcePath), 6000).trim()
+  if (!digest) return res.status(422).json({ error: 'empty session content' })
+  try {
+    const store = getStore()
+    const result = await createTaskFromSession(store, getDocStore(store), sessionId, digest, {
+      projectId: typeof projectId === 'string' && projectId !== '' ? projectId : undefined,
+    })
+    broadcastDataChanged()
+    res.json(result)
+  } catch (e: any) {
+    res.status(502).json({ error: String(e?.message ?? e) })
+  }
 })
 
 // Native macOS folder picker (the browser can't expose absolute paths). Returns the chosen
