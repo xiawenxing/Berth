@@ -6,7 +6,7 @@ vi.mock('../src/data/task-summary', () => ({ triggerTaskSummary: vi.fn() }))
 
 import { openStore } from '../src/db/store'
 import { createProject } from '../src/data/projects'
-import { listTasks } from '../src/data/tasks'
+import { listTasks, createTask } from '../src/data/tasks'
 import { classifyProject } from '../src/agent/triage'
 import { generateTaskTitle } from '../src/agent/index'
 import { triggerTaskSummary } from '../src/data/task-summary'
@@ -40,8 +40,25 @@ describe('data/task-from-session', () => {
     if (r.status === 'created') {
       expect(r.record.title).toBe('修复会话被 kill 后状态错乱')
       expect(store.edgesByTodo().get(r.record.id)).toContain('sess-1')
+      expect(store.getAttach('sess-1')).toEqual({ projectId: proj.id, state: 'confirmed' })
       expect((triggerTaskSummary as any)).toHaveBeenCalledWith(store, r.record.id)
     }
+    expect(listTasks(store)).toHaveLength(1)
+  })
+
+  it('skips linking + summary when createTask returns a non-created branch (duplicate)', async () => {
+    const store = openStore(':memory:')
+    // Pre-create a task whose title equals what the agent will return → createTask returns `duplicate`.
+    ;(classifyProject as any).mockResolvedValue({ candidates: [], needNewProject: true })
+    await createTask(store, fakeDocStore(), '已存在的标题', { confirm: true })
+    ;(generateTaskTitle as any).mockResolvedValue('已存在的标题')
+
+    const r = await createTaskFromSession(store, fakeDocStore(), 'sess-dup', 'USER: 随便聊聊', {})
+
+    expect(r.status).toBe('duplicate')
+    // session NOT linked to any task, and no summary fired, because the task wasn't created.
+    expect(store.edgesByTodo().size).toBe(0)
+    expect((triggerTaskSummary as any)).not.toHaveBeenCalled()
     expect(listTasks(store)).toHaveLength(1)
   })
 

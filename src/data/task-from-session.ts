@@ -31,6 +31,7 @@ export async function createTaskFromSession(
   store.addEdge(result.record.id, sessionId)
   if (opts.projectId) store.setAttach(sessionId, opts.projectId, 'confirmed')
 
+  // 摘要必须在关联之后触发：digest provider 才能把这个会话折进任务摘要。
   triggerTaskSummary(store, result.record.id)
 
   return result
