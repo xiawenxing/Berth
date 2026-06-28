@@ -5,7 +5,7 @@ import { createServer, type Server } from 'node:http'
 import { api } from './api'
 import { refresh, getCache, initData } from './store-singleton'
 import { createPtyWss } from './pty-ws'
-import { createStatusWss } from './status-ws'
+import { createStatusWss, startDataVersionPoll } from './status-ws'
 import { killAllPtys } from './pty-registry'
 import { resolvePublicDir, resolveWebDistDir } from './public-dir'
 import { warmAgentBinaryCaches } from '../pty/binaries'
@@ -100,6 +100,8 @@ export async function start(
       ensureAgentBerthShim(cliEntry)
       const cleanup = () => removeServerFile()
       server.on('close', cleanup)
+      const stopPoll = startDataVersionPoll()
+      server.on('close', () => stopPoll())
       process.once('exit', cleanup)
       // Pre-spawn the top-K sessions off the request path so their first open is instant. Detached:
       // warming must never delay the listen, and a warm failure must never crash startup.

@@ -1,7 +1,7 @@
 import { WebSocketServer, type WebSocket } from 'ws'
 import { snapshotActivity, subscribeActivity } from './pty-registry'
 import type { ActivityEvent } from './activity'
-import { getCache } from './store-singleton'
+import { getCache, getStore } from './store-singleton'
 import { lastMessageTime } from '../adapters/transcript-time'
 
 /**
@@ -61,6 +61,17 @@ let dataTimer: ReturnType<typeof setTimeout> | null = null
 export function broadcastDataChanged(): void {
   if (dataTimer) return
   dataTimer = setTimeout(() => { dataTimer = null; broadcast(JSON.stringify({ t: 'data' })) }, 200)
+}
+
+/** Poll PRAGMA data_version; broadcast when ANOTHER connection/process committed. Returns a stop fn. */
+export function startDataVersionPoll(intervalMs = 1500): () => void {
+  let last = getStore().dataVersion()
+  const iv = setInterval(() => {
+    const v = getStore().dataVersion()
+    if (v !== last) { last = v; broadcastDataChanged() }
+  }, intervalMs)
+  iv.unref?.()                       // never keep the process alive just for the poll
+  return () => clearInterval(iv)
 }
 
 /** Build the `/status` WebSocketServer (noServer mode; the upgrade router in index.ts dispatches to it). */
