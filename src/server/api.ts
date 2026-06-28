@@ -34,6 +34,7 @@ import { parseTranscriptChatTurns, parseTranscriptTurns } from './transcript-tur
 import { parseClaudeJsonlTurns } from '../agent/normalize/claude-jsonl'
 import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd, berthHome } from '../paths'
+import { broadcastDataChanged } from './status-ws'
 
 function isFolderPickerCancelled(err: unknown, stderr = ''): boolean {
   const e = err as { message?: unknown; stderr?: unknown }
@@ -176,6 +177,7 @@ api.post('/edge', (req, res) => {
   store.removeEdgesForSession(sessionId)
   if (typeof todoKey === 'string' && todoKey !== '') store.addEdge(todoKey, sessionId)
   if (typeof projectId === 'string' && projectId !== '') store.setAttach(sessionId, projectId, 'confirmed')
+  broadcastDataChanged()
   res.json({ ok: true })
 })
 
@@ -635,6 +637,7 @@ api.post('/todos', async (req, res) => {
     const store = getStore()
     const imgs = Array.isArray(images) ? images.filter((s: any) => typeof s === 'string') : undefined
     const result = await createTask(store, getDocStore(store), text, { projectId, confirm, createOption, images: imgs, autoTitle: autoTitle === true })
+    broadcastDataChanged()
     res.json(result)
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
@@ -656,6 +659,7 @@ api.post('/todos/:id/title', async (req, res) => {
   })
   try {
     const result = await generateAndApplyTaskTitle(store, getDocStore(store), task.id, sessions, resolveBerthAgent(store))
+    broadcastDataChanged()
     res.json(result)
   } catch (e: any) {
     return sendAgentError(res, e, getLocale(store))
@@ -675,6 +679,7 @@ api.patch('/todos/:id', (req, res) => {
     if (title !== undefined || priority !== undefined || status !== undefined || progress !== undefined)
       updateTask(store, req.params.id, { title, priority, status, progress })
     if (ddl !== undefined) store.setTaskDdl(req.params.id, ddl)
+    broadcastDataChanged()
     res.json({ ok: true })
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
@@ -708,6 +713,7 @@ api.post('/todos/:id/summary-detail', (req, res) => {
 api.delete('/todos/:id', (req, res) => {
   try {
     deleteTask(getStore(), req.params.id)
+    broadcastDataChanged()
     res.json({ ok: true })
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
