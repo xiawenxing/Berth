@@ -132,6 +132,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('berth:session-rekey', onRekey)
   }, [])
 
+  // Live refetch when the backend signals task data changed (CLI / API / another process). Debounced
+  // so a burst of {t:data} frames coalesces into one reload. Mirrors the rekey listener above.
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null
+    const onDataChanged = () => { if (t) return; t = setTimeout(() => { t = null; setNonce((n) => n + 1) }, 200) }
+    window.addEventListener('berth:data-changed', onDataChanged)
+    return () => { window.removeEventListener('berth:data-changed', onDataChanged); if (t) clearTimeout(t) }
+  }, [])
+
   // Drop a visible placeholder the moment its real session surfaces — by exact id (claude/coco) or by
   // the first new same-cli+cwd session (codex, bound late by reconcile) — or when it ages out.
   // Codex can surface before it has written a title/thread_name; keep a hidden pending watcher alive

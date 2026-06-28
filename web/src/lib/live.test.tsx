@@ -101,6 +101,19 @@ describe('markSeenMany — imported sessions default to read', () => {
   })
 })
 
+describe('data-changed — {t:data} frame triggers a refetch signal', () => {
+  it('dispatches berth:data-changed on a {t:"data"} frame', () => {
+    const { cleanup } = mountLive()
+    let fired = 0
+    const handler = () => { fired++ }
+    window.addEventListener('berth:data-changed', handler)
+    act(() => { FakeWS.last!.emit({ t: 'data' }) })
+    window.removeEventListener('berth:data-changed', handler)
+    expect(fired).toBe(1)
+    cleanup()
+  })
+})
+
 describe('setActiveSession — output that lands on the open session stays read', () => {
   it('keeps the active session read when an act frame bumps its updatedAt', () => {
     const { live, cleanup } = mountLive()
