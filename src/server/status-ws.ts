@@ -56,6 +56,13 @@ export function handleStatusConnection(ws: StatusSocket): void {
   ws.on('close', () => { clients.delete(ws) })
 }
 
+let dataTimer: ReturnType<typeof setTimeout> | null = null
+/** Coalesced "task data changed — refetch" signal to every /status client (~200ms debounce). */
+export function broadcastDataChanged(): void {
+  if (dataTimer) return
+  dataTimer = setTimeout(() => { dataTimer = null; broadcast(JSON.stringify({ t: 'data' })) }, 200)
+}
+
 /** Build the `/status` WebSocketServer (noServer mode; the upgrade router in index.ts dispatches to it). */
 export function createStatusWss(): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true })
