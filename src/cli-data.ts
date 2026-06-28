@@ -2,6 +2,8 @@
 // Talks to the RUNNING server's REST API so the server stays the single writer and runs sync. Pure
 // helpers (flag parsing, task selection, formatting) are exported for unit tests; the runners do I/O.
 
+import { readServerFile } from './server-discovery'
+
 export interface ParsedFlags { flags: Record<string, string | boolean>; pos: string[] }
 
 const BOOL_FLAGS = new Set(['json', 'confirm', 'create-option', 'print'])
@@ -87,12 +89,15 @@ function formatProjectTable(projects: ProjectLite[]): string {
 
 // ── HTTP plumbing ─────────────────────────────────────────────────────────────
 
-function baseUrl(flags: Record<string, string | boolean>): string {
-  const host = (flags.host as string) ?? process.env.HOST ?? '127.0.0.1'
-  const port = (flags.port as string) ?? process.env.PORT ?? '7777'
+export function __resolveBaseUrl(flags: Record<string, string | boolean>): string {
+  const host = (flags.host as string) ?? process.env.BERTH_HOST ?? process.env.HOST ?? '127.0.0.1'
+  // only consult the port file when nothing more specific was given
+  const file = (!flags.port && !process.env.BERTH_PORT && !process.env.PORT) ? readServerFile() : null
+  const port = (flags.port as string) ?? process.env.BERTH_PORT ?? process.env.PORT ?? (file ? String(file.port) : '7777')
   const h = host === '0.0.0.0' ? '127.0.0.1' : host
   return `http://${h}:${port}`
 }
+function baseUrl(flags: Record<string, string | boolean>): string { return __resolveBaseUrl(flags) }
 
 async function api(base: string, path: string, init?: RequestInit): Promise<any> {
   let res: Response
