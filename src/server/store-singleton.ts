@@ -23,7 +23,7 @@ import { berthHome } from '../paths'
 import { scanLaunchCallbacks, startLaunchCallbackWatch } from './launch-callback-watch'
 import { codexCallbackDir } from '../pty/launch'
 import { syncRolloutWatch } from './rollout-watch'
-import { selectOrphanLaunches } from './orphan-sweep'
+import { selectOrphanLaunches, selectExpiredUnboundIntents } from './orphan-sweep'
 import { logDiag } from './diag'
 import type { LogicalSession } from '../types'
 
@@ -170,6 +170,14 @@ export function refresh(): LogicalSession[] {
       void syncSource(store, s, { docsRoot: getDocsRoot(store) }, { push: false }).catch(() => {})
     }
   }
+  // P2b: drop never-bound codex intents that never produced a session_meta and whose pty is gone, so a
+  // failed launch can't keep Channel B's rollout poll armed forever (TTL generous: real codex writes
+  // session_meta within ms of start). Done BEFORE syncRolloutWatch so the poll disarms the same pass.
+  const nowSec = Math.floor(Date.now() / 1000)
+  for (const id of selectExpiredUnboundIntents(store.pendingIntents(), { nowSec, ttlSec: 600, hasLivePty })) {
+    logDiag({ category: 'launch', event: 'pending_expired', cli: 'codex', intentId: id })
+    store.deleteLaunchIntent(id)
+  }
   // Channel B: arm/disarm the rollout-dir watch based on whether any codex launch is still unbound.
   syncRolloutWatch(store)
   // P2: sweep dangling claude/coco edges whose eagerly-bound session never materialized. "Exists" =
@@ -178,7 +186,6 @@ export function refresh(): LogicalSession[] {
   const allIds = new Set(all.map(s => s.sessionId))
   const boundLaunches = store.allLaunchIntents().filter(i => i.bound && i.sessionId)
     .map(i => ({ id: i.id, sessionId: i.sessionId, createdAt: i.createdAt }))
-  const nowSec = Math.floor(Date.now() / 1000)
   for (const id of selectOrphanLaunches(boundLaunches, { nowSec, graceSec: 600, hasLivePty, sessionExists: (sid) => allIds.has(sid) })) {
     const orphan = boundLaunches.find(b => b.id === id)
     // A destructive drop (edge + intent) — log it so "where did my task↔session edge go" stays debuggable.
