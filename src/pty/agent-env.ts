@@ -11,12 +11,16 @@ export interface AgentAddr { port: number; host: string; binDir: string }
  * helper should be applied here too (one place for all agent-env injection). Intentionally omitted now
  * because that helper does not exist on this branch yet.
  */
-export function agentSpawnEnv(baseEnv: NodeJS.ProcessEnv, addr: AgentAddr | null): NodeJS.ProcessEnv {
+export function agentSpawnEnv(baseEnv: NodeJS.ProcessEnv, addr: AgentAddr | null, sessionId?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv }
   if (addr) {
     env.PATH = addr.binDir + delimiter + (env.PATH ?? '')
     env.BERTH_PORT = String(addr.port)
     env.BERTH_HOST = addr.host
   }
+  // Self-bind anchor: lets the agent's `berth session bind` resolve its own session deterministically.
+  // claude/coco get a pre-minted id at launch; codex mints late, so it stays unset and self-bind falls
+  // back to a cwd match (see cli-data.selectCurrentSession).
+  if (sessionId) env.BERTH_SESSION_ID = sessionId
   return env
 }
