@@ -64,6 +64,14 @@ function openBrowser(url: string): void {
   try { spawn(cmd, args, { stdio: 'ignore', detached: true }).unref() } catch { /* ignore */ }
 }
 
+/** True iff a Berth server already answers `/api/health` on host:port. Never throws. */
+async function berthHealth(host: string, port: number): Promise<boolean> {
+  try {
+    const r = await fetch(`http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}/api/health`)
+    return r.ok && (await r.json())?.berth === true
+  } catch { return false }
+}
+
 function spawnExit(cmd: string, args: string[]): Promise<number> {
   return new Promise((resolve) => {
     const p = spawn(cmd, args, { stdio: 'inherit' })
@@ -133,6 +141,20 @@ export async function runCli(argv: string[], version: string): Promise<void> {
 
   if (args.command === 'help') { console.log(HELP); return }
   if (args.command === 'version') { console.log(version); return }
+
+  // Idempotent start: if a Berth server already answers /api/health on the target port, don't bind a
+  // second one — just (optionally) open the frontend and return.
+  if (args.command === 'start') {
+    const probeHost = args.host ?? process.env.HOST ?? '127.0.0.1'
+    const probePort = Number(args.port ?? process.env.PORT ?? 7777)
+    if (await berthHealth(probeHost, probePort)) {
+      const shown = probeHost === '0.0.0.0' ? 'localhost' : probeHost
+      const base = `http://${shown}:${probePort}`
+      console.log(`berth: 已在运行 ${base} — 打开前端`)
+      if (args.open) openBrowser(`${base}/app/`)
+      return
+    }
+  }
 
   const { start } = await import('./server/index')
   const host = args.host ?? process.env.HOST ?? '127.0.0.1'
