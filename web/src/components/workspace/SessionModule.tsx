@@ -31,14 +31,17 @@ function TaskTag({
   s,
   tasks,
   onLinkTask,
+  onCreateTaskFromSession,
 }: {
   s: SessionRow
   tasks?: SessionTaskOption[]
   onLinkTask: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onCreateTaskFromSession?: (sessionId: string) => Promise<void> | void
 }) {
   const ref = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
+  const [creating, setCreating] = useState(false)
   const linked = tasks?.find((t) => t.id === s.taskId)
   const isLinked = !!s.taskId
   const close = () => {
@@ -50,6 +53,20 @@ function TaskTag({
     close()
     await onLinkTask(s.id, taskId)
   }
+  const createFromSession = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!onCreateTaskFromSession) return
+    close()
+    setCreating(true)
+    try {
+      await onCreateTaskFromSession(s.id)
+    } catch (err) {
+      // best-effort：失败就恢复，标签回到原关联/未关联（reload 不会带来新任务）。
+      console.error('createTaskFromSession failed', err)
+    } finally {
+      setCreating(false)
+    }
+  }
   const needle = q.trim().toLowerCase()
   const filtered = (tasks ?? []).filter((t) => !needle || t.title.toLowerCase().includes(needle))
 
@@ -58,9 +75,11 @@ function TaskTag({
       <button
         ref={ref}
         type="button"
-        title={isLinked ? linked?.title ?? '已关联任务' : '关联到任务'}
+        disabled={creating}
+        title={creating ? '正在根据会话内容创建任务…' : isLinked ? linked?.title ?? '已关联任务' : '关联到任务'}
         onClick={(e) => {
           e.stopPropagation()
+          if (creating) return
           setOpen((v) => !v)
         }}
         className={cn(
@@ -68,11 +87,11 @@ function TaskTag({
           isLinked
             ? 'border border-brand/30 bg-brand/12 text-brand hover:bg-brand/20'
             : 'border border-dashed border-border text-text-dim opacity-0 hover:border-brand/45 hover:text-brand group-hover:opacity-100',
-          open && 'opacity-100',
+          (open || creating) && 'opacity-100',
         )}
       >
-        <Link2 size={10} className="flex-none" />
-        <span className="truncate">{isLinked ? linked?.title ?? '已关联任务' : '关联任务'}</span>
+        {creating ? <Spinner size={10} className="flex-none" /> : <Link2 size={10} className="flex-none" />}
+        <span className="truncate">{creating ? '创建中…' : isLinked ? linked?.title ?? '已关联任务' : '关联任务'}</span>
       </button>
       {open && (
         <AnchoredPopover anchor={ref} width={264} onClose={close}>
@@ -84,6 +103,15 @@ function TaskTag({
             placeholder="搜索任务…"
             className="mb-1.5 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-[12px] text-foreground outline-none focus:border-brand"
           />
+          {onCreateTaskFromSession && (
+            <>
+              <MenuItem onClick={createFromSession}>
+                <Sparkles size={13} className="flex-none text-brand" />
+                <span className="min-w-0 truncate text-brand">找不到合适的任务？一键创建任务</span>
+              </MenuItem>
+              <div className="my-1 border-t border-border" />
+            </>
+          )}
           <MenuLabel>关联任务</MenuLabel>
           <div className="max-h-60 overflow-y-auto">
             {filtered.length ? (
@@ -120,6 +148,7 @@ function Row({
   tasks,
   onGenerateTitle,
   onLinkTask,
+  onCreateTaskFromSession,
   onDetach,
   onUnimport,
 }: {
@@ -130,6 +159,7 @@ function Row({
   tasks?: SessionTaskOption[]
   onGenerateTitle?: (id: string) => Promise<void> | void
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onCreateTaskFromSession?: (sessionId: string) => Promise<void> | void
   onDetach?: (id: string) => void // 移出项目 (detach → 无归属)
   onUnimport?: (id: string) => void // 取消导入 (remove from Berth's visible set)
 }) {
@@ -241,7 +271,7 @@ function Row({
         {showCwd ? s.cwd : ''}
       </span>
       {/* 关联任务 — clickable marker in the right cluster (replaces the inline label + ⋯ task dump) */}
-      {onLinkTask && <TaskTag s={s} tasks={tasks} onLinkTask={onLinkTask} />}
+      {onLinkTask && <TaskTag s={s} tasks={tasks} onLinkTask={onLinkTask} onCreateTaskFromSession={onCreateTaskFromSession} />}
       <span className="flex-none whitespace-nowrap text-[11px] text-muted-foreground">{s.time}</span>
       <div className="flex flex-none items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
         {onGenerateTitle && (
@@ -349,6 +379,7 @@ function Section({
   tasks,
   onGenerateTitle,
   onLinkTask,
+  onCreateTaskFromSession,
   onDetach,
   onUnimport,
   onDetachGroup,
@@ -369,6 +400,7 @@ function Section({
   tasks?: SessionTaskOption[]
   onGenerateTitle?: (id: string) => Promise<void> | void
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onCreateTaskFromSession?: (sessionId: string) => Promise<void> | void
   onDetach?: (id: string) => void // row 移出项目
   onUnimport?: (id: string) => void // row 取消导入
   onDetachGroup?: (ids: string[]) => void // 移出整组
@@ -471,6 +503,7 @@ function Section({
               tasks={tasks}
               onGenerateTitle={onGenerateTitle}
               onLinkTask={onLinkTask}
+              onCreateTaskFromSession={onCreateTaskFromSession}
               onDetach={onDetach}
               onUnimport={onUnimport}
             />
@@ -505,6 +538,7 @@ export function SessionModule({
   tasks,
   onGenerateTitle,
   onLinkTask,
+  onCreateTaskFromSession,
   onDetach,
   onUnimport,
   onDetachGroup,
@@ -523,6 +557,7 @@ export function SessionModule({
   tasks?: SessionTaskOption[]
   onGenerateTitle?: (id: string) => Promise<void> | void
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onCreateTaskFromSession?: (sessionId: string) => Promise<void> | void
   onDetach?: (id: string) => void // row 移出项目
   onUnimport?: (id: string) => void // row 取消导入
   onDetachGroup?: (ids: string[], rawCwd?: string) => void // 移出整组
@@ -592,6 +627,7 @@ export function SessionModule({
                 tasks={tasks}
                 onGenerateTitle={onGenerateTitle}
                 onLinkTask={onLinkTask}
+                onCreateTaskFromSession={onCreateTaskFromSession}
                 onDetach={onDetach}
                 onUnimport={onUnimport}
               />
@@ -621,6 +657,7 @@ export function SessionModule({
                   tasks={tasks}
                   onGenerateTitle={onGenerateTitle}
                   onLinkTask={onLinkTask}
+                  onCreateTaskFromSession={onCreateTaskFromSession}
                   onDetach={onDetach}
                   onUnimport={onUnimport}
                   onDetachGroup={onDetachGroup ? (ids) => onDetachGroup(ids, g.rawCwd) : undefined}
