@@ -140,6 +140,9 @@ export const api = {
   // Assign/detach a session to a task. Passing projectId also confirms the session under that project.
   edge: (sessionId: string, todoKey: string | null, projectId?: string) =>
     send('POST', '/api/edge', { sessionId, todoKey, projectId }),
+  // Create a new task seeded from an existing session (Task-2 endpoint orchestrates the bind).
+  createTaskFromSession: (sessionId: string, projectId?: string) =>
+    send('POST', '/api/todos/from-session', { sessionId, projectId }),
   // Native macOS folder picker → absolute path (or cancelled).
   pickFolder: () => send('POST', '/api/pick-folder', {}) as Promise<{ path?: string; cancelled?: boolean }>,
   // Preview the sessions a candidate dir would surface (no state mutation).
