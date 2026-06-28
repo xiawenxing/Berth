@@ -142,6 +142,9 @@ function serialize(): ApiSession[] {
 }
 
 export const api = Router()
+api.get('/health', (_req, res) => {
+  res.json({ berth: true, version: process.env.npm_package_version ?? null, berthHome: berthHome(), pid: process.pid })
+})
 api.get('/sessions', (_req, res) => res.json(serialize()))
 api.post('/refresh', (_req, res) => { refresh(); res.json({ ok: true, count: getCache().length }) })
 
