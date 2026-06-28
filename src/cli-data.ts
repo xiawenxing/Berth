@@ -3,6 +3,7 @@
 // helpers (flag parsing, task selection, formatting) are exported for unit tests; the runners do I/O.
 
 import { readServerFile } from './server-discovery'
+import { canonicalPathKey } from './path-normalize'
 
 export interface ParsedFlags { flags: Record<string, string | boolean>; pos: string[] }
 
@@ -85,6 +86,30 @@ function formatProjectLine(p: ProjectLite): string {
 function formatProjectTable(projects: ProjectLite[]): string {
   if (!projects.length) return '（没有项目）'
   return projects.map(formatProjectLine).join('\n')
+}
+
+export interface SessionLite {
+  sessionId: string; cli: string; cwd: string | null; updatedAt: number
+  todoKey: string | null; activity?: string | null
+}
+
+/**
+ * Resolve "my current session" for self-bind. Prefers the BERTH_SESSION_ID injected at PTY launch
+ * (deterministic for claude/coco). Falls back to the most-recently-updated session whose cwd matches
+ * the caller's cwd (same heuristic as server/reconcile.ts) — used for codex before reconcile binds it.
+ * `canon` is injectable for tests; defaults to the symlink-resolving path key.
+ */
+export function selectCurrentSession(
+  sessions: SessionLite[],
+  opts: { berthSessionId?: string; cwd: string; canon?: (p: string) => string },
+): { sessionId: string; inferred: boolean } | null {
+  if (opts.berthSessionId) return { sessionId: opts.berthSessionId, inferred: false }
+  const canon = opts.canon ?? canonicalPathKey
+  const target = canon(opts.cwd)
+  const matches = sessions.filter(s => s.cwd != null && canon(s.cwd) === target)
+  if (!matches.length) return null
+  const best = matches.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
+  return { sessionId: best.sessionId, inferred: true }
 }
 
 // ── HTTP plumbing ─────────────────────────────────────────────────────────────
