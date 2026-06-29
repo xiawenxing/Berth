@@ -446,8 +446,7 @@ function Section({
   const visible = limited ? rows.slice(0, visibleCount) : rows
   const groupMenuBtnRef = useRef<HTMLSpanElement>(null)
   const [groupMenuOpen, setGroupMenuOpen] = useState(false)
-  const isEmpty = rows.length === 0 // a registered 装载目录 with no session yet
-  const hasGroupMenu = !isEmpty && !!(onDetachGroup || onUnimportGroup)
+  const hasGroupMenu = !!(onDetachGroup || onUnimportGroup)
   const groupIds = rows.map((r) => r.id)
 
   return (
@@ -528,13 +527,6 @@ function Section({
       )}
       {!collapsed && (
         <div>
-          {isEmpty && (
-            <div className="border-t border-border/55 px-3.5 py-2.5 text-[12px] text-text-dim">
-              该目录暂无项目会话 · 点
-              <FolderInput size={12} className="mx-1 -mt-0.5 inline align-middle text-text-dim" />
-              从磁盘导入
-            </div>
-          )}
           {visible.map((s) => (
             <Row
               key={s.id}
