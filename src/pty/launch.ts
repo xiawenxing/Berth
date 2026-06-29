@@ -11,19 +11,24 @@ import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
 import { agentSpawnEnv } from './agent-env'
 import { ensureAgentBerthShim } from './agent-shim'
 import { getLocalServerAddress } from '../server-address'
+import { withUtf8Locale } from './locale'
 import { berthHome } from '../paths'
 import type { AgentCli, LogicalSession } from '../types'
 
 const CODEX_BERTH_PROFILE = 'berth-launch'
 const codexHome = () => process.env.CODEX_HOME || join(homedir(), '.codex')
 
-/** Env for a Berth-spawned agent: PATH gets the berth-shim dir; BERTH_PORT/HOST point at our server. */
+/** Env for a Berth-spawned agent: PATH gets the berth-shim dir; BERTH_PORT/HOST point at our server.
+ *  Wrapped in withUtf8Locale so every spawn path also gets a UTF-8 LANG/LC_* — a GUI/C-locale launch
+ *  otherwise makes the agent write a legacy Mac-Roman pasteboard flavor (copy→Feishu mojibake). This
+ *  is the single chokepoint all launch/resume/per-turn spawns flow through, so centralizing the
+ *  locale here covers them all (the clipboard branch wrapped each call site; this is the DRY merge). */
 function spawnEnv(sessionId?: string): NodeJS.ProcessEnv {
   const addr = getLocalServerAddress()
-  if (!addr) return agentSpawnEnv(process.env, null, sessionId)
+  if (!addr) return withUtf8Locale(agentSpawnEnv(process.env, null, sessionId))
   const cliEntry = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'berth.mjs')
   const binDir = ensureAgentBerthShim(cliEntry)
-  return agentSpawnEnv(process.env, { port: addr.port, host: addr.host, binDir }, sessionId)
+  return withUtf8Locale(agentSpawnEnv(process.env, { port: addr.port, host: addr.host, binDir }, sessionId))
 }
 
 /**

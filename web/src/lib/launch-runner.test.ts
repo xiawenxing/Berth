@@ -13,6 +13,7 @@ class FakeWS {
   closed = false
   onmessage: ((e: { data: string }) => void) | null = null
   onerror: ((e?: unknown) => void) | null = null
+  onclose: (() => void) | null = null
   constructor(url: string) {
     this.url = url
     FakeWS.instances.push(this)
@@ -20,6 +21,8 @@ class FakeWS {
   send(data: string) { this.sent.push(data) }
   close() { this.closed = true; this.readyState = 3 }
   emit(data: string) { this.onmessage?.({ data }) }
+  parsed() { return this.sent.map((s) => JSON.parse(s)) }
+  kinds() { return this.parsed().map((m) => m.t) }
 }
 
 const BRACKETED_PASTE_READY = '\x1b[?2004h'
@@ -57,119 +60,133 @@ beforeEach(() => {
   FakeWS.instances = []
   vi.stubGlobal('WebSocket', FakeWS as unknown as typeof WebSocket)
   vi.stubGlobal('localStorage', fakeLocalStorage())
+  vi.useFakeTimers()
   localStorage.clear()
 })
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
-describe('startFreshLaunch — drawer-independent launch submission', () => {
-  it('prompt-only: puts the prompt in the URL and never submits over the socket', () => {
-    startFreshLaunch(baseInput({ freeText: 'do the thing' }))
+describe('startFreshLaunch — first-turn delivery', () => {
+  // ---- URL routing (who carries the prompt) ----
+  it('text-only (codex, free): keeps the native URL positional (codex submit is reliable)', () => {
+    startFreshLaunch(baseInput({ cli: 'codex', freeText: 'do the thing' }))
     const ws = FakeWS.instances[0]
     expect(ws.url).toContain('prompt=do+the+thing')
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
-    expect(ws.sent).toEqual([]) // server fired the URL prompt at spawn; nothing to push
+    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
+    vi.advanceTimersByTime(2000)
+    expect(ws.sent).toEqual([]) // server fired the URL positional; socket pushes nothing
   })
 
-  it('resolves pending and resyncs from the prime socket without relying on the drawer viewer', () => {
+  it('text-only (task): keeps the URL positional so it composes with the task directive', () => {
+    startFreshLaunch(baseInput({ dest: 'task', taskTitle: 'T', taskNote: 'do the thing', todoKey: 'todo-1' }))
+    const ws = FakeWS.instances[0]
+    expect(ws.url).toContain('prompt=do+the+thing')
+    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    vi.advanceTimersByTime(2000)
+    expect(ws.sent).toEqual([])
+  })
+
+  it('image launches never put the prompt on the URL', () => {
+    startFreshLaunch(baseInput({ freeText: 'look', images: [{ name: 's.png', dataUrl: 'data:image/png;base64,AAAA' }] }))
+    expect(FakeWS.instances[0].url).not.toContain('prompt=')
+  })
+
+  it('resolves pending and resyncs from the prime socket on the launched frame', () => {
     const resolvePending = vi.fn()
     const resync = vi.fn()
     startFreshLaunch(baseInput({ freeText: 'do the thing', resolvePending, resync }))
-    const ws = FakeWS.instances[0]
-
-    ws.emit('{"__berth":"launched","sessionId":"S1"}')
-
+    FakeWS.instances[0].emit('{"__berth":"launched","sessionId":"S1"}')
     expect(resolvePending).toHaveBeenCalledWith('tok-1', 'S1')
     expect(resync).toHaveBeenCalledTimes(1)
   })
 
-  it('image launch (TUI): submits images+prompt over the prime socket after bracketed-paste ready', () => {
-    const resolvePending = vi.fn()
+  // ---- claude/coco: idle-gated submission (the fix) ----
+  it('text-only (claude): waits for the composer to go IDLE, then pastes and Enters separately', () => {
+    startFreshLaunch(baseInput({ freeText: 'do the thing' }))
+    const ws = FakeWS.instances[0]
+    expect(ws.url).not.toContain('prompt=')
+    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    ws.emit(`boot ${BRACKETED_PASTE_READY} prompt>`)
+    vi.advanceTimersByTime(300)
+    expect(ws.sent).toEqual([]) // marker seen but not idle yet → do NOT fire (the live-verify failure)
+    vi.advanceTimersByTime(1500) // idle → paste (no Enter) then Enter as a separate write
+    expect(ws.parsed()).toEqual([
+      { t: 'i', d: '\x1b[200~do the thing\x1b[201~' },
+      { t: 'i', d: '\r' },
+    ])
+  })
+
+  it('image launch (claude): holds the prompt until the [Image attach chip, then pastes + Enters', () => {
     startFreshLaunch(baseInput({
       freeText: 'look at this',
       images: [{ name: 'shot.png', dataUrl: 'data:image/png;base64,AAAA' }],
-      resolvePending,
-    }))
-    const ws = FakeWS.instances[0]
-    // images can't ride the URL
-    expect(ws.url).not.toContain('prompt=')
-
-    ws.emit('{"__berth":"launched","sessionId":"S1"}')
-    expect(resolvePending).toHaveBeenCalledWith('tok-1', 'S1') // pending bound to the real id
-    expect(ws.sent).toEqual([]) // not yet — CLI hasn't enabled bracketed paste
-
-    ws.emit('some startup banner\r\n')
-    expect(ws.sent).toEqual([]) // still waiting for the readiness marker
-
-    // On the readiness frame only the image goes out. Sending the prompt in the same burst makes the
-    // CLI drop it (it's still attaching the image), so the prompt waits for the next frame.
-    ws.emit(`ready ${BRACKETED_PASTE_READY} prompt>`)
-    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
-      { t: 'img', name: 'shot.png', d: 'data:image/png;base64,AAAA' },
-    ])
-
-    // The CLI re-renders to acknowledge the image paste; that frame is the cue to send the prompt.
-    ws.emit('[Image #1] attached')
-    const msgs = ws.sent.map((s) => JSON.parse(s))
-    expect(msgs[1]).toEqual({ t: 'i', d: '\x1b[200~look at this\x1b[201~\r' })
-  })
-
-  it('image launch (TUI): never sends the prompt in the same frame as the image (regression)', () => {
-    startFreshLaunch(baseInput({
-      freeText: 'analyze',
-      images: [{ name: 'p.png', dataUrl: 'data:image/png;base64,DDDD' }],
     }))
     const ws = FakeWS.instances[0]
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
     ws.emit(`ready ${BRACKETED_PASTE_READY}`)
-    expect(ws.sent.map((s) => JSON.parse(s).t)).toEqual(['img']) // image only — prompt held back
-    ws.emit('[Image #1]')
-    expect(ws.sent.map((s) => JSON.parse(s).t)).toEqual(['img', 'i']) // prompt follows on the ack frame
+    vi.advanceTimersByTime(1200) // idle → image goes out first
+    expect(ws.parsed()).toEqual([{ t: 'img', name: 'shot.png', d: 'data:image/png;base64,AAAA' }])
+
+    ws.emit('spinner redraw, still attaching') // NOT the attach chip
+    vi.advanceTimersByTime(900)
+    expect(ws.sent.length).toBe(1) // prompt held — this was the reported bug
+
+    ws.emit('[Image #1] attached') // attach confirmation → release prompt, then Enter
+    vi.advanceTimersByTime(1500)
+    const m = ws.parsed()
+    expect(m[1]).toEqual({ t: 'i', d: '\x1b[200~look at this\x1b[201~' })
+    expect(m[2]).toEqual({ t: 'i', d: '\r' })
   })
 
-  it('image launch (TUI): submits each part exactly once even with more output', () => {
-    startFreshLaunch(baseInput({
-      freeText: 'hi',
-      images: [{ name: 'a.png', dataUrl: 'data:image/png;base64,BBBB' }],
-    }))
+  it('image-only launch (claude): image then Enter after attach, no paste', () => {
+    startFreshLaunch(baseInput({ images: [{ name: 'a.png', dataUrl: 'data:image/png;base64,BBBB' }] }))
     const ws = FakeWS.instances[0]
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
-    ws.emit(`x ${BRACKETED_PASTE_READY}`)   // image
-    ws.emit('attached')                      // prompt
-    const after = ws.sent.length
-    expect(ws.sent.map((s) => JSON.parse(s).t)).toEqual(['img', 'i'])
-    ws.emit('more output')
-    ws.emit(`again ${BRACKETED_PASTE_READY}`)
-    expect(ws.sent.length).toBe(after) // no duplicate image or prompt
+    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
+    vi.advanceTimersByTime(1200)
+    ws.emit('[Image #1]')
+    vi.advanceTimersByTime(1200)
+    expect(ws.parsed()).toEqual([
+      { t: 'img', name: 'a.png', d: 'data:image/png;base64,BBBB' },
+      { t: 'i', d: '\r' },
+    ])
   })
 
-  it('task launch (TUI) with images: carries images + the task note as the first turn', () => {
+  it('task launch (claude) with images: image → task note → Enter', () => {
     startFreshLaunch(baseInput({
-      dest: 'task',
-      taskTitle: 'Fix the crash',
-      taskNote: 'repro on cold start',
-      todoKey: 'todo-9',
+      dest: 'task', taskTitle: 'Fix the crash', taskNote: 'repro on cold start', todoKey: 'todo-9',
       images: [{ name: 'log.png', dataUrl: 'data:image/png;base64,EEEE' }],
     }))
     const ws = FakeWS.instances[0]
-    expect(ws.url).not.toContain('prompt=') // images can't ride the URL — note goes over the socket
-
+    expect(ws.url).not.toContain('prompt=')
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
     ws.emit(`ready ${BRACKETED_PASTE_READY}`)
-    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
-      { t: 'img', name: 'log.png', d: 'data:image/png;base64,EEEE' },
-    ])
-    ws.emit('[Image #1]') // CLI ack frame → the task note follows as the prompt
-    expect(JSON.parse(ws.sent[1])).toEqual({ t: 'i', d: '\x1b[200~repro on cold start\x1b[201~\r' })
+    vi.advanceTimersByTime(1200)
+    ws.emit('[Image #1]')
+    vi.advanceTimersByTime(1500)
+    const m = ws.parsed()
+    expect(m[0]).toEqual({ t: 'img', name: 'log.png', d: 'data:image/png;base64,EEEE' })
+    expect(m[1]).toEqual({ t: 'i', d: '\x1b[200~repro on cold start\x1b[201~' })
+    expect(m[2]).toEqual({ t: 'i', d: '\r' })
   })
 
-  it('image launch (Model B / stream): submits one structured turn on the launched frame', () => {
+  // ---- legacy + Model B paths unchanged ----
+  it('image launch (codex): legacy marker path — image on marker, prompt on the ack frame', () => {
+    startFreshLaunch(baseInput({ cli: 'codex', freeText: 'analyze', images: [{ name: 'p.png', dataUrl: 'data:image/png;base64,DDDD' }] }))
+    const ws = FakeWS.instances[0]
+    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
+    expect(ws.kinds()).toEqual(['img']) // sync on the marker (codex behavior preserved)
+    ws.emit('[Image #1]')
+    expect(ws.kinds()).toEqual(['img', 'i'])
+  })
+
+  it('image launch (Model B / stream): one structured turn on the launched frame', () => {
     localStorage.setItem('berth-render-mode', 'B')
-    startFreshLaunch(baseInput({
-      freeText: 'describe it',
-      images: [{ name: 'b.png', dataUrl: 'data:image/png;base64,CCCC' }],
-    }))
+    startFreshLaunch(baseInput({ freeText: 'describe it', images: [{ name: 'b.png', dataUrl: 'data:image/png;base64,CCCC' }] }))
     const ws = FakeWS.instances[0]
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
     const msg = JSON.parse(ws.sent[0])
