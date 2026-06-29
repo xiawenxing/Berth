@@ -133,6 +133,10 @@ export const api = {
   // returns that cache, so without this a session created after server start (launched from a
   // task, or started by hand in an imported dir) never surfaces. Returns the new session count.
   refresh: () => send('POST', '/api/refresh') as Promise<{ ok: boolean; count: number }>,
+  // Targeted pending-launch poll: a sessions-only refresh that surfaces a just-bound launch without
+  // the full refresh()'s per-tick data-source sync, and returns the fresh session list directly so
+  // the poller updates only `sessions` (not projects/todos/settings). See data.tsx's pending effect.
+  resolveLaunches: () => send('POST', '/api/launches/resolve') as Promise<ApiSession[]>,
   // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
   settings: () => getJSON<ApiSettings>('/api/settings'),
   saveSettings: (patch: { priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) => send('POST', '/api/settings', patch),

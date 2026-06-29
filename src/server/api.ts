@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { execFile } from 'node:child_process'
-import { getStore, getCache, visibleSessions, refresh, storeRoots } from './store-singleton'
+import { getStore, getCache, visibleSessions, refresh, refreshSessions, storeRoots } from './store-singleton'
 import { collectLogicalSessions } from '../sessions'
 import { toPreview, previewByCli, previewByIds } from './import-preview'
 import type { AgentCli } from '../types'
@@ -158,6 +158,10 @@ api.get('/health', (_req, res) => {
 })
 api.get('/sessions', (_req, res) => res.json(serialize()))
 api.post('/refresh', (_req, res) => { refresh(); res.json({ ok: true, count: getCache().length }) })
+// Targeted pending-launch poll: surface a just-bound session WITHOUT the full refresh()'s per-tick
+// data-source sync. Returns the same shape as GET /api/sessions so the client updates only its
+// session list (not projects/todos/settings) while it waits for a launch to surface.
+api.post('/launches/resolve', (_req, res) => { refreshSessions(); res.json(serialize()) })
 
 // ── Diagnostics: launch/connection lifecycle event log (for user bug reports) ──
 // The browser flushes its event buffer here so the export bundles BOTH sides of every launch

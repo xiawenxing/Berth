@@ -147,10 +147,16 @@ export function storeRoots(): { claudeRoot: string; codexRoot: string; cocoRoot:
 
 /**
  * Re-scan all 3 CLI stores, restrict to imported directories, persist identity rows, refresh the
- * in-memory cache. The scanned universe is sessions whose cwd is under an import root (∪ curated
- * sessions) — NOT every session in the CLI stores. See `filterImportedSessions`.
+ * in-memory cache, reconcile launches, and run the launch-lifecycle sweeps. The scanned universe is
+ * sessions whose cwd is under an import root (∪ curated sessions) — NOT every session in the CLI
+ * stores. See `filterImportedSessions`.
+ *
+ * This is the SESSIONS-ONLY core: exactly what the pending-launch poll needs (surface a just-bound
+ * session) and cheap (the adapter scan is mtime-cached). It deliberately omits the data-source
+ * auto-pull, which `refresh()` layers on — no reason to re-sync Feishu/Meego every 2.5s while the UI
+ * waits for a launch to surface.
  */
-export function refresh(): LogicalSession[] {
+export function refreshSessions(): LogicalSession[] {
   const all = collectLogicalSessions(storeRoots())
   cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet())
   store.upsertSessions(cache)
@@ -163,12 +169,6 @@ export function refresh(): LogicalSession[] {
   if (bound > 0) {
     cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet())
     store.upsertSessions(cache)
-  }
-  // Auto-pull sources configured for it (default is manual → no-op). Fire-and-forget; never blocks.
-  for (const s of store.allDataSources()) {
-    if (s.enabled && s.pullMode === 'auto') {
-      void syncSource(store, s, { docsRoot: getDocsRoot(store) }, { push: false }).catch(() => {})
-    }
   }
   // P2b: drop never-bound codex intents that never produced a session_meta and whose pty is gone, so a
   // failed launch can't keep Channel B's rollout poll armed forever (TTL generous: real codex writes
@@ -194,4 +194,20 @@ export function refresh(): LogicalSession[] {
     store.deleteLaunchIntent(id)
   }
   return cache
+}
+
+/**
+ * Full refresh: the sessions core PLUS the data-source auto-pull. Use for user-driven / periodic
+ * refreshes; the hot pending-launch poll uses `refreshSessions()` to avoid re-syncing data sources
+ * on every tick.
+ */
+export function refresh(): LogicalSession[] {
+  const result = refreshSessions()
+  // Auto-pull sources configured for it (default is manual → no-op). Fire-and-forget; never blocks.
+  for (const s of store.allDataSources()) {
+    if (s.enabled && s.pullMode === 'auto') {
+      void syncSource(store, s, { docsRoot: getDocsRoot(store) }, { push: false }).catch(() => {})
+    }
+  }
+  return result
 }
