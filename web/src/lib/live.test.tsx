@@ -120,8 +120,8 @@ describe('useLiveActions — stable slice (session-list re-render storm fix)', (
 })
 
 describe('data-changed — {t:data} frame triggers a refetch signal', () => {
-  it('dispatches berth:data-changed on a {t:"data"} frame', () => {
-    const { cleanup } = mountLive()
+  it('dispatches berth:data-changed on a {t:"data"} frame', async () => {
+    const { cleanup } = await mountLive()
     let fired = 0
     const handler = () => { fired++ }
     window.addEventListener('berth:data-changed', handler)
@@ -133,8 +133,8 @@ describe('data-changed — {t:data} frame triggers a refetch signal', () => {
 })
 
 describe('setActiveSession — output that lands on the open session stays read', () => {
-  it('keeps the active session read when an act frame bumps its updatedAt', () => {
-    const { live, cleanup } = mountLive()
+  it('keeps the active session read when an act frame bumps its updatedAt', async () => {
+    const { live, cleanup } = await mountLive()
     try {
       // Open the session (mark read at open time, as the page does), then declare it active.
       act(() => live().markSeen('open-1'))
@@ -147,9 +147,9 @@ describe('setActiveSession — output that lands on the open session stays read'
     }
   })
 
-  it('still marks a non-active session unread when its updatedAt bumps', () => {
+  it('still marks a non-active session unread when its updatedAt bumps', async () => {
     localStorage.setItem('berth-unread-epoch', '100') // baseline in the past so new output reads as unread
-    const { live, cleanup } = mountLive()
+    const { live, cleanup } = await mountLive()
     try {
       act(() => live().markSeen('open-1'))
       act(() => live().setActiveSession('open-1'))
@@ -161,8 +161,8 @@ describe('setActiveSession — output that lands on the open session stays read'
     }
   })
 
-  it('does not clobber an explicit 标为未读 on the open session', () => {
-    const { live, cleanup } = mountLive()
+  it('does not clobber an explicit 标为未读 on the open session', async () => {
+    const { live, cleanup } = await mountLive()
     try {
       act(() => live().setActiveSession('open-1'))
       act(() => live().markUnread('open-1'))
