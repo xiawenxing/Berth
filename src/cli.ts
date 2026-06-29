@@ -43,6 +43,7 @@ Usage:
   berth start [options]   Start the local server and open the UI in your browser
   berth task ...          Manage tasks (list/add/done/status/set/log/doc/rm/sync) — needs a running server
   berth project ...       Manage projects (list/add/rename/archive/rm) — needs a running server
+  berth session ...       Bind an existing session to a task (bind/unbind/list) — needs a running server
   berth skill install     Install the bundled Berth skill into your agents (use --force to overwrite)
   berth --help            Show this help
   berth --version         Show the version
@@ -62,6 +63,14 @@ function openBrowser(url: string): void {
     : 'xdg-open'
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url]
   try { spawn(cmd, args, { stdio: 'ignore', detached: true }).unref() } catch { /* ignore */ }
+}
+
+/** True iff a Berth server already answers `/api/health` on host:port. Never throws. */
+async function berthHealth(host: string, port: number): Promise<boolean> {
+  try {
+    const r = await fetch(`http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}/api/health`)
+    return r.ok && (await r.json())?.berth === true
+  } catch { return false }
 }
 
 function spawnExit(cmd: string, args: string[]): Promise<number> {
@@ -113,11 +122,12 @@ async function installSkill(force: boolean): Promise<void> {
 export async function runCli(argv: string[], version: string): Promise<void> {
   // Data commands (task/project) talk to a running server over HTTP — dispatched before the start
   // parser so their flags (e.g. --status) aren't misread as server options.
-  if (argv[0] === 'task' || argv[0] === 'project') {
-    const { runTaskCli, runProjectCli } = await import('./cli-data')
+  if (argv[0] === 'task' || argv[0] === 'project' || argv[0] === 'session') {
+    const { runTaskCli, runProjectCli, runSessionCli } = await import('./cli-data')
     try {
       if (argv[0] === 'task') await runTaskCli(argv.slice(1))
-      else await runProjectCli(argv.slice(1))
+      else if (argv[0] === 'project') await runProjectCli(argv.slice(1))
+      else await runSessionCli(argv.slice(1))
     } catch (e: any) { console.error(`berth: ${e?.message ?? e}`); process.exit(1) }
     return
   }
@@ -133,6 +143,20 @@ export async function runCli(argv: string[], version: string): Promise<void> {
 
   if (args.command === 'help') { console.log(HELP); return }
   if (args.command === 'version') { console.log(version); return }
+
+  // Idempotent start: if a Berth server already answers /api/health on the target port, don't bind a
+  // second one — just (optionally) open the frontend and return.
+  if (args.command === 'start') {
+    const probeHost = args.host ?? process.env.HOST ?? '127.0.0.1'
+    const probePort = Number(args.port ?? process.env.PORT ?? 7777)
+    if (await berthHealth(probeHost, probePort)) {
+      const shown = probeHost === '0.0.0.0' ? 'localhost' : probeHost
+      const base = `http://${shown}:${probePort}`
+      console.log(`berth: 已在运行 ${base} — 打开前端`)
+      if (args.open) openBrowser(`${base}/app/`)
+      return
+    }
+  }
 
   const { start } = await import('./server/index')
   const host = args.host ?? process.env.HOST ?? '127.0.0.1'

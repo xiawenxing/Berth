@@ -382,6 +382,8 @@ export function openStore(path: string) {
     deleteLaunchIntent(id: string) {
       db.prepare('DELETE FROM launch_intent WHERE id=?').run(id)
     },
+    /** SQLite's data_version — bumps when ANOTHER connection/process commits. Same-connection writes do NOT bump it. */
+    dataVersion(): number { return db.pragma('data_version', { simple: true }) as number },
     ...dataMethods(db),
   }
 }

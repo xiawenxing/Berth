@@ -159,6 +159,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           })
           window.dispatchEvent(new CustomEvent('berth:session-rekey', { detail: { from: m.from, to: m.to } }))
           bump()
+        } else if (m.t === 'data') {
+          // Server signals task data changed (a mutation here, or another process via data_version).
+          // Tell the data layer to refetch. Decoupled via a window event (same pattern as rekey).
+          window.dispatchEvent(new CustomEvent('berth:data-changed'))
         }
       }
       ws.onclose = () => {

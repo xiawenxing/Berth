@@ -10,6 +10,8 @@ extraMetadata:
 files:
   - electron/**
   - dist/**
+  - bin/**        # bin/berth.mjs is the CLI entry the agent shim (src/pty/agent-shim) re-invokes; the
+                  # app-spawned `berth` skill resolves it relative to dist/ — without this it's missing
   - public/**
   - web/dist/**   # Berth 2.0 React SPA — served at /app; without this the packaged app ships only 1.0
   - package.json
@@ -19,6 +21,8 @@ asarUnpack:
   - "node_modules/node-pty/**"
   - "node_modules/better-sqlite3/**"
   - "dist/**"
+  - "bin/**"      # unpacked alongside dist/** so the shim's `node bin/berth.mjs` → import('../dist/cli.js')
+                  # resolves across the asar boundary without mixed asar/unpacked import paths
   - "public/**"
 mac:
   target:

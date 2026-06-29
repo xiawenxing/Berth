@@ -7,13 +7,36 @@ const path = require('node:path')
 
 let mainWindow = null
 
-async function bootServer() {
+// Canonical port: honour $PORT so both the CLI and the app agree on the same default.
+const CANON_PORT = Number(process.env.PORT) || 7777
+const CANON_HOST = '127.0.0.1'
+
+// Returns true when a Berth server is already listening on `port`.
+async function berthHealth(port) {
+  try {
+    const r = await fetch(`http://${CANON_HOST}:${port}/api/health`)
+    return r.ok && (await r.json())?.berth === true
+  } catch { return false }
+}
+
+// 1) Reuse a Berth server already running on the canonical port (e.g. started by `berth start`).
+// 2) Otherwise boot our own server on the canonical port.
+// 3) If the canonical port is held by a non-Berth process, fall back to a free port.
+//    start() writes ~/.berth/server.json in all cases, so callers can discover the address.
+async function resolveServer() {
+  if (await berthHealth(CANON_PORT)) return CANON_PORT
   // dist/server/index.js is ESM; dynamic import() bridges from this CJS main.
   const serverEntry = path.join(__dirname, '..', 'dist', 'server', 'index.js')
   const { start } = await import(serverEntry)
-  // Port 0 = OS-assigned free port; loopback only (single-user, unauthenticated; /pty spawns CLIs).
-  const { port } = await start(0, '127.0.0.1')
-  return port
+  try {
+    // Attempt to bind the canonical port (loopback only — single-user, unauthenticated).
+    const { port } = await start(CANON_PORT, CANON_HOST)
+    return port
+  } catch (e) {
+    // Canonical port taken by a non-Berth process → let the OS assign a free port.
+    const { port } = await start(0, CANON_HOST)
+    return port
+  }
 }
 
 function createWindow(port) {
@@ -38,7 +61,7 @@ function createWindow(port) {
 app.whenReady().then(async () => {
   let port
   try {
-    port = await bootServer()
+    port = await resolveServer()
   } catch (e) {
     console.error('Berth: failed to start server', e)
     app.quit()
