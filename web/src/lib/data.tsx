@@ -177,14 +177,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (changed || next.length !== pending.length) setPending(next)
   }, [sessions, pending])
 
-  // While anything is in flight, keep re-scanning disk until it surfaces (then `pending` empties and
-  // this stops). Replaces SessionDrawer's old give-up-after-6s resync.
+  // While anything is in flight, surface it via a TARGETED sessions-only poll until `pending` empties
+  // (then this stops; placeholders also self-expire above, so a launch that never binds can't poll
+  // forever). Uses /api/launches/resolve — a sessions-only refresh — and updates only `sessions`,
+  // instead of the old api.refresh()+setNonce that re-ran the full data-source sync AND refetched
+  // projects/todos/settings every tick. Replaces SessionDrawer's old give-up-after-6s resync.
   useEffect(() => {
     if (pending.length === 0) return
     let cancelled = false
     const tick = async () => {
-      await api.refresh().catch(() => {})
-      if (!cancelled) setNonce((n) => n + 1)
+      const next = await api.resolveLaunches().catch(() => null)
+      if (!cancelled && next) setSessions(next.filter((x) => !x.deleted))
     }
     void tick() // immediate, so fast CLIs surface without waiting a full interval
     const iv = setInterval(() => void tick(), PENDING_POLL_MS)

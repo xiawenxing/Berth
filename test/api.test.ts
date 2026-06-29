@@ -70,13 +70,16 @@ const mockImportDirs = new Set<string>()
 const mockSettings = new Map<string, string>()
 const mockGetCache = vi.fn((..._a: any[]) => [] as any[])
 
+const mockRefresh = vi.fn()
+const mockRefreshSessions = vi.fn()
 vi.mock('../src/server/store-singleton', () => ({
   getStore: (...a: any[]) => mockGetStore(...a),
   getCache: (...a: any[]) => mockGetCache(...a),
   // visibleSessions = on-disk cache ∪ in-flight launches; these tests exercise the disk arm, so it
   // mirrors getCache(). The live-PTY arm is unit-tested directly via synthLaunchingSessions.
   visibleSessions: (...a: any[]) => mockGetCache(...a),
-  refresh: vi.fn(),
+  refresh: (...a: any[]) => mockRefresh(...a),
+  refreshSessions: (...a: any[]) => mockRefreshSessions(...a),
 }))
 
 // ── Mock data/tasks domain module ─────────────────────────────────────────────
@@ -513,6 +516,26 @@ describe('/api/sessions – live activity field (always)', () => {
     expect(after.find(s => s.sessionId === 's-live-1')?.activity).toBe('running')
 
     killPty('s-live-1')
+  })
+})
+
+describe('POST /api/launches/resolve – targeted pending-launch poll', () => {
+  it('runs the sessions-only refresh (not the full data-source-syncing refresh) and returns the session list', async () => {
+    mockRefresh.mockClear(); mockRefreshSessions.mockClear()
+    const sess = { sessionId: 's-resolve-1', cli: 'codex', cwd: '/x', title: 't', updatedAt: 100, deleted: false, copies: [] }
+    mockGetCache.mockReturnValue([sess])
+    const port = await listen()
+
+    const res = await fetch(`http://localhost:${port}/api/launches/resolve`, { method: 'POST' })
+    expect(res.status).toBe(200)
+    const body = await res.json() as any[]
+    expect(Array.isArray(body)).toBe(true)
+    expect(body.find(s => s.sessionId === 's-resolve-1')).toBeTruthy()
+
+    // The whole point of the targeted poll: surface launches without the per-tick data-source sync
+    // that the full refresh() runs.
+    expect(mockRefreshSessions).toHaveBeenCalledTimes(1)
+    expect(mockRefresh).not.toHaveBeenCalled()
   })
 })
 
