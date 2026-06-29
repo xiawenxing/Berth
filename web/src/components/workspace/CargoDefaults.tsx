@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, FileText, Folder, Package, Plus, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileText, Folder, FolderInput, Package, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api, type PreviewSession, type ApiPathMeta } from '@/lib/api'
 import { shortCwd } from '@/lib/format'
@@ -58,7 +58,7 @@ export function CargoDefaults({
   // Absent → fall back to a direct path removal.
   onRemovePath?: (cwd: string) => void
 }) {
-  const [dialog, setDialog] = useState<{ path: string; sessions: PreviewSession[] } | null>(null)
+  const [dialog, setDialog] = useState<{ path: string; sessions: PreviewSession[]; mode: 'register' | 'import' } | null>(null)
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [tasksOpen, setTasksOpen] = useState(false)
@@ -80,7 +80,7 @@ export function CargoDefaults({
       const picked = await api.pickFolder()
       if (!picked?.path) return
       const { sessions } = await api.previewDir(picked.path)
-      setDialog({ path: picked.path, sessions })
+      setDialog({ path: picked.path, sessions, mode: 'register' })
     } catch {
       // folder pick / preview failures are non-fatal — the button just no-ops.
     } finally {
@@ -88,12 +88,27 @@ export function CargoDefaults({
     }
   }
 
-  // 添加目录 confirm: ALWAYS register the dir (add-path, enabled), THEN import the picked sessions.
+  // Per-row 导入会话: preview the already-registered dir's on-disk sessions and open the dialog in
+  // import-only mode. Preview failures are non-fatal (button no-ops), mirroring onAddDir.
+  const onImportRow = async (cwd: string) => {
+    try {
+      const { sessions } = await api.previewDir(cwd)
+      setDialog({ path: cwd, sessions, mode: 'import' })
+    } catch {
+      // preview failure — no-op
+    }
+  }
+
+  // Confirm. 'register' (添加目录): register the dir THEN import the picked sessions. 'import'
+  // (per-row icon): the dir is already registered — import ONLY, never re-addPath (that would
+  // force enabled:true and silently re-enable a directory the user toggled off).
   const onConfirm = async (ids: string[]) => {
     if (!dialog || !projectId) return
     setBusy(true)
     try {
-      await api.addPath(projectId, dialog.path, { enabled: true })
+      if (dialog.mode === 'register') {
+        await api.addPath(projectId, dialog.path, { enabled: true })
+      }
       if (ids.length) await api.importSessions(ids, projectId)
       setDialog(null)
       onDone?.()
@@ -188,6 +203,9 @@ export function CargoDefaults({
               right={
                 <span className="flex items-center gap-2">
                   <Toggle on={d.enabled} onChange={() => toggle(d.cwd, !d.enabled)} />
+                  <button onClick={() => onImportRow(d.cwd)} title="导入该目录下磁盘上的会话" className="rounded p-1 text-text-dim hover:bg-secondary hover:text-brand">
+                    <FolderInput size={13} />
+                  </button>
                   <button onClick={() => (onRemovePath ? onRemovePath(d.cwd) : remove(d.cwd))} title="移除" className="rounded p-1 text-text-dim hover:bg-secondary hover:text-destructive">
                     <X size={13} />
                   </button>
@@ -210,7 +228,7 @@ export function CargoDefaults({
         <ImportDialog
           path={dialog.path}
           sessions={dialog.sessions}
-          mode="register"
+          mode={dialog.mode}
           busy={busy}
           onCancel={() => setDialog(null)}
           onConfirm={onConfirm}
