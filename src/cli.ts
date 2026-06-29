@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { formatStartupError } from './startup-error'
+import { findReusableServer } from './server-resolve'
 
 export interface CliArgs {
   command: 'start' | 'help' | 'version'
@@ -63,14 +64,6 @@ function openBrowser(url: string): void {
     : 'xdg-open'
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url]
   try { spawn(cmd, args, { stdio: 'ignore', detached: true }).unref() } catch { /* ignore */ }
-}
-
-/** True iff a Berth server already answers `/api/health` on host:port. Never throws. */
-async function berthHealth(host: string, port: number): Promise<boolean> {
-  try {
-    const r = await fetch(`http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}/api/health`)
-    return r.ok && (await r.json())?.berth === true
-  } catch { return false }
 }
 
 function spawnExit(cmd: string, args: string[]): Promise<number> {
@@ -144,14 +137,17 @@ export async function runCli(argv: string[], version: string): Promise<void> {
   if (args.command === 'help') { console.log(HELP); return }
   if (args.command === 'version') { console.log(version); return }
 
-  // Idempotent start: if a Berth server already answers /api/health on the target port, don't bind a
-  // second one — just (optionally) open the frontend and return.
+  // Idempotent start: if a Berth server is already running — recorded in server.json on ANY port, or
+  // live on the target port — don't bind a second one. This is the CLI half of bidirectional reuse:
+  // whether the app or the CLI started first, the other discovers it (server.json is the source of
+  // truth; the target port is the fallback when the record is missing/stale).
   if (args.command === 'start') {
     const probeHost = args.host ?? process.env.HOST ?? '127.0.0.1'
     const probePort = Number(args.port ?? process.env.PORT ?? 7777)
-    if (await berthHealth(probeHost, probePort)) {
-      const shown = probeHost === '0.0.0.0' ? 'localhost' : probeHost
-      const base = `http://${shown}:${probePort}`
+    const reusable = await findReusableServer({ host: probeHost, port: probePort })
+    if (reusable) {
+      const shown = reusable.host === '0.0.0.0' ? 'localhost' : reusable.host
+      const base = `http://${shown}:${reusable.port}`
       console.log(`berth: 已在运行 ${base} — 打开前端`)
       if (args.open) openBrowser(`${base}/app/`)
       return
