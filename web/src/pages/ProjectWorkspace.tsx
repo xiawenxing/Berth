@@ -599,7 +599,7 @@ export function ProjectWorkspace() {
           onDetach={onDetach}
           onDetachGroup={onDetachGroup}
         />
-        <CargoDefaults paths={project?.pathsMeta ?? []} tasks={sessionTaskOptions} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
+        <CargoDefaults paths={project?.pathsMeta ?? []} tasks={sessionTaskOptions} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} onImported={(ids) => live.markSeenMany(ids)} />
       </div>
 
       <NewTaskDialog

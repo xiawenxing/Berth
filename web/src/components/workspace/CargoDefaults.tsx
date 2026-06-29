@@ -46,6 +46,7 @@ export function CargoDefaults({
   onOpenDoc,
   onDone,
   onRemovePath,
+  onImported,
 }: {
   projectId?: string
   projectName?: string
@@ -57,6 +58,9 @@ export function CargoDefaults({
   // When provided, the parent owns the remove flow (so it can offer 「一并移出会话」, §10.1).
   // Absent → fall back to a direct path removal.
   onRemovePath?: (cwd: string) => void
+  // Called with the freshly-imported session ids so the parent can mark them READ (imported
+  // sessions default to read, matching the other import entry points). Optional.
+  onImported?: (ids: string[]) => void
 }) {
   const [dialog, setDialog] = useState<{ path: string; sessions: PreviewSession[]; mode: 'register' | 'import' } | null>(null)
   const [picking, setPicking] = useState(false)
@@ -109,7 +113,10 @@ export function CargoDefaults({
       if (dialog.mode === 'register') {
         await api.addPath(projectId, dialog.path, { enabled: true })
       }
-      if (ids.length) await api.importSessions(ids, projectId)
+      if (ids.length) {
+        await api.importSessions(ids, projectId)
+        onImported?.(ids) // imported → READ, consistent with the other import entry points
+      }
       setDialog(null)
       onDone?.()
     } catch {
