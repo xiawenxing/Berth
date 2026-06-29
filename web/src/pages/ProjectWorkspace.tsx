@@ -266,6 +266,8 @@ export function ProjectWorkspace() {
       .edge(sessionId, taskId, id)
       .then(() => reload())
       .catch(() => reload())
+  const onCreateTaskFromSession = (sessionId: string) =>
+    api.createTaskFromSession(sessionId, id).then(() => reload())
 
   // ── 会话移出项目 + 装载目录联动 (§10.2) ──
   const norm = (p: string) => p.replace(/\/+$/, '')
@@ -594,6 +596,7 @@ export function ProjectWorkspace() {
           onImportOther={importOther}
           onGenerateTitle={onGenerateSessionTitle}
           onLinkTask={onLinkSessionTask}
+          onCreateTaskFromSession={onCreateTaskFromSession}
           onDetach={onDetach}
           onDetachGroup={onDetachGroup}
         />
