@@ -78,6 +78,9 @@ export async function start(
   port = Number(process.env.PORT) || 7777,
   host = process.env.HOST || '127.0.0.1',   // loopback by default: /pty spawns CLIs with bypass-permission
                                             // flags, so binding all interfaces would be LAN RCE. Opt out knowingly.
+  // The app (server-process.cjs) opts into a free-port fallback so it always launches; the CLI keeps
+  // the default (false) so an explicit `--port` that's taken surfaces as an error, not a silent random port.
+  opts: { allowPortFallback?: boolean } = {},
 ) {
   await initData()   // one-time recordId→uuid migration before anything reads the data layer
   refresh()
@@ -94,9 +97,10 @@ export async function start(
     },
   })
   const hasWeb = !!WEB_DIST   // 2.0 SPA built and served at /app → callers open /app/ directly
-  // Bind the preferred port; if a NON-Berth process holds it, fall back to a free port (a live Berth
-  // server on it would already have been reused upstream via findReusableServer). Other errors throw.
-  const realPort = await listenWithFallback(server, port, host)
+  // Bind the preferred port. With allowPortFallback (the app), a NON-Berth holder makes us fall back to
+  // a free port (a live Berth server there was already reused upstream via findReusableServer). Without
+  // it (the CLI's explicit --port), an in-use port throws so the user's choice isn't silently relocated.
+  const realPort = await listenWithFallback(server, port, host, opts.allowPortFallback ?? false)
   const shown = host === '0.0.0.0' || host === '::' ? 'localhost' : host
   console.log(`Berth: ${getCache().length} sessions | http://${shown}:${realPort}${hasWeb ? '/app/' : ''}`)
   setLocalServerAddress(realPort, host)

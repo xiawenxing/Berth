@@ -144,7 +144,11 @@ export async function runCli(argv: string[], version: string): Promise<void> {
   if (args.command === 'start') {
     const probeHost = args.host ?? process.env.HOST ?? '127.0.0.1'
     const probePort = Number(args.port ?? process.env.PORT ?? 7777)
-    const reusable = await findReusableServer({ host: probeHost, port: probePort })
+    // An explicit --port/--host means "I want THIS address": only reuse a server actually on it. With
+    // no explicit address, reuse any recorded Berth server (bidirectional discovery — whoever started
+    // first, on whatever port).
+    const explicit = args.port !== undefined || args.host !== undefined
+    const reusable = await findReusableServer({ host: probeHost, port: probePort }, {}, { exact: explicit })
     if (reusable) {
       const shown = reusable.host === '0.0.0.0' ? 'localhost' : reusable.host
       const base = `http://${shown}:${reusable.port}`

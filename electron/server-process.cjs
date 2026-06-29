@@ -18,7 +18,9 @@ function tell(msg) {
 }
 
 import(serverEntry)
-  .then(({ start }) => start(port, host))
+  // allowPortFallback: the app must always launch, so if a non-Berth process holds 7777 we bind a free
+  // port (recorded in server.json so the CLI still discovers us).
+  .then(({ start }) => start(port, host, { allowPortFallback: true }))
   .then(({ port: boundPort }) => tell({ type: 'listening', port: boundPort, host }))
   .catch((err) => {
     tell({ type: 'error', message: String((err && err.stack) || err) })

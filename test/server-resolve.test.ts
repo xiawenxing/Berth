@@ -44,7 +44,7 @@ describe('findReusableServer', () => {
     expect(got).toBeNull()
   })
 
-  it('does not double-probe when the record already points at the preferred port', async () => {
+  it('does not double-probe when the record already points at the preferred host:port', async () => {
     let probes = 0
     const rec = { host: '127.0.0.1', port: 7777 }
     const got = await findReusableServer(PREFERRED, {
@@ -53,6 +53,18 @@ describe('findReusableServer', () => {
     })
     expect(got).toBeNull()
     expect(probes).toBe(1)   // recorded == preferred → probe once, not twice
+  })
+
+  // exact mode: an explicitly-requested host:port must NOT be satisfied by a server on another port.
+  it('exact mode reuses ONLY a server on the requested port, ignoring a record on a different port', async () => {
+    const otherPort = { host: '127.0.0.1', port: 58128 }
+    const got = await findReusableServer(PREFERRED, deps({ record: otherPort, healthy: new Set([58128]) }), { exact: true })
+    expect(got).toBeNull()   // record is on 58128, request is 7777 → do not reuse
+  })
+
+  it('exact mode reuses a server that is on the requested port', async () => {
+    const got = await findReusableServer(PREFERRED, deps({ record: null, healthy: new Set([7777]) }), { exact: true })
+    expect(got).toEqual({ host: '127.0.0.1', port: 7777 })
   })
 })
 
@@ -70,5 +82,14 @@ describe('probeHealth', () => {
   it('is false (never throws) when the fetch rejects', async () => {
     const no = await probeHealth('127.0.0.1', 7777, async () => { throw new Error('ECONNREFUSED') })
     expect(no).toBe(false)
+  })
+
+  it('passes an abort signal so a wedged port cannot hang startup', async () => {
+    let opts: any
+    await probeHealth('127.0.0.1', 7777, (async (_url: string, o: any) => {
+      opts = o
+      return { ok: true, json: async () => ({ berth: true }) }
+    }) as any)
+    expect(opts?.signal).toBeTruthy()
   })
 })

@@ -44,4 +44,14 @@ describe('listenWithFallback', () => {
     // An out-of-range port triggers a RangeError-class failure, not EADDRINUSE.
     await expect(listenWithFallback(s, 70000, '127.0.0.1')).rejects.toBeTruthy()
   })
+
+  it('rejects on EADDRINUSE (does NOT relocate) when fallback is disabled', async () => {
+    const port = await freePort()
+    const blocker = track(createServer())
+    await new Promise<void>((res) => blocker.listen(port, '127.0.0.1', () => res()))
+
+    const s = track(createServer())
+    // allowFallback=false → an explicit-port conflict must surface as an error, not a silent random port.
+    await expect(listenWithFallback(s, port, '127.0.0.1', false)).rejects.toBeTruthy()
+  })
 })
