@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-CN" class="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Berth compact task card mock</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --color-background: #f3f7f7;
+      --color-foreground: #23383a;
+      --color-card: #ffffff;
+      --color-card-foreground: #23383a;
+      --color-muted: #e6eeee;
+      --color-muted-foreground: #5f7577;
+      --color-secondary: #e6eeee;
+      --color-accent: #dde9e9;
+      --color-border: #d2e0e0;
+      --color-brand: #0f8f9b;
+      --color-success: #2a9d63;
+      --color-warning: #b9831b;
+      --color-destructive: #dc4338;
+      --color-text-dim: #90a5a6;
+      --elev-1: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.07);
+      --elev-2: 0 2px 4px rgb(16 24 40 / 0.05), 0 4px 10px rgb(16 24 40 / 0.09);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--color-background);
+      color: var(--color-foreground);
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .stage {
+      min-height: 100vh;
+      padding: 42px 38px;
+      overflow: hidden;
+    }
+
+    .board {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      min-width: 980px;
+    }
+
+    .lane {
+      width: 302px;
+      min-height: 492px;
+      overflow: hidden;
+      border: 1px solid var(--color-border);
+      border-radius: 15px;
+      background: color-mix(in oklab, var(--color-background) 72%, white 28%);
+    }
+
+    .lane.active {
+      border-top: 3px solid var(--color-brand);
+    }
+
+    .lane.done {
+      border-top: 3px solid var(--color-success);
+    }
+
+    .lane-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 68px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--color-border);
+      background: color-mix(in oklab, var(--color-background) 80%, white 20%);
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .lane-dot {
+      width: 16px;
+      height: 16px;
+      flex: none;
+      border-radius: 999px;
+      background: var(--color-brand);
+    }
+
+    .done .lane-dot { background: var(--color-success); }
+
+    .count {
+      margin-left: auto;
+      min-width: 38px;
+      height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: var(--color-muted);
+      color: var(--color-text-dim);
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .cards {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .task-card {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 58px;
+      padding: 10px 12px;
+      border: 1px solid color-mix(in oklab, var(--color-border) 52%, transparent);
+      border-radius: 13px;
+      background: var(--color-card);
+      box-shadow: var(--elev-2);
+    }
+
+    .task-card.compact {
+      min-height: 56px;
+      padding-block: 9px;
+    }
+
+    .task-card::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      flex: none;
+      border-radius: 999px;
+      background: color-mix(in oklab, var(--color-muted-foreground) 60%, white 40%);
+    }
+
+    .task-card.unread::before {
+      background: var(--color-destructive);
+    }
+
+    .task-title {
+      min-width: 0;
+      flex: 1;
+      color: var(--color-card-foreground);
+      font-weight: 720;
+      letter-spacing: 0;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow-wrap: anywhere;
+    }
+
+    .compact .task-title {
+      font-size: 12px;
+      line-height: 1.28;
+    }
+
+    .overdue-icon {
+      width: 21px;
+      height: 21px;
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      color: var(--color-destructive);
+      background: color-mix(in oklab, var(--color-destructive) 12%, white 88%);
+    }
+
+    .overdue-icon svg {
+      width: 14px;
+      height: 14px;
+      stroke-width: 2.2;
+    }
+
+    .menu {
+      width: 22px;
+      height: 22px;
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      color: var(--color-muted-foreground);
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .note {
+      max-width: 780px;
+      margin-top: 26px;
+      color: var(--color-muted-foreground);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <section class="board" aria-label="任务缩略卡片样稿">
+      <div class="lane">
+        <header class="lane-header">
+          <span class="lane-dot"></span>
+          <span>进行中</span>
+          <span class="count">6</span>
+        </header>
+        <div class="cards">
+          <article class="task-card compact">
+            <span class="task-title">任务启动后自动同步状态，避免新会话已经开始但任务仍停在待办</span>
+            <span class="menu">…</span>
+          </article>
+          <article class="task-card compact">
+            <span class="task-title">新建任务后左侧列表立即刷新，并保留当前看板滚动位置</span>
+            <span class="menu">…</span>
+          </article>
+          <article class="task-card compact unread">
+            <span class="task-title">未读会话在项目、任务和会话列表里统一透出红点</span>
+            <span class="menu">…</span>
+          </article>
+        </div>
+      </div>
+
+      <div class="lane active">
+        <header class="lane-header">
+          <span class="lane-dot"></span>
+          <span>待验证</span>
+          <span class="count">1</span>
+        </header>
+        <div class="cards">
+          <article class="task-card compact overdue" title="截止日期：2026-06-24">
+            <span class="task-title">确认任务缩略态只显示标题，过期只保留红色图标提醒不再挤占文字空间</span>
+            <span class="overdue-icon" aria-label="已逾期">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 2v4" />
+                <path d="M16 2v4" />
+                <path d="M3 10h18" />
+                <path d="M5 4h14a2 2 0 0 1 2 2v6.5" />
+                <path d="M8 20H5a2 2 0 0 1-2-2V6" />
+                <circle cx="17" cy="17" r="4" />
+                <path d="M17 14.8V17l1.4 1.1" />
+              </svg>
+            </span>
+            <span class="menu">…</span>
+          </article>
+        </div>
+      </div>
+
+      <div class="lane done">
+        <header class="lane-header">
+          <span class="lane-dot"></span>
+          <span>已完成</span>
+          <span class="count">12</span>
+        </header>
+        <div class="cards">
+          <article class="task-card compact">
+            <span class="task-title">ida 优化项：确认切换主题后任务卡片阴影和边框仍然清楚</span>
+            <span class="menu">…</span>
+          </article>
+          <article class="task-card compact">
+            <span class="task-title">ipd todo 同步：本地优先字段与外部数据源冲突提示</span>
+            <span class="menu">…</span>
+          </article>
+          <article class="task-card compact">
+            <span class="task-title">skill 入口文案收敛，不再把安装流程拆成多个重复按钮</span>
+            <span class="menu">…</span>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <p class="note">
+      缩略态改动点：去掉优先级 chip 和「逾期 N 天」文字标签；过期只显示右侧红色日历时钟 icon；标题从 13px 调到 12px，并允许两行显示，优先把横向空间留给任务内容。
+    </p>
+  </main>
+</body>
+</html>
