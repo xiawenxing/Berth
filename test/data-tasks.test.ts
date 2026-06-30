@@ -71,15 +71,34 @@ describe('data/tasks', () => {
 
   it('uses an AI-generated title when autoTitle is enabled', async () => {
     const store = openStore(':memory:')
+    const ds = fakeDocStore()
     ;(generateTaskTitle as any).mockResolvedValue('修复新建任务标题总结')
-    const r = await createTask(store, fakeDocStore().store, '新建任务时勾选 AI 自动总结任务标题，但是实际没有自动总结', { confirm: true, autoTitle: true }, now)
+    const original = '新建任务时勾选 AI 自动总结任务标题，但是实际没有自动总结；需要保留这段具体描述'
+    const r = await createTask(store, ds.store, original, { confirm: true, autoTitle: true }, now)
     expect(r.status).toBe('created')
     if (r.status === 'created') expect(r.record.title).toBe('修复新建任务标题总结')
     expect(store.allTasks()[0].title).toBe('修复新建任务标题总结')
+    expect(store.allTasks()[0].detailDoc).toMatch(/tasks\/.*\/index\.md/)
+    expect(ds.writes[0].content).toContain(original)
     expect(generateTaskTitle).toHaveBeenCalledWith(
-      '新建任务时勾选 AI 自动总结任务标题，但是实际没有自动总结',
+      original,
       expect.anything(),
     )
+  })
+
+  it('truncates a non-AI task title but preserves the full request in the context doc', async () => {
+    const store = openStore(':memory:')
+    const ds = fakeDocStore()
+    const long = `请修复任务创建时标题过长的问题，${'保留完整上下文。'.repeat(40)}`
+    const r = await createTask(store, ds.store, long, { confirm: true, autoTitle: false }, now)
+    expect(r.status).toBe('created')
+    if (r.status === 'created') {
+      expect(r.record.title.length).toBeLessThanOrEqual(200)
+      expect(r.record.title.endsWith('…')).toBe(true)
+      expect(r.record.detailDoc).toMatch(/tasks\/.*\/index\.md/)
+    }
+    expect(store.allTasks()[0].title.length).toBeLessThanOrEqual(200)
+    expect(ds.writes[0].content).toContain(long)
   })
 
   it('never writes an unlisted project unless createOption=true', async () => {
@@ -95,11 +114,12 @@ describe('data/tasks', () => {
   it('pasted images write a detail doc and set detail_doc', async () => {
     const store = openStore(':memory:')
     const ds = fakeDocStore()
-    const r = await createTask(store, ds.store, '带图任务', { confirm: true, images: ['data:image/png;base64,xx'] }, now)
+    const r = await createTask(store, ds.store, '带图任务说明', { confirm: true, images: ['data:image/png;base64,xx'] }, now)
     expect(r.status).toBe('created')
     if (r.status === 'created') expect(r.record.detailDoc).toMatch(/tasks\/.*\/index\.md/)
     expect(ds.writes).toHaveLength(1)
-    expect(ds.writes[0].content).toContain('![](assets/x.png)')
+    expect(ds.writes[0].content).toContain('带图任务说明')
+    expect(ds.writes[0].content).toContain('![任务附图 1](assets/x.png)')
     expect(listTasks(store)[0].detailDoc).toMatch(/tasks\/.*\/index\.md/)
   })
 
@@ -146,5 +166,10 @@ describe('data/tasks', () => {
   it('throws on empty text', async () => {
     const store = openStore(':memory:')
     await expect(createTask(store, fakeDocStore().store, '   ', {}, now)).rejects.toThrow()
+  })
+
+  it('rejects task creation text over the preserved-context input limit', async () => {
+    const store = openStore(':memory:')
+    await expect(createTask(store, fakeDocStore().store, 'x'.repeat(12_001), { confirm: true }, now)).rejects.toThrow(/too long/)
   })
 })

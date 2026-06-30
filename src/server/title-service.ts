@@ -9,6 +9,7 @@ import { resolveBerthAgent } from '../data/agent-config'
 import { generateTitle } from '../agent/index'
 import { titleInputFromTranscript } from '../agent/transcript'
 import { logDiag } from './diag'
+import { compactTitle } from '../title-limits'
 
 const inFlight = new Set<string>()
 export function isGeneratingTitle(id: string): boolean { return inFlight.has(id) }
@@ -73,8 +74,9 @@ async function generateSessionTitle(sessionId: string): Promise<void> {
     logDiag({ category: 'title', event: 'empty_result', sessionId, level: 'warn' })
     return
   }
-  getStore().setTitleOverride(sessionId, title)
-  logDiag({ category: 'title', event: 'saved', sessionId, titleLen: title.length })
+  const saved = compactTitle(title)
+  getStore().setTitleOverride(sessionId, saved)
+  logDiag({ category: 'title', event: 'saved', sessionId, titleLen: saved.length })
 }
 
 /** Fire-and-forget (re)generation. The in-flight flag is set synchronously (so a reload right after

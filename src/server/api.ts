@@ -40,6 +40,7 @@ import { parseClaudeJsonlTurns } from '../agent/normalize/claude-jsonl'
 import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd, berthHome } from '../paths'
 import { broadcastDataChanged } from './status-ws'
+import { compactTitle, TASK_CREATE_INPUT_MAX_CHARS } from '../title-limits'
 
 function isFolderPickerCancelled(err: unknown, stderr = ''): boolean {
   const e = err as { message?: unknown; stderr?: unknown }
@@ -138,8 +139,9 @@ function serialize(): ApiSession[] {
     // Fill an init-window null cwd from the launch intent, then collapse a symlink-variant of the
     // project workspace dir back to its canonical form so it groups under 项目默认目录.
     const cwd = normalizeWorkspaceCwd(s.cwd ?? intentCwd.get(s.sessionId) ?? null, projectId, workspaceDirFor, canon)
+    const rawTitle = overrides.get(s.sessionId) ?? s.title
     return {
-    sessionId: s.sessionId, cli: s.cli, cwd, title: overrides.get(s.sessionId) ?? s.title,
+    sessionId: s.sessionId, cli: s.cli, cwd, title: rawTitle ? compactTitle(rawTitle) : null,
     updatedAt: s.updatedAt, deleted: s.deleted, copies: s.copies.length,
     pinned: pins.has(s.sessionId),
     projectId,
@@ -756,6 +758,8 @@ api.post('/todos', async (req, res) => {
   const { text, projectId, confirm, createOption, images, autoTitle } = req.body ?? {}
   if (typeof text !== 'string' || (text.trim() === '' && (!Array.isArray(images) || images.length === 0)))
     return res.status(400).json({ error: 'text or images required' })
+  if (text.trim().length > TASK_CREATE_INPUT_MAX_CHARS)
+    return res.status(400).json({ error: `text too long; max ${TASK_CREATE_INPUT_MAX_CHARS} characters` })
   try {
     const store = getStore()
     const imgs = Array.isArray(images) ? images.filter((s: any) => typeof s === 'string') : undefined
@@ -987,9 +991,10 @@ api.patch('/sessions/:id/title', (req, res) => {
   if (!s) return res.status(404).json({ error: 'unknown session' })
   const title = typeof req.body?.title === 'string' ? req.body.title.trim() : ''
   if (!title) return res.status(400).json({ error: 'title required' })
-  getStore().setTitleOverride(s.sessionId, title)
-  logDiag({ category: 'title', event: 'manual_saved', sessionId: s.sessionId, titleLen: title.length })
-  res.json({ title })
+  const saved = compactTitle(title)
+  getStore().setTitleOverride(s.sessionId, saved)
+  logDiag({ category: 'title', event: 'manual_saved', sessionId: s.sessionId, titleLen: saved.length })
+  res.json({ title: saved })
 })
 
 api.post('/sessions/:id/consolidate', async (req, res) => {

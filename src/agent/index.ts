@@ -6,6 +6,7 @@ import { resolveAgentBinary } from '../pty/binaries'
 import { HEADLESS_CLIS } from '../data/agent-config'
 import { berthAgentCwd } from '../paths'
 import type { AgentCli } from '../types'
+import { compactTitle } from '../title-limits'
 import { titleInputFromTranscript } from './transcript'
 import { classifyAgentFailure, looksLikeAuthBlock, InternalAgentBlocked, isInternalAgentBlocked } from './agent-failure'
 const BUF = 8 * 1024 * 1024
@@ -128,8 +129,8 @@ export async function generateTitle(transcriptHead: string, agent?: BerthAgent):
   // carries its own model (possibly empty = the CLI's own default), so don't force a claude model.
   const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
   let out = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 45000 }, { cli, timeoutMs: 60000 })
-  out = (out.split('\n').find(l => l.trim()) ?? '').replace(/^["'""\s]+|["'""\s]+$/g, '').slice(0, 100)
-  return out
+  out = (out.split('\n').find(l => l.trim()) ?? '').replace(/^["'""\s]+|["'""\s]+$/g, '')
+  return compactTitle(out)
 }
 
 /** Generate a concise task title from task clues (description/context/session titles). */
@@ -147,8 +148,8 @@ export async function generateTaskTitle(input: string, agent?: BerthAgent): Prom
   const cli = agent?.cli ?? 'claude'
   const model = agent ? (agent.model || undefined) : 'claude-haiku-4-5'
   let out = await runAgentWithFallback(prompt, { cli, model, timeoutMs: 45000 }, { cli, timeoutMs: 60000 })
-  out = (out.split('\n').find(l => l.trim()) ?? '').replace(/^["'""\s]+|["'""\s]+$/g, '').slice(0, 100)
-  return out
+  out = (out.split('\n').find(l => l.trim()) ?? '').replace(/^["'""\s]+|["'""\s]+$/g, '')
+  return compactTitle(out)
 }
 
 /** Structured summary (shared by 项目小结 and the task 进展详情): a one-line headline + progress
