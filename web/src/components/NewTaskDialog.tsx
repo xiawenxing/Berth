@@ -4,7 +4,7 @@ import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, pastedImageDataUrls, usePastedImages, type PastedImage } from './ImagePaste'
 import { LaunchConfigFields } from './LaunchConfigFields'
 import type { AgentCli, AgentConfig, ApiProject } from '@/lib/api'
-import { initCargo, type CargoState } from '@/lib/launch-cargo'
+import { addDir, initCargo, type CargoState } from '@/lib/launch-cargo'
 import type { Task } from '@/lib/types'
 import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
 import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
@@ -76,7 +76,7 @@ export function NewTaskDialog({
     if (cargo.dirs.some((d) => d.cwd === cwd)) { setExtraDir(''); return }
     const ok = await onAddLaunchPath(cwd)
     if (!ok) return
-    setCargo({ ...cargo, dirs: [...cargo.dirs, { cwd, loaded: true }] })
+    setCargo(addDir(cargo, cwd))
     setExtraDir('')
   }
 

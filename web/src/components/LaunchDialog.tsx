@@ -7,7 +7,7 @@ import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { api, type AgentCli, type ApiTask } from '@/lib/api'
-import { initCargo, type CargoState } from '@/lib/launch-cargo'
+import { addDir, initCargo, type CargoState } from '@/lib/launch-cargo'
 import { filterTaskOptions } from '@/lib/task-picker'
 import { startFreshLaunch } from '@/lib/launch-runner'
 import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
@@ -99,7 +99,7 @@ export function LaunchDialog() {
     try {
       await api.addPath(launch.projectId, cwd, { enabled: true })
       reload() // 重拉项目，新目录进 pathsMeta
-      setCargo({ ...cargo, dirs: [...cargo.dirs, { cwd, loaded: true }] }) // 乐观加入并默认装载
+      setCargo(addDir(cargo, cwd)) // 乐观加入并默认装载
       setExtraDir('')
     } catch {
       /* add-path 校验失败（路径不存在等）→ 静默，不阻断 */
