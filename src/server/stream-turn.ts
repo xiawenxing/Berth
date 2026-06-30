@@ -3,11 +3,18 @@ import { currentDocStore } from '../data/docstore'
 export interface TurnImage {
   name?: string
   dataUrl: string
+  marker?: string
 }
 
 export interface PreparedStreamTurn {
   agentText: string
   displayText: string
+}
+
+interface SavedTurnImage {
+  rel: string
+  abs: string
+  marker?: string
 }
 
 function imageCountLabel(count: number): string {
@@ -20,22 +27,39 @@ function imageCountLabel(count: number): string {
  */
 export function prepareStreamTurn(text: string, images?: TurnImage[]): PreparedStreamTurn {
   const rawText = text.trim()
-  const saved = (images ?? [])
+  const saved: SavedTurnImage[] = (images ?? [])
     .filter((image): image is TurnImage => !!image && typeof image.dataUrl === 'string' && image.dataUrl.length > 0)
     .map((image) => {
-      try { return currentDocStore().saveAttachment(image.dataUrl, image.name || 'paste') }
+      try {
+        const saved = currentDocStore().saveAttachment(image.dataUrl, image.name || 'paste')
+        return saved ? { ...saved, ...(image.marker ? { marker: image.marker } : {}) } : null
+      }
       catch { return null }
     })
-    .filter((image): image is { rel: string; abs: string } => !!image)
+    .filter((image): image is SavedTurnImage => !!image)
 
   if (!saved.length) {
     return { agentText: rawText, displayText: rawText }
   }
 
-  const paths = saved.map((image, idx) => `${idx + 1}. ${image.abs}`).join('\n')
+  let agentText = rawText
+  let displayText = rawText
+  const remaining: typeof saved = []
+  for (const image of saved) {
+    if (image.marker && agentText.includes(image.marker)) {
+      agentText = agentText.split(image.marker).join(image.abs)
+      displayText = displayText || image.marker
+    } else {
+      remaining.push(image)
+    }
+  }
+
+  if (!remaining.length) return { agentText, displayText }
+
+  const paths = remaining.map((image, idx) => `${idx + 1}. ${image.abs}`).join('\n')
   const attachmentText = `Attached images:\n${paths}`
   return {
-    agentText: rawText ? `${rawText}\n\n${attachmentText}` : attachmentText,
-    displayText: rawText ? `${rawText}\n\n${imageCountLabel(saved.length)}` : imageCountLabel(saved.length),
+    agentText: agentText ? `${agentText}\n\n${attachmentText}` : attachmentText,
+    displayText: displayText ? `${displayText}\n\n${imageCountLabel(remaining.length)}` : imageCountLabel(remaining.length),
   }
 }

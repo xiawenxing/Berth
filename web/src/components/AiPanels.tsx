@@ -3,6 +3,7 @@ import { Sparkles, Copy, Save, RefreshCw, X, CheckCircle2, Circle, List, CheckSq
 import { Drawer } from './ui/Overlay'
 import { AnchoredPopover } from './ui/Menu'
 import { PastedImageStrip, pastedImageDataUrls, usePastedImages } from './ImagePaste'
+import { stripImagePlaceholders } from '@/lib/image-placeholders'
 import { api, type StructuredSummary } from '@/lib/api'
 
 const EMPTY_SUMMARY: StructuredSummary = { headline: '', progress: [], milestones: [] }
@@ -294,7 +295,7 @@ export function ContextDocDrawer({ target, onClose }: { target: ContextDocTarget
     setBusy(true)
     setNote('')
     api
-      .contextUpdate(target.kind, target.key, input.trim(), pastedImageDataUrls(images))
+      .contextUpdate(target.kind, target.key, stripImagePlaceholders(input, images), pastedImageDataUrls(images))
       .then(() => api.readDoc(target.path))
       .then((r) => {
         setContent(r.content || '')
@@ -334,7 +335,7 @@ export function ContextDocDrawer({ target, onClose }: { target: ContextDocTarget
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onPaste={onPasteImages}
+                onPaste={(e) => onPasteImages(e, { value: input, setValue: setInput, target: e.currentTarget })}
                 rows={2}
                 placeholder="补充点什么，或粘贴图片，让港务助手整理进上下文…"
                 className="min-h-0 flex-1 resize-none bg-transparent text-[13px] text-foreground outline-none placeholder:text-text-dim"

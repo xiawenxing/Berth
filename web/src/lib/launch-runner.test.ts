@@ -174,6 +174,30 @@ describe('startFreshLaunch — first-turn delivery', () => {
     expect(m[2]).toEqual({ t: 'i', d: '\r' })
   })
 
+  it('task launch (claude) with a placed image: text before marker → image → text after marker → Enter', () => {
+    startFreshLaunch(baseInput({
+      dest: 'task', taskTitle: 'Fix the crash', taskNote: 'repro [Image #1] on cold start', todoKey: 'todo-9',
+      images: [{ name: 'log.png', dataUrl: 'data:image/png;base64,EEEE', marker: '[Image #1]' }],
+    }))
+    const ws = FakeWS.instances[0]
+    ws.emit(JSON.stringify({
+      __berth: 'launched',
+      sessionId: 'S1',
+      deferredInitialPrompt: 'Please start working on the task: "Fix the crash"\n\nAdditional notes for this session:\nrepro [Image #1] on cold start',
+    }))
+    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
+    vi.advanceTimersByTime(1200)
+    vi.advanceTimersByTime(600)
+    ws.emit('[Image #1]')
+    vi.advanceTimersByTime(600)
+    vi.advanceTimersByTime(600)
+    const m = ws.parsed()
+    expect(m[0]).toEqual({ t: 'i', d: '\x1b[200~Please start working on the task: "Fix the crash"\r\rAdditional notes for this session:\rrepro \x1b[201~' })
+    expect(m[1]).toEqual({ t: 'img', name: 'log.png', d: 'data:image/png;base64,EEEE' })
+    expect(m[2]).toEqual({ t: 'i', d: '\x1b[200~ on cold start\x1b[201~' })
+    expect(m[3]).toEqual({ t: 'i', d: '\r' })
+  })
+
   // ---- first-turn delivery tracing (so the intermittent "title generated but query dropped" bug
   //      stops being invisible — every launch now leaves a correlated firstturn timeline) ----
   describe('diagnostics', () => {
@@ -241,7 +265,9 @@ describe('startFreshLaunch — first-turn delivery', () => {
     ws.emit(`ready ${BRACKETED_PASTE_READY}`)
     expect(ws.kinds()).toEqual(['img']) // sync on the marker (codex behavior preserved)
     ws.emit('[Image #1]')
-    expect(ws.kinds()).toEqual(['img', 'i'])
+    expect(ws.kinds()).toEqual(['img', 'i', 'i'])
+    expect(ws.parsed()[1]).toEqual({ t: 'i', d: '\x1b[200~analyze\x1b[201~' })
+    expect(ws.parsed()[2]).toEqual({ t: 'i', d: '\r' })
   })
 
   it('image launch (Model B / stream): one structured turn on the launched frame', () => {
@@ -253,5 +279,19 @@ describe('startFreshLaunch — first-turn delivery', () => {
     expect(msg.t).toBe('turn')
     expect(msg.text).toBe('describe it')
     expect(msg.images).toEqual([{ name: 'b.png', dataUrl: 'data:image/png;base64,CCCC' }])
+  })
+
+  it('image launch (Model B / stream): preserves image markers in the structured turn', () => {
+    localStorage.setItem('berth-render-mode', 'B')
+    startFreshLaunch(baseInput({
+      cli: 'codex',
+      freeText: 'describe [Image #1] here',
+      images: [{ name: 'b.png', dataUrl: 'data:image/png;base64,CCCC', marker: '[Image #1]' }],
+    }))
+    const ws = FakeWS.instances[0]
+    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    const msg = JSON.parse(ws.sent[0])
+    expect(msg.text).toBe('describe [Image #1] here')
+    expect(msg.images).toEqual([{ name: 'b.png', dataUrl: 'data:image/png;base64,CCCC', marker: '[Image #1]' }])
   })
 })

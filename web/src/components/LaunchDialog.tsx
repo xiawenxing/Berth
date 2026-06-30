@@ -186,7 +186,14 @@ export function LaunchDialog() {
                 setFreeText(e.target.value)
                 if (launchDraftKey) writeDraft(launchDraftKey, e.target.value)
               }}
-              onPaste={onPasteImages}
+              onPaste={(e) => onPasteImages(e, {
+                value: freeText,
+                setValue: (next) => {
+                  setFreeText(next)
+                  if (launchDraftKey) writeDraft(launchDraftKey, next)
+                },
+                target: e.currentTarget,
+              })}
               rows={2}
               placeholder="想让 agent 做什么…（可粘贴图片）"
               className="mt-2 w-full resize-none rounded-md border border-border bg-card px-2.5 py-2 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
@@ -200,7 +207,14 @@ export function LaunchDialog() {
                 setTaskNote(e.target.value)
                 if (launchDraftKey) writeDraft(launchDraftKey, e.target.value)
               }}
-              onPaste={onPasteImages}
+              onPaste={(e) => onPasteImages(e, {
+                value: taskNote,
+                setValue: (next) => {
+                  setTaskNote(next)
+                  if (launchDraftKey) writeDraft(launchDraftKey, next)
+                },
+                target: e.currentTarget,
+              })}
               rows={3}
               placeholder="补充本次会话的额外背景、范围或具体要求…（可粘贴图片）"
               className="mt-2 w-full resize-none rounded-md border border-border bg-card px-2.5 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
