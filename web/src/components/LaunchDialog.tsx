@@ -171,10 +171,13 @@ export function LaunchDialog() {
               query={taskQuery}
               options={taskOptions}
               onOpenChange={setTaskSelectOpen}
-              onQueryChange={setTaskQuery}
+              onQueryChange={(next) => {
+                setTaskQuery(next)
+                if (picked && next !== picked.title) setPicked(null)
+              }}
               onPick={(task) => {
                 setPicked({ id: task.id, title: task.title })
-                setTaskQuery('')
+                setTaskQuery(task.title)
                 setTaskSelectOpen(false)
               }}
             />
@@ -317,11 +320,6 @@ function TaskSelect({
     }
   }, [open])
 
-  const openPicker = () => {
-    onQueryChange('')
-    onOpenChange(true)
-  }
-
   return (
     <div
       className="relative mt-2"
@@ -329,44 +327,55 @@ function TaskSelect({
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onOpenChange(false)
       }}
     >
+      <input
+        ref={inputRef}
+        value={query}
+        onFocus={(e) => {
+          onOpenChange(true)
+          e.currentTarget.select()
+        }}
+        onClick={() => onOpenChange(true)}
+        onChange={(e) => {
+          onQueryChange(e.target.value)
+          onOpenChange(true)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            onOpenChange(false)
+          }
+          if (e.key === 'Enter' && open && options[0]) {
+            e.preventDefault()
+            onPick(options[0])
+          }
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            onOpenChange(true)
+          }
+        }}
+        placeholder="选择任务..."
+        role="combobox"
+        aria-expanded={open}
+        aria-controls="launch-task-options"
+        className="w-full rounded-md border border-border bg-card px-2.5 py-2 pr-8 text-[13px] text-foreground outline-none transition-colors focus:ring-2 focus:ring-ring placeholder:text-text-dim"
+      />
       <button
         type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => (open ? onOpenChange(false) : openPicker())}
-        className={cn(
-          'flex w-full items-center gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-left text-[13px] text-foreground outline-none transition-colors hover:bg-accent focus:ring-2 focus:ring-ring',
-          !value && 'text-text-dim',
-        )}
+        tabIndex={-1}
+        aria-label={open ? '收起任务列表' : '展开任务列表'}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          onOpenChange(!open)
+          if (!open) inputRef.current?.focus()
+        }}
+        className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center justify-center rounded p-1 text-text-dim hover:text-foreground"
       >
-        <span className="min-w-0 flex-1 truncate" title={value?.title}>
-          {value?.title ?? '选择任务…'}
-        </span>
-        <ChevronDown size={14} className={cn('shrink-0 text-text-dim transition-transform', open && 'rotate-180')} />
+        <ChevronDown size={14} className={cn('transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
         <div className="anim-pop absolute left-0 right-0 top-[calc(100%+6px)] z-40 rounded-md border border-border bg-popover p-1 shadow-lg">
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.preventDefault()
-                onOpenChange(false)
-              }
-              if (e.key === 'Enter' && options[0]) {
-                e.preventDefault()
-                onPick(options[0])
-              }
-            }}
-            placeholder="搜索任务…"
-            role="combobox"
-            aria-expanded={open}
-            className="mb-1 w-full rounded border border-border bg-card px-2.5 py-1.5 text-[12.5px] text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
-          />
-          <div role="listbox" className="max-h-44 overflow-y-auto">
+          <div id="launch-task-options" role="listbox" className="max-h-44 overflow-y-auto">
             {options.length === 0 ? (
               <div className="px-2.5 py-3 text-center text-[12px] text-text-dim">
                 {query.trim() ? '没有匹配的任务' : '该项目暂无可选任务'}
