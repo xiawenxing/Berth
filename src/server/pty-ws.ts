@@ -388,10 +388,18 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   const launchedTodo = todoKey ? todos.find(t => t.id === todoKey) : undefined
   try {
     await advanceTodoOnLaunch(store, launchedTodo)
+    if (launchedTodo) logDiag({ category: 'launch', event: 'task_status_advanced', launchToken: launchToken ?? undefined, cli, todoKey: launchedTodo.id })
   } catch (e: any) {
+    if (launchedTodo) logDiag({ category: 'launch', event: 'task_status_advance_failed', launchToken: launchToken ?? undefined, cli, todoKey: launchedTodo.id, level: 'warn', error: String(e?.message ?? e) })
     try { ws.send(`\r\n[berth] task status update skipped: ${e?.message ?? e}\r\n`) } catch {}
   }
   const plan = planFreshLaunch({ cli, cwd, todoKey, projectId, projectName }, todos, Math.floor(Date.now() / 1000), () => randomUUID(), docsRoot, locale)
+  logDiag({
+    category: 'launch', event: 'plan_built', launchToken: launchToken ?? undefined, sessionId: plan.sessionId ?? plan.intent.id, cli,
+    intentId: plan.intent.id, bound: !!plan.bindNow, todoKey: plan.bindNow?.todoKey ?? todoKey ?? undefined,
+    projectId: plan.bindNow?.projectId ?? projectId ?? undefined, hasTaskPrompt: !!plan.initialPrompt,
+    deferInitialPrompt,
+  })
 
   // Context maintenance: seed the protocol, ensure this entity's context file, and inject the
   // compact rules + paths through the same silent manifest channel. Also remember the context-file
@@ -445,6 +453,12 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     ctxAddDirs = addDirs // [docsRoot] — bound to "any context on"; hidden from the user
   }
   const finalAddDirs = [...userAddDirs, ...ctxAddDirs]
+  logDiag({
+    category: 'launch', event: 'context_ready', launchToken: launchToken ?? undefined, sessionId: plan.sessionId ?? plan.intent.id, cli,
+    anyContext: anyCtx, includeProject: gates.project, includeTask: gates.task,
+    protocolEnabled: ctxCfg.protocolEnabled, hasContextDoc: !!contextAbs, hasInjectFile: !!injectFile,
+    userAddDirCount: userAddDirs.length, contextAddDirCount: ctxAddDirs.length, addDirCount: finalAddDirs.length,
+  })
 
   store.addLaunchIntent(plan.intent)
   if (plan.bindNow) {
@@ -506,6 +520,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       model: agentEntry.model ?? undefined,
       addDirs: finalAddDirs,
       initialPrompt: spawnInitialPrompt,
+      launchToken: launchToken ?? undefined,
     })
     // holdRunning keeps the session `running` through the agent's silent thinking gap (no output for
     // >IDLE_MS) so a freshly-launched chat turn never falsely settles to 停泊 mid-turn.

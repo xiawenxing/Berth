@@ -8,6 +8,7 @@ import { getStore, getCache } from './store-singleton'
 import { resolveBerthAgent } from '../data/agent-config'
 import { generateTitle } from '../agent/index'
 import { titleInputFromTranscript } from '../agent/transcript'
+import { logDiag } from './diag'
 
 const inFlight = new Set<string>()
 export function isGeneratingTitle(id: string): boolean { return inFlight.has(id) }
@@ -51,18 +52,36 @@ export function titleGist(sessionId: string): string | null {
 
 async function generateSessionTitle(sessionId: string): Promise<void> {
   const gist = titleGist(sessionId)
-  if (!gist) return
+  if (!gist) {
+    logDiag({ category: 'title', event: 'no_gist', sessionId, level: 'warn' })
+    return
+  }
+  logDiag({ category: 'title', event: 'agent_start', sessionId, gistLen: gist.length })
   const title = await generateTitle(gist, resolveBerthAgent(getStore()))
-  if (title) getStore().setTitleOverride(sessionId, title)
+  if (!title) {
+    logDiag({ category: 'title', event: 'empty_result', sessionId, level: 'warn' })
+    return
+  }
+  getStore().setTitleOverride(sessionId, title)
+  logDiag({ category: 'title', event: 'saved', sessionId, titleLen: title.length })
 }
 
 /** Fire-and-forget (re)generation. The in-flight flag is set synchronously (so a reload right after
  *  the POST already shows the spinner), the agent call is deferred to a microtask and detached from
  *  the request. Dedups per session; errors are swallowed (the spinner just clears, title unchanged). */
 export function triggerSessionTitle(sessionId: string): void {
-  if (inFlight.has(sessionId)) return
+  if (inFlight.has(sessionId)) {
+    logDiag({ category: 'title', event: 'dedupe', sessionId })
+    return
+  }
   inFlight.add(sessionId)
+  logDiag({ category: 'title', event: 'start', sessionId })
   queueMicrotask(() => {
-    void generateSessionTitle(sessionId).catch(() => {}).finally(() => inFlight.delete(sessionId))
+    void generateSessionTitle(sessionId)
+      .catch((e: any) => logDiag({ category: 'title', event: 'failed', sessionId, level: 'error', error: String(e?.message ?? e) }))
+      .finally(() => {
+        inFlight.delete(sessionId)
+        logDiag({ category: 'title', event: 'finish', sessionId })
+      })
   })
 }

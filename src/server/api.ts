@@ -31,7 +31,7 @@ import type { Locale } from '../i18n'
 import { readFileSync, statSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { snapshotActivity, liveCount } from './pty-registry'
-import { ingestDiag, collectDiagForExport } from './diag'
+import { ingestDiag, collectDiagForExport, logDiag } from './diag'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { parseTranscriptChatTurns, parseTranscriptTurns } from './transcript-turns'
 import { resolveOpenTarget, openCommand, isAllowedOrigin, type OpenTarget } from './open-local'
@@ -959,8 +959,15 @@ api.post('/settings', (req, res) => {
 // client polls /api/sessions (titleGenerating + the eventual title) for progress.
 api.post('/sessions/:id/title', (req, res) => {
   const s = getCache().find(x => x.sessionId === req.params.id)
-  if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
-  if (!titleGist(s.sessionId)) return res.status(422).json({ error: 'no usable session content for title' })
+  if (!s || !s.contentSourcePath) {
+    logDiag({ category: 'title', event: 'request_no_transcript', sessionId: req.params.id, level: 'warn', cached: !!s })
+    return res.status(404).json({ error: 'no readable transcript' })
+  }
+  if (!titleGist(s.sessionId)) {
+    logDiag({ category: 'title', event: 'request_no_gist', sessionId: s.sessionId, level: 'warn' })
+    return res.status(422).json({ error: 'no usable session content for title' })
+  }
+  logDiag({ category: 'title', event: 'request', sessionId: s.sessionId })
   triggerSessionTitle(s.sessionId)
   res.json({ generating: true })
 })
@@ -971,6 +978,7 @@ api.patch('/sessions/:id/title', (req, res) => {
   const title = typeof req.body?.title === 'string' ? req.body.title.trim() : ''
   if (!title) return res.status(400).json({ error: 'title required' })
   getStore().setTitleOverride(s.sessionId, title)
+  logDiag({ category: 'title', event: 'manual_saved', sessionId: s.sessionId, titleLen: title.length })
   res.json({ title })
 })
 
