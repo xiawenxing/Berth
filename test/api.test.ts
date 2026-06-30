@@ -6,6 +6,9 @@ import { join } from 'node:path'
 
 const mockExecFile = vi.hoisted(() => vi.fn())
 const mockGenerateTaskTitle = vi.hoisted(() => vi.fn(async (..._a: any[]) => '智能任务标题'))
+const mockGetAgentModelCatalogs = vi.hoisted(() => vi.fn(async (..._a: any[]) => [
+  { cli: 'codex', ok: true, source: 'cli', models: [{ id: 'gpt-5.5', label: 'GPT-5.5' }] },
+]))
 
 vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
@@ -145,6 +148,10 @@ vi.mock('../src/server/reconcile', () => ({
   reconcileLaunchIntents: vi.fn(),
 }))
 
+vi.mock('../src/pty/model-catalog', () => ({
+  getAgentModelCatalogs: (...a: any[]) => mockGetAgentModelCatalogs(...a),
+}))
+
 // ── Mock context-consolidate-service so no real CLI/agent runs ────────────────
 const mockRunConsolidation = vi.fn().mockResolvedValue({ ok: true, progress: 'p', status: 's', rotated: false })
 const mockRunContextUpdate = vi.fn().mockResolvedValue({ ok: true, changed: [], added: [], removed: [], commit: null, rotated: false })
@@ -191,6 +198,9 @@ beforeEach(() => {
   mockCreateTask.mockResolvedValue({ status: 'created', record: { id: 'r', title: 'test', project: 'Berth' } })
   mockUpdateTask.mockClear()
   mockGenerateTaskTitle.mockReset().mockResolvedValue('智能任务标题')
+  mockGetAgentModelCatalogs.mockReset().mockResolvedValue([
+    { cli: 'codex', ok: true, source: 'cli', models: [{ id: 'gpt-5.5', label: 'GPT-5.5' }] },
+  ])
   mockSetTitleOverride.mockClear()
   mockSettings.clear()
   mockImportDirs.clear()
@@ -466,6 +476,15 @@ describe('settings API – agents config', () => {
     })
     expect(r.status).toBe(400)
     expect(((await r.json()) as any).error).toBeTruthy()
+  })
+
+  it('GET /agent-models returns probed model catalogs', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/agent-models?refresh=1`)
+    const j = await r.json() as any
+    expect(r.status).toBe(200)
+    expect(mockGetAgentModelCatalogs).toHaveBeenCalledWith(true)
+    expect(j.catalogs[0].models[0]).toEqual({ id: 'gpt-5.5', label: 'GPT-5.5' })
   })
 })
 

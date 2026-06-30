@@ -32,6 +32,7 @@ import { readFileSync, statSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { snapshotActivity, liveCount } from './pty-registry'
 import { ingestDiag, collectDiagForExport, logDiag } from './diag'
+import { getAgentModelCatalogs } from '../pty/model-catalog'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { parseTranscriptChatTurns, parseTranscriptTurns } from './transcript-turns'
 import { resolveOpenTarget, openCommand, isAllowedOrigin, type OpenTarget } from './open-local'
@@ -952,6 +953,15 @@ api.post('/settings', (req, res) => {
     return res.status(400).json({ error: e?.message || 'invalid settings' })
   }
   res.json({ ok: true, docsRoot: getDocsRoot(store), locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
+})
+
+api.get('/agent-models', async (req, res) => {
+  try {
+    const refreshCatalog = req.query.refresh === '1' || req.query.refresh === 'true'
+    res.json({ catalogs: await getAgentModelCatalogs(refreshCatalog) })
+  } catch (e: any) {
+    res.status(502).json({ error: String(e?.message ?? e) })
+  }
 })
 
 // Kick a detached title (re)generation and return immediately — it runs decoupled from this request,
