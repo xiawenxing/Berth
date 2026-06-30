@@ -89,9 +89,10 @@ describe('startFreshLaunch — first-turn delivery', () => {
     expect(ws.sent).toEqual([])
   })
 
-  it('image launches never put the prompt on the URL', () => {
+  it('image launches send prompt to the server for merging but defer URL positional submission', () => {
     startFreshLaunch(baseInput({ freeText: 'look', images: [{ name: 's.png', dataUrl: 'data:image/png;base64,AAAA' }] }))
-    expect(FakeWS.instances[0].url).not.toContain('prompt=')
+    expect(FakeWS.instances[0].url).toContain('deferInitialPrompt=1')
+    expect(FakeWS.instances[0].url).toContain('prompt=look')
   })
 
   it('resolves pending and resyncs from the prime socket on the launched frame', () => {
@@ -161,15 +162,20 @@ describe('startFreshLaunch — first-turn delivery', () => {
       images: [{ name: 'log.png', dataUrl: 'data:image/png;base64,EEEE' }],
     }))
     const ws = FakeWS.instances[0]
-    expect(ws.url).not.toContain('prompt=')
-    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    expect(ws.url).toContain('deferInitialPrompt=1')
+    expect(ws.url).toContain('prompt=repro+on+cold+start')
+    ws.emit(JSON.stringify({
+      __berth: 'launched',
+      sessionId: 'S1',
+      deferredInitialPrompt: 'Please start working on the task: "Fix the crash"\n\nAdditional notes for this session:\nrepro on cold start',
+    }))
     ws.emit(`ready ${BRACKETED_PASTE_READY}`)
     vi.advanceTimersByTime(1200)
     ws.emit('[Image #1]')
     vi.advanceTimersByTime(1500)
     const m = ws.parsed()
     expect(m[0]).toEqual({ t: 'img', name: 'log.png', d: 'data:image/png;base64,EEEE' })
-    expect(m[1]).toEqual({ t: 'i', d: '\x1b[200~repro on cold start\x1b[201~' })
+    expect(m[1]).toEqual({ t: 'i', d: '\x1b[200~Please start working on the task: "Fix the crash"\r\rAdditional notes for this session:\rrepro on cold start\x1b[201~' })
     expect(m[2]).toEqual({ t: 'i', d: '\r' })
   })
 

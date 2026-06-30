@@ -94,13 +94,27 @@ export function launchPromptRidesUrl(launch: FirstTurnLaunch, renderStream: bool
   return !wantsSocketTextSubmit(launch)                      // Model A: claude/coco free → socket, else URL
 }
 
+function launchDefersInitialPrompt(launch: FirstTurnLaunch): boolean {
+  return !!launch.images?.length
+}
+
+export function appendLaunchFirstTurnParams(qs: URLSearchParams, launch: FirstTurnLaunch, renderStream: boolean): void {
+  if (launchPromptRidesUrl(launch, renderStream)) {
+    qs.set('prompt', launch.prompt!)
+    return
+  }
+  if (!launchDefersInitialPrompt(launch)) return
+  qs.set('deferInitialPrompt', '1')
+  if (launch.prompt?.trim()) qs.set('prompt', launch.prompt)
+}
+
 function buildLaunchQuery(launch: LaunchDrawerSession['launch'], renderStream: boolean): URLSearchParams {
   const qs = new URLSearchParams({ new: '1', cli: launch.cli, cwd: launch.cwd, cols: '120', rows: '30' })
   if (renderStream) qs.set('render', 'stream-json')
   if (launch.launchToken) qs.set('launchToken', launch.launchToken)
   if (launch.projectId) qs.set('projectId', launch.projectId)
   if (launch.todoKey) qs.set('todoKey', launch.todoKey)
-  if (launchPromptRidesUrl(launch, renderStream)) qs.set('prompt', launch.prompt!)
+  appendLaunchFirstTurnParams(qs, launch, renderStream)
   if (launch.ctxProject === false) qs.set('ctxProject', '0')
   if (launch.ctxTask === false) qs.set('ctxTask', '0')
   for (const d of launch.addDirs ?? []) qs.append('addDirs', d)
@@ -130,7 +144,8 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
   const stream = streamRenderEnabled()
   const images = (launch.images ?? []).filter((img) => img.dataUrl)
   const hasImages = images.length > 0
-  const prompt = launch.prompt?.trim() ?? ''
+  let prompt = launch.prompt?.trim() ?? ''
+  const expectsDeferredPrompt = hasImages && !!launch.todoKey
   const claudeOrCoco = launch.cli === 'claude' || launch.cli === 'coco'
   const socketText = !stream && !hasImages && wantsSocketTextSubmit(launch)
   // claude/coco own first-turn delivery over this socket, gated on the CLI being genuinely idle.
@@ -170,7 +185,7 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
     else if (kind === 'paste') { if (prompt) ws.send(JSON.stringify({ t: 'i', d: `\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~` })) }
     else if (kind === 'enter') ws.send(JSON.stringify({ t: 'i', d: '\r' }))
   }
-  const steps = useStepper ? firstTurnSteps({ hasImages, hasPrompt: !!prompt }) : []
+  const steps = useStepper ? firstTurnSteps({ hasImages, hasPrompt: !!prompt || expectsDeferredPrompt }) : []
   let stepIdx = 0
   let stepStartedAt = 0
   let outLenAtStep = 0
@@ -234,6 +249,7 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
         const msg = JSON.parse(data)
         if (msg.__berth === 'launched' && msg.sessionId) {
           launchedId = msg.sessionId
+          if (typeof msg.deferredInitialPrompt === 'string') prompt = msg.deferredInitialPrompt.trim()
           lastDataAt = Date.now()
           logDiag('connect', 'prime_launched', { launchToken: tok, cli: launch.cli, sessionId: msg.sessionId, bound: msg.bound })
           void onLaunched?.(msg.sessionId)

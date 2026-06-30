@@ -9,7 +9,7 @@ import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loadin
 import { cliReadiness, shouldMarkLaunchReady, shouldRevealLaunch } from '@/lib/launch-readiness'
 import { logDiag } from '@/lib/diag'
 import type { LaunchSpec } from '@/lib/ui-store'
-import { launchPromptRidesUrl } from '@/lib/launch-runner'
+import { appendLaunchFirstTurnParams } from '@/lib/launch-runner'
 import '@xterm/xterm/css/xterm.css'
 
 const DEFAULT_PTY_HISTORY_BYTES = 16 * 1024 * 1024
@@ -332,10 +332,9 @@ export function Terminal({
       for (const d of launch.addDirs ?? []) qs.append('addDirs', d)
       if (launch.ctxProject === false) qs.set('ctxProject', '0')
       if (launch.ctxTask === false) qs.set('ctxTask', '0')
-      // Match the prime socket's routing: when it will submit the first turn over the socket (claude/
-      // coco free launch, or any image launch), this viewer must NOT also put the prompt on the URL —
-      // whichever of the two wins the spawn race would otherwise double-submit. Model A → renderStream false.
-      if (launchPromptRidesUrl(launch, false)) qs.set('prompt', launch.prompt!)
+      // Match the prime socket's routing exactly: this viewer can win the spawn race, so first-turn
+      // URL/deferred params must be identical to the drawer-independent launch driver.
+      appendLaunchFirstTurnParams(qs, launch, false)
     } else if (sessionId) {
       qs.set('sessionId', sessionId)
       qs.set('historyBytes', String(historyBytes))
