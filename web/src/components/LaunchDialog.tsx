@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Anchor, Play } from 'lucide-react'
+import { Anchor, ChevronDown, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, usePastedImages } from './ImagePaste'
 import { LaunchConfigFields } from './LaunchConfigFields'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
-import { api, type AgentCli } from '@/lib/api'
+import { api, type AgentCli, type ApiTask } from '@/lib/api'
 import { initCargo, type CargoState } from '@/lib/launch-cargo'
 import { filterTaskOptions } from '@/lib/task-picker'
 import { startFreshLaunch } from '@/lib/launch-runner'
@@ -29,6 +29,7 @@ export function LaunchDialog() {
   // When 起航 is opened without a preset task, the user picks one here (title + todoKey).
   const [picked, setPicked] = useState<{ id: string; title: string } | null>(null)
   const [taskQuery, setTaskQuery] = useState('')
+  const [taskSelectOpen, setTaskSelectOpen] = useState(false)
   const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
   const [cargo, setCargo] = useState<CargoState | null>(null)
   const [adjust, setAdjust] = useState(false)
@@ -53,6 +54,7 @@ export function LaunchDialog() {
       setExtraDir('')
       setPicked(null)
       setTaskQuery('')
+      setTaskSelectOpen(false)
       setCargo(initCargo(enabledPaths, project?.lastCwd ?? null, hasTask))
     }
     prevLaunch.current = launch
@@ -75,6 +77,7 @@ export function LaunchDialog() {
     clearImages()
     if (dest === 'free') setFreeText('')
     else setTaskNote('')
+    setTaskSelectOpen(false)
     setDest(next)
   }
 
@@ -162,44 +165,19 @@ export function LaunchDialog() {
             )}
           </div>
           {dest === 'task' && !presetTask && (
-            <div className="mt-2">
-              <input
-                value={taskQuery}
-                onChange={(e) => setTaskQuery(e.target.value)}
-                placeholder="搜索任务…"
-                className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
-              />
-              <div className="mt-1.5 max-h-44 overflow-y-auto rounded-md border border-border">
-                {taskOptions.length === 0 ? (
-                  <div className="px-2.5 py-3 text-center text-[12px] text-text-dim">
-                    {taskQuery.trim() ? '没有匹配的任务' : '该项目暂无可选任务'}
-                  </div>
-                ) : (
-                  taskOptions.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => setPicked({ id: t.id, title: t.title })}
-                      className={cn(
-                        'flex w-full items-center px-2.5 py-1.5 text-left text-[12.5px] transition-colors',
-                        picked?.id === t.id ? 'bg-brand/5 text-foreground' : 'text-foreground hover:bg-muted/40',
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'mr-2 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border',
-                          picked?.id === t.id ? 'border-brand' : 'border-border',
-                        )}
-                      >
-                        {picked?.id === t.id && <span className="h-2 w-2 rounded-full bg-brand" />}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate" title={t.title}>
-                        {t.title}
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
+            <TaskSelect
+              value={picked}
+              open={taskSelectOpen}
+              query={taskQuery}
+              options={taskOptions}
+              onOpenChange={setTaskSelectOpen}
+              onQueryChange={setTaskQuery}
+              onPick={(task) => {
+                setPicked({ id: task.id, title: task.title })
+                setTaskQuery('')
+                setTaskSelectOpen(false)
+              }}
+            />
           )}
           {dest === 'free' && (
             <textarea
@@ -297,5 +275,122 @@ function Radio({ checked, onClick, children, className }: { checked: boolean; on
       </span>
       <span className="truncate">{children}</span>
     </button>
+  )
+}
+
+function TaskSelect({
+  value,
+  open,
+  query,
+  options,
+  onOpenChange,
+  onQueryChange,
+  onPick,
+}: {
+  value: { id: string; title: string } | null
+  open: boolean
+  query: string
+  options: ApiTask[]
+  onOpenChange: (open: boolean) => void
+  onQueryChange: (query: string) => void
+  onPick: (task: ApiTask) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => inputRef.current?.focus())
+    }
+  }, [open])
+
+  const openPicker = () => {
+    onQueryChange('')
+    onOpenChange(true)
+  }
+
+  return (
+    <div
+      className="relative mt-2"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onOpenChange(false)
+      }}
+    >
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => (open ? onOpenChange(false) : openPicker())}
+        className={cn(
+          'flex w-full items-center gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-left text-[13px] text-foreground outline-none transition-colors hover:bg-accent focus:ring-2 focus:ring-ring',
+          !value && 'text-text-dim',
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate" title={value?.title}>
+          {value?.title ?? '选择任务…'}
+        </span>
+        <ChevronDown size={14} className={cn('shrink-0 text-text-dim transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="anim-pop absolute left-0 right-0 top-[calc(100%+6px)] z-40 rounded-md border border-border bg-popover p-1 shadow-lg">
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                onOpenChange(false)
+              }
+              if (e.key === 'Enter' && options[0]) {
+                e.preventDefault()
+                onPick(options[0])
+              }
+            }}
+            placeholder="搜索任务…"
+            role="combobox"
+            aria-expanded={open}
+            className="mb-1 w-full rounded border border-border bg-card px-2.5 py-1.5 text-[12.5px] text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
+          />
+          <div role="listbox" className="max-h-44 overflow-y-auto">
+            {options.length === 0 ? (
+              <div className="px-2.5 py-3 text-center text-[12px] text-text-dim">
+                {query.trim() ? '没有匹配的任务' : '该项目暂无可选任务'}
+              </div>
+            ) : (
+              options.map((t) => {
+                const selected = value?.id === t.id
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => onPick(t)}
+                    className={cn(
+                      'flex w-full items-center rounded px-2.5 py-1.5 text-left text-[12.5px] transition-colors',
+                      selected ? 'bg-brand/10 text-foreground' : 'text-foreground hover:bg-accent',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'mr-2 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border',
+                        selected ? 'border-brand' : 'border-border',
+                      )}
+                    >
+                      {selected && <span className="h-2 w-2 rounded-full bg-brand" />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate" title={t.title}>
+                      {t.title}
+                    </span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
