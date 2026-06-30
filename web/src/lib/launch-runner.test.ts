@@ -105,55 +105,49 @@ describe('startFreshLaunch — first-turn delivery', () => {
     expect(resync).toHaveBeenCalledTimes(1)
   })
 
-  // ---- claude/coco: idle-gated submission (the fix) ----
-  it('text-only (claude): waits for the composer to go IDLE, then pastes and Enters separately', () => {
+  // ---- claude/coco free launches: default to Model B (race-free first turn) ----
+  it('text-only (claude free): defaults to Model B instead of prime-socket paste', () => {
     startFreshLaunch(baseInput({ freeText: 'do the thing' }))
     const ws = FakeWS.instances[0]
-    expect(ws.url).not.toContain('prompt=')
+    expect(ws.url).toContain('render=stream-json')
+    expect(ws.url).toContain('prompt=do+the+thing')
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
     ws.emit(`boot ${BRACKETED_PASTE_READY} prompt>`)
-    vi.advanceTimersByTime(300)
-    expect(ws.sent).toEqual([]) // marker seen but not idle yet → do NOT fire (the live-verify failure)
-    vi.advanceTimersByTime(1500) // idle → paste (no Enter) then Enter as a separate write
-    expect(ws.parsed()).toEqual([
-      { t: 'i', d: '\x1b[200~do the thing\x1b[201~' },
-      { t: 'i', d: '\r' },
-    ])
+    vi.advanceTimersByTime(2000)
+    expect(ws.sent).toEqual([]) // server-side stream driver owns the first turn
   })
 
-  it('image launch (claude): holds the prompt until the [Image attach chip, then pastes + Enters', () => {
+  it('text-only (coco free): defaults to Model B instead of prime-socket paste', () => {
+    startFreshLaunch(baseInput({ cli: 'coco', freeText: 'do the thing' }))
+    const ws = FakeWS.instances[0]
+    expect(ws.url).toContain('render=stream-json')
+    expect(ws.url).toContain('prompt=do+the+thing')
+    ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    ws.emit(`boot ${BRACKETED_PASTE_READY} prompt>`)
+    vi.advanceTimersByTime(2000)
+    expect(ws.sent).toEqual([])
+  })
+
+  it('image launch (claude free): sends one structured Model B turn on launch', () => {
     startFreshLaunch(baseInput({
       freeText: 'look at this',
       images: [{ name: 'shot.png', dataUrl: 'data:image/png;base64,AAAA' }],
     }))
     const ws = FakeWS.instances[0]
+    expect(ws.url).toContain('render=stream-json')
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
-    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
-    vi.advanceTimersByTime(1200) // idle → image goes out first
-    expect(ws.parsed()).toEqual([{ t: 'img', name: 'shot.png', d: 'data:image/png;base64,AAAA' }])
-
-    ws.emit('spinner redraw, still attaching') // NOT the attach chip
-    vi.advanceTimersByTime(900)
-    expect(ws.sent.length).toBe(1) // prompt held — this was the reported bug
-
-    ws.emit('[Image #1] attached') // attach confirmation → release prompt, then Enter
-    vi.advanceTimersByTime(1500)
-    const m = ws.parsed()
-    expect(m[1]).toEqual({ t: 'i', d: '\x1b[200~look at this\x1b[201~' })
-    expect(m[2]).toEqual({ t: 'i', d: '\r' })
+    expect(ws.parsed()).toEqual([
+      { t: 'turn', text: 'look at this', images: [{ name: 'shot.png', dataUrl: 'data:image/png;base64,AAAA' }], clientTurnId: 'launch_tok-1' },
+    ])
   })
 
-  it('image-only launch (claude): image then Enter after attach, no paste', () => {
+  it('image-only launch (claude free): sends one structured Model B image turn', () => {
     startFreshLaunch(baseInput({ images: [{ name: 'a.png', dataUrl: 'data:image/png;base64,BBBB' }] }))
     const ws = FakeWS.instances[0]
+    expect(ws.url).toContain('render=stream-json')
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
-    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
-    vi.advanceTimersByTime(1200)
-    ws.emit('[Image #1]')
-    vi.advanceTimersByTime(1200)
     expect(ws.parsed()).toEqual([
-      { t: 'img', name: 'a.png', d: 'data:image/png;base64,BBBB' },
-      { t: 'i', d: '\r' },
+      { t: 'turn', text: '', images: [{ name: 'a.png', dataUrl: 'data:image/png;base64,BBBB' }], clientTurnId: 'launch_tok-1' },
     ])
   })
 
@@ -190,34 +184,46 @@ describe('startFreshLaunch — first-turn delivery', () => {
 
     beforeEach(() => { vi.spyOn(diag, 'logDiag') })
 
-    it('a clean text launch traces armed → step_emit(paste) → step_emit(enter) → complete', () => {
-      startFreshLaunch(baseInput({ freeText: 'do the thing' }))
+    it('a clean task image launch traces armed → images → paste → enter → complete', () => {
+      startFreshLaunch(baseInput({
+        dest: 'task', taskTitle: 'Fix the crash', taskNote: 'do the thing', todoKey: 'todo-1',
+        images: [{ name: 'log.png', dataUrl: 'data:image/png;base64,EEEE' }],
+      }))
       const ws = FakeWS.instances[0]
-      ws.emit('{"__berth":"launched","sessionId":"S1"}')
+      ws.emit(JSON.stringify({ __berth: 'launched', sessionId: 'S1', deferredInitialPrompt: 'Please start working\n\nAdditional notes:\ndo the thing' }))
       ws.emit(`boot ${BRACKETED_PASTE_READY} prompt>`)
-      vi.advanceTimersByTime(1800) // idle → paste, then Enter, then finish
+      vi.advanceTimersByTime(1200)
+      ws.emit('[Image #1]')
+      vi.advanceTimersByTime(1800)
       const events = ft()
-      expect(events.map((e) => e.event)).toEqual(['armed', 'step_emit', 'step_emit', 'complete'])
-      expect(events[1]).toMatchObject({ step: 'paste', markerSeen: true })
-      expect(events[2]).toMatchObject({ step: 'enter' })
+      expect(events.map((e) => e.event)).toEqual(['armed', 'step_emit', 'step_emit', 'step_emit', 'complete'])
+      expect(events[1]).toMatchObject({ step: 'images', markerSeen: true })
+      expect(events[2]).toMatchObject({ step: 'paste' })
+      expect(events[3]).toMatchObject({ step: 'enter' })
     })
 
     it('records markerSeen=false when the bracketed-paste marker never shows (readiness misfire)', () => {
-      startFreshLaunch(baseInput({ freeText: 'do the thing' }))
+      startFreshLaunch(baseInput({
+        dest: 'task', taskTitle: 'Fix the crash', taskNote: 'do the thing', todoKey: 'todo-1',
+        images: [{ name: 'log.png', dataUrl: 'data:image/png;base64,EEEE' }],
+      }))
       const ws = FakeWS.instances[0]
-      ws.emit('{"__berth":"launched","sessionId":"S1"}')
+      ws.emit(JSON.stringify({ __berth: 'launched', sessionId: 'S1', deferredInitialPrompt: 'Please start working' }))
       // No marker ever emitted → readyGuard only trips on the 12s fallback → paste fires "blind".
       vi.advanceTimersByTime(12_500)
-      const paste = ft().find((e) => e.event === 'step_emit' && e.step === 'paste')
-      expect(paste).toBeTruthy()
-      expect(paste!.markerSeen).toBe(false)
-      expect(paste!.elapsedSinceStepMs as number).toBeGreaterThanOrEqual(12_000)
+      const images = ft().find((e) => e.event === 'step_emit' && e.step === 'images')
+      expect(images).toBeTruthy()
+      expect(images!.markerSeen).toBe(false)
+      expect(images!.elapsedSinceStepMs as number).toBeGreaterThanOrEqual(12_000)
     })
 
     it('socket closing before the composer goes idle traces armed but NEVER complete (the silent drop)', () => {
-      startFreshLaunch(baseInput({ freeText: 'do the thing' }))
+      startFreshLaunch(baseInput({
+        dest: 'task', taskTitle: 'Fix the crash', taskNote: 'do the thing', todoKey: 'todo-1',
+        images: [{ name: 'log.png', dataUrl: 'data:image/png;base64,EEEE' }],
+      }))
       const ws = FakeWS.instances[0]
-      ws.emit('{"__berth":"launched","sessionId":"S1"}')
+      ws.emit(JSON.stringify({ __berth: 'launched', sessionId: 'S1', deferredInitialPrompt: 'Please start working' }))
       ws.close() // drawer/network/server tore the prime socket down before the stepper could fire
       vi.advanceTimersByTime(60_500) // let the safety timeout run
       const events = ft().map((e) => e.event)

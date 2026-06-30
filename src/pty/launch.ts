@@ -229,18 +229,23 @@ export function cocoTurnArgv(prompt: string, resumeId: string | null, sessionId:
   return resumeId ? [`--resume=${resumeId}`, ...flags, prompt] : ['--session-id', sessionId, ...flags, prompt]
 }
 
-export interface PerTurnOpts { cwd: string; sessionId?: string; model?: string; prompt: string; resumeId: string | null }
+export interface PerTurnOpts { cwd: string; sessionId?: string; model?: string; prompt: string; resumeId: string | null; injectFile?: string }
 
 export function spawnPerTurn(cli: AgentCli, o: PerTurnOpts): ChildProcess {
   const cwd = ensureLaunchCwd(o.cwd)
   const bin = resolveAgentBinary(cli)
   if (cli === 'codex') ensureCodexTrust(cwd)   // `codex exec` also refuses an untrusted dir
+  const env = spawnEnv(o.sessionId) as any
+  if (cli === 'coco' && o.injectFile) {
+    ensureCocoBerthHook()
+    env.BERTH_CONTEXT_FILE = writeCocoContextPayload(o.injectFile)
+  }
   const argv = cli === 'codex' ? codexTurnArgv(o.prompt, o.resumeId, { model: o.model })
     : cli === 'coco' ? cocoTurnArgv(o.prompt, o.resumeId, o.sessionId ?? '')
       : (() => { throw new Error(`per-turn stream not supported for ${cli}`) })()
   // stdin is 'ignore' (prompt rides argv) so codex never blocks on "Reading additional input from
   // stdin…"; detached:true makes the child a group leader for the registry's process.kill(-pid).
-  return spawnChild(bin, gated(cli, bin, argv), { cwd, env: spawnEnv(o.sessionId) as any, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  return spawnChild(bin, gated(cli, bin, argv), { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
 /** Directory under BERTH_HOME where SessionStart hooks drop their launch-callback envelopes. */

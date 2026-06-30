@@ -62,10 +62,6 @@ export interface StartFreshLaunchInput {
   now?: () => number
 }
 
-function streamRenderEnabled(): boolean {
-  try { return localStorage.getItem('berth-render-mode') === 'B' } catch { return false }
-}
-
 /** The fields of a launch spec the first-turn routing depends on (shared by LaunchDrawerSession and
  *  the drawer terminal's LaunchSpec). */
 export interface FirstTurnLaunch {
@@ -75,11 +71,17 @@ export interface FirstTurnLaunch {
   todoKey?: string | null
 }
 
-// Model A only: claude/coco FREE launches submit their first turn over the prime socket (gated on the
-// CLI being ready), NOT via the CLI's native URL positional. The positional's cold-start auto-submit
-// has a rare miss that strands the typed query pre-filled-but-unsent in the composer. codex keeps the
-// positional (its submit is reliable); task launches keep it too so the user note composes with the
-// task directive the server injects as the positional.
+function streamRenderEnabled(launch: FirstTurnLaunch): boolean {
+  // Claude/Coco free-launch first turns must not be typed into a booting TUI: both CLIs can expose
+  // terminal readiness markers before their composers accept paste/Enter. Route those launches
+  // through Model B by default; keep task launches and codex under the user's renderer preference.
+  if (!launch.todoKey && (launch.cli === 'claude' || launch.cli === 'coco')) return true
+  try { return localStorage.getItem('berth-render-mode') === 'B' } catch { return false }
+}
+
+// Model A fallback only: when a claude/coco free launch is not routed through Model B, submit its
+// first turn over the prime socket instead of the native URL positional. The default path now sends
+// claude/coco free launches to Model B; this guard remains for the explicit TUI code path.
 function wantsSocketTextSubmit(launch: FirstTurnLaunch): boolean {
   if (!launch.prompt?.trim()) return false
   if (launch.todoKey) return false
@@ -141,7 +143,7 @@ const IMAGE_ATTACH_FALLBACK_MS = 3_000
  */
 function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (sessionId: string) => void | Promise<void>): void {
   if (typeof WebSocket === 'undefined' || typeof location === 'undefined') return
-  const stream = streamRenderEnabled()
+  const stream = streamRenderEnabled(launch)
   const images = (launch.images ?? []).filter((img) => img.dataUrl)
   const hasImages = images.length > 0
   let prompt = launch.prompt?.trim() ?? ''
