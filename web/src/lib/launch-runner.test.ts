@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startFreshLaunch, type StartFreshLaunchInput } from './launch-runner'
+import * as diag from './diag'
 
 // A fake /pty WebSocket: records what the prime socket sends and lets the test drive inbound frames.
 class FakeWS {
@@ -177,6 +178,53 @@ describe('startFreshLaunch — first-turn delivery', () => {
     expect(m[0]).toEqual({ t: 'img', name: 'log.png', d: 'data:image/png;base64,EEEE' })
     expect(m[1]).toEqual({ t: 'i', d: '\x1b[200~Please start working on the task: "Fix the crash"\r\rAdditional notes for this session:\rrepro on cold start\x1b[201~' })
     expect(m[2]).toEqual({ t: 'i', d: '\r' })
+  })
+
+  // ---- first-turn delivery tracing (so the intermittent "title generated but query dropped" bug
+  //      stops being invisible — every launch now leaves a correlated firstturn timeline) ----
+  describe('diagnostics', () => {
+    const ft = (): Array<Record<string, unknown> & { event: string }> =>
+      (diag.logDiag as unknown as { mock: { calls: unknown[][] } }).mock.calls
+        .filter((c) => c[0] === 'firstturn')
+        .map((c) => ({ event: c[1] as string, ...(c[2] as Record<string, unknown>) }))
+
+    beforeEach(() => { vi.spyOn(diag, 'logDiag') })
+
+    it('a clean text launch traces armed → step_emit(paste) → step_emit(enter) → complete', () => {
+      startFreshLaunch(baseInput({ freeText: 'do the thing' }))
+      const ws = FakeWS.instances[0]
+      ws.emit('{"__berth":"launched","sessionId":"S1"}')
+      ws.emit(`boot ${BRACKETED_PASTE_READY} prompt>`)
+      vi.advanceTimersByTime(1800) // idle → paste, then Enter, then finish
+      const events = ft()
+      expect(events.map((e) => e.event)).toEqual(['armed', 'step_emit', 'step_emit', 'complete'])
+      expect(events[1]).toMatchObject({ step: 'paste', markerSeen: true })
+      expect(events[2]).toMatchObject({ step: 'enter' })
+    })
+
+    it('records markerSeen=false when the bracketed-paste marker never shows (readiness misfire)', () => {
+      startFreshLaunch(baseInput({ freeText: 'do the thing' }))
+      const ws = FakeWS.instances[0]
+      ws.emit('{"__berth":"launched","sessionId":"S1"}')
+      // No marker ever emitted → readyGuard only trips on the 12s fallback → paste fires "blind".
+      vi.advanceTimersByTime(12_500)
+      const paste = ft().find((e) => e.event === 'step_emit' && e.step === 'paste')
+      expect(paste).toBeTruthy()
+      expect(paste!.markerSeen).toBe(false)
+      expect(paste!.elapsedSinceStepMs as number).toBeGreaterThanOrEqual(12_000)
+    })
+
+    it('socket closing before the composer goes idle traces armed but NEVER complete (the silent drop)', () => {
+      startFreshLaunch(baseInput({ freeText: 'do the thing' }))
+      const ws = FakeWS.instances[0]
+      ws.emit('{"__berth":"launched","sessionId":"S1"}')
+      ws.close() // drawer/network/server tore the prime socket down before the stepper could fire
+      vi.advanceTimersByTime(60_500) // let the safety timeout run
+      const events = ft().map((e) => e.event)
+      expect(events).toContain('armed')
+      expect(events).toContain('timeout')
+      expect(events).not.toContain('complete') // the query was never delivered — and now we can SEE it
+    })
   })
 
   // ---- legacy + Model B paths unchanged ----
