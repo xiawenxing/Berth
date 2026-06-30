@@ -55,11 +55,16 @@ function findSurfacedSession(sessions: ApiSession[], p: PendingLaunch): ApiSessi
   return sessions.find((s) => sessionMatchesPending(s, p))
 }
 
-function needsTitleBackfill(p: PendingLaunch, s: ApiSession): boolean {
-  // codex and coco both surface before their title is written (codex: thread_name; coco: session.json
-  // metadata.title lands a few seconds after the session file is created). Keep the refresh loop alive
-  // until the title backfills. claude writes its first user message into the transcript at creation, so
-  // it surfaces title-complete and never needs this.
+export function needsTitleBackfill(p: PendingLaunch, s: ApiSession): boolean {
+  // Keep the surfacing poll alive while the surfaced row is still the TRANSIENT launching placeholder —
+  // the synthetic live-PTY arm (launching=true, title=null, jsonl not scanned into `cache` yet). A
+  // claude launch can surface via that arm BEFORE the disk scan ingests its jsonl; resolving pending
+  // then freezes the card at "启动中…" — and it can't be renamed, because the synth row hardcodes
+  // title:null and is rebuilt every refresh. Polling on drives refreshSessions() until the disk arm
+  // supersedes it (launching clears, title appears). The 30-min LAUNCHED_PENDING_TTL_MS still bounds it.
+  if (s.launching) return true
+  // codex and coco also surface before their title is written (codex: thread_name; coco: session.json
+  // metadata.title lands a few seconds after the session file is created) — keep polling until it lands.
   return (p.cli === 'codex' || p.cli === 'coco') && !s.title
 }
 

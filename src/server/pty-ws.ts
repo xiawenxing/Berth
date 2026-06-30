@@ -497,8 +497,8 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   const wantStream = rendersStream(url, cli)
   if (wantStream) {
     // Model B: no positional prompt — the driver delivers the first user turn (claude via stdin NDJSON;
-    // codex/coco as the per-turn exec prompt). claude's manifest rides --append-system-prompt-file
-    // (injectFile); codex/coco Model B v1 doesn't inject the manifest yet (per-turn hook is a follow-up).
+    // codex/coco as the per-turn exec prompt). claude's manifest rides --append-system-prompt-file;
+    // coco's rides the same session_start hook payload as TUI launches.
     const driver = makeFreshStreamDriver(cli, {
       cwd,
       sessionId: plan.sessionId ?? undefined,

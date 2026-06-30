@@ -23,7 +23,7 @@ export function makeFreshStreamDriver(cli: AgentCli, o: FreshStreamOpts): Sessio
       { initialPrompt: o.initialPrompt },
     )
   }
-  const spawnTurn = (prompt: string, resumeId: string | null) => spawnPerTurn(cli, { cwd: o.cwd, sessionId: o.sessionId, model: o.model, prompt, resumeId })
+  const spawnTurn = (prompt: string, resumeId: string | null) => spawnPerTurn(cli, { cwd: o.cwd, sessionId: o.sessionId, model: o.model, prompt, resumeId, injectFile: o.injectFile })
   return new PerTurnStreamDriver(newReducer(cli), spawnTurn, { initialPrompt: o.initialPrompt })
 }
 

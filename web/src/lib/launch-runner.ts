@@ -62,10 +62,6 @@ export interface StartFreshLaunchInput {
   now?: () => number
 }
 
-function streamRenderEnabled(): boolean {
-  try { return localStorage.getItem('berth-render-mode') === 'B' } catch { return false }
-}
-
 /** The fields of a launch spec the first-turn routing depends on (shared by LaunchDrawerSession and
  *  the drawer terminal's LaunchSpec). */
 export interface FirstTurnLaunch {
@@ -75,11 +71,17 @@ export interface FirstTurnLaunch {
   todoKey?: string | null
 }
 
-// Model A only: claude/coco FREE launches submit their first turn over the prime socket (gated on the
-// CLI being ready), NOT via the CLI's native URL positional. The positional's cold-start auto-submit
-// has a rare miss that strands the typed query pre-filled-but-unsent in the composer. codex keeps the
-// positional (its submit is reliable); task launches keep it too so the user note composes with the
-// task directive the server injects as the positional.
+function streamRenderEnabled(launch: FirstTurnLaunch): boolean {
+  // Claude/Coco free-launch first turns must not be typed into a booting TUI: both CLIs can expose
+  // terminal readiness markers before their composers accept paste/Enter. Route those launches
+  // through Model B by default; keep task launches and codex under the user's renderer preference.
+  if (!launch.todoKey && (launch.cli === 'claude' || launch.cli === 'coco')) return true
+  try { return localStorage.getItem('berth-render-mode') === 'B' } catch { return false }
+}
+
+// Model A fallback only: when a claude/coco free launch is not routed through Model B, submit its
+// first turn over the prime socket instead of the native URL positional. The default path now sends
+// claude/coco free launches to Model B; this guard remains for the explicit TUI code path.
 function wantsSocketTextSubmit(launch: FirstTurnLaunch): boolean {
   if (!launch.prompt?.trim()) return false
   if (launch.todoKey) return false
@@ -141,7 +143,7 @@ const IMAGE_ATTACH_FALLBACK_MS = 3_000
  */
 function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (sessionId: string) => void | Promise<void>): void {
   if (typeof WebSocket === 'undefined' || typeof location === 'undefined') return
-  const stream = streamRenderEnabled()
+  const stream = streamRenderEnabled(launch)
   const images = (launch.images ?? []).filter((img) => img.dataUrl)
   const hasImages = images.length > 0
   let prompt = launch.prompt?.trim() ?? ''
@@ -162,8 +164,20 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
   let launchedId: string | null = null
   let recentOutput = ''
   let lastDataAt = 0
+  let launchedAt = 0
   let done = false
   let poll: ReturnType<typeof setInterval> | undefined
+
+  // First-turn delivery tracer. The idle-gated stepper drops paste/Enter SILENTLY when the socket is
+  // already closed (emit() no-ops) or when the readiness heuristic misfires — and that's exactly the
+  // intermittent "claude launched, title generated, but the query was never typed or sent" bug. Without
+  // this trace each occurrence leaves no evidence. Correlated by launchToken/sessionId; never logs
+  // prompt text (lengths only). Category 'firstturn' matches the server-side nudge events.
+  const ftDiag = (event: string, extra: Record<string, unknown> = {}): void =>
+    logDiag('firstturn', event, {
+      launchToken: tok, cli: launch.cli, sessionId: launchedId ?? undefined,
+      hasImages, hasPrompt: !!prompt, ...extra,
+    })
 
   const stop = () => { if (poll) { clearInterval(poll); poll = undefined } }
   const closeSoon = () => setTimeout(() => { try { ws.close() } catch {} }, 100)
@@ -176,11 +190,16 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
     }
     setTimeout(tick, 50)
   }
-  const finish = () => { done = true; stop(); closeWhenFlushed() }
+  const finish = () => { ftDiag('complete', { sinceLaunchMs: launchedAt ? Date.now() - launchedAt : null }); done = true; stop(); closeWhenFlushed() }
 
   // ---- claude/coco: idle-gated step machine (paste split from Enter; image split from prompt) ----
   const emit = (kind: SubmitEmit): void => {
-    if (ws.readyState !== WebSocket.OPEN) return
+    if (ws.readyState !== WebSocket.OPEN) {
+      // The query is being dropped HERE: the step fired but the socket already closed. This is the
+      // root-cause signature of the silent first-turn loss — surface it loudly in the trace.
+      ftDiag('emit_skipped', { kind, level: 'warn', reason: 'socket_not_open', readyState: ws.readyState })
+      return
+    }
     if (kind === 'images') { for (const img of images) ws.send(JSON.stringify({ t: 'img', name: img.name || 'paste', d: img.dataUrl })) }
     else if (kind === 'paste') { if (prompt) ws.send(JSON.stringify({ t: 'i', d: `\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~` })) }
     else if (kind === 'enter') ws.send(JSON.stringify({ t: 'i', d: '\r' }))
@@ -193,12 +212,23 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
   const tick = () => {
     if (done || ws.readyState !== WebSocket.OPEN || stepIdx >= steps.length) return
     const now = Date.now()
+    const quietMs = now - (lastDataAt || now)
+    const elapsedSinceStepMs = now - stepStartedAt
     if (!steps[stepIdx].ready({
       recentOutput,
       newOutputSinceStep: recentOutput.slice(outLenAtStep),
-      quietMs: now - (lastDataAt || now),
-      elapsedSinceStepMs: now - stepStartedAt,
+      quietMs,
+      elapsedSinceStepMs,
     })) return
+    // Record the decision context BEFORE emitting: which step, how it tripped (output went quiet vs the
+    // time-based backstop), whether the bracketed-paste marker is still visible (it scrolls out of the
+    // 8KB window during claude's verbose banner), and how much output we've buffered. emit() then logs
+    // emit_skipped if the socket has since closed.
+    ftDiag('step_emit', {
+      step: steps[stepIdx].emit, idx: stepIdx, quietMs, elapsedSinceStepMs,
+      markerSeen: recentOutput.includes(BRACKETED_PASTE_READY), outLen: recentOutput.length,
+      sinceLaunchMs: launchedAt ? now - launchedAt : null,
+    })
     emit(steps[stepIdx].emit)
     // Our own send is activity too: reset the idle clock so the NEXT step waits for the CLI to receive,
     // echo, and settle — else quietMs (time since last *received* frame) is already high and the next
@@ -254,7 +284,7 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
           logDiag('connect', 'prime_launched', { launchToken: tok, cli: launch.cli, sessionId: msg.sessionId, bound: msg.bound })
           void onLaunched?.(msg.sessionId)
           if (stream) { if (hasImages) sendStreamTurn(); else closeSoon() }
-          else if (useStepper && steps.length) { advanceStep(Date.now()); poll = setInterval(tick, POLL_INTERVAL_MS) }
+          else if (useStepper && steps.length) { launchedAt = Date.now(); ftDiag('armed', { steps: steps.length }); advanceStep(Date.now()); poll = setInterval(tick, POLL_INTERVAL_MS) }
           else if (legacyImage) { legacyPump() }
           else { closeSoon() }   // codex/task text rode the URL positional → server fired it
         }
@@ -269,9 +299,16 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
       if (legacyImage) legacyPump()  // stepper is driven by its poll timer, not per-frame
     }
   }
-  ws.onerror = () => { logDiag('connect', 'prime_error', { launchToken: tok, cli: launch.cli, level: 'error', sessionId: launchedId ?? undefined }); stop(); try { ws.close() } catch {} }
-  // Safety: never let a first-turn socket linger if the CLI never reaches a submittable state.
-  if (useStepper || legacyImage) setTimeout(() => { if (!done) { stop(); try { ws.close() } catch {} } }, PRIME_PAYLOAD_TIMEOUT_MS)
+  ws.onerror = () => { logDiag('connect', 'prime_error', { launchToken: tok, cli: launch.cli, level: 'error', sessionId: launchedId ?? undefined }); if ((useStepper || legacyImage) && !done) ftDiag('error', { level: 'error', stepIdx, steps: steps.length }); stop(); try { ws.close() } catch {} }
+  // Safety: never let a first-turn socket linger if the CLI never reaches a submittable state. If this
+  // fires the first turn was NEVER delivered (stuck before all steps) — log it as the failure it is, with
+  // how far the stepper got, so the trace shows "armed but never completed" vs a clean complete.
+  if (useStepper || legacyImage) setTimeout(() => {
+    if (!done) {
+      ftDiag('timeout', { level: 'warn', stepIdx, steps: steps.length, launched: !!launchedId, sinceLaunchMs: launchedAt ? Date.now() - launchedAt : null })
+      stop(); try { ws.close() } catch {}
+    }
+  }, PRIME_PAYLOAD_TIMEOUT_MS)
 }
 
 export function startFreshLaunch(input: StartFreshLaunchInput): string {
