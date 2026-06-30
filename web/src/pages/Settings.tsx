@@ -11,6 +11,7 @@ import { api } from '@/lib/api'
 import type { AgentCli, AgentEntry } from '@/lib/api'
 import { priorityColors } from '@/lib/priority'
 import { statusMeta } from '@/lib/status'
+import { Switch } from '@/components/ui/Switch'
 
 export function Settings() {
   const [scheme, setScheme] = useState<string>(() => getScheme().id)
@@ -413,20 +414,8 @@ function ToggleRow({ label, hint, on, onChange }: { label: string; hint?: string
         <div className="text-[12px] text-foreground">{label}</div>
         {hint && <div className="text-[11px] text-text-dim">{hint}</div>}
       </div>
-      <Toggle on={on} onChange={onChange} />
+      <Switch checked={on} onChange={onChange} />
     </div>
-  )
-}
-function Toggle({ on, onChange, disabled = false, title }: { on: boolean; onChange: () => void; disabled?: boolean; title?: string }) {
-  return (
-    <button
-      onClick={onChange}
-      disabled={disabled}
-      title={title}
-      className={cn('flex h-5 w-9 flex-none items-center rounded-full px-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50', on ? 'bg-success/70' : 'bg-muted')}
-    >
-      <span className={cn('h-4 w-4 rounded-full bg-card-foreground transition-transform', on && 'translate-x-4')} />
-    </button>
   )
 }
 function Segmented({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
@@ -476,13 +465,13 @@ function AgentRow({
         />
       )}
       <span className="text-[11px] text-muted-foreground" title="开启后该 agent 每次工具调用前请求授权（仅交互式会话生效）">安全</span>
-      <Toggle
-        on={agent.safeMode}
+      <Switch
+        checked={agent.safeMode}
         onChange={() => onChange({ safeMode: !agent.safeMode })}
         title={agent.safeMode ? '安全模式：开（启动时请求授权）' : '安全模式：关（最高权限）'}
       />
-      <Toggle
-        on={agent.enabled}
+      <Switch
+        checked={agent.enabled}
         onChange={() => canDisable && onChange({ enabled: !agent.enabled })}
         disabled={!canDisable}
         title={!canDisable ? '至少保留一个启动 Agent' : agent.enabled ? '停用' : '启用'}
