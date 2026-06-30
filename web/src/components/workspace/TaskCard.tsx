@@ -258,11 +258,11 @@ export function TaskCard({
             title={onRename ? `${task.title}（双击重命名）` : task.title}
             className={cn(
               'min-w-0 flex-1 font-semibold text-card-foreground',
-              // 2 lines for active live cards; reliable single-line truncate everywhere else
-              // (line-clamp-1 collapses the title height in a flex row when there's no other content).
+              // Inactive/narrow columns are thumbnail cards for every status: smaller two-line
+              // titles keep done/cancelled visually consistent with live compact cards.
               active && isLive
                 ? 'text-[13px] leading-[1.35] line-clamp-2 [overflow-wrap:anywhere]'
-                : !active && isLive
+                : !active
                   ? 'text-[12px] leading-[1.28] line-clamp-2 [overflow-wrap:anywhere]'
                   : 'truncate text-[13px] leading-[1.35]',
               done && 'font-medium text-muted-foreground',
