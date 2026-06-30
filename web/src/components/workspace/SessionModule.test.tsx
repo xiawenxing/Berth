@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SessionModule, rowPropsEqual } from './SessionModule'
 import { LiveProvider } from '@/lib/live'
 import type { SessionRow } from '@/lib/types'
@@ -59,6 +59,55 @@ describe('SessionModule — 关联任务 search box', () => {
 
       // Pressing Space inside the search box must NOT open the session.
       expect(opened).toBe(0)
+    } finally {
+      await act(async () => {
+        root.unmount()
+      })
+      host.remove()
+    }
+  })
+})
+
+describe('SessionModule — session row menu', () => {
+  it('copies the raw session id from the more menu', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+
+    try {
+      await act(async () => {
+        root.render(
+          <LiveProvider>
+            <SessionModule
+              pin={[makeRow({ id: 'raw-session-123' })]}
+              groups={[]}
+              onOpen={() => {}}
+            />
+          </LiveProvider>,
+        )
+      })
+
+      const more = host.querySelector('button[aria-label="更多"]') as HTMLButtonElement | null
+      expect(more).not.toBeNull()
+      await act(async () => {
+        more!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      const copy = Array.from(document.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('拷贝原始 sessionId'),
+      ) as HTMLButtonElement | undefined
+      expect(copy).toBeTruthy()
+
+      await act(async () => {
+        copy!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(writeText).toHaveBeenCalledWith('raw-session-123')
     } finally {
       await act(async () => {
         root.unmount()

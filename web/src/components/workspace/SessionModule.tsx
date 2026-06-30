@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, LogOut, Trash2, Check, CircleDot } from 'lucide-react'
+import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, LogOut, Trash2, Check, CircleDot, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/Spinner'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
@@ -198,8 +198,15 @@ function RowImpl({
   const moreBtnRef = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [kicked, setKicked] = useState(false) // instant feedback until titleGenerating takes over
+  const [copiedSessionId, setCopiedSessionId] = useState(false)
+  const copiedResetRef = useRef<number | null>(null)
   const generating = kicked || !!s.titleGenerating
   useEffect(() => { if (s.titleGenerating) setKicked(false) }, [s.titleGenerating])
+  useEffect(() => {
+    return () => {
+      if (copiedResetRef.current != null) window.clearTimeout(copiedResetRef.current)
+    }
+  }, [])
   // ⋯ menu now holds 标为已读/未读 (always) + 移出项目/取消导入 (when provided). Task-linking moved to TaskTag.
 
   // An in-flight launch placeholder: not yet a real, openable session — show 创建中… with a spinner
@@ -263,6 +270,18 @@ function RowImpl({
     e.stopPropagation()
     setMenuOpen(false)
     actions.markUnread(s.id)
+  }
+  const copySessionId = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(s.id)
+      setCopiedSessionId(true)
+      if (copiedResetRef.current != null) window.clearTimeout(copiedResetRef.current)
+      copiedResetRef.current = window.setTimeout(() => setCopiedSessionId(false), 1500)
+    } catch (err) {
+      console.error('copy session id failed', err)
+    }
   }
   const displayTitle = imagePathPlaceholderText(s.title)
 
@@ -357,6 +376,9 @@ function RowImpl({
                 <CircleDot size={13} className="flex-none text-muted-foreground" /> 标为未读
               </MenuItem>
             )}
+            <MenuItem onClick={copySessionId}>
+              <Copy size={13} className="flex-none text-muted-foreground" /> {copiedSessionId ? '已拷贝 sessionId' : '拷贝原始 sessionId'}
+            </MenuItem>
             {(onDetach || onUnimport) && (
               <>
                 <div className="my-1 border-t border-border" />
