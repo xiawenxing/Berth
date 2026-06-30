@@ -1,11 +1,15 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const saveAttachment = vi.hoisted(() => vi.fn((_dataUrl: string, _nameHint: string) => ({
   rel: 'assets/x.png',
   abs: '/tmp/berth-docs/assets/x.png',
 })))
+const mockLogDiag = vi.hoisted(() => vi.fn())
 vi.mock('../src/data/docstore', () => ({
   currentDocStore: () => ({ saveAttachment }),
+}))
+vi.mock('../src/server/diag', () => ({
+  logDiag: mockLogDiag,
 }))
 
 import { StreamJsonDriver, type ChildLike } from '../src/server/stream-json-driver'
@@ -32,6 +36,10 @@ const clock = () => 1000
 const parseFrames = (sent: string[]): ChatFrame[] => sent.map((s) => JSON.parse(s))
 
 describe('StreamJsonDriver', () => {
+  beforeEach(() => {
+    mockLogDiag.mockClear()
+  })
+
   it('exposes pid and forwards kill to the child', () => {
     const f = fakeChild(99)
     const d = new StreamJsonDriver(f.child, { clock })
@@ -211,5 +219,19 @@ describe('StreamJsonDriver', () => {
     const d = new StreamJsonDriver(f.child, { clock })
     d.send({ t: 'turn', text: '   ', clientTurnId: 'blank' })   // no agent text → nothing sent
     expect(d.turnActive()).toBe(false)
+  })
+
+  it('logs the Model B turn lifecycle without raw prompt text', () => {
+    const f = fakeChild()
+    const d = new StreamJsonDriver(f.child, { clock, diag: { cli: 'claude', sessionId: 'sid', launchToken: 'tok' } })
+    d.send({ t: 'turn', text: 'secret prompt', clientTurnId: 'client-1' })
+    f.emit(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sid', model: 'opus' }) + '\n')
+    f.emit(JSON.stringify({ type: 'result', duration_ms: 12 }) + '\n')
+
+    const events = mockLogDiag.mock.calls.map(([ev]) => ev)
+    expect(events.map((ev) => ev.event)).toEqual(expect.arrayContaining(['driver_start', 'prepared', 'write_start', 'write_done', 'first_output', 'session', 'result']))
+    const prepared = events.find((ev) => ev.event === 'prepared')
+    expect(prepared).toMatchObject({ category: 'stream_turn', cli: 'claude', sessionId: 'sid', launchToken: 'tok', textLen: 'secret prompt'.length, agentTextLen: 'secret prompt'.length })
+    expect(prepared?.text).toBeUndefined()
   })
 })

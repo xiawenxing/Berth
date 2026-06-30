@@ -37,6 +37,7 @@ setDocStoreStore(store)
 setDocGitEnabled(getContextConfig(store).gitEnabled)
 
 let cache: LogicalSession[] = []
+let lastSynthSessionIds = new Set<string>()
 
 export function getStore() { return store }
 export function getCache(): LogicalSession[] { return cache }
@@ -51,8 +52,32 @@ export function getCache(): LogicalSession[] { return cache }
 export function visibleSessions(): LogicalSession[] {
   const real = cache
   const intents = store.allLaunchIntents()
-  const synth = synthLaunchingSessions(intents, new Set(real.map(s => s.sessionId)), hasLivePty, store.allHiddenSessionSet())
+  const realIds = new Set(real.map(s => s.sessionId))
+  const synth = synthLaunchingSessions(intents, realIds, hasLivePty, store.allHiddenSessionSet())
+  logSynthSessionTransitions(synth, realIds)
   return synth.length ? [...real, ...synth] : real
+}
+
+function logSynthSessionTransitions(synth: LogicalSession[], realIds: Set<string>): void {
+  const next = new Set(synth.map(s => s.sessionId))
+  for (const s of synth) {
+    if (lastSynthSessionIds.has(s.sessionId)) continue
+    logDiag({
+      category: 'launch', event: 'synth_row',
+      sessionId: s.sessionId, cli: s.cli, cwd: s.cwd,
+      launching: s.launching,
+    })
+  }
+  for (const sessionId of lastSynthSessionIds) {
+    if (next.has(sessionId)) continue
+    logDiag({
+      category: 'launch',
+      event: realIds.has(sessionId) ? 'synth_superseded' : 'synth_gone',
+      sessionId,
+      level: realIds.has(sessionId) ? 'info' : 'warn',
+    })
+  }
+  lastSynthSessionIds = next
 }
 
 // Let the data-layer task summarizer reach the in-memory session cache (which only the server knows

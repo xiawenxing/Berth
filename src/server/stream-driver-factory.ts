@@ -13,25 +13,25 @@ import type { AgentCli, LogicalSession } from '../types'
 const nowSec = () => Math.floor(Date.now() / 1000)
 const newReducer = (cli: AgentCli): ChatReducer => (cli === 'codex' ? new CodexReducer(nowSec) : new ClaudeReducer(nowSec))
 
-export interface FreshStreamOpts { cwd: string; sessionId?: string; injectFile?: string; model?: string; addDirs?: string[]; initialPrompt?: string }
+export interface FreshStreamOpts { cwd: string; sessionId?: string; injectFile?: string; model?: string; addDirs?: string[]; initialPrompt?: string; launchToken?: string }
 
 /** A fresh Model B launch driver. claude = persistent; codex/coco = per-turn. */
 export function makeFreshStreamDriver(cli: AgentCli, o: FreshStreamOpts): SessionDriver {
   if (cli === 'claude') {
     return new StreamJsonDriver(
       launchFreshStream({ cwd: o.cwd, sessionId: o.sessionId, injectFile: o.injectFile, model: o.model, addDirs: o.addDirs }),
-      { initialPrompt: o.initialPrompt },
+      { initialPrompt: o.initialPrompt, diag: { cli, sessionId: o.sessionId, launchToken: o.launchToken } },
     )
   }
   const spawnTurn = (prompt: string, resumeId: string | null) => spawnPerTurn(cli, { cwd: o.cwd, sessionId: o.sessionId, model: o.model, prompt, resumeId, injectFile: o.injectFile })
-  return new PerTurnStreamDriver(newReducer(cli), spawnTurn, { initialPrompt: o.initialPrompt })
+  return new PerTurnStreamDriver(newReducer(cli), spawnTurn, { initialPrompt: o.initialPrompt, diag: { cli, sessionId: o.sessionId, launchToken: o.launchToken } })
 }
 
 /** A resume Model B driver. claude resumes one persistent process; codex/coco resume per-turn (the
  *  resumeId seed continues the existing session from the first typed turn). */
 export function makeResumeStreamDriver(s: LogicalSession): SessionDriver {
   const cli = s.resume!.cli
-  if (cli === 'claude') return new StreamJsonDriver(resumeSessionStream(s))
+  if (cli === 'claude') return new StreamJsonDriver(resumeSessionStream(s), { diag: { cli, sessionId: s.sessionId } })
   const spawnTurn = (prompt: string, resumeId: string | null) => spawnPerTurn(cli, { cwd: s.cwd ?? '', prompt, resumeId })
-  return new PerTurnStreamDriver(newReducer(cli), spawnTurn, { resumeId: s.resume!.id })
+  return new PerTurnStreamDriver(newReducer(cli), spawnTurn, { resumeId: s.resume!.id, diag: { cli, sessionId: s.sessionId } })
 }
