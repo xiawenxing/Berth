@@ -46,6 +46,21 @@ function formatDdl(ddl: string) {
   }
 }
 
+function CompactOverdueIcon({ ddl }: { ddl?: string | null }) {
+  if (!ddl) return null
+  const display = formatDdl(ddl)
+  if (display.tone !== 'overdue') return null
+  return (
+    <span
+      title={`截止日期：${display.title}（${display.label}）`}
+      className="inline-flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full bg-destructive/15 text-destructive"
+      aria-label={display.label}
+    >
+      <CalendarClock size={12} />
+    </span>
+  )
+}
+
 function DdlChip({
   task,
   onSetDdl,
@@ -242,10 +257,14 @@ export function TaskCard({
             }}
             title={onRename ? `${task.title}（双击重命名）` : task.title}
             className={cn(
-              'min-w-0 flex-1 text-[13px] font-semibold leading-[1.35] text-card-foreground',
+              'min-w-0 flex-1 font-semibold text-card-foreground',
               // 2 lines for active live cards; reliable single-line truncate everywhere else
               // (line-clamp-1 collapses the title height in a flex row when there's no other content).
-              active && isLive ? 'line-clamp-2 [overflow-wrap:anywhere]' : 'truncate',
+              active && isLive
+                ? 'text-[13px] leading-[1.35] line-clamp-2 [overflow-wrap:anywhere]'
+                : !active && isLive
+                  ? 'text-[12px] leading-[1.28] line-clamp-2 [overflow-wrap:anywhere]'
+                  : 'truncate text-[13px] leading-[1.35]',
               done && 'font-medium text-muted-foreground',
               cancelled && 'font-medium text-text-dim line-through',
             )}
@@ -264,13 +283,8 @@ export function TaskCard({
             <Spinner size={11} /> 标题生成中…
           </span>
         )}
-        {/* compact (inactive-column) live cards: ddl-if-set + priority chip ride in the head (single-row, dense) */}
-        {!active && isLive && (
-          <>
-            {task.ddl && <DdlChip task={task} onSetDdl={onSetDdl} />}
-            <PrioChip task={task} priorities={priorities} onSetPriority={onSetPriority} />
-          </>
-        )}
+        {/* compact (inactive-column) live cards: keep room for the title; only overdue gets an icon. */}
+        {!active && isLive && <CompactOverdueIcon ddl={task.ddl} />}
         {/* ▷启动 — v7 .kcard-go: quiet muted marker (icon + 启动), success only on hover; collapse-only, live cards */}
         {!open && active && isLive && task.summary !== REFINING && (
           <button
