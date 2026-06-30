@@ -25,7 +25,12 @@ export const READY_FALLBACK_MS = 12_000
 export const ATTACH_FALLBACK_MS = 6_000
 export const RENDER_FALLBACK_MS = 3_000
 
-export type SubmitEmit = 'images' | 'paste' | 'enter'
+export type SubmitEmit =
+  | 'images'
+  | 'paste'
+  | 'enter'
+  | { kind: 'image'; index: number }
+  | { kind: 'pasteText'; text: string }
 
 export interface SubmitSignals {
   /** All output accumulated since the launch handshake. */
@@ -45,17 +50,17 @@ export interface SubmitStep {
 }
 
 // The composer exists (bracketed paste enabled) AND the boot render has gone quiet → safe to start.
-const readyGuard = (s: SubmitSignals): boolean =>
+export const readyGuard = (s: SubmitSignals): boolean =>
   (s.recentOutput.includes(BRACKETED_PASTE_READY) && s.quietMs >= READY_QUIET_MS) ||
   s.elapsedSinceStepMs >= READY_FALLBACK_MS
 
 // The image we just pasted has been turned into an attachment chip ([Image …]) and rendering settled.
-const attachGuard = (s: SubmitSignals): boolean =>
+export const attachGuard = (s: SubmitSignals): boolean =>
   (s.newOutputSinceStep.includes(IMAGE_ATTACH_MARK) && s.quietMs >= RENDER_QUIET_MS) ||
   s.elapsedSinceStepMs >= ATTACH_FALLBACK_MS
 
 // The text we just pasted has rendered into the composer and rendering settled.
-const renderGuard = (s: SubmitSignals): boolean =>
+export const renderGuard = (s: SubmitSignals): boolean =>
   s.quietMs >= RENDER_QUIET_MS || s.elapsedSinceStepMs >= RENDER_FALLBACK_MS
 
 /** Build the gated emit sequence for a Model-A first turn. Empty when there is nothing to submit

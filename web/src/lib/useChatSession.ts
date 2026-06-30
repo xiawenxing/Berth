@@ -21,6 +21,7 @@ export interface ChatSession {
 export interface ChatImage {
   name: string
   dataUrl: string
+  marker?: string
 }
 
 /**

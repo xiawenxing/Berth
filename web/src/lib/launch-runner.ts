@@ -2,11 +2,13 @@ import type { AgentCli, ApiProject, ApiSession } from './api'
 import { shortCwd } from './format'
 import { deriveLaunch, type CargoState } from './launch-cargo'
 import { logDiag } from './diag'
-import { firstTurnSteps, BRACKETED_PASTE_READY, type SubmitEmit } from './launch-firstturn-steps'
+import { splitTextByImagePlaceholders, type PromptPart } from './image-placeholders'
+import { attachGuard, firstTurnSteps, BRACKETED_PASTE_READY, readyGuard, renderGuard, type SubmitEmit, type SubmitStep } from './launch-firstturn-steps'
 
 export interface LaunchImage {
   name: string
   dataUrl: string
+  marker?: string
 }
 
 export interface LaunchPending {
@@ -67,7 +69,7 @@ export interface StartFreshLaunchInput {
 export interface FirstTurnLaunch {
   cli: string
   prompt?: string
-  images?: { name: string; dataUrl: string }[]
+  images?: { name: string; dataUrl: string; marker?: string }[]
   todoKey?: string | null
 }
 
@@ -129,6 +131,32 @@ const POLL_INTERVAL_MS = 120
 const IMAGE_ATTACH_MARK = '[Image'
 const IMAGE_ATTACH_FALLBACK_MS = 3_000
 
+function pasteFrame(text: string): string {
+  return `\x1b[200~${text.replace(/\r?\n/g, '\r')}\x1b[201~`
+}
+
+function firstTurnStepsForParts(parts: PromptPart<LaunchImage>[]): SubmitStep[] {
+  if (!parts.length) return []
+  const steps: SubmitStep[] = []
+  let ready = readyGuard
+  for (const part of parts) {
+    if (part.kind === 'text') {
+      if (!part.text) continue
+      steps.push({ emit: { kind: 'pasteText', text: part.text }, ready })
+      ready = renderGuard
+    } else {
+      steps.push({ emit: { kind: 'image', index: part.index }, ready })
+      ready = attachGuard
+    }
+  }
+  if (steps.length) steps.push({ emit: 'enter', ready })
+  return steps
+}
+
+function hasPlacedImages(prompt: string, images: LaunchImage[]): boolean {
+  return images.some((image) => !!image.marker && prompt.includes(image.marker))
+}
+
 /**
  * A drawer-INDEPENDENT socket that drives a fresh launch to completion so closing the drawer
  * mid-creation can never drop the session or its first turn.
@@ -147,12 +175,14 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
   const images = (launch.images ?? []).filter((img) => img.dataUrl)
   const hasImages = images.length > 0
   let prompt = launch.prompt?.trim() ?? ''
+  let promptParts = splitTextByImagePlaceholders(prompt, images)
+  let placedImages = hasPlacedImages(prompt, images)
   const expectsDeferredPrompt = hasImages && !!launch.todoKey
   const claudeOrCoco = launch.cli === 'claude' || launch.cli === 'coco'
   const socketText = !stream && !hasImages && wantsSocketTextSubmit(launch)
   // claude/coco own first-turn delivery over this socket, gated on the CLI being genuinely idle.
   const useStepper = !stream && claudeOrCoco && (hasImages || socketText)
-  // Other CLIs' image launches keep their prior marker-based path (don't perturb codex on this branch).
+  // Other CLIs' image launches use their marker-based attach path.
   const legacyImage = !stream && hasImages && !claudeOrCoco
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -201,10 +231,18 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
       return
     }
     if (kind === 'images') { for (const img of images) ws.send(JSON.stringify({ t: 'img', name: img.name || 'paste', d: img.dataUrl })) }
-    else if (kind === 'paste') { if (prompt) ws.send(JSON.stringify({ t: 'i', d: `\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~` })) }
+    else if (kind === 'paste') { if (prompt) ws.send(JSON.stringify({ t: 'i', d: pasteFrame(prompt) })) }
     else if (kind === 'enter') ws.send(JSON.stringify({ t: 'i', d: '\r' }))
+    else if (kind.kind === 'image') {
+      const img = images[kind.index]
+      if (img) ws.send(JSON.stringify({ t: 'img', name: img.name || 'paste', d: img.dataUrl }))
+    } else if (kind.kind === 'pasteText') {
+      if (kind.text) ws.send(JSON.stringify({ t: 'i', d: pasteFrame(kind.text) }))
+    }
   }
-  const steps = useStepper ? firstTurnSteps({ hasImages, hasPrompt: !!prompt || expectsDeferredPrompt }) : []
+  let steps = useStepper
+    ? (placedImages ? firstTurnStepsForParts(promptParts) : firstTurnSteps({ hasImages, hasPrompt: !!prompt || expectsDeferredPrompt }))
+    : []
   let stepIdx = 0
   let stepStartedAt = 0
   let outLenAtStep = 0
@@ -241,27 +279,46 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
   }
 
   // ---- legacy marker-based path (non-claude/coco image launches) ----
-  let imagesSent = false
-  let promptSent = false
+  let legacyStarted = false
+  let legacyDone = false
+  let legacyPartIdx = 0
+  let legacyWaitingForImage = false
+  let legacyOutLenAtImage = 0
   let legacyFallback: ReturnType<typeof setTimeout> | undefined
-  const legacySubmitPrompt = (): void => {
-    if (promptSent || !imagesSent || ws.readyState !== WebSocket.OPEN) return
-    promptSent = true; done = true
+  const legacyFinish = (): void => {
+    if (legacyDone || ws.readyState !== WebSocket.OPEN) return
+    legacyDone = true; done = true
     if (legacyFallback) clearTimeout(legacyFallback)
-    if (prompt) ws.send(JSON.stringify({ t: 'i', d: `\x1b[200~${prompt.replace(/\r?\n/g, '\r')}\x1b[201~\r` }))
-    else ws.send(JSON.stringify({ t: 'i', d: '\r' }))
+    ws.send(JSON.stringify({ t: 'i', d: '\r' }))
     closeWhenFlushed()
   }
   const legacyPump = (): void => {
     if (!legacyImage || !launchedId) return
-    if (!imagesSent) {
+    if (!legacyStarted) {
       if (!recentOutput.includes(BRACKETED_PASTE_READY)) return
-      imagesSent = true
-      for (const img of images) ws.send(JSON.stringify({ t: 'img', name: img.name || 'paste', d: img.dataUrl }))
-      legacyFallback = setTimeout(legacySubmitPrompt, IMAGE_ATTACH_FALLBACK_MS)
-    } else if (!promptSent && recentOutput.includes(IMAGE_ATTACH_MARK)) {
-      legacySubmitPrompt()
+      legacyStarted = true
     }
+    if (legacyWaitingForImage) {
+      if (!recentOutput.slice(legacyOutLenAtImage).includes(IMAGE_ATTACH_MARK)) return
+      legacyWaitingForImage = false
+      if (legacyFallback) { clearTimeout(legacyFallback); legacyFallback = undefined }
+    }
+    while (legacyPartIdx < promptParts.length) {
+      const part = promptParts[legacyPartIdx++]
+      if (part.kind === 'text') {
+        if (part.text) ws.send(JSON.stringify({ t: 'i', d: pasteFrame(part.text) }))
+      } else {
+        ws.send(JSON.stringify({ t: 'img', name: part.image.name || 'paste', d: part.image.dataUrl }))
+        legacyWaitingForImage = true
+        legacyOutLenAtImage = recentOutput.length
+        legacyFallback = setTimeout(() => {
+          legacyWaitingForImage = false
+          legacyPump()
+        }, IMAGE_ATTACH_FALLBACK_MS)
+        return
+      }
+    }
+    legacyFinish()
   }
 
   // Model B: deliver images + prompt as one structured turn the instant the session launches.
@@ -279,7 +336,14 @@ function primeFreshLaunch(launch: LaunchDrawerSession['launch'], onLaunched?: (s
         const msg = JSON.parse(data)
         if (msg.__berth === 'launched' && msg.sessionId) {
           launchedId = msg.sessionId
-          if (typeof msg.deferredInitialPrompt === 'string') prompt = msg.deferredInitialPrompt.trim()
+          if (typeof msg.deferredInitialPrompt === 'string') {
+            prompt = msg.deferredInitialPrompt.trim()
+            promptParts = splitTextByImagePlaceholders(prompt, images)
+            placedImages = hasPlacedImages(prompt, images)
+            steps = useStepper
+              ? (placedImages ? firstTurnStepsForParts(promptParts) : firstTurnSteps({ hasImages, hasPrompt: !!prompt || expectsDeferredPrompt }))
+              : []
+          }
           lastDataAt = Date.now()
           logDiag('connect', 'prime_launched', { launchToken: tok, cli: launch.cli, sessionId: msg.sessionId, bound: msg.bound })
           void onLaunched?.(msg.sessionId)

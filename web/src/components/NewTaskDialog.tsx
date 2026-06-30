@@ -8,6 +8,7 @@ import { initCargo, type CargoState } from '@/lib/launch-cargo'
 import type { Task } from '@/lib/types'
 import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
 import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
+import { stripImagePlaceholders } from '@/lib/image-placeholders'
 
 /**
  * 新建任务 — minimal immediate-create model: one big title textarea + two small
@@ -82,7 +83,8 @@ export function NewTaskDialog({
   const create = () => {
     if (!text.trim() && images.length === 0) return
     if (!canRun) return
-    onCreate(text.trim(), {
+    const cleanText = stripImagePlaceholders(text, images)
+    onCreate(cleanText, {
       aiSummarize: ai,
       runNow: run,
       images: pastedImageDataUrls(images),
@@ -113,7 +115,14 @@ export function NewTaskDialog({
             setText(e.target.value)
             writeDraft(taskDraftKey, e.target.value)
           }}
-          onPaste={onPasteImages}
+          onPaste={(e) => onPasteImages(e, {
+            value: text,
+            setValue: (next) => {
+              setText(next)
+              writeDraft(taskDraftKey, next)
+            },
+            target: e.currentTarget,
+          })}
           rows={4}
           placeholder="粗略写个标题，或贴一段描述/图片都行"
           className="min-h-24 w-full resize-y rounded-md border border-border bg-card px-3 py-2.5 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"

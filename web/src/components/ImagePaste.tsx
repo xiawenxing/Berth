@@ -1,17 +1,19 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export interface PastedImage {
+  id?: string
   name: string
   dataUrl: string
+  marker?: string
 }
 
-function readImageFile(file: File): Promise<PastedImage> {
+function readImageFile(file: File, meta: Pick<PastedImage, 'id' | 'marker'> = {}): Promise<PastedImage> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => {
-      if (typeof reader.result === 'string') resolve({ name: file.name || 'paste', dataUrl: reader.result })
+      if (typeof reader.result === 'string') resolve({ ...meta, name: file.name || 'paste', dataUrl: reader.result })
       else reject(new Error('image read failed'))
     }
     reader.onerror = () => reject(reader.error ?? new Error('image read failed'))
@@ -40,23 +42,52 @@ function clipboardImageFiles(e: React.ClipboardEvent): File[] {
   return files
 }
 
+export interface ImagePastePlacement {
+  value: string
+  setValue: (next: string) => void
+  target?: HTMLTextAreaElement | null
+}
+
+function insertMarkersAtSelection(placement: ImagePastePlacement, markers: string[]) {
+  const target = placement.target
+  const value = placement.value ?? ''
+  const start = typeof target?.selectionStart === 'number' ? target.selectionStart : value.length
+  const end = typeof target?.selectionEnd === 'number' ? target.selectionEnd : start
+  const insertion = markers.join('\n')
+  const next = value.slice(0, start) + insertion + value.slice(end)
+  const cursor = start + insertion.length
+  placement.setValue(next)
+  if (target) {
+    const raf = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame
+      : (cb: FrameRequestCallback) => { setTimeout(() => cb(Date.now()), 0); return 0 }
+    raf(() => {
+      try {
+        target.selectionStart = cursor
+        target.selectionEnd = cursor
+        target.focus()
+      } catch {
+        /* textarea may have unmounted */
+      }
+    })
+  }
+}
+
 export function usePastedImages() {
   const [images, setImages] = useState<PastedImage[]>([])
+  const nextImageNo = useRef(1)
 
-  const onPasteImages = useCallback((e: React.ClipboardEvent) => {
+  const onPasteImages = useCallback((e: React.ClipboardEvent, placement?: ImagePastePlacement) => {
     const files = clipboardImageFiles(e)
     if (!files.length) return
     e.preventDefault()
-    void Promise.all(files.map(readImageFile))
-      .then((next) => setImages((prev) => {
-        const seen = new Set(prev.map((image) => image.dataUrl))
-        const unique = next.filter((image) => {
-          if (seen.has(image.dataUrl)) return false
-          seen.add(image.dataUrl)
-          return true
-        })
-        return unique.length ? [...prev, ...unique] : prev
-      }))
+    const reserved = files.map((file) => {
+      const n = nextImageNo.current++
+      return { file, id: `paste_${Date.now()}_${n}`, marker: `[Image #${n}]` }
+    })
+    if (placement) insertMarkersAtSelection(placement, reserved.map((entry) => entry.marker))
+    void Promise.all(reserved.map((entry) => readImageFile(entry.file, { id: entry.id, marker: entry.marker })))
+      .then((next) => setImages((prev) => next.length ? [...prev, ...next] : prev))
       .catch(() => {})
   }, [])
 

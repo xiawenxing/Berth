@@ -63,6 +63,7 @@ describe('Composer', () => {
       })
 
       expect(host.querySelectorAll('img')).toHaveLength(1)
+      expect(textarea.value).toBe('[Image #1]')
       const button = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === '发送')
       if (!button) throw new Error('send button not rendered')
 
@@ -71,10 +72,52 @@ describe('Composer', () => {
       })
 
       expect(sent).toHaveLength(1)
-      expect(sent[0].text).toBe('')
+      expect(sent[0].text).toBe('[Image #1]')
       expect(sent[0].images).toHaveLength(1)
-      expect(sent[0].images?.[0]).toMatchObject({ name: 'shot.png' })
+      expect(sent[0].images?.[0]).toMatchObject({ name: 'shot.png', marker: '[Image #1]' })
       expect(sent[0].images?.[0]?.dataUrl).toMatch(/^data:image\/png;base64,/)
+    } finally {
+      await act(async () => {
+        root.unmount()
+      })
+      host.remove()
+    }
+  })
+
+  it('inserts pasted image markers at the textarea caret', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    const sent: { text: string; images?: PastedImage[] }[] = []
+
+    try {
+      await act(async () => {
+        root.render(<Composer onSend={(text, images) => sent.push({ text, images })} onInterrupt={() => {}} busy={false} />)
+      })
+
+      const textarea = host.querySelector('textarea')
+      if (!textarea) throw new Error('textarea not rendered')
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(textarea, 'before after')
+        textarea.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      textarea.setSelectionRange('before '.length, 'before '.length)
+      const file = new File([new Uint8Array([4, 5, 6])], 'mid.png', { type: 'image/png' })
+      const paste = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(paste, 'clipboardData', {
+        value: {
+          items: [{ type: 'image/png', getAsFile: () => file }],
+          files: [file],
+        },
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(paste)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      expect(textarea.value).toBe('before [Image #1]after')
     } finally {
       await act(async () => {
         root.unmount()
