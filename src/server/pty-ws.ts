@@ -40,6 +40,7 @@ interface FreshLaunchResult {
   cli: AgentCli
   cwd: string
   mode: 'tui' | 'stream'
+  deferredInitialPrompt?: string
 }
 
 /** Model B (stream-json chat renderer) is opt-in via ?render=stream-json. All three CLIs support it:
@@ -75,7 +76,17 @@ function rememberFreshLaunch(token: string, promise: Promise<FreshLaunchResult>)
 }
 
 function sendLaunchFrame(ws: WebSocket, r: FreshLaunchResult) {
-  try { ws.send(JSON.stringify({ __berth: 'launched', sessionId: r.launchKey, bound: r.bound, cli: r.cli, cwd: r.cwd, mode: r.mode })) } catch {}
+  try {
+    ws.send(JSON.stringify({
+      __berth: 'launched',
+      sessionId: r.launchKey,
+      bound: r.bound,
+      cli: r.cli,
+      cwd: r.cwd,
+      mode: r.mode,
+      ...(r.deferredInitialPrompt ? { deferredInitialPrompt: r.deferredInitialPrompt } : {}),
+    }))
+  } catch {}
 }
 
 export interface FreshLaunchParams {
@@ -301,6 +312,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   const todoKey = url.searchParams.get('todoKey') || null
   const projectId = url.searchParams.get('projectId') || null
   const explicitPrompt = url.searchParams.get('prompt') || undefined
+  const deferInitialPrompt = url.searchParams.get('deferInitialPrompt') === '1'
   const gates = parseContextGates(url.searchParams)
   const requestedAddDirs = url.searchParams.getAll('addDirs')
 
@@ -449,6 +461,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // directive, not a replacement. Project/free launches have no planned prompt, so explicit text
   // remains the whole first turn.
   const initialPrompt = composeLaunchInitialPrompt(plan.initialPrompt, explicitPrompt, locale)
+  const spawnInitialPrompt = deferInitialPrompt ? undefined : initialPrompt
 
   // codex injects context via a SessionStart hook gated on `--dangerously-bypass-hook-trust`. The
   // support probe is warmed off the launch path; read only the cache here so a warning never blocks
@@ -492,7 +505,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       injectFile,
       model: agentEntry.model ?? undefined,
       addDirs: finalAddDirs,
-      initialPrompt,
+      initialPrompt: spawnInitialPrompt,
     })
     // holdRunning keeps the session `running` through the agent's silent thinking gap (no output for
     // >IDLE_MS) so a freshly-launched chat turn never falsely settles to 停泊 mid-turn.
@@ -513,7 +526,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       sessionId: plan.sessionId ?? undefined,
       injectFile,
       callbackToken: cli === 'codex' ? plan.intent.id : undefined,  // channel A: token = intent id
-      initialPrompt: initialPrompt ?? undefined,
+      initialPrompt: spawnInitialPrompt ?? undefined,
       model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
       safeMode: agentEntry.safeMode,           // per-CLI safe mode → freshArgv drops the bypass flag (Model A only)
       addDirs: finalAddDirs,
@@ -549,7 +562,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     // claude/coco: nudge the pre-filled positional prompt's Enter if the composer's slow-cold-start
     // auto-submit missed it (gotcha #15). Guarded against double-submit by the surfaced() check —
     // skips the instant a jsonl exists (a turn already ran). See launch-firstturn.ts.
-    if (shouldArmFirstTurnNudge({ cli, mode: 'tui', hasInitialPrompt: !!initialPrompt })) {
+    if (shouldArmFirstTurnNudge({ cli, mode: 'tui', hasInitialPrompt: !!spawnInitialPrompt })) {
       logDiag({ category: 'firstturn', event: 'nudge_armed', sessionId: launchKey, cli })
       armFirstTurnNudge({
         alive: () => hasLivePty(launchKey),
@@ -563,7 +576,14 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // live registry key. This MUST be after register*: 2.0 re-opens /pty?sessionId=… immediately on
   // this frame, and sending it earlier races the registry and can attach the UI to stale transcript
   // state instead of the just-launched process.
-  const launchResult: FreshLaunchResult = { launchKey, bound: !!plan.sessionId, cli, cwd, mode: wantStream ? 'stream' : 'tui' }
+  const launchResult: FreshLaunchResult = {
+    launchKey,
+    bound: !!plan.sessionId,
+    cli,
+    cwd,
+    mode: wantStream ? 'stream' : 'tui',
+    deferredInitialPrompt: deferInitialPrompt ? initialPrompt : undefined,
+  }
   logDiag({
     category: 'launch', event: 'spawned', launchToken: launchToken ?? undefined, sessionId: launchKey, cli,
     bound: launchResult.bound, mode: launchResult.mode, hasInitialPrompt: !!initialPrompt,
