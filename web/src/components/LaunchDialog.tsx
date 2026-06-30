@@ -14,7 +14,7 @@ import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
 import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
 
 /**
- * 装载台 / 起航 — destination (任务 | 自由提问) + 货舱 (三级上下文开关 + 统一目录列表)。
+ * 装载台 / 起航 — destination (由入口决定) + 货舱 (三级上下文开关 + 统一目录列表)。
  * 目录列表：勾选 = 装载 (--add-dir)；⚓ 点亮其一 = 启动目录 (cwd)，不点 = 默认启动目录 (workspace)。
  * 代码上下文主开关关闭 = 默认目录、无 --add-dir。docsRoot 由服务端隐式挂载，不在此 UI。
  * 起航 → opens the session drawer with a fresh /pty launch.
@@ -44,7 +44,7 @@ export function LaunchDialog() {
   useEffect(() => {
     if (launch && prevLaunch.current !== launch) {
       const hasTask = launch.taskTitle ? launch.dest === 'task' : false
-      setDest(launch.taskTitle ? launch.dest : 'free')
+      setDest(launch.taskTitle ? 'task' : launch.dest)
       const saved = readDraft(draftKey(`launch:${launch.projectId ?? 'none'}:${launch.todoKey ?? 'free'}`))
       setFreeText(launch.dest === 'free' ? saved : '')
       setTaskNote(launch.dest === 'task' ? saved : '')
@@ -146,12 +146,20 @@ export function LaunchDialog() {
         <div>
           <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">目的地</div>
           <div className="flex min-w-0 gap-4 text-[13px]">
-            <Radio checked={dest === 'task'} onClick={() => changeDest('task')} className="min-w-0 flex-1">
-              任务：{taskTitle ?? '选择任务…'}
-            </Radio>
-            <Radio checked={dest === 'free'} onClick={() => changeDest('free')} className="shrink-0">
-              自由提问
-            </Radio>
+            {presetTask ? (
+              <DestinationLabel className="min-w-0 flex-1">
+                任务：{taskTitle ?? '选择任务…'}
+              </DestinationLabel>
+            ) : (
+              <>
+                <Radio checked={dest === 'task'} onClick={() => changeDest('task')} className="min-w-0 flex-1">
+                  任务：{taskTitle ?? '选择任务…'}
+                </Radio>
+                <Radio checked={dest === 'free'} onClick={() => changeDest('free')} className="shrink-0">
+                  自由提问
+                </Radio>
+              </>
+            )}
           </div>
           {dest === 'task' && !presetTask && (
             <div className="mt-2">
@@ -267,6 +275,17 @@ export function LaunchDialog() {
         </button>
       </div>
     </Dialog>
+  )
+}
+
+function DestinationLabel({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`flex items-center gap-1.5 text-foreground ${className ?? ''}`}>
+      <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-brand">
+        <span className="h-2 w-2 rounded-full bg-brand" />
+      </span>
+      <span className="truncate">{children}</span>
+    </div>
   )
 }
 
