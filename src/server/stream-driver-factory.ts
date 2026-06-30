@@ -32,6 +32,6 @@ export function makeFreshStreamDriver(cli: AgentCli, o: FreshStreamOpts): Sessio
 export function makeResumeStreamDriver(s: LogicalSession): SessionDriver {
   const cli = s.resume!.cli
   if (cli === 'claude') return new StreamJsonDriver(resumeSessionStream(s), { diag: { cli, sessionId: s.sessionId } })
-  const spawnTurn = (prompt: string, resumeId: string | null) => spawnPerTurn(cli, { cwd: s.cwd ?? '', prompt, resumeId })
+  const spawnTurn = (prompt: string, resumeId: string | null) => spawnPerTurn(cli, { cwd: s.cwd ?? '', sessionId: s.sessionId, prompt, resumeId })
   return new PerTurnStreamDriver(newReducer(cli), spawnTurn, { resumeId: s.resume!.id, diag: { cli, sessionId: s.sessionId } })
 }
