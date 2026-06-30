@@ -84,6 +84,21 @@ export interface AgentConfig {
   headlessClis: AgentCli[]
 }
 
+export interface AgentModelOption {
+  id: string
+  label: string
+  description?: string
+  contextWindow?: number
+}
+
+export interface AgentModelCatalog {
+  cli: AgentCli
+  ok: boolean
+  source: 'cli' | 'help' | 'none'
+  models: AgentModelOption[]
+  error?: string
+}
+
 export interface ApiSettings {
   priorities?: string[]
   statuses?: string[]
@@ -140,6 +155,7 @@ export const api = {
   // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
   settings: () => getJSON<ApiSettings>('/api/settings'),
   saveSettings: (patch: { priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) => send('POST', '/api/settings', patch),
+  agentModels: () => getJSON<{ catalogs: AgentModelCatalog[] }>('/api/agent-models'),
   // Structured codex-style chat turns for a real session's drawer/right-pane.
   transcript: (sessionId: string) =>
     getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),

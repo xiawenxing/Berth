@@ -8,7 +8,7 @@ import { useUI } from '@/lib/ui-store'
 import { useLive } from '@/lib/live'
 import { useInlineEdit } from '@/lib/useInlineEdit'
 import { api } from '@/lib/api'
-import type { AgentCli, AgentEntry } from '@/lib/api'
+import type { AgentCli, AgentEntry, AgentModelCatalog } from '@/lib/api'
 import { priorityColors } from '@/lib/priority'
 import { statusMeta } from '@/lib/status'
 import { Switch } from '@/components/ui/Switch'
@@ -39,11 +39,22 @@ export function Settings() {
   const [savingVocab, setSavingVocab] = useState(false)
   const [savingAgents, setSavingAgents] = useState(false)
   const [agentError, setAgentError] = useState<string | null>(null)
+  const [modelCatalogs, setModelCatalogs] = useState<Partial<Record<AgentCli, AgentModelCatalog>>>({})
   useEffect(() => setStatuses(cfgStatuses), [cfgStatuses])
   useEffect(() => setPriorities(cfgPriorities), [cfgPriorities])
   useEffect(() => setAgentList(cfgAgents.list), [cfgAgents.list])
   useEffect(() => setBerthAgentCli(cfgAgents.berthAgentCli), [cfgAgents.berthAgentCli])
   useEffect(() => setBerthAgentModel(cfgAgents.berthAgentModel), [cfgAgents.berthAgentModel])
+  useEffect(() => {
+    let alive = true
+    api.agentModels()
+      .then(({ catalogs }) => {
+        if (!alive) return
+        setModelCatalogs(Object.fromEntries(catalogs.map((c) => [c.cli, c])) as Partial<Record<AgentCli, AgentModelCatalog>>)
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
   const vocabDirty =
     statuses.join('\0') !== cfgStatuses.join('\0') || priorities.join('\0') !== cfgPriorities.join('\0')
   const agentDirty =
@@ -131,8 +142,10 @@ export function Settings() {
               value={berthAgentModel}
               onChange={(e) => setBerthAgentModel(e.target.value)}
               placeholder="留空 = CLI 默认模型"
+              list={`model-options-berth-${berthAgentCli}`}
               className="min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground outline-none placeholder:text-text-dim"
             />
+            <ModelOptions id={`model-options-berth-${berthAgentCli}`} catalog={modelCatalogs[berthAgentCli]} />
           </Row>
           <ToggleRow label="主动提议建议" hint="船返港且有产出时给建议卡（可关）" on={proactive} onChange={() => setProactive((v) => !v)} />
           <ToggleRow label="新建任务默认 AI 自动总结标题" on={autoTitle} onChange={() => setAutoTitle((v) => !v)} />
@@ -143,6 +156,7 @@ export function Settings() {
             <AgentRow
               key={agent.cli}
               agent={agent}
+              catalog={modelCatalogs[agent.cli]}
               enabledCount={agentList.filter((a) => a.enabled).length}
               onChange={(patch) => updateAgent(agent.cli, patch)}
             />
@@ -440,16 +454,29 @@ function agentTone(cli: AgentCli): string {
   return 'text-purple'
 }
 
+function ModelOptions({ id, catalog }: { id: string; catalog?: AgentModelCatalog }) {
+  return (
+    <datalist id={id}>
+      {catalog?.models.map((m) => (
+        <option key={m.id} value={m.id} label={m.label} />
+      ))}
+    </datalist>
+  )
+}
+
 function AgentRow({
   agent,
+  catalog,
   enabledCount,
   onChange,
 }: {
   agent: AgentEntry
+  catalog?: AgentModelCatalog
   enabledCount: number
   onChange: (patch: Partial<AgentEntry>) => void
 }) {
   const canDisable = !agent.enabled || enabledCount > 1
+  const listId = `model-options-${agent.cli}`
   return (
     <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
       <span className={cn('w-16 text-[13px] font-semibold', agentTone(agent.cli))}>{agent.cli}</span>
@@ -461,9 +488,12 @@ function AgentRow({
           value={agent.model ?? ''}
           onChange={(e) => onChange({ model: e.target.value.trim() ? e.target.value : null })}
           placeholder="CLI 默认模型"
+          list={listId}
+          title={catalog?.source === 'cli' ? '已探测 CLI 模型列表' : catalog?.source === 'help' ? 'CLI help 中的模型别名' : '可手动输入模型'}
           className="w-48 rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground outline-none placeholder:text-text-dim"
         />
       )}
+      <ModelOptions id={listId} catalog={catalog} />
       <span className="text-[11px] text-muted-foreground" title="开启后该 agent 每次工具调用前请求授权（仅交互式会话生效）">安全</span>
       <Switch
         checked={agent.safeMode}
