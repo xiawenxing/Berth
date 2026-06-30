@@ -9,6 +9,7 @@ import type { Task } from '@/lib/types'
 import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
 import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
 import { stripImagePlaceholders } from '@/lib/image-placeholders'
+import { TASK_CREATE_INPUT_MAX_CHARS } from '@/lib/title-limits'
 
 /**
  * 新建任务 — minimal immediate-create model: one big title textarea + two small
@@ -45,10 +46,15 @@ export function NewTaskDialog({
   const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
   const canRun = !run || (!!project?.id && !!selectedAgent)
   const taskDraftKey = draftKey(`new-task:${project?.id ?? 'global'}`)
+  const setLimitedText = useCallback((next: string) => {
+    const limited = next.slice(0, TASK_CREATE_INPUT_MAX_CHARS)
+    setText(limited)
+    writeDraft(taskDraftKey, limited)
+  }, [taskDraftKey])
 
   useEffect(() => {
     if (open && !wasOpen.current) {
-      setText(readDraft(taskDraftKey))
+      setText(readDraft(taskDraftKey).slice(0, TASK_CREATE_INPUT_MAX_CHARS))
       setAi(true)
       setRun(false)
       setAdjust(false)
@@ -111,22 +117,20 @@ export function NewTaskDialog({
         <textarea
           ref={ref}
           value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            writeDraft(taskDraftKey, e.target.value)
-          }}
+          maxLength={TASK_CREATE_INPUT_MAX_CHARS}
+          onChange={(e) => setLimitedText(e.target.value)}
           onPaste={(e) => onPasteImages(e, {
             value: text,
-            setValue: (next) => {
-              setText(next)
-              writeDraft(taskDraftKey, next)
-            },
+            setValue: setLimitedText,
             target: e.currentTarget,
           })}
           rows={4}
           placeholder="粗略写个标题，或贴一段描述/图片都行"
           className="min-h-24 w-full resize-y rounded-md border border-border bg-card px-3 py-2.5 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
         />
+        <div className="mt-1 text-right text-[10.5px] text-muted-foreground">
+          {text.length}/{TASK_CREATE_INPUT_MAX_CHARS}
+        </div>
         <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />
         <div className="mt-2.5 flex flex-wrap gap-4">
           <MiniCheck on={ai} onToggle={() => setAi((v) => !v)} icon={<Sparkles size={12} />}>
