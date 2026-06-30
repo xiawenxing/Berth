@@ -5,7 +5,6 @@ import { PastedImageStrip, usePastedImages } from './ImagePaste'
 import { LaunchConfigFields } from './LaunchConfigFields'
 import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
-import { cn } from '@/lib/utils'
 import { api, type AgentCli } from '@/lib/api'
 import { initCargo, type CargoState } from '@/lib/launch-cargo'
 import { startFreshLaunch } from '@/lib/launch-runner'
@@ -13,7 +12,7 @@ import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
 import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
 
 /**
- * 装载台 / 起航 — destination (任务 | 自由提问) + 货舱 (三级上下文开关 + 统一目录列表)。
+ * 装载台 / 起航 — destination (由入口决定) + 货舱 (三级上下文开关 + 统一目录列表)。
  * 目录列表：勾选 = 装载 (--add-dir)；⚓ 点亮其一 = 启动目录 (cwd)，不点 = 默认启动目录 (workspace)。
  * 代码上下文主开关关闭 = 默认目录、无 --add-dir。docsRoot 由服务端隐式挂载，不在此 UI。
  * 起航 → opens the session drawer with a fresh /pty launch.
@@ -21,7 +20,6 @@ import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage
 export function LaunchDialog() {
   const { launch, closeLaunch, openDrawer } = useUI()
   const { projects, agents, sessions, addPending, resolvePending, reload, resync } = useData()
-  const [dest, setDest] = useState<'task' | 'free'>('task')
   const [cli, setCli] = useState<AgentCli>(() => loadLastAgent() ?? 'claude')
   const [freeText, setFreeText] = useState('')
   const [taskNote, setTaskNote] = useState('')
@@ -36,11 +34,11 @@ export function LaunchDialog() {
   const selectedAgent = enabledAgents.find((a) => a.cli === cli) ?? enabledAgents[0]
   const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
   const launchDraftKey = launch ? draftKey(`launch:${launch.projectId ?? 'none'}:${launch.todoKey ?? 'free'}`) : null
+  const dest = launch?.dest === 'task' ? 'task' : 'free'
 
   useEffect(() => {
     if (launch && prevLaunch.current !== launch) {
       const hasTask = launch.taskTitle ? launch.dest === 'task' : false
-      setDest(launch.taskTitle ? launch.dest : 'free')
       const saved = readDraft(draftKey(`launch:${launch.projectId ?? 'none'}:${launch.todoKey ?? 'free'}`))
       setFreeText(launch.dest === 'free' ? saved : '')
       setTaskNote(launch.dest === 'task' ? saved : '')
@@ -126,12 +124,9 @@ export function LaunchDialog() {
         <div>
           <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">目的地</div>
           <div className="flex min-w-0 gap-4 text-[13px]">
-            <Radio checked={dest === 'task'} onClick={() => setDest('task')} className="min-w-0 flex-1">
-              任务：{taskTitle ?? '选择任务…'}
-            </Radio>
-            <Radio checked={dest === 'free'} onClick={() => setDest('free')} className="shrink-0">
-              自由提问
-            </Radio>
+            <DestinationLabel className="min-w-0 flex-1">
+              {dest === 'task' ? `任务：${taskTitle ?? '选择任务…'}` : '自由提问'}
+            </DestinationLabel>
           </div>
           {dest === 'free' && (
             <textarea
@@ -200,13 +195,13 @@ export function LaunchDialog() {
   )
 }
 
-function Radio({ checked, onClick, children, className }: { checked: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
+function DestinationLabel({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <button onClick={onClick} role="radio" aria-checked={checked} className={cn('flex items-center gap-1.5 text-foreground', className)}>
-      <span className={cn('flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border', checked ? 'border-brand' : 'border-border')}>
-        {checked && <span className="h-2 w-2 rounded-full bg-brand" />}
+    <div className={`flex items-center gap-1.5 text-foreground ${className ?? ''}`}>
+      <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-brand">
+        <span className="h-2 w-2 rounded-full bg-brand" />
       </span>
       <span className="truncate">{children}</span>
-    </button>
+    </div>
   )
 }
