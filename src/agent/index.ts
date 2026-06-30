@@ -118,10 +118,10 @@ export async function generateTitle(transcriptHead: string, agent?: BerthAgent):
   if (!sampled) return ''
   const prompt =
     `Below are sampled clues from a coding-assistant session transcript. ` +
-    `They may include user requests, assistant progress, and tool/grep/command/path clues. ` +
+    `They include evenly sampled user requests as the primary signal, plus a few assistant progress replies. ` +
     `Reply with ONLY a concise title of at most 8 words, in the session's own language, ` +
     `describing what the session actually worked on. Do not title it from only the first user query ` +
-    `when process clues show a more specific outcome. No surrounding quotes, no trailing punctuation.\n\n---\n` +
+    `when later user requests show a more specific outcome. No surrounding quotes, no trailing punctuation.\n\n---\n` +
     sampled
   const cli = agent?.cli ?? 'claude'
   // No agent configured at all → preserve the historical claude+haiku default. A configured agent

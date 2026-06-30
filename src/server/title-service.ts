@@ -13,7 +13,22 @@ import { logDiag } from './diag'
 const inFlight = new Set<string>()
 export function isGeneratingTitle(id: string): boolean { return inFlight.has(id) }
 
-/** Read a bounded head+tail sample of a (possibly huge) transcript file for title inference. */
+function readAlignedChunk(fd: number, start: number, length: number, fileSize: number): string {
+  const b = Buffer.alloc(length)
+  const n = readSync(fd, b, 0, length, start)
+  let text = b.toString('utf8', 0, n)
+  if (start > 0) {
+    const firstNewline = text.indexOf('\n')
+    text = firstNewline >= 0 ? text.slice(firstNewline + 1) : ''
+  }
+  if (start + n < fileSize) {
+    const lastNewline = text.lastIndexOf('\n')
+    text = lastNewline >= 0 ? text.slice(0, lastNewline) : ''
+  }
+  return text
+}
+
+/** Read a bounded head/middle/tail sample of a (possibly huge) transcript file for title inference. */
 export function readTitleTranscriptSample(path: string): string {
   const fd = openSync(path, 'r')
   try {
@@ -24,17 +39,13 @@ export function readTitleTranscriptSample(path: string): string {
       const n = readSync(fd, b, 0, size, 0)
       return b.toString('utf8', 0, n)
     }
-    const headBytes = 256 * 1024
-    const tailBytes = maxBytes - headBytes
-    const head = Buffer.alloc(headBytes)
-    const hn = readSync(fd, head, 0, headBytes, 0)
-    const tailStart = Math.max(0, size - tailBytes)
-    const tail = Buffer.alloc(size - tailStart)
-    const tn = readSync(fd, tail, 0, tail.length, tailStart)
-    let tailText = tail.toString('utf8', 0, tn)
-    const firstNewline = tailText.indexOf('\n')
-    if (tailStart > 0 && firstNewline >= 0) tailText = tailText.slice(firstNewline + 1)
-    return head.toString('utf8', 0, hn) + '\n' + tailText
+    const chunkBytes = Math.floor(maxBytes / 3)
+    const head = readAlignedChunk(fd, 0, chunkBytes, size)
+    const middleStart = Math.max(0, Math.floor(size / 2 - chunkBytes / 2))
+    const middle = readAlignedChunk(fd, middleStart, chunkBytes, size)
+    const tailStart = Math.max(0, size - chunkBytes)
+    const tail = readAlignedChunk(fd, tailStart, chunkBytes, size)
+    return [head, middle, tail].filter(Boolean).join('\n')
   } finally {
     closeSync(fd)
   }
