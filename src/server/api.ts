@@ -41,6 +41,7 @@ import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd, berthHome } from '../paths'
 import { broadcastDataChanged } from './status-ws'
 import { compactTitle, TASK_CREATE_INPUT_MAX_CHARS } from '../title-limits'
+import { getAgentIntegrationStatus, installAgentIntegration } from '../agent-integration'
 
 function isFolderPickerCancelled(err: unknown, stderr = ''): boolean {
   const e = err as { message?: unknown; stderr?: unknown }
@@ -158,6 +159,20 @@ function serialize(): ApiSession[] {
 export const api = Router()
 api.get('/health', (_req, res) => {
   res.json({ berth: true, version: process.env.npm_package_version ?? null, berthHome: berthHome(), pid: process.pid })
+})
+api.get('/agent-integration', (_req, res) => {
+  try {
+    res.json(getAgentIntegrationStatus())
+  } catch (e: any) {
+    res.status(500).json({ error: String(e?.message ?? e) })
+  }
+})
+api.post('/agent-integration/install', (_req, res) => {
+  try {
+    res.json(installAgentIntegration())
+  } catch (e: any) {
+    res.status(500).json({ error: String(e?.message ?? e) })
+  }
 })
 api.get('/sessions', (_req, res) => res.json(serialize()))
 api.post('/refresh', (_req, res) => { refresh(); res.json({ ok: true, count: getCache().length }) })

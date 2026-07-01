@@ -50,8 +50,6 @@ Useful commands after startup:
 berth task list
 berth task add "Ship the onboarding polish"
 berth project list
-berth session bind <task>          # tie the current session to a task (omit <sessionId> for "this session")
-berth session list                 # see sessions and the task each is bound to
 ```
 
 ### Option 2: macOS desktop app
@@ -59,6 +57,9 @@ berth session list                 # see sessions and the task each is bound to
 Download the latest DMG from
 [GitHub Releases](https://github.com/xiawenxing/Berth/releases/latest), open it, and drag **Berth**
 into Applications.
+
+If you want agents inside Berth sessions to use `berth task` / `berth project` directly, open Berth
+and use **Settings → Agent Integration** to install the CLI shim and bundled `berth-tasks` skill.
 
 #### First launch (one-time)
 
@@ -97,7 +98,7 @@ xattr -dr com.apple.quarantine /Applications/Berth.app
 4. Resume live sessions from Berth whenever you need to inspect or continue the work.
 
 The bundled skill lets agents manage Berth tasks/projects for you through `berth task` and
-`berth project`, and bind their own (or any existing) session to a task with `berth session`.
+`berth project`.
 
 ## Optional Integrations
 

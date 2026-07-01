@@ -52,6 +52,9 @@ berth project list
 从 [GitHub Releases](https://github.com/xiawenxing/Berth/releases/latest) 下载最新 DMG，
 打开后把 **Berth** 拖进 Applications。
 
+如果你希望会话里的 agent 能直接使用 `berth task` / `berth project`，打开 Berth 后到
+**设置 → Agent 集成** 安装 CLI shim 和内置 `berth-tasks` skill。
+
 #### 首次打开（只需一次）
 
 Berth 的 macOS 安装包做了 ad-hoc 签名，但**没有**走 Apple 付费开发者计划的公证（notarize），
