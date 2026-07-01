@@ -388,8 +388,35 @@ export function Terminal({
       reader.readAsDataURL(file)
     }
     let replayPositionRestored = false
+    let initialResumeBottomRestored = false
+    let userScrolledResumeBeforeRestore = false
+    let resumeBottomFrame: number | null = null
+    let resumeBottomTimer: ReturnType<typeof setTimeout> | null = null
     let suppressHistoryLoadUntil = 0
     let imagePasteHandledAt = 0
+    const noteResumeViewportIntent = () => {
+      if (!launch) userScrolledResumeBeforeRestore = true
+    }
+    const restoreInitialResumeBottom = () => {
+      if (launch || historyBytes > DEFAULT_PTY_HISTORY_BYTES || initialResumeBottomRestored || userScrolledResumeBeforeRestore) return
+      initialResumeBottomRestored = true
+      suppressHistoryLoadUntil = Date.now() + 1000
+      term.scrollToBottom()
+      // Codex resume replays a full-screen TUI and xterm may still be settling/fitting after the
+      // first write callback. Nudge the viewport once more after layout so the composer stays visible.
+      resumeBottomFrame = requestAnimationFrame(() => {
+        resumeBottomFrame = null
+        if (userScrolledResumeBeforeRestore) return
+        term.scrollToBottom()
+      })
+      resumeBottomTimer = setTimeout(() => {
+        resumeBottomTimer = null
+        if (userScrolledResumeBeforeRestore) return
+        term.scrollToBottom()
+      }, 80)
+    }
+    host.addEventListener('wheel', noteResumeViewportIntent, { passive: true })
+    host.addEventListener('touchmove', noteResumeViewportIntent, { passive: true })
     const onPaste = (e: ClipboardEvent) => {
       if (!pasteIsForThisTerminal(e)) return
       const files = clipboardImageFiles(e)
@@ -458,7 +485,9 @@ export function Terminal({
           replayPositionRestored = true
           suppressHistoryLoadUntil = Date.now() + 1000
           term.scrollToTop()
+          return
         }
+        restoreInitialResumeBottom()
       })
     }
     const disp = term.onData((d) => {
@@ -502,10 +531,14 @@ export function Terminal({
       if (launchFallbackTimer) clearTimeout(launchFallbackTimer)
       if (revealTimer) clearTimeout(revealTimer)
       if (resumeOverlayTimer) clearTimeout(resumeOverlayTimer)
+      if (resumeBottomFrame !== null) cancelAnimationFrame(resumeBottomFrame)
+      if (resumeBottomTimer) clearTimeout(resumeBottomTimer)
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
       resizeObserver?.disconnect()
       window.removeEventListener('resize', onResize)
       host.removeEventListener('mousedown', refocus)
+      host.removeEventListener('wheel', noteResumeViewportIntent)
+      host.removeEventListener('touchmove', noteResumeViewportIntent)
       document.removeEventListener('paste', onPaste, true)
       document.removeEventListener('keydown', onKeyDown, true)
       disp.dispose()
