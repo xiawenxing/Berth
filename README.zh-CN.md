@@ -37,16 +37,6 @@ Berth 本地优先。它只读各 CLI 自己的会话存储，自己的数据放
 npm install -g @corusco/berth && berth skill install && berth start
 ```
 
-这会安装 Berth CLI，把内置的 `berth-tasks` skill 安装到本机 agent，然后启动应用并打开 UI。
-
-启动后常用命令：
-
-```bash
-berth task list
-berth task add "完善 onboarding"
-berth project list
-```
-
 ### 方式二：macOS 桌面应用
 
 从 [GitHub Releases](https://github.com/xiawenxing/Berth/releases/latest) 下载最新 DMG，
@@ -75,6 +65,18 @@ Berth 的 macOS 安装包做了 ad-hoc 签名，但**没有**走 Apple 付费开
 xattr -dr com.apple.quarantine /Applications/Berth.app
 ```
 
+### 推荐安装 Agent 集成
+
+npm 包用户可运行：
+
+```bash
+berth skill install
+```
+
+DMG 用户可在 **设置 → Agent 集成** 一键安装/更新 CLI shim 和内置 `berth-tasks` skill。
+
+内置 skill 会让 agent 能通过 `berth task` 和 `berth project` 帮你管理任务/项目。
+
 ## 环境要求
 
 - macOS 是当前主力支持平台。
@@ -83,20 +85,20 @@ xattr -dr com.apple.quarantine /Applications/Berth.app
 
 ## 基本使用
 
-1. 导入或创建项目。
-2. 在项目看板里添加任务。
-3. 从任务启动 Claude、Codex 或 Coco。
-4. 需要查看或继续工作时，在 Berth 里恢复对应会话。
+1. 创建项目，从任务起航
 
-内置 skill 会让 agent 能通过 `berth task` 和 `berth project` 帮你管理任务/项目。
+一键启动 agent 执行任务：
 
-## 可选集成
+- 无需关心会话的上下文管理：agent 自动读取项目上下文、任务上下文，无需人工重复描述。多个 agent 自动维护任务上下文，进展记录可以天然继承了。
+- agent 自动流转任务状态：启动后即把会话丢到一边，从任务视角轻松管理进行中的会话状态。
 
-Berth 可以通过可选数据源适配器同步外部系统里的任务。这些集成默认关闭，只在本地设置里配置后启用；核心应用不依赖它们。
+<img width="2006" height="1034" alt="img_v3_02131_ec1b983d-8593-4a3d-823b-ee587c3ba48g" src="https://github.com/user-attachments/assets/e494037f-8af6-4331-a8a9-6bb0ef34b03d" />
 
-## 开发
+2. 导入已有会话
 
-贡献者环境、本地调试、测试、打包说明都在 [DEVELOPMENT.md](DEVELOPMENT.md)。
+- 支持本地会话的导入和绑定任务
+
+<img width="2006" height="1034" alt="img_v3_02131_17ec95ea-8cde-48f4-85c6-13ad68dbe85g" src="https://github.com/user-attachments/assets/ec48de57-74f8-4a00-8d55-7ba0672c9de6" />
 
 ## 许可证
 

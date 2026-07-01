@@ -41,17 +41,6 @@ Choose one path.
 npm install -g @corusco/berth && berth skill install && berth start
 ```
 
-This installs the Berth CLI, installs the bundled `berth-tasks` skill into your local agents, then
-starts the app and opens the UI.
-
-Useful commands after startup:
-
-```bash
-berth task list
-berth task add "Ship the onboarding polish"
-berth project list
-```
-
 ### Option 2: macOS desktop app
 
 Download the latest DMG from
@@ -84,6 +73,20 @@ flag, then launch normally:
 xattr -dr com.apple.quarantine /Applications/Berth.app
 ```
 
+### Recommended Agent Integration
+
+npm package users can run:
+
+```bash
+berth skill install
+```
+
+DMG users can use **Settings → Agent Integration** to install/update the CLI shim and bundled
+`berth-tasks` skill in one click.
+
+The bundled skill lets agents manage Berth tasks/projects for you through `berth task` and
+`berth project`.
+
 ## Requirements
 
 - macOS is the primary supported platform.
@@ -92,23 +95,23 @@ xattr -dr com.apple.quarantine /Applications/Berth.app
 
 ## How You Use It
 
-1. Import or create a project.
-2. Add tasks to the project board.
-3. Launch Claude, Codex, or Coco from a task.
-4. Resume live sessions from Berth whenever you need to inspect or continue the work.
+1. Create a project and launch from a task.
 
-The bundled skill lets agents manage Berth tasks/projects for you through `berth task` and
-`berth project`.
+Start an agent for the task with one click:
 
-## Optional Integrations
+- You do not need to manually restate context: the agent automatically reads project context and task
+  context. Multiple agents can maintain the task context together, so progress records naturally carry
+  forward.
+- The task status moves with the agent lifecycle: after launch, you can leave the session running and
+  manage in-flight work from the task view.
 
-Berth can sync tasks with external systems through optional data-source adapters. These are disabled
-unless configured locally in Settings; the core app works without them.
+<img width="2006" height="1034" alt="Berth project task launch screenshot" src="https://github.com/user-attachments/assets/e494037f-8af6-4331-a8a9-6bb0ef34b03d" />
 
-## Development
+2. Import existing sessions.
 
-Contributor setup, local debugging, tests, and packaging details live in
-[DEVELOPMENT.md](DEVELOPMENT.md).
+- Import local agent sessions and bind them to tasks.
+
+<img width="2006" height="1034" alt="Berth imported sessions screenshot" src="https://github.com/user-attachments/assets/ec48de57-74f8-4a00-8d55-7ba0672c9de6" />
 
 ## License
 
