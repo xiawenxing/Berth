@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { Sparkles, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, pastedImageDataUrls, usePastedImages, type PastedImage } from './ImagePaste'
@@ -46,10 +46,13 @@ export function NewTaskDialog({
   const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
   const canRun = !run || (!!project?.id && !!selectedAgent)
   const taskDraftKey = draftKey(`new-task:${project?.id ?? 'global'}`)
-  const setLimitedText = useCallback((next: string) => {
-    const limited = next.slice(0, TASK_CREATE_INPUT_MAX_CHARS)
-    setText(limited)
-    writeDraft(taskDraftKey, limited)
+  const setLimitedText = useCallback((next: SetStateAction<string>) => {
+    setText((prev) => {
+      const raw = typeof next === 'function' ? (next as (prev: string) => string)(prev) : next
+      const limited = raw.slice(0, TASK_CREATE_INPUT_MAX_CHARS)
+      writeDraft(taskDraftKey, limited)
+      return limited
+    })
   }, [taskDraftKey])
 
   useEffect(() => {

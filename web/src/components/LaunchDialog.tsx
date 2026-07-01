@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { Anchor, ChevronDown, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, usePastedImages } from './ImagePaste'
@@ -12,6 +12,10 @@ import { filterTaskOptions } from '@/lib/task-picker'
 import { startFreshLaunch } from '@/lib/launch-runner'
 import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
 import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
+
+function resolveTextAction(next: SetStateAction<string>, prev: string): string {
+  return typeof next === 'function' ? (next as (prev: string) => string)(prev) : next
+}
 
 /**
  * 装载台 / 起航 — destination (由入口决定) + 货舱 (三级上下文开关 + 统一目录列表)。
@@ -192,8 +196,11 @@ export function LaunchDialog() {
               onPaste={(e) => onPasteImages(e, {
                 value: freeText,
                 setValue: (next) => {
-                  setFreeText(next)
-                  if (launchDraftKey) writeDraft(launchDraftKey, next)
+                  setFreeText((prev) => {
+                    const resolved = resolveTextAction(next, prev)
+                    if (launchDraftKey) writeDraft(launchDraftKey, resolved)
+                    return resolved
+                  })
                 },
                 target: e.currentTarget,
               })}
@@ -213,8 +220,11 @@ export function LaunchDialog() {
               onPaste={(e) => onPasteImages(e, {
                 value: taskNote,
                 setValue: (next) => {
-                  setTaskNote(next)
-                  if (launchDraftKey) writeDraft(launchDraftKey, next)
+                  setTaskNote((prev) => {
+                    const resolved = resolveTextAction(next, prev)
+                    if (launchDraftKey) writeDraft(launchDraftKey, resolved)
+                    return resolved
+                  })
                 },
                 target: e.currentTarget,
               })}
