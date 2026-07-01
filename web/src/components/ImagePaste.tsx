@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, type SetStateAction } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -44,19 +44,43 @@ function clipboardImageFiles(e: React.ClipboardEvent): File[] {
 
 export interface ImagePastePlacement {
   value: string
-  setValue: (next: string) => void
+  setValue: (next: SetStateAction<string>) => void
   target?: HTMLTextAreaElement | null
+}
+
+interface CapturedImagePastePlacement extends ImagePastePlacement {
+  start: number
+  end: number
+}
+
+function countImagePlaceholders(value: string): number {
+  return value.match(/\[Image #\d+\]/g)?.length ?? 0
+}
+
+function capturePlacement(placement: ImagePastePlacement): CapturedImagePastePlacement {
+  const target = placement.target
+  const value = placement.value ?? ''
+  const start = typeof target?.selectionStart === 'number' ? target.selectionStart : value.length
+  const end = typeof target?.selectionEnd === 'number' ? target.selectionEnd : start
+  return { ...placement, value, start, end }
 }
 
 function insertMarkersAtSelection(placement: ImagePastePlacement, markers: string[]) {
   const target = placement.target
   const value = placement.value ?? ''
-  const start = typeof target?.selectionStart === 'number' ? target.selectionStart : value.length
-  const end = typeof target?.selectionEnd === 'number' ? target.selectionEnd : start
+  const captured = 'start' in placement
+    ? placement as CapturedImagePastePlacement
+    : capturePlacement(placement)
+  const start = captured.start
+  const end = captured.end
   const insertion = markers.join('\n')
-  const next = value.slice(0, start) + insertion + value.slice(end)
   const cursor = start + insertion.length
-  placement.setValue(next)
+  placement.setValue((current) => {
+    const base = typeof current === 'string' ? current : value
+    const safeStart = Math.min(start, base.length)
+    const safeEnd = Math.min(Math.max(end, safeStart), base.length)
+    return base.slice(0, safeStart) + insertion + base.slice(safeEnd)
+  })
   if (target) {
     const raf = typeof requestAnimationFrame === 'function'
       ? requestAnimationFrame
@@ -74,22 +98,44 @@ function insertMarkersAtSelection(placement: ImagePastePlacement, markers: strin
 }
 
 export function usePastedImages() {
-  const [images, setImages] = useState<PastedImage[]>([])
-  const nextImageNo = useRef(1)
+  const [images, setImageState] = useState<PastedImage[]>([])
+  const imagesRef = useRef<PastedImage[]>([])
+
+  const setImages = useCallback((next: SetStateAction<PastedImage[]>) => {
+    setImageState((prev) => {
+      const resolved = typeof next === 'function'
+        ? (next as (prev: PastedImage[]) => PastedImage[])(prev)
+        : next
+      imagesRef.current = resolved
+      return resolved
+    })
+  }, [])
 
   const onPasteImages = useCallback((e: React.ClipboardEvent, placement?: ImagePastePlacement) => {
     const files = clipboardImageFiles(e)
     if (!files.length) return
     e.preventDefault()
-    const reserved = files.map((file) => {
-      const n = nextImageNo.current++
-      return { file, id: `paste_${Date.now()}_${n}`, marker: `[Image #${n}]` }
-    })
-    if (placement) insertMarkersAtSelection(placement, reserved.map((entry) => entry.marker))
-    void Promise.all(reserved.map((entry) => readImageFile(entry.file, { id: entry.id, marker: entry.marker })))
-      .then((next) => setImages((prev) => next.length ? [...prev, ...next] : prev))
+    const captured = placement ? capturePlacement(placement) : undefined
+    void Promise.all(files.map((file) => readImageFile(file)))
+      .then((read) => {
+        const seen = new Set(imagesRef.current.map((image) => image.dataUrl))
+        const unique = read.filter((image) => {
+          if (seen.has(image.dataUrl)) return false
+          seen.add(image.dataUrl)
+          return true
+        })
+        if (!unique.length) return
+        const baseNo = captured ? countImagePlaceholders(captured.value) + 1 : imagesRef.current.length + 1
+        const pasteId = Date.now()
+        const next = unique.map((image, idx) => {
+          const n = baseNo + idx
+          return { ...image, id: `paste_${pasteId}_${n}`, marker: `[Image #${n}]` }
+        })
+        if (captured) insertMarkersAtSelection(captured, next.map((image) => image.marker ?? ''))
+        setImages((prev) => next.length ? [...prev, ...next] : prev)
+      })
       .catch(() => {})
-  }, [])
+  }, [setImages])
 
   const removeImage = useCallback((idx: number) => {
     setImages((prev) => prev.filter((_, i) => i !== idx))
