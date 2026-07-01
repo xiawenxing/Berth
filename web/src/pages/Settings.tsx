@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare, LifeBuoy, Download } from 'lucide-react'
+import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare, LifeBuoy, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { exportDiagLog } from '@/lib/diag'
 import { cn } from '@/lib/utils'
 import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
@@ -12,6 +12,7 @@ import type { AgentCli, AgentEntry, AgentModelCatalog } from '@/lib/api'
 import { priorityColors } from '@/lib/priority'
 import { statusMeta } from '@/lib/status'
 import { Switch } from '@/components/ui/Switch'
+import type { AgentIntegrationStatus } from '@/lib/api'
 
 export function Settings() {
   const [scheme, setScheme] = useState<string>(() => getScheme().id)
@@ -40,6 +41,10 @@ export function Settings() {
   const [savingAgents, setSavingAgents] = useState(false)
   const [agentError, setAgentError] = useState<string | null>(null)
   const [modelCatalogs, setModelCatalogs] = useState<Partial<Record<AgentCli, AgentModelCatalog>>>({})
+  const [integration, setIntegration] = useState<AgentIntegrationStatus | null>(null)
+  const [installingIntegration, setInstallingIntegration] = useState(false)
+  const [integrationMessage, setIntegrationMessage] = useState<string | null>(null)
+  const [integrationError, setIntegrationError] = useState<string | null>(null)
   useEffect(() => setStatuses(cfgStatuses), [cfgStatuses])
   useEffect(() => setPriorities(cfgPriorities), [cfgPriorities])
   useEffect(() => setAgentList(cfgAgents.list), [cfgAgents.list])
@@ -52,6 +57,13 @@ export function Settings() {
         if (!alive) return
         setModelCatalogs(Object.fromEntries(catalogs.map((c) => [c.cli, c])) as Partial<Record<AgentCli, AgentModelCatalog>>)
       })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+  useEffect(() => {
+    let alive = true
+    api.agentIntegration()
+      .then((status) => { if (alive) setIntegration(status) })
       .catch(() => {})
     return () => { alive = false }
   }, [])
@@ -85,6 +97,24 @@ export function Settings() {
       .catch((e) => setAgentError(String(e?.message ?? e)))
       .finally(() => setSavingAgents(false))
   }
+  const installIntegration = async () => {
+    setInstallingIntegration(true)
+    setIntegrationError(null)
+    setIntegrationMessage(null)
+    try {
+      const result = await api.installAgentIntegration()
+      setIntegration(result.status)
+      const targetCount = result.skillResults.length
+      setIntegrationMessage(targetCount > 0
+        ? `已安装 CLI，并刷新 ${targetCount} 个 agent 的 berth-tasks skill`
+        : '已安装 CLI；暂未检测到可写入的 agent skill 目录')
+      window.setTimeout(() => setIntegrationMessage(null), 3500)
+    } catch (e) {
+      setIntegrationError(String((e as any)?.message ?? e))
+    } finally {
+      setInstallingIntegration(false)
+    }
+  }
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -93,6 +123,16 @@ export function Settings() {
       </header>
 
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5">
+        {(integration?.needsAction || integrationMessage || integrationError) && (
+          <AgentIntegrationBanner
+            status={integration}
+            busy={installingIntegration}
+            message={integrationMessage}
+            error={integrationError}
+            onInstall={installIntegration}
+          />
+        )}
+
         <Card icon={<Palette size={14} />} title="外观" hint="选择日间 / 夜间配色方案（即时生效）">
           <Row label="日间">
             <div className="flex flex-wrap gap-2">
@@ -277,6 +317,64 @@ export function Settings() {
           )}
         </Card>
       </div>
+    </div>
+  )
+}
+
+function integrationText(status: AgentIntegrationStatus | null): string {
+  if (!status) return '正在检查本机 CLI 与 agent skill'
+  const parts: string[] = []
+  if (status.cli.state === 'missing') parts.push('CLI 未安装')
+  if (status.cli.state === 'outdated') parts.push(`CLI 不是当前版本 ${status.currentVersion}`)
+  if (!status.skills.bundled) parts.push('当前 App 未包含 berth-tasks skill')
+  else {
+    const missing = status.skills.targets.filter((t) => t.state === 'missing').length
+    const outdated = status.skills.targets.filter((t) => t.state === 'outdated').length
+    if (missing) parts.push(`${missing} 个 agent 未安装 skill`)
+    if (outdated) parts.push(`${outdated} 个 agent 的 skill 需要更新`)
+  }
+  return parts.length ? parts.join(' · ') : 'Agent 集成已是当前版本'
+}
+
+function AgentIntegrationBanner({
+  status,
+  busy,
+  message,
+  error,
+  onInstall,
+}: {
+  status: AgentIntegrationStatus | null
+  busy: boolean
+  message: string | null
+  error: string | null
+  onInstall: () => void
+}) {
+  const ok = status && !status.needsAction && !error
+  return (
+    <div className={cn(
+      'flex items-center gap-3 rounded-lg border px-3 py-2.5',
+      ok ? 'border-success/35 bg-success/10' : 'border-warning/35 bg-warning/10',
+      error && 'border-destructive/35 bg-destructive/10',
+    )}>
+      <span className={cn('flex-none', ok ? 'text-success' : error ? 'text-destructive' : 'text-warning')}>
+        {ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[12px] font-medium text-foreground">Agent 集成</div>
+        <div className="truncate text-[11px] text-muted-foreground">
+          {error ? `安装失败：${error}` : message ?? integrationText(status)}
+        </div>
+      </div>
+      {status?.currentVersion && <span className="rounded bg-card px-1.5 py-0.5 text-[10.5px] text-text-dim">v{status.currentVersion}</span>}
+      {status?.needsAction && (
+        <button
+          onClick={onInstall}
+          disabled={busy}
+          className="rounded-md bg-brand px-3 py-1 text-[12px] font-medium text-brand-foreground hover:brightness-110 disabled:opacity-60"
+        >
+          {busy ? '安装中…' : status.cli.state === 'missing' ? '安装' : '更新'}
+        </button>
+      )}
     </div>
   )
 }

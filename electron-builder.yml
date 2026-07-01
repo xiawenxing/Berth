@@ -12,6 +12,7 @@ files:
   - dist/**
   - bin/**        # bin/berth.mjs is the CLI entry the agent shim (src/pty/agent-shim) re-invokes; the
                   # app-spawned `berth` skill resolves it relative to dist/ — without this it's missing
+  - skills/**     # bundled berth-tasks skill; Settings can install/update it for DMG users
   - public/**
   - web/dist/**   # Berth 2.0 React SPA — served at /app; without this the packaged app ships only 1.0
   - package.json

@@ -105,6 +105,32 @@ export interface ApiSettings {
   agents?: AgentConfig
 }
 
+export type IntegrationState = 'current' | 'missing' | 'outdated'
+
+export interface AgentIntegrationStatus {
+  currentVersion: string
+  cli: {
+    state: IntegrationState
+    currentVersion: string
+    installedVersion: string | null
+    path: string
+    pathInEnv: boolean
+    managed: boolean
+  }
+  skills: {
+    state: IntegrationState
+    bundled: boolean
+    targets: { agent: string; dir: string; state: IntegrationState }[]
+  }
+  needsAction: boolean
+}
+
+export interface AgentIntegrationInstallResult {
+  status: AgentIntegrationStatus
+  cliPath: string
+  skillResults: { agent: string; installed: string[]; skipped: string[] }[]
+}
+
 export interface PreviewSession {
   sessionId: string
   cli: string
@@ -156,6 +182,8 @@ export const api = {
   settings: () => getJSON<ApiSettings>('/api/settings'),
   saveSettings: (patch: { priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) => send('POST', '/api/settings', patch),
   agentModels: () => getJSON<{ catalogs: AgentModelCatalog[] }>('/api/agent-models'),
+  agentIntegration: () => getJSON<AgentIntegrationStatus>('/api/agent-integration'),
+  installAgentIntegration: () => send('POST', '/api/agent-integration/install', {}) as Promise<AgentIntegrationInstallResult>,
   // Structured codex-style chat turns for a real session's drawer/right-pane.
   transcript: (sessionId: string) =>
     getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),
