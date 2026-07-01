@@ -1,25 +1,11 @@
 import { useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, FileText, Folder, Package, Plus, X } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { ChevronDown, ChevronRight, FileText, Folder, FolderInput, Package, Plus, X } from 'lucide-react'
 import { api, type PreviewSession, type ApiPathMeta } from '@/lib/api'
 import { shortCwd } from '@/lib/format'
 import { ImportDialog } from '@/components/ImportDialog'
 import { useShowMore } from '@/lib/paging'
 import { ShowMoreToggle } from '@/components/ui/ShowMoreToggle'
-
-function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
-  return (
-    <button
-      onClick={onChange}
-      className={cn(
-        'flex h-5 w-9 flex-none items-center rounded-full px-0.5 transition-colors',
-        on ? 'bg-success/70' : 'bg-muted',
-      )}
-    >
-      <span className={cn('h-4 w-4 rounded-full bg-card-foreground transition-transform', on && 'translate-x-4')} />
-    </button>
-  )
-}
+import { Switch } from '@/components/ui/Switch'
 
 function RegRow({ icon: Icon, name, sub, right }: { icon: typeof Folder; name: string; sub?: string; right?: ReactNode }) {
   return (
@@ -46,6 +32,7 @@ export function CargoDefaults({
   onOpenDoc,
   onDone,
   onRemovePath,
+  onImported,
 }: {
   projectId?: string
   projectName?: string
@@ -57,8 +44,11 @@ export function CargoDefaults({
   // When provided, the parent owns the remove flow (so it can offer 「一并移出会话」, §10.1).
   // Absent → fall back to a direct path removal.
   onRemovePath?: (cwd: string) => void
+  // Called with the freshly-imported session ids so the parent can mark them READ (imported
+  // sessions default to read, matching the other import entry points). Optional.
+  onImported?: (ids: string[]) => void
 }) {
-  const [dialog, setDialog] = useState<{ path: string; sessions: PreviewSession[] } | null>(null)
+  const [dialog, setDialog] = useState<{ path: string; sessions: PreviewSession[]; mode: 'register' | 'import' } | null>(null)
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [tasksOpen, setTasksOpen] = useState(false)
@@ -80,7 +70,7 @@ export function CargoDefaults({
       const picked = await api.pickFolder()
       if (!picked?.path) return
       const { sessions } = await api.previewDir(picked.path)
-      setDialog({ path: picked.path, sessions })
+      setDialog({ path: picked.path, sessions, mode: 'register' })
     } catch {
       // folder pick / preview failures are non-fatal — the button just no-ops.
     } finally {
@@ -88,13 +78,31 @@ export function CargoDefaults({
     }
   }
 
-  // 添加目录 confirm: ALWAYS register the dir (add-path, enabled), THEN import the picked sessions.
+  // Per-row 导入会话: preview the already-registered dir's on-disk sessions and open the dialog in
+  // import-only mode. Preview failures are non-fatal (button no-ops), mirroring onAddDir.
+  const onImportRow = async (cwd: string) => {
+    try {
+      const { sessions } = await api.previewDir(cwd)
+      setDialog({ path: cwd, sessions, mode: 'import' })
+    } catch {
+      // preview failure — no-op
+    }
+  }
+
+  // Confirm. 'register' (添加目录): register the dir THEN import the picked sessions. 'import'
+  // (per-row icon): the dir is already registered — import ONLY, never re-addPath (that would
+  // force enabled:true and silently re-enable a directory the user toggled off).
   const onConfirm = async (ids: string[]) => {
     if (!dialog || !projectId) return
     setBusy(true)
     try {
-      await api.addPath(projectId, dialog.path, { enabled: true })
-      if (ids.length) await api.importSessions(ids, projectId)
+      if (dialog.mode === 'register') {
+        await api.addPath(projectId, dialog.path, { enabled: true })
+      }
+      if (ids.length) {
+        await api.importSessions(ids, projectId)
+        onImported?.(ids) // imported → READ, consistent with the other import entry points
+      }
       setDialog(null)
       onDone?.()
     } catch {
@@ -128,7 +136,7 @@ export function CargoDefaults({
               onOpenDoc?.({ kind: 'project', key: projectName, path: `projects/${projectName}/index.md`, title: `项目上下文 · ${projectName}` })
             }
           >
-            <RegRow icon={FileText} name={`项目上下文${projectName ? ` (${projectName})` : ''}`} sub={projectName ? `projects/${projectName}/index.md` : ''} right={<Toggle on onChange={() => {}} />} />
+            <RegRow icon={FileText} name={`项目上下文${projectName ? ` (${projectName})` : ''}`} sub={projectName ? `projects/${projectName}/index.md` : ''} right={<Switch checked onChange={() => {}} />} />
           </button>
           <div className="text-[11px] text-text-dim">点开上方可编辑，或写一句让港务助手整理进上下文</div>
 
@@ -187,7 +195,10 @@ export function CargoDefaults({
               name={shortCwd(d.cwd)}
               right={
                 <span className="flex items-center gap-2">
-                  <Toggle on={d.enabled} onChange={() => toggle(d.cwd, !d.enabled)} />
+                  <Switch checked={d.enabled} onChange={() => toggle(d.cwd, !d.enabled)} />
+                  <button onClick={() => onImportRow(d.cwd)} title="导入该目录下磁盘上的会话" className="rounded p-1 text-text-dim hover:bg-secondary hover:text-brand">
+                    <FolderInput size={13} />
+                  </button>
                   <button onClick={() => (onRemovePath ? onRemovePath(d.cwd) : remove(d.cwd))} title="移除" className="rounded p-1 text-text-dim hover:bg-secondary hover:text-destructive">
                     <X size={13} />
                   </button>
@@ -210,7 +221,7 @@ export function CargoDefaults({
         <ImportDialog
           path={dialog.path}
           sessions={dialog.sessions}
-          mode="register"
+          mode={dialog.mode}
           busy={busy}
           onCancel={() => setDialog(null)}
           onConfirm={onConfirm}

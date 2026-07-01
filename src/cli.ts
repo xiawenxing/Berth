@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { formatStartupError } from './startup-error'
+import { findReusableServer } from './server-resolve'
 
 export interface CliArgs {
   command: 'start' | 'help' | 'version'
@@ -43,6 +44,7 @@ Usage:
   berth start [options]   Start the local server and open the UI in your browser
   berth task ...          Manage tasks (list/add/done/status/set/log/doc/rm/sync) — needs a running server
   berth project ...       Manage projects (list/add/rename/archive/rm) — needs a running server
+  berth session ...       Bind an existing session to a task (bind/unbind/list) — needs a running server
   berth skill install     Install the bundled Berth skill into your agents (use --force to overwrite)
   berth --help            Show this help
   berth --version         Show the version
@@ -113,11 +115,12 @@ async function installSkill(force: boolean): Promise<void> {
 export async function runCli(argv: string[], version: string): Promise<void> {
   // Data commands (task/project) talk to a running server over HTTP — dispatched before the start
   // parser so their flags (e.g. --status) aren't misread as server options.
-  if (argv[0] === 'task' || argv[0] === 'project') {
-    const { runTaskCli, runProjectCli } = await import('./cli-data')
+  if (argv[0] === 'task' || argv[0] === 'project' || argv[0] === 'session') {
+    const { runTaskCli, runProjectCli, runSessionCli } = await import('./cli-data')
     try {
       if (argv[0] === 'task') await runTaskCli(argv.slice(1))
-      else await runProjectCli(argv.slice(1))
+      else if (argv[0] === 'project') await runProjectCli(argv.slice(1))
+      else await runSessionCli(argv.slice(1))
     } catch (e: any) { console.error(`berth: ${e?.message ?? e}`); process.exit(1) }
     return
   }
@@ -133,6 +136,27 @@ export async function runCli(argv: string[], version: string): Promise<void> {
 
   if (args.command === 'help') { console.log(HELP); return }
   if (args.command === 'version') { console.log(version); return }
+
+  // Idempotent start: if a Berth server is already running — recorded in server.json on ANY port, or
+  // live on the target port — don't bind a second one. This is the CLI half of bidirectional reuse:
+  // whether the app or the CLI started first, the other discovers it (server.json is the source of
+  // truth; the target port is the fallback when the record is missing/stale).
+  if (args.command === 'start') {
+    const probeHost = args.host ?? process.env.HOST ?? '127.0.0.1'
+    const probePort = Number(args.port ?? process.env.PORT ?? 7777)
+    // An explicit --port/--host means "I want THIS address": only reuse a server actually on it. With
+    // no explicit address, reuse any recorded Berth server (bidirectional discovery — whoever started
+    // first, on whatever port).
+    const explicit = args.port !== undefined || args.host !== undefined
+    const reusable = await findReusableServer({ host: probeHost, port: probePort }, {}, { exact: explicit })
+    if (reusable) {
+      const shown = reusable.host === '0.0.0.0' ? 'localhost' : reusable.host
+      const base = `http://${shown}:${reusable.port}`
+      console.log(`berth: 已在运行 ${base} — 打开前端`)
+      if (args.open) openBrowser(`${base}/app/`)
+      return
+    }
+  }
 
   const { start } = await import('./server/index')
   const host = args.host ?? process.env.HOST ?? '127.0.0.1'

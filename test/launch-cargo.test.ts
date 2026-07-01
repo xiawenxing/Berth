@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initCargo, toggleDir, anchorDir, setCode, deriveLaunch } from '../web/src/lib/launch-cargo'
+import { addDir, initCargo, toggleDir, anchorDir, setCode, deriveLaunch } from '../web/src/lib/launch-cargo'
 
 const paths = ['/a', '/b', '/c']
 
@@ -24,12 +24,21 @@ describe('launch-cargo', () => {
     expect(deriveLaunch(s)).toEqual({ cwd: '/a', addDirs: ['/b', '/c'], ctxProject: true, ctxTask: true })
   })
 
-  it('unchecking the lit dir falls back to 默认 (cwd="")', () => {
+  it('unchecking the lit dir lets another loaded dir become cwd', () => {
     let s = initCargo(paths, '/a', true)
     s = toggleDir(s, '/a')
+    expect(s.litCwd).toBe('/b')
+    expect(deriveLaunch(s).cwd).toBe('/b')
+    expect(deriveLaunch(s).addDirs).toEqual(['/c'])
+  })
+
+  it('manual anchor clear keeps cwd default while loaded dirs remain', () => {
+    let s = initCargo(paths, '/a', true)
+    s = anchorDir(s, '/a')
+    expect(s.litCwd).toBeNull()
+    s = addDir(s, '/d')
     expect(s.litCwd).toBeNull()
     expect(deriveLaunch(s).cwd).toBe('')
-    expect(deriveLaunch(s).addDirs).toEqual(['/b', '/c'])
   })
 
   it('checking the first dir from empty auto-lits it', () => {

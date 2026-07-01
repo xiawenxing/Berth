@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { execFile } from 'node:child_process'
-import { getStore, getCache, refresh, storeRoots } from './store-singleton'
+import { getStore, getCache, visibleSessions, refresh, refreshSessions, storeRoots } from './store-singleton'
 import { collectLogicalSessions } from '../sessions'
 import { toPreview, previewByCli, previewByIds } from './import-preview'
 import type { AgentCli } from '../types'
@@ -21,19 +21,26 @@ import { lastLogEntries } from '../data/context-log'
 import { syncSource, resolveConflict } from '../data/sync/engine'
 import { adapterCapabilities, getAdapter } from '../data/sync/registry'
 import type { DataSourceRow, SyncMode } from '../data/types'
+import { extractConversation } from '../agent/transcript'
+import { createTaskFromSession } from '../data/task-from-session'
 import { parseStructuredSummary } from '../agent/index'
 import { summarizeCompactedContext } from '../agent/context-compact'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
 import { isGeneratingTitle, triggerSessionTitle, titleGist } from './title-service'
 import type { Locale } from '../i18n'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync, statSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { snapshotActivity } from './pty-registry'
+import { snapshotActivity, liveCount } from './pty-registry'
+import { ingestDiag, collectDiagForExport, logDiag } from './diag'
+import { getAgentModelCatalogs } from '../pty/model-catalog'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
 import { parseTranscriptChatTurns, parseTranscriptTurns } from './transcript-turns'
+import { resolveOpenTarget, openCommand, isAllowedOrigin, type OpenTarget } from './open-local'
 import { parseClaudeJsonlTurns } from '../agent/normalize/claude-jsonl'
 import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd, berthHome } from '../paths'
+import { broadcastDataChanged } from './status-ws'
+import { compactTitle, TASK_CREATE_INPUT_MAX_CHARS } from '../title-limits'
 
 function isFolderPickerCancelled(err: unknown, stderr = ''): boolean {
   const e = err as { message?: unknown; stderr?: unknown }
@@ -72,6 +79,7 @@ export interface ApiSession {
   todoKey?: string | null
   activity: 'running' | 'settled' | null   // live PTY status (null = no live process / external session)
   titleGenerating?: boolean                // 港务助手 is generating this session's title right now
+  launching?: boolean                      // in-flight fresh launch: live PTY but no jsonl on disk yet
 }
 
 /**
@@ -122,13 +130,18 @@ function serialize(): ApiSession[] {
   }
   const canonCache = new Map<string, string>()
   const canon = (p: string) => { let v = canonCache.get(p); if (v === undefined) { v = canonicalPathKey(p); canonCache.set(p, v) } return v }
-  return getCache().map(s => {
+  // The list source is `visibleSessions()` = the on-disk cache (disk arm) ∪ in-flight Berth launches
+  // with a live pty but no jsonl yet (live-PTY arm; carries `launching:true`). Both flow through the
+  // SAME mapping below — a launching row resolves its project/task/activity from the same attach/edge/
+  // registry maps as a real row, the only difference being its content isn't on disk yet.
+  return visibleSessions().map(s => {
     const projectId = attach.get(s.sessionId)?.projectId ?? null
     // Fill an init-window null cwd from the launch intent, then collapse a symlink-variant of the
     // project workspace dir back to its canonical form so it groups under 项目默认目录.
     const cwd = normalizeWorkspaceCwd(s.cwd ?? intentCwd.get(s.sessionId) ?? null, projectId, workspaceDirFor, canon)
+    const rawTitle = overrides.get(s.sessionId) ?? s.title
     return {
-    sessionId: s.sessionId, cli: s.cli, cwd, title: overrides.get(s.sessionId) ?? s.title,
+    sessionId: s.sessionId, cli: s.cli, cwd, title: rawTitle ? compactTitle(rawTitle) : null,
     updatedAt: s.updatedAt, deleted: s.deleted, copies: s.copies.length,
     pinned: pins.has(s.sessionId),
     projectId,
@@ -137,19 +150,89 @@ function serialize(): ApiSession[] {
     todoKey: reverseMap.get(s.sessionId) ?? null,
     activity: activityMap.get(s.sessionId) ?? null,
     titleGenerating: isGeneratingTitle(s.sessionId),   // drives the live spinner on the generate-title icon
+    launching: s.launching,   // in-flight launch surfaced from the live-PTY arm (undefined for real rows)
     }
   }).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export const api = Router()
+api.get('/health', (_req, res) => {
+  res.json({ berth: true, version: process.env.npm_package_version ?? null, berthHome: berthHome(), pid: process.pid })
+})
 api.get('/sessions', (_req, res) => res.json(serialize()))
 api.post('/refresh', (_req, res) => { refresh(); res.json({ ok: true, count: getCache().length }) })
+// Targeted pending-launch poll: surface a just-bound session WITHOUT the full refresh()'s per-tick
+// data-source sync. Returns the same shape as GET /api/sessions so the client updates only its
+// session list (not projects/todos/settings) while it waits for a launch to surface.
+api.post('/launches/resolve', (_req, res) => { refreshSessions(); res.json(serialize()) })
+
+// ── Diagnostics: launch/connection lifecycle event log (for user bug reports) ──
+// The browser flushes its event buffer here so the export bundles BOTH sides of every launch
+// handshake on one correlated timeline (keyed by launchToken/sessionId).
+api.post('/diag', (req, res) => {
+  const n = ingestDiag(req.body?.events)
+  res.json({ ok: true, ingested: n })
+})
+
+// Download the merged (server + browser) event log as a JSON bundle, plus a little machine context
+// so a report is self-describing. Content-Disposition makes the SPA's fetch→blob download name it.
+api.get('/diag/export', (_req, res) => {
+  const events = collectDiagForExport()
+  const bundle = {
+    generatedAt: Date.now(),
+    berthVersion: process.env.npm_package_version ?? null,
+    platform: process.platform,
+    nodeVersion: process.version,
+    liveSessions: liveCount(),
+    eventCount: events.length,
+    events,
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="berth-diag-${stamp}.json"`)
+  res.send(JSON.stringify(bundle, null, 2))
+})
 
 api.post('/pin', (req, res) => {
   const { sessionId, on } = req.body ?? {}
   if (typeof sessionId !== 'string' || typeof on !== 'boolean')
     return res.status(400).json({ error: 'sessionId:string, on:boolean required' })
   getStore().setPin(sessionId, on)
+  res.json({ ok: true })
+})
+
+// ── Read-state (the dock unread dot). Server-authoritative; replaces per-origin localStorage so the
+// CLI browser and the Electron app share it. last_seen is unix SECONDS. ──
+api.get('/read-state', (_req, res) => {
+  res.json(getStore().readState())
+})
+
+api.post('/read-state/seen', (req, res) => {
+  const { sessionIds, ts } = req.body ?? {}
+  if (!Array.isArray(sessionIds) || sessionIds.length === 0 || !sessionIds.every(x => typeof x === 'string' && x !== ''))
+    return res.status(400).json({ error: 'sessionIds:string[] required' })
+  const when = typeof ts === 'number' && Number.isFinite(ts) && ts > 0
+    ? Math.floor(ts)
+    : Math.floor(Date.now() / 1000)
+  getStore().markSeen(sessionIds, when)
+  res.json({ ok: true })
+})
+
+api.post('/read-state/unread', (req, res) => {
+  const { sessionId } = req.body ?? {}
+  if (typeof sessionId !== 'string' || sessionId === '')
+    return res.status(400).json({ error: 'sessionId required' })
+  getStore().markUnread(sessionId)
+  res.json({ ok: true })
+})
+
+api.post('/read-state/import', (req, res) => {
+  const { seen, unread, epoch } = req.body ?? {}
+  getStore().importReadState({
+    seen: seen !== null && typeof seen === 'object' && !Array.isArray(seen) ? seen : {},
+    unread: unread !== null && typeof unread === 'object' && !Array.isArray(unread) ? unread : {},
+    epoch: typeof epoch === 'number' ? epoch : undefined,
+  })
   res.json({ ok: true })
 })
 
@@ -173,7 +256,29 @@ api.post('/edge', (req, res) => {
   store.removeEdgesForSession(sessionId)
   if (typeof todoKey === 'string' && todoKey !== '') store.addEdge(todoKey, sessionId)
   if (typeof projectId === 'string' && projectId !== '') store.setAttach(sessionId, projectId, 'confirmed')
+  broadcastDataChanged()
   res.json({ ok: true })
+})
+
+// 一键据会话内容建任务并关联：读会话 transcript → 抽对话 digest → agent 生成标题 → 建任务 → 关联本会话。
+api.post('/todos/from-session', async (req, res) => {
+  const { sessionId, projectId } = req.body ?? {}
+  if (typeof sessionId !== 'string' || sessionId === '')
+    return res.status(400).json({ error: 'sessionId required' })
+  const s = getCache().find(x => x.sessionId === sessionId)
+  if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
+  const digest = extractConversation(readTranscript(s.contentSourcePath), 6000).trim()
+  if (!digest) return res.status(422).json({ error: 'empty session content' })
+  try {
+    const store = getStore()
+    const result = await createTaskFromSession(store, getDocStore(store), sessionId, digest, {
+      projectId: typeof projectId === 'string' && projectId !== '' ? projectId : undefined,
+    })
+    broadcastDataChanged()
+    res.json(result)
+  } catch (e: any) {
+    res.status(502).json({ error: String(e?.message ?? e) })
+  }
 })
 
 // Native macOS folder picker (the browser can't expose absolute paths). Returns the chosen
@@ -202,6 +307,30 @@ api.post('/pick-folder', (req, res) => {
       cancelled,
     ),
   )
+})
+
+// Open a local-file hyperlink (file:// / absolute path / ~ / custom scheme) clicked in rendered
+// markdown. Browsers block file:// navigation from an http page, so the click is routed here and
+// the host (this server runs on the user's machine) opens it with the OS default app. Loopback +
+// Origin check + JSON-only (CORS preflight) keep other local pages from abusing this.
+api.post('/open-local', (req, res) => {
+  if (!req.is('application/json'))
+    return res.status(415).json({ ok: false, error: 'content-type must be application/json' })
+  if (!isAllowedOrigin(req.get('origin') ?? undefined))
+    return res.status(403).json({ ok: false, error: 'forbidden origin' })
+  const target = req.body?.target
+  if (typeof target !== 'string' || target.trim() === '')
+    return res.status(400).json({ ok: false, error: 'target required' })
+  let resolved: OpenTarget
+  try { resolved = resolveOpenTarget(target) }
+  catch { return res.status(400).json({ ok: false, error: 'unsupported target' }) }
+  if (resolved.kind === 'file' && !existsSync(resolved.value))
+    return res.status(404).json({ ok: false, error: 'file not found' })
+  const { bin, args } = openCommand(process.platform, resolved.value)
+  execFile(bin, args, { timeout: 10000 }, (err) => {
+    if (err) return res.status(500).json({ ok: false, error: String((err as any)?.message ?? err) })
+    res.json({ ok: true })
+  })
 })
 
 api.get('/projects', (_req, res) => {
@@ -322,10 +451,11 @@ api.post('/session-dirs/preview', (req, res) => {
   if (!cwd) return res.status(400).json({ error: 'cwd required' })
   const target = normDirForMatch(cwd)
   const all = collectLogicalSessions(storeRoots())
+  const overrides = getStore().allTitleOverrides()
   const sessions = all
     .filter(s => s.cwd != null && normDirForMatch(s.cwd) === target)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map(toPreview)
+    .map(s => toPreview(s, overrides))
   res.json({ sessions })
 })
 
@@ -336,7 +466,7 @@ api.post('/sessions/preview-by-cli', (req, res) => {
   const cli = req.body?.cli
   if (typeof cli !== 'string' || !IMPORT_CLIS.has(cli as AgentCli))
     return res.status(400).json({ error: 'cli must be one of claude|codex|coco' })
-  res.json({ sessions: previewByCli(collectLogicalSessions(storeRoots()), cli as AgentCli) })
+  res.json({ sessions: previewByCli(collectLogicalSessions(storeRoots()), cli as AgentCli, getStore().allTitleOverrides()) })
 })
 
 // 导入会话 chooser — by-id source. Looks the given ids up across all stores so the paste-ids flow can
@@ -344,7 +474,7 @@ api.post('/sessions/preview-by-cli', (req, res) => {
 api.post('/sessions/preview-by-ids', (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
   if (ids.length === 0) return res.status(400).json({ error: 'ids:string[] required' })
-  res.json(previewByIds(collectLogicalSessions(storeRoots()), ids))
+  res.json(previewByIds(collectLogicalSessions(storeRoots()), ids, getStore().allTitleOverrides()))
 })
 
 api.delete('/session-dirs', (req, res) => {
@@ -628,10 +758,13 @@ api.post('/todos', async (req, res) => {
   const { text, projectId, confirm, createOption, images, autoTitle } = req.body ?? {}
   if (typeof text !== 'string' || (text.trim() === '' && (!Array.isArray(images) || images.length === 0)))
     return res.status(400).json({ error: 'text or images required' })
+  if (text.trim().length > TASK_CREATE_INPUT_MAX_CHARS)
+    return res.status(400).json({ error: `text too long; max ${TASK_CREATE_INPUT_MAX_CHARS} characters` })
   try {
     const store = getStore()
     const imgs = Array.isArray(images) ? images.filter((s: any) => typeof s === 'string') : undefined
     const result = await createTask(store, getDocStore(store), text, { projectId, confirm, createOption, images: imgs, autoTitle: autoTitle === true })
+    broadcastDataChanged()
     res.json(result)
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
@@ -653,6 +786,7 @@ api.post('/todos/:id/title', async (req, res) => {
   })
   try {
     const result = await generateAndApplyTaskTitle(store, getDocStore(store), task.id, sessions, resolveBerthAgent(store))
+    broadcastDataChanged()
     res.json(result)
   } catch (e: any) {
     return sendAgentError(res, e, getLocale(store))
@@ -672,6 +806,7 @@ api.patch('/todos/:id', (req, res) => {
     if (title !== undefined || priority !== undefined || status !== undefined || progress !== undefined)
       updateTask(store, req.params.id, { title, priority, status, progress })
     if (ddl !== undefined) store.setTaskDdl(req.params.id, ddl)
+    broadcastDataChanged()
     res.json({ ok: true })
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
@@ -705,6 +840,7 @@ api.post('/todos/:id/summary-detail', (req, res) => {
 api.delete('/todos/:id', (req, res) => {
   try {
     deleteTask(getStore(), req.params.id)
+    broadcastDataChanged()
     res.json({ ok: true })
   } catch (e: any) {
     res.status(502).json({ error: String(e?.message ?? e) })
@@ -823,13 +959,29 @@ api.post('/settings', (req, res) => {
   res.json({ ok: true, docsRoot: getDocsRoot(store), locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
 })
 
+api.get('/agent-models', async (req, res) => {
+  try {
+    const refreshCatalog = req.query.refresh === '1' || req.query.refresh === 'true'
+    res.json({ catalogs: await getAgentModelCatalogs(refreshCatalog) })
+  } catch (e: any) {
+    res.status(502).json({ error: String(e?.message ?? e) })
+  }
+})
+
 // Kick a detached title (re)generation and return immediately — it runs decoupled from this request,
 // so closing the drawer never stops it. Fails fast (422) when the session has no usable content; the
 // client polls /api/sessions (titleGenerating + the eventual title) for progress.
 api.post('/sessions/:id/title', (req, res) => {
   const s = getCache().find(x => x.sessionId === req.params.id)
-  if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
-  if (!titleGist(s.sessionId)) return res.status(422).json({ error: 'no usable session content for title' })
+  if (!s || !s.contentSourcePath) {
+    logDiag({ category: 'title', event: 'request_no_transcript', sessionId: req.params.id, level: 'warn', cached: !!s })
+    return res.status(404).json({ error: 'no readable transcript' })
+  }
+  if (!titleGist(s.sessionId)) {
+    logDiag({ category: 'title', event: 'request_no_gist', sessionId: s.sessionId, level: 'warn' })
+    return res.status(422).json({ error: 'no usable session content for title' })
+  }
+  logDiag({ category: 'title', event: 'request', sessionId: s.sessionId })
   triggerSessionTitle(s.sessionId)
   res.json({ generating: true })
 })
@@ -839,8 +991,10 @@ api.patch('/sessions/:id/title', (req, res) => {
   if (!s) return res.status(404).json({ error: 'unknown session' })
   const title = typeof req.body?.title === 'string' ? req.body.title.trim() : ''
   if (!title) return res.status(400).json({ error: 'title required' })
-  getStore().setTitleOverride(s.sessionId, title)
-  res.json({ title })
+  const saved = compactTitle(title)
+  getStore().setTitleOverride(s.sessionId, saved)
+  logDiag({ category: 'title', event: 'manual_saved', sessionId: s.sessionId, titleLen: saved.length })
+  res.json({ title: saved })
 })
 
 api.post('/sessions/:id/consolidate', async (req, res) => {

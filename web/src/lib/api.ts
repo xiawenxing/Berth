@@ -52,6 +52,9 @@ export interface ApiSession {
   activity?: string | null
   deleted?: boolean
   titleGenerating?: boolean // server is generating this session's title right now (drives the spinner)
+  /** Server-side in-flight launch: a live PTY that hasn't written its jsonl yet, surfaced so a closed
+   *  drawer / page reload keeps it (reopening reattaches to the same process). Shown as 启动中…. */
+  launching?: boolean
   /** Client-only: an optimistic in-flight launch placeholder (创建中…), never sent by the server. */
   __pending?: boolean
   __pendingOpenable?: boolean
@@ -71,6 +74,7 @@ export interface AgentEntry {
   cli: AgentCli
   enabled: boolean
   model: string | null
+  safeMode: boolean
 }
 
 export interface AgentConfig {
@@ -78,6 +82,21 @@ export interface AgentConfig {
   berthAgentCli: AgentCli
   berthAgentModel: string
   headlessClis: AgentCli[]
+}
+
+export interface AgentModelOption {
+  id: string
+  label: string
+  description?: string
+  contextWindow?: number
+}
+
+export interface AgentModelCatalog {
+  cli: AgentCli
+  ok: boolean
+  source: 'cli' | 'help' | 'none'
+  models: AgentModelOption[]
+  error?: string
 }
 
 export interface ApiSettings {
@@ -92,6 +111,17 @@ export interface PreviewSession {
   title: string | null
   cwd: string | null
   updatedAt: number
+}
+
+export interface ReadState {
+  lastSeen: Record<string, number>
+  unread: Record<string, true>
+  epoch: number
+}
+export interface ReadStateImport {
+  seen?: Record<string, number>
+  unread?: Record<string, true>
+  epoch?: number
 }
 
 async function getJSON<T>(url: string): Promise<T> {
@@ -118,9 +148,14 @@ export const api = {
   // returns that cache, so without this a session created after server start (launched from a
   // task, or started by hand in an imported dir) never surfaces. Returns the new session count.
   refresh: () => send('POST', '/api/refresh') as Promise<{ ok: boolean; count: number }>,
+  // Targeted pending-launch poll: a sessions-only refresh that surfaces a just-bound launch without
+  // the full refresh()'s per-tick data-source sync, and returns the fresh session list directly so
+  // the poller updates only `sessions` (not projects/todos/settings). See data.tsx's pending effect.
+  resolveLaunches: () => send('POST', '/api/launches/resolve') as Promise<ApiSession[]>,
   // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
   settings: () => getJSON<ApiSettings>('/api/settings'),
   saveSettings: (patch: { priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) => send('POST', '/api/settings', patch),
+  agentModels: () => getJSON<{ catalogs: AgentModelCatalog[] }>('/api/agent-models'),
   // Structured codex-style chat turns for a real session's drawer/right-pane.
   transcript: (sessionId: string) =>
     getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),
@@ -140,8 +175,24 @@ export const api = {
   // Assign/detach a session to a task. Passing projectId also confirms the session under that project.
   edge: (sessionId: string, todoKey: string | null, projectId?: string) =>
     send('POST', '/api/edge', { sessionId, todoKey, projectId }),
+  // Create a new task seeded from an existing session (Task-2 endpoint orchestrates the bind).
+  createTaskFromSession: (sessionId: string, projectId?: string) =>
+    send('POST', '/api/todos/from-session', { sessionId, projectId }),
   // Native macOS folder picker → absolute path (or cancelled).
   pickFolder: () => send('POST', '/api/pick-folder', {}) as Promise<{ path?: string; cancelled?: boolean }>,
+  // Ask the host (this Berth server, on the user's machine) to open a local-file link with the OS
+  // default app — browsers block file:// / absolute-path navigation from an http page. Unlike `send`
+  // (which throws on non-2xx and drops the body), this resolves the structured {ok,error} body even
+  // on 4xx/5xx, so callers can surface the server's reason (e.g. 404 "file not found"). Only a
+  // network-level failure rejects.
+  openLocal: async (target: string): Promise<{ ok: boolean; error?: string }> => {
+    const res = await fetch('/api/open-local', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target }),
+    })
+    return res.json().catch(() => ({ ok: res.ok })) as Promise<{ ok: boolean; error?: string }>
+  },
   // Preview the sessions a candidate dir would surface (no state mutation).
   previewDir: (cwd: string) =>
     send('POST', '/api/session-dirs/preview', { cwd }) as Promise<{ sessions: PreviewSession[] }>,
@@ -199,4 +250,12 @@ export const api = {
   // Context doc read/write (docstore-relative `path`/ref; POST guards on baseMtime).
   readDoc: (path: string) => getJSON<{ content: string; mtime?: number }>(`/api/doc?path=${encodeURIComponent(path)}`),
   saveDoc: (path: string, content: string, baseMtime?: number) => send('POST', '/api/doc', { path, content, baseMtime }),
+  // ── Read-state (dock unread dot), server-authoritative. last_seen is unix SECONDS. ──
+  readState: () => getJSON<ReadState>('/api/read-state'),
+  markSeen: (sessionIds: string[], ts?: number) =>
+    send('POST', '/api/read-state/seen', { sessionIds, ts }),
+  markUnread: (sessionId: string) =>
+    send('POST', '/api/read-state/unread', { sessionId }),
+  importReadState: (payload: ReadStateImport) =>
+    send('POST', '/api/read-state/import', payload),
 }

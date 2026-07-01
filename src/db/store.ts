@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS session_import_dir ( cwd TEXT PRIMARY KEY );
 -- surface a session — registering a 货舱 cwd (project_path) no longer surfaces all its sessions.
 CREATE TABLE IF NOT EXISTS session_import ( session_id TEXT PRIMARY KEY );
 CREATE TABLE IF NOT EXISTS session_hidden ( session_id TEXT PRIMARY KEY );
+-- Per-session read state. Server-authoritative (was browser localStorage, which is origin-partitioned
+-- so the Electron app and the CLI never shared it). last_seen is unix SECONDS; the unread-epoch
+-- baseline lives in app_setting under key 'unread-epoch'. No FK (read state may predate a disk scan).
+CREATE TABLE IF NOT EXISTS session_read (
+  session_id      TEXT PRIMARY KEY,
+  last_seen       INTEGER NOT NULL DEFAULT 0,
+  explicit_unread INTEGER NOT NULL DEFAULT 0
+);
 `
 
 function cols(db: Database.Database, table: string): Set<string> {
@@ -144,6 +152,54 @@ export function openStore(path: string) {
     allPinnedSet(): Set<string> {
       return new Set((db.prepare('SELECT session_id FROM pin').all() as any[]).map(r => r.session_id))
     },
+    markSeen(ids: string[], tsSeconds: number) {
+      if (ids.length === 0) return
+      const stmt = db.prepare(`INSERT INTO session_read (session_id,last_seen,explicit_unread)
+        VALUES (?,?,0)
+        ON CONFLICT(session_id) DO UPDATE SET
+          last_seen=max(last_seen, excluded.last_seen), explicit_unread=0`)
+      const tx = db.transaction((rows: string[]) => { for (const id of rows) stmt.run(id, tsSeconds) })
+      tx(ids)
+    },
+    markUnread(id: string) {
+      db.prepare(`INSERT INTO session_read (session_id,last_seen,explicit_unread) VALUES (?,0,1)
+        ON CONFLICT(session_id) DO UPDATE SET explicit_unread=1`).run(id)
+    },
+    readState(): { lastSeen: Record<string, number>; unread: Record<string, true>; epoch: number } {
+      const row = db.prepare(`SELECT value FROM app_setting WHERE key='unread-epoch'`).get() as any
+      let epoch = Number(row?.value ?? 0)
+      if (!Number.isFinite(epoch) || epoch <= 0) {
+        epoch = Math.floor(Date.now() / 1000)
+        db.prepare(`INSERT INTO app_setting (key,value) VALUES ('unread-epoch',?)
+          ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(String(epoch))
+      }
+      const lastSeen: Record<string, number> = {}
+      const unread: Record<string, true> = {}
+      for (const r of db.prepare('SELECT session_id, last_seen, explicit_unread FROM session_read').all() as any[]) {
+        if (r.last_seen > 0) lastSeen[r.session_id] = r.last_seen
+        if (r.explicit_unread) unread[r.session_id] = true
+      }
+      return { lastSeen, unread, epoch }
+    },
+    importReadState(input: { seen?: Record<string, number>; unread?: Record<string, true>; epoch?: number }) {
+      const seenStmt = db.prepare(`INSERT INTO session_read (session_id,last_seen,explicit_unread)
+        VALUES (?,?,0) ON CONFLICT(session_id) DO UPDATE SET last_seen=max(last_seen, excluded.last_seen)`)
+      const unreadStmt = db.prepare(`INSERT INTO session_read (session_id,last_seen,explicit_unread)
+        VALUES (?,0,1) ON CONFLICT(session_id) DO UPDATE SET explicit_unread=1`)
+      const epochSelectStmt = db.prepare(`SELECT value FROM app_setting WHERE key='unread-epoch'`)
+      const epochUpsertStmt = db.prepare(`INSERT INTO app_setting (key,value) VALUES ('unread-epoch',?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+      const tx = db.transaction(() => {
+        for (const [id, ts] of Object.entries(input.seen ?? {})) seenStmt.run(id, Number(ts) || 0)
+        for (const id of Object.keys(input.unread ?? {})) unreadStmt.run(id)
+        if (input.epoch && input.epoch > 0) {
+          const cur = Number(((epochSelectStmt.get() as any)?.value) ?? 0)
+          const next = cur > 0 ? Math.min(cur, input.epoch) : input.epoch
+          epochUpsertStmt.run(String(next))
+        }
+      })
+      tx()
+    },
     allAttachMap(): Map<string, { projectId: string | null; state: string }> {
       const m = new Map<string, { projectId: string | null; state: string }>()
       for (const r of db.prepare('SELECT session_id, project_id, state FROM attach').all() as any[])
@@ -213,6 +269,10 @@ export function openStore(path: string) {
     addEdge(todoKey: string, sessionId: string) {
       db.prepare('INSERT OR IGNORE INTO edge (todo_key, session_id) VALUES (?,?)').run(todoKey, sessionId)
     },
+    /** Remove ONE specific (todoKey, sessionId) edge — used when correcting a mis-binding. */
+    removeEdge(todoKey: string, sessionId: string) {
+      db.prepare('DELETE FROM edge WHERE todo_key=? AND session_id=?').run(todoKey, sessionId)
+    },
     removeEdgesForSession(sessionId: string) {
       db.prepare('DELETE FROM edge WHERE session_id=?').run(sessionId)
     },
@@ -239,6 +299,13 @@ export function openStore(path: string) {
         id: r.id, cli: r.cli, cwd: r.cwd, projectId: r.project_id, todoKey: r.todo_key,
         sessionId: r.session_id, createdAt: r.created_at, bound: !!r.bound,
       }))
+    },
+    /** Fetch one launch intent by id regardless of bound state (null if absent). */
+    getLaunchIntent(id: string): LaunchIntent | null {
+      const r = db.prepare('SELECT * FROM launch_intent WHERE id=?').get(id) as any
+      if (!r) return null
+      return { id: r.id, cli: r.cli, cwd: r.cwd, projectId: r.project_id, todoKey: r.todo_key,
+        sessionId: r.session_id, createdAt: r.created_at, bound: !!r.bound }
     },
     bindIntent(id: string, sessionId: string) {
       db.prepare('UPDATE launch_intent SET session_id=?, bound=1 WHERE id=?').run(sessionId, id)
@@ -302,6 +369,21 @@ export function openStore(path: string) {
     allBoundLaunchSessionIds(): Set<string> {
       return new Set((db.prepare('SELECT session_id FROM launch_intent WHERE bound=1 AND session_id IS NOT NULL').all() as any[]).map(r => r.session_id))
     },
+    /** Every launch intent (bound or not). Drives the in-flight "启动中" overlay: a launch with a live
+     *  PTY but no jsonl on disk yet is surfaced from here so it survives a reload and a closed drawer. */
+    allLaunchIntents(): LaunchIntent[] {
+      return (db.prepare('SELECT * FROM launch_intent ORDER BY created_at DESC').all() as any[]).map(r => ({
+        id: r.id, cli: r.cli, cwd: r.cwd, projectId: r.project_id, todoKey: r.todo_key,
+        sessionId: r.session_id, createdAt: r.created_at, bound: !!r.bound,
+      }))
+    },
+    /** Drop a launch intent outright — used to sweep a dead orphan (pty gone, never surfaced). Distinct
+     *  from removeLaunchIntentsForSession (which clears by the bound session id). */
+    deleteLaunchIntent(id: string) {
+      db.prepare('DELETE FROM launch_intent WHERE id=?').run(id)
+    },
+    /** SQLite's data_version — bumps when ANOTHER connection/process commits. Same-connection writes do NOT bump it. */
+    dataVersion(): number { return db.pragma('data_version', { simple: true }) as number },
     ...dataMethods(db),
   }
 }

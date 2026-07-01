@@ -3,15 +3,20 @@ import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { createServer, type Server } from 'node:http'
 import { api } from './api'
-import { refresh, getCache, initData } from './store-singleton'
+import { refresh, getCache, getStore, initData } from './store-singleton'
 import { createPtyWss } from './pty-ws'
-import { createStatusWss } from './status-ws'
+import { createStatusWss, startDataVersionPoll } from './status-ws'
+import { startTaskStatusFlow } from './task-status-flow'
 import { killAllPtys } from './pty-registry'
 import { resolvePublicDir, resolveWebDistDir } from './public-dir'
 import { warmAgentBinaryCaches } from '../pty/binaries'
 import { warmSessionPool } from './warm-pool'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { setLocalServerAddress } from '../server-address'
+import { writeServerFile, removeServerFile } from '../server-discovery'
+import { listenWithFallback } from './listen'
+import { ensureAgentBerthShim } from '../pty/agent-shim'
 
 // Resolved by walking up to a public/index.html, so it works both in dev (tsx, src/server) and when
 // compiled (dist/server) with public/ shipped at the package root. See public-dir.ts.
@@ -73,6 +78,9 @@ export async function start(
   port = Number(process.env.PORT) || 7777,
   host = process.env.HOST || '127.0.0.1',   // loopback by default: /pty spawns CLIs with bypass-permission
                                             // flags, so binding all interfaces would be LAN RCE. Opt out knowingly.
+  // The app (server-process.cjs) opts into a free-port fallback so it always launches; the CLI keeps
+  // the default (false) so an explicit `--port` that's taken surfaces as an error, not a silent random port.
+  opts: { allowPortFallback?: boolean } = {},
 ) {
   await initData()   // one-time recordId→uuid migration before anything reads the data layer
   refresh()
@@ -80,19 +88,34 @@ export async function start(
   installShutdownCleanup()
   const server = createServer(createApp())
   attachWebSockets(server)   // /pty terminals + /status live-activity broadcast, one upgrade router
-  const hasWeb = !!WEB_DIST   // 2.0 SPA built and served at /app → callers open /app/ directly
-  return new Promise<{ port: number; hasWeb: boolean }>((resolve, reject) => {
-    const onListenError = (error: Error) => reject(error)
-    server.once('error', onListenError)
-    server.listen(port, host, () => {
-      server.off('error', onListenError)
-      const shown = host === '0.0.0.0' || host === '::' ? 'localhost' : host
-      const realPort = (server.address() as any)?.port ?? port
-      console.log(`Berth: ${getCache().length} sessions | http://${shown}:${realPort}${hasWeb ? '/app/' : ''}`)
-      // Pre-spawn the top-K sessions off the request path so their first open is instant. Detached:
-      // warming must never delay the listen, and a warm failure must never crash startup.
-      void warmSessionPool().catch(() => {})
-      resolve({ port: realPort, hasWeb })
-    })
+  // Path B of the session→task status flow: on settle, debounce, then apply the agent's decision.
+  startTaskStatusFlow({
+    store: getStore(),
+    getSession: (sid) => {
+      const s = getCache().find(x => x.sessionId === sid)
+      return s ? { sessionId: s.sessionId, cli: s.cli, contentSourcePath: s.contentSourcePath ?? null } : null
+    },
   })
+  const hasWeb = !!WEB_DIST   // 2.0 SPA built and served at /app → callers open /app/ directly
+  // Bind the preferred port. With allowPortFallback (the app), a NON-Berth holder makes us fall back to
+  // a free port (a live Berth server there was already reused upstream via findReusableServer). Without
+  // it (the CLI's explicit --port), an in-use port throws so the user's choice isn't silently relocated.
+  const realPort = await listenWithFallback(server, port, host, opts.allowPortFallback ?? false)
+  const shown = host === '0.0.0.0' || host === '::' ? 'localhost' : host
+  console.log(`Berth: ${getCache().length} sessions | http://${shown}:${realPort}${hasWeb ? '/app/' : ''}`)
+  setLocalServerAddress(realPort, host)
+  writeServerFile({ port: realPort, host, version: process.env.npm_package_version ?? undefined })
+  // CLI entry shipped beside the compiled server: dist/server/index.js → ../../bin/berth.mjs
+  // (in dev tsx: src/server/index.ts → ../../bin/berth.mjs → repo/bin/berth.mjs). Same relative path.
+  const cliEntry = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'berth.mjs')
+  ensureAgentBerthShim(cliEntry)
+  const cleanup = () => removeServerFile()
+  server.on('close', cleanup)
+  const stopPoll = startDataVersionPoll()
+  server.on('close', () => stopPoll())
+  process.once('exit', cleanup)
+  // Pre-spawn the top-K sessions off the request path so their first open is instant. Detached:
+  // warming must never delay the listen, and a warm failure must never crash startup.
+  void warmSessionPool().catch(() => {})
+  return { port: realPort, hasWeb, server }
 }

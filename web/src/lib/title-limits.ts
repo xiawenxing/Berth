@@ -1,0 +1,1 @@
+export const TASK_CREATE_INPUT_MAX_CHARS = 12_000

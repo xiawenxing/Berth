@@ -97,6 +97,9 @@ export function ProjectWorkspace() {
   )
   const [tasks, setTasks] = useState<Task[]>(realTasks)
   useEffect(() => setTasks(realTasks), [realTasks])
+  // Stable identity so memoized session Rows (rowPropsEqual compares tasks by ref) only re-render
+  // when the task option list actually changes, not on every parent render.
+  const sessionTaskOptions = useMemo(() => realTasks.map((t) => ({ id: t.id, title: t.title })), [realTasks])
 
   // Resolve each task's linked session IDs (ApiTask.sessions) to real sessions for the card's
   // expansion. Kept SEPARATE from the editable `tasks` state so live-status ticks refresh links
@@ -122,7 +125,9 @@ export function ProjectWorkspace() {
   const toRow = (s: (typeof projSessions)[number], pinned: boolean): SessionRow => ({
     id: s.sessionId,
     cli: s.cli,
-    title: imagePathPlaceholderText(s.title, '(未命名)'),
+    // A server-surfaced in-flight launch has no title yet → label it 启动中… (still fully openable;
+    // reopening reattaches to the live pty). Real titled sessions keep the normal placeholder fallback.
+    title: s.launching && !s.title ? '启动中…' : imagePathPlaceholderText(s.title, '(未命名)'),
     cwd: shortCwd(s.cwd),
     time: relTime(s.updatedAt),
     updatedAt: s.updatedAt,
@@ -176,7 +181,7 @@ export function ProjectWorkspace() {
       return b[1].length - a[1].length
     })
     let contextN = 1
-    return sorted.map(([cwd, rows]) => {
+    const sessionGroups: CwdGroup[] = sorted.map(([cwd, rows]) => {
       if (cwd === ws) {
         // rawCwd is the real (masked) workspace path — drives the import icon so sessions that ran
         // in the default workspace dir but weren't auto-curated can still be imported manually.
@@ -194,6 +199,9 @@ export function ProjectWorkspace() {
         rawCwd: cwd === NO_CWD ? undefined : cwd,
       }
     })
+    // 装载目录 with no imported session yet are NOT surfaced here — their import entry point
+    // lives on the 装载区域 row icon (CargoDefaults). Only session-derived groups appear.
+    return sessionGroups
   }, [projSessions, project, live.rev])
 
   const done = tasks.filter((t) => isDoneStatus(t.status)).length
@@ -257,6 +265,8 @@ export function ProjectWorkspace() {
       .edge(sessionId, taskId, id)
       .then(() => reload())
       .catch(() => reload())
+  const onCreateTaskFromSession = (sessionId: string) =>
+    api.createTaskFromSession(sessionId, id).then(() => reload())
 
   // ── 会话移出项目 + 装载目录联动 (§10.2) ──
   const norm = (p: string) => p.replace(/\/+$/, '')
@@ -575,7 +585,7 @@ export function ProjectWorkspace() {
           pin={pin}
           groups={groups}
           pending={pendingRows}
-          tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))}
+          tasks={sessionTaskOptions}
           onLaunch={() => launch('')}
           onResync={doResync}
           syncing={syncing}
@@ -585,10 +595,11 @@ export function ProjectWorkspace() {
           onImportOther={importOther}
           onGenerateTitle={onGenerateSessionTitle}
           onLinkTask={onLinkSessionTask}
+          onCreateTaskFromSession={onCreateTaskFromSession}
           onDetach={onDetach}
           onDetachGroup={onDetachGroup}
         />
-        <CargoDefaults paths={project?.pathsMeta ?? []} tasks={realTasks.map((t) => ({ id: t.id, title: t.title }))} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} />
+        <CargoDefaults paths={project?.pathsMeta ?? []} tasks={sessionTaskOptions} projectId={id} projectName={projName} onOpenDoc={setCtxDoc} onDone={doResync} onRemovePath={(cwd) => setRemoveCargo({ cwd })} onImported={(ids) => live.markSeenMany(ids)} />
       </div>
 
       <NewTaskDialog

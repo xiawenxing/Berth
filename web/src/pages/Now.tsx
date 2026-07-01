@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Pin, Play, ChevronDown, CalendarClock, Check, Sparkles, MoreHorizontal, CircleDot } from 'lucide-react'
+import { Pin, Play, ChevronDown, CalendarClock, Check, Sparkles, MoreHorizontal, CircleDot, Copy } from 'lucide-react'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/lib/utils'
 import { CliBadge } from '@/components/workspace/TaskCard'
@@ -167,7 +167,9 @@ function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void
   const ship = live.shipStatus(s.sessionId, s.updatedAt)
   const pending = !!s.__pending
   const pendingOpenable = pending && !!s.__pendingOpenable
-  const displayTitle = imagePathPlaceholderText(s.title, s.sessionId)
+  // A server-surfaced in-flight launch (launching) has no title yet; label it 启动中… like the
+  // optimistic placeholder, but it's a real, fully-openable session row (reopen reattaches the pty).
+  const displayTitle = s.launching && !s.title ? '启动中…' : imagePathPlaceholderText(s.title, s.sessionId)
 
   return (
     <div
@@ -203,8 +205,15 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
   const [kicked, setKicked] = useState(false) // instant feedback until titleGenerating takes over
   const [failed, setFailed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [copiedSessionId, setCopiedSessionId] = useState(false)
+  const copiedResetRef = useRef<number | null>(null)
   const generating = kicked || !!s.titleGenerating
   useEffect(() => { if (s.titleGenerating) setKicked(false) }, [s.titleGenerating])
+  useEffect(() => {
+    return () => {
+      if (copiedResetRef.current != null) window.clearTimeout(copiedResetRef.current)
+    }
+  }, [])
 
   const generateTitle = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -246,6 +255,19 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
     e.stopPropagation()
     setMenuOpen(false)
     live.markUnread(s.sessionId)
+  }
+
+  const copySessionId = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(s.sessionId)
+      setCopiedSessionId(true)
+      if (copiedResetRef.current != null) window.clearTimeout(copiedResetRef.current)
+      copiedResetRef.current = window.setTimeout(() => setCopiedSessionId(false), 1500)
+    } catch (err) {
+      console.error('copy session id failed', err)
+    }
   }
 
   if (pending) {
@@ -307,6 +329,9 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
               <CircleDot size={13} className="flex-none text-muted-foreground" /> 标为未读
             </MenuItem>
           )}
+          <MenuItem onClick={copySessionId}>
+            <Copy size={13} className="flex-none text-muted-foreground" /> {copiedSessionId ? '已拷贝 sessionId' : '拷贝原始 sessionId'}
+          </MenuItem>
         </AnchoredPopover>
       )}
     </div>

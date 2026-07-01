@@ -202,3 +202,49 @@ describe('migrateSessionDirsOnce', () => {
     expect(s.allSessionImportDirs()).toEqual([])
   })
 })
+
+describe('read-state', () => {
+  it('markSeen upserts max(last_seen) and resets explicit_unread', () => {
+    const db = openStore(':memory:')
+    db.markUnread('s1')                       // explicit unread first
+    db.markSeen(['s1'], 100)                  // seeing clears it + sets last_seen
+    db.markSeen(['s1'], 50)                   // older ts must not lower last_seen
+    const st = db.readState()
+    expect(st.lastSeen['s1']).toBe(100)
+    expect(st.unread['s1']).toBeUndefined()
+  })
+
+  it('markUnread sets the flag and preserves last_seen', () => {
+    const db = openStore(':memory:')
+    db.markSeen(['s1'], 100)
+    db.markUnread('s1')
+    const st = db.readState()
+    expect(st.lastSeen['s1']).toBe(100)
+    expect(st.unread['s1']).toBe(true)
+  })
+
+  it('readState lazily defaults the epoch and persists it', () => {
+    const db = openStore(':memory:')
+    const first = db.readState().epoch
+    expect(first).toBeGreaterThan(0)
+    expect(db.readState().epoch).toBe(first)  // stable across calls
+  })
+
+  it('importReadState merges max last_seen, OR unread, min epoch', () => {
+    const db = openStore(':memory:')
+    db.markSeen(['s1'], 100)
+    db.readState()                            // forces a server epoch (now, large)
+    db.importReadState({ seen: { s1: 50, s2: 200 }, unread: { s3: true }, epoch: 42 })
+    const st = db.readState()
+    expect(st.lastSeen['s1']).toBe(100)       // max(100, 50)
+    expect(st.lastSeen['s2']).toBe(200)
+    expect(st.unread['s3']).toBe(true)
+    expect(st.epoch).toBe(42)                 // min(now, 42)
+  })
+
+  it('importReadState adopts the incoming epoch when none exists yet', () => {
+    const db = openStore(':memory:')
+    db.importReadState({ epoch: 42 })   // no prior readState() → no stored epoch
+    expect(db.readState().epoch).toBe(42)
+  })
+})

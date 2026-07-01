@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, type AgentConfig, type ApiProject, type ApiSession, type ApiSettings, type ApiTask } from './api'
 import { DEFAULT_STATUSES } from './status'
+import { logDiag } from './diag'
 
 // A fresh launch in flight: shown as an optimistic "创建中…" placeholder in the lists until its
 // real session surfaces on disk (and in /api/sessions). Reconciled away by exact session id (claude/
@@ -54,11 +55,16 @@ function findSurfacedSession(sessions: ApiSession[], p: PendingLaunch): ApiSessi
   return sessions.find((s) => sessionMatchesPending(s, p))
 }
 
-function needsTitleBackfill(p: PendingLaunch, s: ApiSession): boolean {
-  // codex and coco both surface before their title is written (codex: thread_name; coco: session.json
-  // metadata.title lands a few seconds after the session file is created). Keep the refresh loop alive
-  // until the title backfills. claude writes its first user message into the transcript at creation, so
-  // it surfaces title-complete and never needs this.
+export function needsTitleBackfill(p: PendingLaunch, s: ApiSession): boolean {
+  // Keep the surfacing poll alive while the surfaced row is still the TRANSIENT launching placeholder —
+  // the synthetic live-PTY arm (launching=true, title=null, jsonl not scanned into `cache` yet). A
+  // claude launch can surface via that arm BEFORE the disk scan ingests its jsonl; resolving pending
+  // then freezes the card at "启动中…" — and it can't be renamed, because the synth row hardcodes
+  // title:null and is rebuilt every refresh. Polling on drives refreshSessions() until the disk arm
+  // supersedes it (launching clears, title appears). The 30-min LAUNCHED_PENDING_TTL_MS still bounds it.
+  if (s.launching) return true
+  // codex and coco also surface before their title is written (codex: thread_name; coco: session.json
+  // metadata.title lands a few seconds after the session file is created) — keep polling until it lands.
   return (p.cli === 'codex' || p.cli === 'coco') && !s.title
 }
 
@@ -69,9 +75,9 @@ function needsTitleBackfill(p: PendingLaunch, s: ApiSession): boolean {
 const DEFAULT_PRIORITIES = ['P0', 'P1', 'P2']
 const DEFAULT_AGENTS: AgentConfig = {
   list: [
-    { cli: 'claude', enabled: true, model: null },
-    { cli: 'codex', enabled: true, model: null },
-    { cli: 'coco', enabled: true, model: null },
+    { cli: 'claude', enabled: true, model: null, safeMode: false },
+    { cli: 'codex', enabled: true, model: null, safeMode: false },
+    { cli: 'coco', enabled: true, model: null, safeMode: false },
   ],
   berthAgentCli: 'claude',
   berthAgentModel: 'claude-haiku-4-5',
@@ -132,6 +138,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('berth:session-rekey', onRekey)
   }, [])
 
+  // Live refetch when the backend signals task data changed (CLI / API / another process). Debounced
+  // so a burst of {t:data} frames coalesces into one reload. Mirrors the rekey listener above.
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null
+    const onDataChanged = () => { if (t) return; t = setTimeout(() => { t = null; setNonce((n) => n + 1) }, 200) }
+    window.addEventListener('berth:data-changed', onDataChanged)
+    return () => { window.removeEventListener('berth:data-changed', onDataChanged); if (t) clearTimeout(t) }
+  }, [])
+
   // Drop a visible placeholder the moment its real session surfaces — by exact id (claude/coco) or by
   // the first new same-cli+cwd session (codex, bound late by reconcile) — or when it ages out.
   // Codex can surface before it has written a title/thread_name; keep a hidden pending watcher alive
@@ -149,27 +164,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!expired && needsTitleBackfill(p, surfaced)) {
           const updated = p.surfaced && p.sessionId === surfaced.sessionId ? p : { ...p, sessionId: surfaced.sessionId, surfaced: true }
           next.push(updated)
-          if (updated !== p) changed = true
+          if (updated !== p) { changed = true; logDiag('launch', 'surfaced', { launchToken: p.tempId, sessionId: surfaced.sessionId, cli: p.cli, ageMs: now - p.createdAt, titlePending: true }) }
         } else {
           changed = true
+          logDiag('launch', 'surfaced', { launchToken: p.tempId, sessionId: surfaced.sessionId, cli: p.cli, ageMs: now - p.createdAt })
         }
       } else if (!expired) {
         next.push(p)
       } else {
         changed = true
+        // Aged out without ever surfacing — the failure signature this whole effort targets. The
+        // durable launching-overlay should normally surface it first; if this still fires, the export
+        // shows whether a launched-frame ever arrived (hadLaunchedFrame) and how long it waited.
+        logDiag('launch', 'pending_expired', { launchToken: p.tempId, sessionId: p.sessionId ?? undefined, cli: p.cli, hadLaunchedFrame: !!p.sessionId, ageMs: now - p.createdAt, level: 'warn' })
       }
     }
     if (changed || next.length !== pending.length) setPending(next)
   }, [sessions, pending])
 
-  // While anything is in flight, keep re-scanning disk until it surfaces (then `pending` empties and
-  // this stops). Replaces SessionDrawer's old give-up-after-6s resync.
+  // While anything is in flight, surface it via a TARGETED sessions-only poll until `pending` empties
+  // (then this stops; placeholders also self-expire above, so a launch that never binds can't poll
+  // forever). Uses /api/launches/resolve — a sessions-only refresh — and updates only `sessions`,
+  // instead of the old api.refresh()+setNonce that re-ran the full data-source sync AND refetched
+  // projects/todos/settings every tick. Replaces SessionDrawer's old give-up-after-6s resync.
   useEffect(() => {
     if (pending.length === 0) return
     let cancelled = false
     const tick = async () => {
-      await api.refresh().catch(() => {})
-      if (!cancelled) setNonce((n) => n + 1)
+      const next = await api.resolveLaunches().catch(() => null)
+      if (!cancelled && next) setSessions(next.filter((x) => !x.deleted))
     }
     void tick() // immediate, so fast CLIs surface without waiting a full interval
     const iv = setInterval(() => void tick(), PENDING_POLL_MS)

@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, LogOut, Trash2, Check, CircleDot } from 'lucide-react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Pin, ChevronDown, Anchor, Terminal, Play, Link2, RefreshCw, Box, FolderInput, FolderPlus, Sparkles, MoreHorizontal, LogOut, Trash2, Check, CircleDot, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/Spinner'
 import { AnchoredPopover, MenuItem, MenuLabel } from '@/components/ui/Menu'
-import { useLive } from '@/lib/live'
+import { useLiveActions } from '@/lib/live'
 import { useShowMore } from '@/lib/paging'
 import { imagePathPlaceholderText } from '@/lib/format'
 import { ShowMoreToggle } from '@/components/ui/ShowMoreToggle'
@@ -31,14 +31,17 @@ function TaskTag({
   s,
   tasks,
   onLinkTask,
+  onCreateTaskFromSession,
 }: {
   s: SessionRow
   tasks?: SessionTaskOption[]
   onLinkTask: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onCreateTaskFromSession?: (sessionId: string) => Promise<void> | void
 }) {
   const ref = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
+  const [creating, setCreating] = useState(false)
   const linked = tasks?.find((t) => t.id === s.taskId)
   const isLinked = !!s.taskId
   const close = () => {
@@ -50,6 +53,20 @@ function TaskTag({
     close()
     await onLinkTask(s.id, taskId)
   }
+  const createFromSession = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!onCreateTaskFromSession) return
+    close()
+    setCreating(true)
+    try {
+      await onCreateTaskFromSession(s.id)
+    } catch (err) {
+      // best-effort：失败就恢复，标签回到原关联/未关联（reload 不会带来新任务）。
+      console.error('createTaskFromSession failed', err)
+    } finally {
+      setCreating(false)
+    }
+  }
   const needle = q.trim().toLowerCase()
   const filtered = (tasks ?? []).filter((t) => !needle || t.title.toLowerCase().includes(needle))
 
@@ -58,9 +75,11 @@ function TaskTag({
       <button
         ref={ref}
         type="button"
-        title={isLinked ? linked?.title ?? '已关联任务' : '关联到任务'}
+        disabled={creating}
+        title={creating ? '正在根据会话内容创建任务…' : isLinked ? linked?.title ?? '已关联任务' : '关联到任务'}
         onClick={(e) => {
           e.stopPropagation()
+          if (creating) return
           setOpen((v) => !v)
         }}
         className={cn(
@@ -68,11 +87,11 @@ function TaskTag({
           isLinked
             ? 'border border-brand/30 bg-brand/12 text-brand hover:bg-brand/20'
             : 'border border-dashed border-border text-text-dim opacity-0 hover:border-brand/45 hover:text-brand group-hover:opacity-100',
-          open && 'opacity-100',
+          (open || creating) && 'opacity-100',
         )}
       >
-        <Link2 size={10} className="flex-none" />
-        <span className="truncate">{isLinked ? linked?.title ?? '已关联任务' : '关联任务'}</span>
+        {creating ? <Spinner size={10} className="flex-none" /> : <Link2 size={10} className="flex-none" />}
+        <span className="truncate">{creating ? '创建中…' : isLinked ? linked?.title ?? '已关联任务' : '关联任务'}</span>
       </button>
       {open && (
         <AnchoredPopover anchor={ref} width={264} onClose={close}>
@@ -81,9 +100,21 @@ function TaskTag({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onClick={(e) => e.stopPropagation()}
+            // Keep keystrokes inside the search box: the parent row treats Space/Enter as
+            // "open session", and would also hijack the IME's Space-to-select. Don't let them bubble.
+            onKeyDown={(e) => e.stopPropagation()}
             placeholder="搜索任务…"
             className="mb-1.5 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-[12px] text-foreground outline-none focus:border-brand"
           />
+          {onCreateTaskFromSession && (
+            <>
+              <MenuItem onClick={createFromSession}>
+                <Sparkles size={13} className="flex-none text-brand" />
+                <span className="min-w-0 truncate text-brand">找不到合适的任务？一键创建任务</span>
+              </MenuItem>
+              <div className="my-1 border-t border-border" />
+            </>
+          )}
           <MenuLabel>关联任务</MenuLabel>
           <div className="max-h-60 overflow-y-auto">
             {filtered.length ? (
@@ -110,19 +141,7 @@ function TaskTag({
   )
 }
 
-/** A session row — faithful to v7 .srow: glyph · cli · title · ship pill · linked · cwd(right) ·
- *  time · hover actions(pin). Whole row opens the session; the pin toggle stops propagation. */
-function Row({
-  s,
-  showCwd,
-  onOpen,
-  onPin,
-  tasks,
-  onGenerateTitle,
-  onLinkTask,
-  onDetach,
-  onUnimport,
-}: {
+interface RowProps {
   s: SessionRow
   showCwd?: boolean
   onOpen?: (s: SessionRow) => void
@@ -130,16 +149,64 @@ function Row({
   tasks?: SessionTaskOption[]
   onGenerateTitle?: (id: string) => Promise<void> | void
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onCreateTaskFromSession?: (sessionId: string) => Promise<void> | void
   onDetach?: (id: string) => void // 移出项目 (detach → 无归属)
   onUnimport?: (id: string) => void // 取消导入 (remove from Berth's visible set)
-}) {
-  const live = useLive()
+}
+
+/** React.memo comparator: a single session's /status transition bumps live.rev, which rebuilds EVERY
+ *  row object (new `s`, new handler closures) even though only one row's visible data changed. Compare
+ *  the DISPLAY-affecting fields so unchanged rows skip the re-render. Handler identities are ignored on
+ *  purpose — they're id-based and behaviorally stable; comparing them would defeat the memo since the
+ *  parent makes fresh closures every render. (Returns true ⇒ props equal ⇒ skip re-render.) */
+export function rowPropsEqual(a: RowProps, b: RowProps): boolean {
+  if (a.showCwd !== b.showCwd) return false
+  if (a.tasks !== b.tasks) return false // by ref — ProjectWorkspace memoizes the options array
+  const x = a.s, y = b.s
+  return (
+    x.id === y.id &&
+    x.cli === y.cli &&
+    x.title === y.title &&
+    x.cwd === y.cwd &&
+    x.time === y.time &&
+    x.status === y.status &&
+    x.linkedTask === y.linkedTask &&
+    x.taskId === y.taskId &&
+    x.pinned === y.pinned &&
+    x.titleGenerating === y.titleGenerating &&
+    x.pending === y.pending &&
+    x.pendingOpenable === y.pendingOpenable
+  )
+}
+
+/** A session row — faithful to v7 .srow: glyph · cli · title · ship pill · linked · cwd(right) ·
+ *  time · hover actions(pin). Whole row opens the session; the pin toggle stops propagation. */
+function RowImpl({
+  s,
+  showCwd,
+  onOpen,
+  onPin,
+  tasks,
+  onGenerateTitle,
+  onLinkTask,
+  onCreateTaskFromSession,
+  onDetach,
+  onUnimport,
+}: RowProps) {
+  const actions = useLiveActions()
   const ship: ShipStatus = s.status === 'idle' ? 'moored' : s.status
   const moreBtnRef = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [kicked, setKicked] = useState(false) // instant feedback until titleGenerating takes over
+  const [copiedSessionId, setCopiedSessionId] = useState(false)
+  const copiedResetRef = useRef<number | null>(null)
   const generating = kicked || !!s.titleGenerating
   useEffect(() => { if (s.titleGenerating) setKicked(false) }, [s.titleGenerating])
+  useEffect(() => {
+    return () => {
+      if (copiedResetRef.current != null) window.clearTimeout(copiedResetRef.current)
+    }
+  }, [])
   // ⋯ menu now holds 标为已读/未读 (always) + 移出项目/取消导入 (when provided). Task-linking moved to TaskTag.
 
   // An in-flight launch placeholder: not yet a real, openable session — show 创建中… with a spinner
@@ -197,12 +264,24 @@ function Row({
   const markRead = (e: React.MouseEvent) => {
     e.stopPropagation()
     setMenuOpen(false)
-    live.markSeen(s.id)
+    actions.markSeen(s.id)
   }
   const markUnread = (e: React.MouseEvent) => {
     e.stopPropagation()
     setMenuOpen(false)
-    live.markUnread(s.id)
+    actions.markUnread(s.id)
+  }
+  const copySessionId = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(s.id)
+      setCopiedSessionId(true)
+      if (copiedResetRef.current != null) window.clearTimeout(copiedResetRef.current)
+      copiedResetRef.current = window.setTimeout(() => setCopiedSessionId(false), 1500)
+    } catch (err) {
+      console.error('copy session id failed', err)
+    }
   }
   const displayTitle = imagePathPlaceholderText(s.title)
 
@@ -241,7 +320,7 @@ function Row({
         {showCwd ? s.cwd : ''}
       </span>
       {/* 关联任务 — clickable marker in the right cluster (replaces the inline label + ⋯ task dump) */}
-      {onLinkTask && <TaskTag s={s} tasks={tasks} onLinkTask={onLinkTask} />}
+      {onLinkTask && <TaskTag s={s} tasks={tasks} onLinkTask={onLinkTask} onCreateTaskFromSession={onCreateTaskFromSession} />}
       <span className="flex-none whitespace-nowrap text-[11px] text-muted-foreground">{s.time}</span>
       <div className="flex flex-none items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
         {onGenerateTitle && (
@@ -297,6 +376,9 @@ function Row({
                 <CircleDot size={13} className="flex-none text-muted-foreground" /> 标为未读
               </MenuItem>
             )}
+            <MenuItem onClick={copySessionId}>
+              <Copy size={13} className="flex-none text-muted-foreground" /> {copiedSessionId ? '已拷贝 sessionId' : '拷贝原始 sessionId'}
+            </MenuItem>
             {(onDetach || onUnimport) && (
               <>
                 <div className="my-1 border-t border-border" />
@@ -332,6 +414,10 @@ function Row({
   )
 }
 
+/** Memoized: only re-renders a row when its own display data changes (see rowPropsEqual), so one
+ *  session's live-status transition no longer re-renders the entire session list. */
+const Row = memo(RowImpl, rowPropsEqual)
+
 /** A collapsible section (Pin or a cwd group) with a header and optional show-more. */
 function Section({
   icon,
@@ -349,6 +435,7 @@ function Section({
   tasks,
   onGenerateTitle,
   onLinkTask,
+  onCreateTaskFromSession,
   onDetach,
   onUnimport,
   onDetachGroup,
@@ -369,6 +456,7 @@ function Section({
   tasks?: SessionTaskOption[]
   onGenerateTitle?: (id: string) => Promise<void> | void
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onCreateTaskFromSession?: (sessionId: string) => Promise<void> | void
   onDetach?: (id: string) => void // row 移出项目
   onUnimport?: (id: string) => void // row 取消导入
   onDetachGroup?: (ids: string[]) => void // 移出整组
@@ -471,6 +559,7 @@ function Section({
               tasks={tasks}
               onGenerateTitle={onGenerateTitle}
               onLinkTask={onLinkTask}
+              onCreateTaskFromSession={onCreateTaskFromSession}
               onDetach={onDetach}
               onUnimport={onUnimport}
             />
@@ -505,6 +594,7 @@ export function SessionModule({
   tasks,
   onGenerateTitle,
   onLinkTask,
+  onCreateTaskFromSession,
   onDetach,
   onUnimport,
   onDetachGroup,
@@ -523,6 +613,7 @@ export function SessionModule({
   tasks?: SessionTaskOption[]
   onGenerateTitle?: (id: string) => Promise<void> | void
   onLinkTask?: (sessionId: string, taskId: string | null) => Promise<void> | void
+  onCreateTaskFromSession?: (sessionId: string) => Promise<void> | void
   onDetach?: (id: string) => void // row 移出项目
   onUnimport?: (id: string) => void // row 取消导入
   onDetachGroup?: (ids: string[], rawCwd?: string) => void // 移出整组
@@ -592,6 +683,7 @@ export function SessionModule({
                 tasks={tasks}
                 onGenerateTitle={onGenerateTitle}
                 onLinkTask={onLinkTask}
+                onCreateTaskFromSession={onCreateTaskFromSession}
                 onDetach={onDetach}
                 onUnimport={onUnimport}
               />
@@ -621,6 +713,7 @@ export function SessionModule({
                   tasks={tasks}
                   onGenerateTitle={onGenerateTitle}
                   onLinkTask={onLinkTask}
+                  onCreateTaskFromSession={onCreateTaskFromSession}
                   onDetach={onDetach}
                   onUnimport={onUnimport}
                   onDetachGroup={onDetachGroup ? (ids) => onDetachGroup(ids, g.rawCwd) : undefined}

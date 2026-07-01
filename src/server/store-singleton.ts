@@ -2,8 +2,9 @@ import { homedir } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { openStore } from '../db/store'
-import { collectLogicalSessions, filterImportedSessions, curatedSessionIds as computeCuratedIds } from '../sessions'
+import { collectLogicalSessions, filterImportedSessions, curatedSessionIds as computeCuratedIds, synthLaunchingSessions } from '../sessions'
 import { reconcileLaunchIntents } from './reconcile'
+import { hasLivePty } from './pty-registry'
 import { ensureBootstrap } from '../data/bootstrap'
 import { seedOnboarding } from '../data/onboarding'
 import { migrateIdentitiesOnce } from '../data/migrate'
@@ -19,6 +20,11 @@ import { setTaskSessionDigestProvider } from '../data/task-summary'
 import { readTranscript } from './context-consolidate-service'
 import { extractConversation } from '../agent/transcript'
 import { berthHome } from '../paths'
+import { scanLaunchCallbacks, startLaunchCallbackWatch } from './launch-callback-watch'
+import { codexCallbackDir } from '../pty/launch'
+import { syncRolloutWatch } from './rollout-watch'
+import { selectOrphanLaunches, selectExpiredUnboundIntents } from './orphan-sweep'
+import { logDiag } from './diag'
 import type { LogicalSession } from '../types'
 
 const DB_DIR = berthHome()
@@ -31,9 +37,48 @@ setDocStoreStore(store)
 setDocGitEnabled(getContextConfig(store).gitEnabled)
 
 let cache: LogicalSession[] = []
+let lastSynthSessionIds = new Set<string>()
 
 export function getStore() { return store }
 export function getCache(): LogicalSession[] { return cache }
+
+/**
+ * The UI's visible session set = the on-disk cache (the disk arm) PLUS in-flight Berth launches that
+ * have a live pty but no jsonl yet (the live-PTY arm; see `synthLaunchingSessions`). This — not
+ * `getCache()` — is what `/api/sessions` lists, so a launch survives a closed drawer / page reload and
+ * reopening reattaches to the live process. `getCache()` stays the pure on-disk truth used by the
+ * resume / title / warm-pool / first-turn paths, which deliberately must see only real sessions.
+ */
+export function visibleSessions(): LogicalSession[] {
+  const real = cache
+  const intents = store.allLaunchIntents()
+  const realIds = new Set(real.map(s => s.sessionId))
+  const synth = synthLaunchingSessions(intents, realIds, hasLivePty, store.allHiddenSessionSet())
+  logSynthSessionTransitions(synth, realIds)
+  return synth.length ? [...real, ...synth] : real
+}
+
+function logSynthSessionTransitions(synth: LogicalSession[], realIds: Set<string>): void {
+  const next = new Set(synth.map(s => s.sessionId))
+  for (const s of synth) {
+    if (lastSynthSessionIds.has(s.sessionId)) continue
+    logDiag({
+      category: 'launch', event: 'synth_row',
+      sessionId: s.sessionId, cli: s.cli, cwd: s.cwd,
+      launching: s.launching,
+    })
+  }
+  for (const sessionId of lastSynthSessionIds) {
+    if (next.has(sessionId)) continue
+    logDiag({
+      category: 'launch',
+      event: realIds.has(sessionId) ? 'synth_superseded' : 'synth_gone',
+      sessionId,
+      level: realIds.has(sessionId) ? 'info' : 'warn',
+    })
+  }
+  lastSynthSessionIds = next
+}
 
 // Let the data-layer task summarizer reach the in-memory session cache (which only the server knows
 // about) without a data→server import: for each session linked to the task (edges), read its raw
@@ -79,6 +124,10 @@ export async function initData(): Promise<void> {
   // Guard the scan at the call site so we don't pay a full 3-store disk scan on every boot post-migration.
   if (!store.getSetting('session-import-migrated'))
     migrateSessionImportOnce(store, collectLogicalSessions(storeRoots()))
+  // Channel A: pick up any callbacks dropped while Berth was down, then watch for new ones.
+  const cbDir = codexCallbackDir()
+  scanLaunchCallbacks(store, cbDir)
+  startLaunchCallbackWatch(store, cbDir)  // process-lifetime watcher; stop fn intentionally not stored (unref'd, no shutdown path)
 }
 
 /**
@@ -123,10 +172,16 @@ export function storeRoots(): { claudeRoot: string; codexRoot: string; cocoRoot:
 
 /**
  * Re-scan all 3 CLI stores, restrict to imported directories, persist identity rows, refresh the
- * in-memory cache. The scanned universe is sessions whose cwd is under an import root (∪ curated
- * sessions) — NOT every session in the CLI stores. See `filterImportedSessions`.
+ * in-memory cache, reconcile launches, and run the launch-lifecycle sweeps. The scanned universe is
+ * sessions whose cwd is under an import root (∪ curated sessions) — NOT every session in the CLI
+ * stores. See `filterImportedSessions`.
+ *
+ * This is the SESSIONS-ONLY core: exactly what the pending-launch poll needs (surface a just-bound
+ * session) and cheap (the adapter scan is mtime-cached). It deliberately omits the data-source
+ * auto-pull, which `refresh()` layers on — no reason to re-sync Feishu/Meego every 2.5s while the UI
+ * waits for a launch to surface.
  */
-export function refresh(): LogicalSession[] {
+export function refreshSessions(): LogicalSession[] {
   const all = collectLogicalSessions(storeRoots())
   cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet())
   store.upsertSessions(cache)
@@ -140,11 +195,44 @@ export function refresh(): LogicalSession[] {
     cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet())
     store.upsertSessions(cache)
   }
+  // P2b: drop never-bound codex intents that never produced a session_meta and whose pty is gone, so a
+  // failed launch can't keep Channel B's rollout poll armed forever (TTL generous: real codex writes
+  // session_meta within ms of start). Done BEFORE syncRolloutWatch so the poll disarms the same pass.
+  const nowSec = Math.floor(Date.now() / 1000)
+  for (const id of selectExpiredUnboundIntents(store.pendingIntents(), { nowSec, ttlSec: 600, hasLivePty })) {
+    logDiag({ category: 'launch', event: 'pending_expired', cli: 'codex', intentId: id })
+    store.deleteLaunchIntent(id)
+  }
+  // Channel B: arm/disarm the rollout-dir watch based on whether any codex launch is still unbound.
+  syncRolloutWatch(store)
+  // P2: sweep dangling claude/coco edges whose eagerly-bound session never materialized. "Exists" =
+  // present in the UNFILTERED disk scan (all), so a real-but-hidden/uncurated bound session is never
+  // swept; 10-min grace keeps a slow-but-real launch (cold start / trust dialog) safe.
+  const allIds = new Set(all.map(s => s.sessionId))
+  const boundLaunches = store.allLaunchIntents().filter(i => i.bound && i.sessionId)
+    .map(i => ({ id: i.id, sessionId: i.sessionId, createdAt: i.createdAt }))
+  for (const id of selectOrphanLaunches(boundLaunches, { nowSec, graceSec: 600, hasLivePty, sessionExists: (sid) => allIds.has(sid) })) {
+    const orphan = boundLaunches.find(b => b.id === id)
+    // A destructive drop (edge + intent) — log it so "where did my task↔session edge go" stays debuggable.
+    logDiag({ category: 'reconcile', event: 'orphan_sweep', sessionId: orphan?.sessionId ?? undefined, intentId: id })
+    if (orphan?.sessionId) store.removeEdgesForSession(orphan.sessionId)
+    store.deleteLaunchIntent(id)
+  }
+  return cache
+}
+
+/**
+ * Full refresh: the sessions core PLUS the data-source auto-pull. Use for user-driven / periodic
+ * refreshes; the hot pending-launch poll uses `refreshSessions()` to avoid re-syncing data sources
+ * on every tick.
+ */
+export function refresh(): LogicalSession[] {
+  const result = refreshSessions()
   // Auto-pull sources configured for it (default is manual → no-op). Fire-and-forget; never blocks.
   for (const s of store.allDataSources()) {
     if (s.enabled && s.pullMode === 'auto') {
       void syncSource(store, s, { docsRoot: getDocsRoot(store) }, { push: false }).catch(() => {})
     }
   }
-  return cache
+  return result
 }

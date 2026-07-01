@@ -6,6 +6,9 @@ import { join } from 'node:path'
 
 const mockExecFile = vi.hoisted(() => vi.fn())
 const mockGenerateTaskTitle = vi.hoisted(() => vi.fn(async (..._a: any[]) => '智能任务标题'))
+const mockGetAgentModelCatalogs = vi.hoisted(() => vi.fn(async (..._a: any[]) => [
+  { cli: 'codex', ok: true, source: 'cli', models: [{ id: 'gpt-5.5', label: 'GPT-5.5' }] },
+]))
 
 vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
@@ -70,10 +73,16 @@ const mockImportDirs = new Set<string>()
 const mockSettings = new Map<string, string>()
 const mockGetCache = vi.fn((..._a: any[]) => [] as any[])
 
+const mockRefresh = vi.fn()
+const mockRefreshSessions = vi.fn()
 vi.mock('../src/server/store-singleton', () => ({
   getStore: (...a: any[]) => mockGetStore(...a),
   getCache: (...a: any[]) => mockGetCache(...a),
-  refresh: vi.fn(),
+  // visibleSessions = on-disk cache ∪ in-flight launches; these tests exercise the disk arm, so it
+  // mirrors getCache(). The live-PTY arm is unit-tested directly via synthLaunchingSessions.
+  visibleSessions: (...a: any[]) => mockGetCache(...a),
+  refresh: (...a: any[]) => mockRefresh(...a),
+  refreshSessions: (...a: any[]) => mockRefreshSessions(...a),
 }))
 
 // ── Mock data/tasks domain module ─────────────────────────────────────────────
@@ -111,10 +120,12 @@ vi.mock('../src/agent/index', () => ({
   generateTaskTitle: (...a: any[]) => mockGenerateTaskTitle(...a),
   parseStructuredSummary: vi.fn((raw: string) => ({ headline: raw, progress: [], milestones: [] })),
 }))
+const mockExtractConversation = vi.hoisted(() => vi.fn((..._a: any[]) => ''))
 vi.mock('../src/agent/transcript', () => ({
   extractTitleContext: vi.fn(() => ''),
   extractUserGist: vi.fn(() => ''),
   titleInputFromTranscript: vi.fn((text: string) => text.trim() ? 'sampled title clue' : ''),
+  extractConversation: (...a: any[]) => mockExtractConversation(...a),
 }))
 
 // ── Mock pty-ws so its node-pty imports don't load (createApp never wires WS) ─
@@ -135,6 +146,10 @@ vi.mock('../src/data/context-doc', () => ({
 // ── Mock reconcile so refresh has no side-effects ────────────────────────────
 vi.mock('../src/server/reconcile', () => ({
   reconcileLaunchIntents: vi.fn(),
+}))
+
+vi.mock('../src/pty/model-catalog', () => ({
+  getAgentModelCatalogs: (...a: any[]) => mockGetAgentModelCatalogs(...a),
 }))
 
 // ── Mock context-consolidate-service so no real CLI/agent runs ────────────────
@@ -183,11 +198,15 @@ beforeEach(() => {
   mockCreateTask.mockResolvedValue({ status: 'created', record: { id: 'r', title: 'test', project: 'Berth' } })
   mockUpdateTask.mockClear()
   mockGenerateTaskTitle.mockReset().mockResolvedValue('智能任务标题')
+  mockGetAgentModelCatalogs.mockReset().mockResolvedValue([
+    { cli: 'codex', ok: true, source: 'cli', models: [{ id: 'gpt-5.5', label: 'GPT-5.5' }] },
+  ])
   mockSetTitleOverride.mockClear()
   mockSettings.clear()
   mockImportDirs.clear()
   mockRunContextUpdate.mockReset().mockResolvedValue({ ok: true, changed: [], added: [], removed: [], commit: null, rotated: false })
   mockReadTranscript.mockReset().mockReturnValue('transcript text')
+  mockExtractConversation.mockReset().mockReturnValue('')
   mockRevertCommit.mockReset().mockReturnValue({ ok: true })
 })
 
@@ -458,6 +477,15 @@ describe('settings API – agents config', () => {
     expect(r.status).toBe(400)
     expect(((await r.json()) as any).error).toBeTruthy()
   })
+
+  it('GET /agent-models returns probed model catalogs', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/agent-models?refresh=1`)
+    const j = await r.json() as any
+    expect(r.status).toBe(200)
+    expect(mockGetAgentModelCatalogs).toHaveBeenCalledWith(true)
+    expect(j.catalogs[0].models[0]).toEqual({ id: 'gpt-5.5', label: 'GPT-5.5' })
+  })
 })
 
 describe('pin/attach API – input validation (always)', () => {
@@ -507,6 +535,26 @@ describe('/api/sessions – live activity field (always)', () => {
     expect(after.find(s => s.sessionId === 's-live-1')?.activity).toBe('running')
 
     killPty('s-live-1')
+  })
+})
+
+describe('POST /api/launches/resolve – targeted pending-launch poll', () => {
+  it('runs the sessions-only refresh (not the full data-source-syncing refresh) and returns the session list', async () => {
+    mockRefresh.mockClear(); mockRefreshSessions.mockClear()
+    const sess = { sessionId: 's-resolve-1', cli: 'codex', cwd: '/x', title: 't', updatedAt: 100, deleted: false, copies: [] }
+    mockGetCache.mockReturnValue([sess])
+    const port = await listen()
+
+    const res = await fetch(`http://localhost:${port}/api/launches/resolve`, { method: 'POST' })
+    expect(res.status).toBe(200)
+    const body = await res.json() as any[]
+    expect(Array.isArray(body)).toBe(true)
+    expect(body.find(s => s.sessionId === 's-resolve-1')).toBeTruthy()
+
+    // The whole point of the targeted poll: surface launches without the per-tick data-source sync
+    // that the full refresh() runs.
+    expect(mockRefreshSessions).toHaveBeenCalledTimes(1)
+    expect(mockRefresh).not.toHaveBeenCalled()
   })
 })
 
@@ -856,6 +904,54 @@ describe('POST /api/edge', () => {
   })
 })
 
+// ── POST /api/todos/from-session: validation branches ────────────────────────
+describe('POST /api/todos/from-session', () => {
+  it('400 when sessionId missing', async () => {
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: 'P' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('404 when the session is unknown', async () => {
+    mockGetCache.mockReturnValue([])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'nope' }),
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('404 when the session exists but has no readable transcript', async () => {
+    mockGetCache.mockReturnValue([
+      { sessionId: 'sess-1', cli: 'claude', cwd: '/x', title: 't', updatedAt: 100, deleted: false, copies: [], contentSourcePath: null },
+    ])
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'sess-1' }),
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('422 when the extracted digest is empty', async () => {
+    mockGetCache.mockReturnValue([
+      { sessionId: 'sess-1', cli: 'claude', cwd: '/x', title: 't', updatedAt: 100, deleted: false, copies: [], contentSourcePath: '/x.jsonl' },
+    ])
+    mockExtractConversation.mockReturnValueOnce('   ')
+    const port = await listen()
+    const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'sess-1' }),
+    })
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({ error: 'empty session content' })
+  })
+})
+
 // ── T9: POST /api/context ─────────────────────────────────────────────────────
 describe('POST /api/context', () => {
   it('ensures a project context file', async () => {
@@ -1077,5 +1173,79 @@ describe('POST /api/doc/revert', () => {
     })
     expect(res.status).toBe(409)
     expect((await res.json() as any).error).toBe('invalid commit')
+  })
+})
+
+describe('open-local API', () => {
+  beforeEach(() => { mockExecFile.mockReset() })
+
+  // local header const (avoid shadowing the module-level `J`): JSON + loopback Origin.
+  const HDR = { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:7777' }
+
+  it('opens a file target via the platform command and returns ok', async () => {
+    // file existence is checked for kind:'file' — use a path we know exists: this test file's dir.
+    const existing = process.cwd()
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: any, cb: Function) => cb(null, '', ''))
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST', headers: HDR, body: JSON.stringify({ target: existing }),
+    })
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ ok: true })
+    expect(mockExecFile).toHaveBeenCalledTimes(1)
+    const [bin, args] = mockExecFile.mock.calls[0]
+    if (process.platform === 'darwin') { expect(bin).toBe('open'); expect(args).toEqual([existing]) }
+  })
+
+  it('passes a custom scheme through without an existence check', async () => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: any, cb: Function) => cb(null, '', ''))
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST', headers: HDR, body: JSON.stringify({ target: 'obsidian://open?file=x' }),
+    })
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ ok: true })
+    const [, args] = mockExecFile.mock.calls[0]
+    expect(args).toContain('obsidian://open?file=x')
+  })
+
+  it('rejects a missing target with 400', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST', headers: HDR, body: JSON.stringify({}),
+    })
+    expect(r.status).toBe(400)
+    expect(mockExecFile).not.toHaveBeenCalled()
+  })
+
+  it('rejects a foreign origin with 403', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example.com' },
+      body: JSON.stringify({ target: process.cwd() }),
+    })
+    expect(r.status).toBe(403)
+    expect(mockExecFile).not.toHaveBeenCalled()
+  })
+
+  it('rejects a non-JSON content-type with 415', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain', Origin: 'http://127.0.0.1:7777' },
+      body: 'target=/etc/hosts',
+    })
+    expect(r.status).toBe(415)
+    expect(mockExecFile).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for a non-existent file target', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/open-local`, {
+      method: 'POST', headers: HDR, body: JSON.stringify({ target: '/no/such/path/xyz-123.md' }),
+    })
+    expect(r.status).toBe(404)
+    expect(mockExecFile).not.toHaveBeenCalled()
   })
 })

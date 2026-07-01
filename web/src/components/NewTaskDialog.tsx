@@ -4,10 +4,12 @@ import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, pastedImageDataUrls, usePastedImages, type PastedImage } from './ImagePaste'
 import { LaunchConfigFields } from './LaunchConfigFields'
 import type { AgentCli, AgentConfig, ApiProject } from '@/lib/api'
-import { initCargo, type CargoState } from '@/lib/launch-cargo'
+import { addDir, initCargo, type CargoState } from '@/lib/launch-cargo'
 import type { Task } from '@/lib/types'
 import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draft-storage'
 import { loadLastAgent, saveLastAgent } from '@/lib/agent-preference'
+import { stripImagePlaceholders } from '@/lib/image-placeholders'
+import { TASK_CREATE_INPUT_MAX_CHARS } from '@/lib/title-limits'
 
 /**
  * 新建任务 — minimal immediate-create model: one big title textarea + two small
@@ -44,10 +46,15 @@ export function NewTaskDialog({
   const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
   const canRun = !run || (!!project?.id && !!selectedAgent)
   const taskDraftKey = draftKey(`new-task:${project?.id ?? 'global'}`)
+  const setLimitedText = useCallback((next: string) => {
+    const limited = next.slice(0, TASK_CREATE_INPUT_MAX_CHARS)
+    setText(limited)
+    writeDraft(taskDraftKey, limited)
+  }, [taskDraftKey])
 
   useEffect(() => {
     if (open && !wasOpen.current) {
-      setText(readDraft(taskDraftKey))
+      setText(readDraft(taskDraftKey).slice(0, TASK_CREATE_INPUT_MAX_CHARS))
       setAi(true)
       setRun(false)
       setAdjust(false)
@@ -75,14 +82,15 @@ export function NewTaskDialog({
     if (cargo.dirs.some((d) => d.cwd === cwd)) { setExtraDir(''); return }
     const ok = await onAddLaunchPath(cwd)
     if (!ok) return
-    setCargo({ ...cargo, dirs: [...cargo.dirs, { cwd, loaded: true }] })
+    setCargo(addDir(cargo, cwd))
     setExtraDir('')
   }
 
   const create = () => {
     if (!text.trim() && images.length === 0) return
     if (!canRun) return
-    onCreate(text.trim(), {
+    const cleanText = stripImagePlaceholders(text, images)
+    onCreate(cleanText, {
       aiSummarize: ai,
       runNow: run,
       images: pastedImageDataUrls(images),
@@ -98,7 +106,7 @@ export function NewTaskDialog({
   }
 
   return (
-    <Dialog open={open} onClose={cancel} width={run ? 560 : 460}>
+    <Dialog open={open} onClose={cancel} width={560}>
       <div className="border-b border-border px-4 py-3">
         <h3 className="text-[13px] font-semibold text-foreground">新建任务</h3>
         <p className="mt-0.5 text-[11px] text-muted-foreground">{run ? '创建后直接起航 · 配置会随任务一起生效' : '写个标题就走 · 港务助手在后台补全'}</p>
@@ -109,15 +117,20 @@ export function NewTaskDialog({
         <textarea
           ref={ref}
           value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            writeDraft(taskDraftKey, e.target.value)
-          }}
-          onPaste={onPasteImages}
+          maxLength={TASK_CREATE_INPUT_MAX_CHARS}
+          onChange={(e) => setLimitedText(e.target.value)}
+          onPaste={(e) => onPasteImages(e, {
+            value: text,
+            setValue: setLimitedText,
+            target: e.currentTarget,
+          })}
           rows={4}
           placeholder="粗略写个标题，或贴一段描述/图片都行"
           className="min-h-24 w-full resize-y rounded-md border border-border bg-card px-3 py-2.5 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
         />
+        <div className="mt-1 text-right text-[10.5px] text-muted-foreground">
+          {text.length}/{TASK_CREATE_INPUT_MAX_CHARS}
+        </div>
         <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />
         <div className="mt-2.5 flex flex-wrap gap-4">
           <MiniCheck on={ai} onToggle={() => setAi((v) => !v)} icon={<Sparkles size={12} />}>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare } from 'lucide-react'
+import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare, LifeBuoy, Download } from 'lucide-react'
+import { exportDiagLog } from '@/lib/diag'
 import { cn } from '@/lib/utils'
 import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
 import { useData } from '@/lib/data'
@@ -7,9 +8,10 @@ import { useUI } from '@/lib/ui-store'
 import { useLive } from '@/lib/live'
 import { useInlineEdit } from '@/lib/useInlineEdit'
 import { api } from '@/lib/api'
-import type { AgentCli, AgentEntry } from '@/lib/api'
+import type { AgentCli, AgentEntry, AgentModelCatalog } from '@/lib/api'
 import { priorityColors } from '@/lib/priority'
 import { statusMeta } from '@/lib/status'
+import { Switch } from '@/components/ui/Switch'
 
 export function Settings() {
   const [scheme, setScheme] = useState<string>(() => getScheme().id)
@@ -37,11 +39,22 @@ export function Settings() {
   const [savingVocab, setSavingVocab] = useState(false)
   const [savingAgents, setSavingAgents] = useState(false)
   const [agentError, setAgentError] = useState<string | null>(null)
+  const [modelCatalogs, setModelCatalogs] = useState<Partial<Record<AgentCli, AgentModelCatalog>>>({})
   useEffect(() => setStatuses(cfgStatuses), [cfgStatuses])
   useEffect(() => setPriorities(cfgPriorities), [cfgPriorities])
   useEffect(() => setAgentList(cfgAgents.list), [cfgAgents.list])
   useEffect(() => setBerthAgentCli(cfgAgents.berthAgentCli), [cfgAgents.berthAgentCli])
   useEffect(() => setBerthAgentModel(cfgAgents.berthAgentModel), [cfgAgents.berthAgentModel])
+  useEffect(() => {
+    let alive = true
+    api.agentModels()
+      .then(({ catalogs }) => {
+        if (!alive) return
+        setModelCatalogs(Object.fromEntries(catalogs.map((c) => [c.cli, c])) as Partial<Record<AgentCli, AgentModelCatalog>>)
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
   const vocabDirty =
     statuses.join('\0') !== cfgStatuses.join('\0') || priorities.join('\0') !== cfgPriorities.join('\0')
   const agentDirty =
@@ -129,8 +142,10 @@ export function Settings() {
               value={berthAgentModel}
               onChange={(e) => setBerthAgentModel(e.target.value)}
               placeholder="留空 = CLI 默认模型"
+              list={`model-options-berth-${berthAgentCli}`}
               className="min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground outline-none placeholder:text-text-dim"
             />
+            <ModelOptions id={`model-options-berth-${berthAgentCli}`} catalog={modelCatalogs[berthAgentCli]} />
           </Row>
           <ToggleRow label="主动提议建议" hint="船返港且有产出时给建议卡（可关）" on={proactive} onChange={() => setProactive((v) => !v)} />
           <ToggleRow label="新建任务默认 AI 自动总结标题" on={autoTitle} onChange={() => setAutoTitle((v) => !v)} />
@@ -141,6 +156,7 @@ export function Settings() {
             <AgentRow
               key={agent.cli}
               agent={agent}
+              catalog={modelCatalogs[agent.cli]}
               enabledCount={agentList.filter((a) => a.enabled).length}
               onChange={(patch) => updateAgent(agent.cli, patch)}
             />
@@ -178,6 +194,10 @@ export function Settings() {
             <code className="rounded bg-card px-2 py-1 font-mono text-[12px] text-foreground">~/.berth/docs</code>
             <button className="rounded-md border border-border px-2 py-1 text-[12px] hover:bg-accent">选择</button>
           </Row>
+        </Card>
+
+        <Card icon={<LifeBuoy size={14} />} title="诊断日志" hint="会话启动 / 连接 / 时序的埋点；遇到问题导出后发给维护者排查">
+          <DiagnosticsRow />
         </Card>
 
         {/* 数据源 / 同步——暂时隐藏 */}
@@ -356,6 +376,35 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     </div>
   )
 }
+function DiagnosticsRow() {
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  const onExport = async () => {
+    setBusy(true)
+    setDone(false)
+    try {
+      await exportDiagLog()
+      setDone(true)
+      window.setTimeout(() => setDone(false), 2500)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        onClick={onExport}
+        disabled={busy}
+        className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[12px] hover:bg-accent disabled:opacity-50"
+      >
+        <Download size={13} /> {busy ? '导出中…' : '导出诊断日志'}
+      </button>
+      <span className="text-[11px] text-text-dim">
+        {done ? '已导出 ✓' : '下载一个 JSON 文件（前后端事件时间线），可直接发给维护者'}
+      </span>
+    </div>
+  )
+}
 function ModeBtn({ active, onClick, label, hint, disabled }: { active: boolean; onClick: () => void; label: string; hint: string; disabled?: boolean }) {
   return (
     <button
@@ -379,20 +428,8 @@ function ToggleRow({ label, hint, on, onChange }: { label: string; hint?: string
         <div className="text-[12px] text-foreground">{label}</div>
         {hint && <div className="text-[11px] text-text-dim">{hint}</div>}
       </div>
-      <Toggle on={on} onChange={onChange} />
+      <Switch checked={on} onChange={onChange} />
     </div>
-  )
-}
-function Toggle({ on, onChange, disabled = false, title }: { on: boolean; onChange: () => void; disabled?: boolean; title?: string }) {
-  return (
-    <button
-      onClick={onChange}
-      disabled={disabled}
-      title={title}
-      className={cn('flex h-5 w-9 flex-none items-center rounded-full px-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50', on ? 'bg-success/70' : 'bg-muted')}
-    >
-      <span className={cn('h-4 w-4 rounded-full bg-card-foreground transition-transform', on && 'translate-x-4')} />
-    </button>
   )
 }
 function Segmented({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
@@ -417,16 +454,29 @@ function agentTone(cli: AgentCli): string {
   return 'text-purple'
 }
 
+function ModelOptions({ id, catalog }: { id: string; catalog?: AgentModelCatalog }) {
+  return (
+    <datalist id={id}>
+      {catalog?.models.map((m) => (
+        <option key={m.id} value={m.id} label={m.label} />
+      ))}
+    </datalist>
+  )
+}
+
 function AgentRow({
   agent,
+  catalog,
   enabledCount,
   onChange,
 }: {
   agent: AgentEntry
+  catalog?: AgentModelCatalog
   enabledCount: number
   onChange: (patch: Partial<AgentEntry>) => void
 }) {
   const canDisable = !agent.enabled || enabledCount > 1
+  const listId = `model-options-${agent.cli}`
   return (
     <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
       <span className={cn('w-16 text-[13px] font-semibold', agentTone(agent.cli))}>{agent.cli}</span>
@@ -438,11 +488,20 @@ function AgentRow({
           value={agent.model ?? ''}
           onChange={(e) => onChange({ model: e.target.value.trim() ? e.target.value : null })}
           placeholder="CLI 默认模型"
+          list={listId}
+          title={catalog?.source === 'cli' ? '已探测 CLI 模型列表' : catalog?.source === 'help' ? 'CLI help 中的模型别名' : '可手动输入模型'}
           className="w-48 rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground outline-none placeholder:text-text-dim"
         />
       )}
-      <Toggle
-        on={agent.enabled}
+      <ModelOptions id={listId} catalog={catalog} />
+      <span className="text-[11px] text-muted-foreground" title="开启后该 agent 每次工具调用前请求授权（仅交互式会话生效）">安全</span>
+      <Switch
+        checked={agent.safeMode}
+        onChange={() => onChange({ safeMode: !agent.safeMode })}
+        title={agent.safeMode ? '安全模式：开（启动时请求授权）' : '安全模式：关（最高权限）'}
+      />
+      <Switch
+        checked={agent.enabled}
         onChange={() => canDisable && onChange({ enabled: !agent.enabled })}
         disabled={!canDisable}
         title={!canDisable ? '至少保留一个启动 Agent' : agent.enabled ? '停用' : '启用'}

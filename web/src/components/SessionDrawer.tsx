@@ -6,6 +6,7 @@ import { useUI } from '@/lib/ui-store'
 import { useData } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api } from '@/lib/api'
+import { logDiag } from '@/lib/diag'
 
 /**
  * 60vw right-side session drawer (style 2 — no card). Slim header (no ■/×).
@@ -26,6 +27,19 @@ export function SessionDrawer() {
   useEffect(() => () => {
     if (optimisticTimer.current !== null) clearTimeout(optimisticTimer.current)
   }, [])
+  // Log drawer open/close transitions. A close while a launch is still in flight (no sessionId bound
+  // yet) is the exact action that used to strand a session — keeping it on the timeline makes that
+  // sequence visible in an exported report.
+  const prevDrawerRef = useRef<typeof drawer>(null)
+  useEffect(() => {
+    const prev = prevDrawerRef.current
+    if (!prev && drawer) {
+      logDiag('ui', 'drawer_open', { launchToken: drawer.launch?.launchToken, sessionId: drawer.sessionId ?? undefined, cli: drawer.cli, isLaunch: !!drawer.launch })
+    } else if (prev && !drawer) {
+      logDiag('ui', 'drawer_close', { launchToken: prev.launch?.launchToken, sessionId: prev.sessionId ?? undefined, cli: prev.cli, wasLaunch: !!prev.launch, hadSessionId: !!prev.sessionId })
+    }
+    prevDrawerRef.current = drawer
+  }, [drawer])
   // Tell live which session is on screen so output landing on it stays read (see live.tsx act
   // handler). Without this, a result that arrives while the drawer is open would surface as unread
   // until the user closes & reopens the session.

@@ -122,6 +122,30 @@ live-reloading SPA. `npm test` = unit; `*.live.test.ts` are gated behind `BERTH_
   fresh launches plan + record attribution + spawn + register. `planFreshLaunch` is pure/tested.
 - `server/reconcile.ts` — binds pending codex launch-intents to their real session id on refresh and
   **rekeys the live pty** so a later click reattaches instead of spawning a parallel resume.
+- `server/bind.ts` + `server/launch-callback*.ts` + `server/rollout-match.ts` + `server/rollout-watch.ts`
+  — codex binds the task↔session edge **at session start** via two idempotent channels, not the old
+  reconcile-only path (see gotcha #17). **A** (`launch-callback*`): the SessionStart hook drops codex's
+  envelope (real `session_id`) to `$BERTH_HOME/launch-callbacks/<intentId>.json`, watched + bound by
+  token (exact). **B** (`rollout-*`): fallback watch of the codex rollout dir's `session_meta`
+  (per-cwd FIFO, 90s window), armed only while a codex intent is unbound. `server/bind.ts`'s
+  `bindIntentToSession` is the shared store-write (edge+attach+bindIntent) used by reconcile + both
+  channels. `server/orphan-sweep.ts` drops dangling claude/coco edges whose eager session never
+  materialized (10-min grace; existence checked against the UNFILTERED scan so a hidden session isn't swept).
+
+- `server/launch-firstturn.ts` — Model-A first-turn safety net. claude/coco TUI launches deliver
+  the first turn as the native positional prompt; on a slow cold start the composer auto-submit can
+  miss (gotcha #15), pre-filling without the Enter. `armFirstTurnNudge` schedules up to two delayed
+  `\r` writes that submit the pre-filled prompt IF the session still hasn't surfaced (guarded against
+  double-submit by a `surfaced()` check; codex/Model-B excluded). Pure decision + injectable scheduler.
+
+**Diagnostics (`server/diag.ts` + `web/src/lib/diag.ts`):** a structured event log of the launch /
+connection / surfacing lifecycle, for troubleshooting intermittent launch failures on users' machines.
+Both sides emit events keyed by `launchToken`/`sessionId`; the browser flushes to `POST /api/diag` so
+the export is ONE correlated timeline. Server buffers in a ring + appends rotating JSONL under
+`BERTH_HOME/logs`; `GET /api/diag/export` downloads the merged bundle (Settings → 诊断日志 → 导出).
+Prompt text is redacted to len+hash; image payloads dropped. Best-effort: logging never throws into a
+launch. Key signals: `launch/pending_expired` (a placeholder aged out without surfacing — the failure
+mode), `pty/exit` with viewer count, `firstturn/nudge_fired`.
 
 **Wiring:** `server/index.ts` (express + ws, JSON limit 30mb for pasted images), `server/api.ts`
 (all REST routes), `bin/berth-serve.ts` (entry).
@@ -175,6 +199,18 @@ Frontend side: `web/src/components/Terminal.tsx` opens `/pty`; reconnect is the 
 the top expands the requested `historyBytes` window and reconnects to replay a larger spool tail.
 Because xterm raw ANSI state cannot be safely prepended from an arbitrary byte boundary, this is a
 larger-tail replay rather than a seamless infinite-scroll prepend.
+
+### Session → task status flow (`src/server/task-status-flow.ts`)
+
+When Berth launches a task-linked session, it automatically advances task status through two lifecycle hooks:
+
+- **On launch**: `advanceTodoOnLaunch` fires once and moves the linked task from 待办 → 进行中 (one-shot; no-op if already past 待办).
+- **On session settle**: a ~5 s debounce (after the last PTY output line) triggers `reconcileTaskStatusForSession`, which updates status via one of two paths:
+  - **Path A** — the agent runs `berth task done --id <taskId>` or `berth task status --id <taskId> <status>`. The `--id` flag resolves by uuid only, so there is no title-mismatch risk. The command is injected into the agent's context via the manifest finish-protocol (`src/i18n.ts` `finishProtocol()`).
+  - **Path B** — the agent emits `BERTH_TASK_STATUS: <taskId> <status>` on its own line in the transcript. Berth parses this sentinel and applies the status — but only if the task is still at 进行中 (so Path A wins when both paths fire).
+- **No decision**: if neither path fires, the task stays at 进行中 — Berth never silently marks a task done.
+
+> Deferred: making the `berth` CLI reliably on PATH on agent-launched machines so Path A works without a global install. Path B is already CLI-independent and provides correctness guarantees either way.
 
 ---
 
@@ -394,6 +430,28 @@ is the session-grained model that replaced the old directory-grained one (where 
     `pty/trust.ts`, so the positional reliably reaches it.
     - Image launches are unaffected (their first turn rides the client prime socket; server
       `initialPrompt` is undefined there, so no double-submission). Model B (stream) delivers its own turn.
+16. **`/api/sessions` is NOT just `getCache()` — it overlays in-flight launches** (`launchingOverlay`
+    in `api.ts`). A fresh launch surfaces normally only once the CLI writes a jsonl (needs a completed
+    turn); before that it's absent from the disk scan. Such a launch (bound `launch_intent` + a LIVE
+    pty, keyed by `intent.sessionId ?? intent.id`) is synthesized as a `launching:true` row so closing
+    the drawer / reloading the page can't strand a running-but-invisible agent (the "wedged in 创建中,
+    lost on reload" bug). Gated on `hasLivePty` — a dead launch shows no ghost. Paired with the resume
+    branch reattaching (not killing) an in-flight launch whose id isn't in the cache yet, and the
+    first-turn nudge (`launch-firstturn.ts`). So: a `/api/sessions` row need not be in `getCache()`;
+    don't assume the two are 1:1.
+17. **codex task↔session bind is now EAGER (at session start), not reconcile-only.** Two idempotent
+    channels write the `edge` the moment codex starts, so a kill+restart can't drop the link the way
+    the old 40s-window reconcile intermittently did: **(A)** the codex SessionStart hook drops codex's
+    launch envelope to `$BERTH_HOME/launch-callbacks/<intentId>.json` — the file NAME carries the launch
+    token (= the intent id) for an EXACT bind; **(B)** a fallback `fs.watch` of the rollout dir reads the
+    first-line `session_meta` and binds by **per-cwd FIFO + a 90s window** (`matchRolloutToIntent` takes
+    the earliest same-cwd pending intent and checks ONLY its window — it does NOT fall through to a later
+    intent). The hook envelope carries `session_id`+`cwd`+`transcript_path` (probe-verified, codex
+    0.142.0); codex's `notify` is NOT usable (single slot, occupied by Computer Use, fires `turn-ended`).
+    The legacy `watchCodexFirstTurn`/`reconcile` is now a last-ditch fallback — don't reintroduce a
+    correctness dependency on the 40s window. claude/coco are unaffected (they pre-mint `--session-id`
+    and edge synchronously at launch); their only residual risk is a dangling edge if the session never
+    materializes, swept by `orphan-sweep.ts`. See the bind-reliability spec/plan under `docs/superpowers/`.
 
 ---
 

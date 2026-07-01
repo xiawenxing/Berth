@@ -50,16 +50,38 @@ Useful commands after startup:
 berth task list
 berth task add "Ship the onboarding polish"
 berth project list
+berth session bind <task>          # tie the current session to a task (omit <sessionId> for "this session")
+berth session list                 # see sessions and the task each is bound to
 ```
 
 ### Option 2: macOS desktop app
 
-Download the latest signed DMG from
-[GitHub Releases](https://github.com/xiawenxing/Berth/releases/latest), open it, drag **Berth** to
-Applications, then launch it.
+Download the latest DMG from
+[GitHub Releases](https://github.com/xiawenxing/Berth/releases/latest), open it, and drag **Berth**
+into Applications.
 
-The DMG must be signed and notarized. If macOS reports that Berth is damaged, discard that artifact
-and download the latest release.
+#### First launch (one-time)
+
+Berth's macOS builds are ad-hoc signed but **not** notarized through Apple's paid Developer Program,
+so Gatekeeper shows a warning the first time you open it. The app is unmodified — you just have to
+approve it once:
+
+1. Open **Applications**, then **right-click (Control-click) Berth → Open**.
+2. Click **Open** in the dialog that appears.
+
+That's it — after this one approval, Berth opens normally on every double-click from then on.
+
+> Do **not** double-click on the very first launch. Double-clicking an un-approved download gives a
+> dead-end "*Apple cannot check it for malicious software*" dialog with no Open button. Use
+> right-click → Open instead.
+
+If right-click → Open is blocked (macOS 15 Sequoia removed that shortcut for unnotarized apps), or
+you'd rather skip the warning entirely, run this once in Terminal to strip the download-quarantine
+flag, then launch normally:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Berth.app
+```
 
 ## Requirements
 
@@ -75,7 +97,7 @@ and download the latest release.
 4. Resume live sessions from Berth whenever you need to inspect or continue the work.
 
 The bundled skill lets agents manage Berth tasks/projects for you through `berth task` and
-`berth project`.
+`berth project`, and bind their own (or any existing) session to a task with `berth session`.
 
 ## Optional Integrations
 

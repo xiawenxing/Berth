@@ -27,6 +27,15 @@ function execHelp(bin: string, timeout: number): Promise<string> {
   })
 }
 
+export function execVersion(bin: string, timeout: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(bin, ['--version'], { encoding: 'utf8', timeout }, (err, stdout, stderr) => {
+      if (err) { reject(err); return }
+      resolve(`${stdout ?? ''}${stderr ?? ''}`)
+    })
+  })
+}
+
 export function resolveAgentBinary(cli: AgentCli): string {
   const c = firstUsableCandidate(cli)
   if (!c) throw new Error(`no binary for ${cli}`)

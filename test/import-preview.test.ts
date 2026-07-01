@@ -32,6 +32,13 @@ describe('previewByCli', () => {
   it('returns [] for a CLI with no sessions', () => {
     expect(previewByCli(SESSIONS.filter(x => x.cli !== 'codex'), 'codex')).toEqual([])
   })
+
+  it('applies the Berth rename override over the session title (berth名 > 原生/推断)', () => {
+    const overrides = new Map([['c1', 'My renamed session']])
+    const out = previewByCli(SESSIONS, 'claude', overrides)
+    expect(out.find(p => p.sessionId === 'c1')!.title).toBe('My renamed session')
+    expect(out.find(p => p.sessionId === 'c2')!.title).toBe('A2')   // no override → unchanged
+  })
 })
 
 describe('previewByIds', () => {
@@ -50,5 +57,10 @@ describe('previewByIds', () => {
     const { found, notFound } = previewByIds(SESSIONS, ['c1', 'c1'])
     expect(found.map(p => p.sessionId)).toEqual(['c1'])
     expect(notFound).toEqual([])
+  })
+
+  it('applies the Berth rename override to found sessions', () => {
+    const { found } = previewByIds(SESSIONS, ['x1'], new Map([['x1', '改过的名字']]))
+    expect(found[0].title).toBe('改过的名字')
   })
 })

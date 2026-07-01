@@ -49,7 +49,7 @@ export function Composer({
           ref={taRef}
           value={text}
           onChange={(e) => { setText(e.target.value); grow(e.target) }}
-          onPaste={onPasteImages}
+          onPaste={(e) => onPasteImages(e, { value: text, setValue: setText, target: e.currentTarget })}
           onKeyDown={onKeyDown}
           rows={1}
           placeholder="发消息… (Enter 发送 · Shift+Enter 换行，可粘贴图片)"

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, pastedImageDataUrls, usePastedImages } from './ImagePaste'
+import { stripImagePlaceholders } from '@/lib/image-placeholders'
 
 /**
  * 新建项目 — name + description + ☑ AI 根据描述生成项目上下文. No repo path
@@ -35,7 +36,7 @@ export function NewProjectDialog({
 
   const create = () => {
     if (!name.trim()) return
-    onCreate(name.trim(), desc.trim(), ai, pastedImageDataUrls(images))
+    onCreate(name.trim(), stripImagePlaceholders(desc, images), ai, pastedImageDataUrls(images))
     onClose()
   }
 
@@ -62,7 +63,7 @@ export function NewProjectDialog({
           <textarea
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
-            onPaste={onPasteImages}
+            onPaste={(e) => onPasteImages(e, { value: desc, setValue: setDesc, target: e.currentTarget })}
             rows={3}
             placeholder="简单描述这个项目是做什么的…（可粘贴图片）"
             className="w-full resize-y rounded-md border border-border bg-card px-3 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"

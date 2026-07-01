@@ -5,6 +5,7 @@ import { listProjects, createProject } from './projects'
 import { getTaskFieldConfig } from './task-config'
 import { resolveBerthAgent } from './agent-config'
 import { triggerTaskSummary } from './task-summary'
+import { compactTitle, TASK_CREATE_INPUT_MAX_CHARS } from '../title-limits'
 import type { DocStore } from './docstore'
 import type { Task } from './types'
 
@@ -28,7 +29,7 @@ export function listTasks(store: Store): Task[] {
  *   2. project resolution — explicit `projectId` (never auto-create an option unless `createOption`),
  *      else AI `classifyProject` writing an existing project only when confidently the single winner.
  *   3. mint a Berth uuid + insert.
- *   4. pasted images → Berth docstore: write the task's detail md embedding them, set `detail_doc`.
+ *   4. original request + pasted images → Berth docstore detail md, set `detail_doc`.
  * External push is the sync engine's job (runs separately per push_mode).
  */
 export async function createTask(
@@ -38,11 +39,13 @@ export async function createTask(
   opts: { projectId?: string; confirm?: boolean; createOption?: boolean; images?: string[]; autoTitle?: boolean } = {},
   now: Now = Date.now,
 ): Promise<CreateResult> {
-  text = text.trim()
-  if (!text) throw new Error('empty task text')
+  const originalText = text.trim()
+  const images = opts.images ?? []
+  if (!originalText && images.length === 0) throw new Error('empty task text')
+  if (originalText.length > TASK_CREATE_INPUT_MAX_CHARS) throw new Error(`task text too long: max ${TASK_CREATE_INPUT_MAX_CHARS} chars`)
 
   // 1. search-before-create
-  const dup = findDuplicate(store, text)
+  const dup = originalText ? findDuplicate(store, originalText) : null
   if (dup && !opts.confirm) return { status: 'duplicate', existing: dup }
 
   const projects = listProjects(store)
@@ -54,7 +57,7 @@ export async function createTask(
   if (opts.projectId) {
     const existing = projects.find(p => p.id === opts.projectId || p.name === opts.projectId)
     if (!existing) {
-      if (!opts.createOption) return { status: 'needs-confirm', text, candidates: [], needNewProject: true, suggestedNewName: opts.projectId }
+      if (!opts.createOption) return { status: 'needs-confirm', text: originalText, candidates: [], needNewProject: true, suggestedNewName: opts.projectId }
       const created = createProject(store, opts.projectId)
       projectId = created.id
       project = created.name
@@ -65,7 +68,7 @@ export async function createTask(
   } else if (opts.confirm) {
     // confirm with no projectId → taskless write
   } else {
-    const cls = await classifyProject(text, names, resolveBerthAgent(store))
+    const cls = await classifyProject(originalText, names, resolveBerthAgent(store))
     const top = cls.candidates[0]
     if (top && top.confidence >= CONFIDENCE_THRESHOLD && !cls.needNewProject &&
         (cls.candidates.length === 1 || top.confidence - cls.candidates[1].confidence >= 0.2)) {
@@ -73,19 +76,19 @@ export async function createTask(
       projectId = p?.id ?? null
       project = p?.name ?? top.name
     } else {
-      return { status: 'needs-confirm', text, candidates: cls.candidates, needNewProject: cls.needNewProject, suggestedNewName: cls.suggestedNewName }
+      return { status: 'needs-confirm', text: originalText, candidates: cls.candidates, needNewProject: cls.needNewProject, suggestedNewName: cls.suggestedNewName }
     }
   }
 
-  let title = text
-  if (opts.autoTitle) {
+  let title = originalText ? compactTitle(originalText) : '图片任务'
+  if (opts.autoTitle && originalText) {
     try {
-      const generated = (await generateTaskTitle(text, resolveBerthAgent(store))).trim()
+      const generated = compactTitle(await generateTaskTitle(originalText, resolveBerthAgent(store)))
       if (generated) title = generated
     } catch {
       // Title generation is best-effort; task creation should not fail just because the agent is blocked.
     }
-    const titleDup = title !== text ? findDuplicate(store, title) : null
+    const titleDup = title !== compactTitle(originalText) ? findDuplicate(store, title) : null
     if (titleDup && !opts.confirm) return { status: 'duplicate', existing: titleDup }
   }
 
@@ -99,12 +102,11 @@ export async function createTask(
   }
   store.insertTask(task)
 
-  // 4. pasted images → detail doc owned by Berth
+  // 4. Preserve the task creation payload as the durable execution context. The short title is only
+  // a human index; task id + context doc carry the full semantics agents need when launched later.
   let detailDoc: string | undefined
-  if (opts.images && opts.images.length) {
-    try { detailDoc = attachImagesAsDetailDoc(store, docStore, id, title, project, opts.images, now) }
-    catch { /* best-effort; the task already exists */ }
-  }
+  try { detailDoc = writeInitialTaskContextDoc(store, docStore, id, title, project, originalText, images, now) }
+  catch { /* best-effort; the task already exists */ }
 
   return { status: 'created', record: { id, title, projectId, project, detailDoc } }
 }
@@ -114,7 +116,7 @@ export function updateTask(store: Store, id: string, patch: { title?: string; pr
   if (!id) throw new Error('id required')
   const cfg = getTaskFieldConfig(store)
   const fields: { title?: string; priority?: string; status?: string; progress?: string } = {}
-  if (typeof patch.title === 'string' && patch.title.trim()) fields.title = patch.title.trim()
+  if (typeof patch.title === 'string' && patch.title.trim()) fields.title = compactTitle(patch.title)
   if (typeof patch.priority === 'string') {
     if (!cfg.priorities.includes(patch.priority)) throw new Error(`invalid priority: ${patch.priority}`)
     fields.priority = patch.priority
@@ -144,14 +146,50 @@ export function deleteTask(store: Store, id: string, now: Now = Date.now): { ok:
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
-function attachImagesAsDetailDoc(store: Store, docStore: DocStore, id: string, title: string, project: string | null, images: string[], now: Now): string | undefined {
+function writeInitialTaskContextDoc(
+  store: Store,
+  docStore: DocStore,
+  id: string,
+  title: string,
+  project: string | null,
+  originalText: string,
+  images: string[],
+  now: Now,
+): string | undefined {
   const ref = docStore.taskDocRef(id)                 // tasks/<id>/index.md
   const destDir = ref.replace(/\/[^/]*$/, '')         // tasks/<id> — co-locate assets next to the note
   const saved = images.map(d => docStore.saveAttachment(d, 'task', destDir)).filter((s): s is { rel: string; abs: string } => !!s)
-  if (!saved.length) return undefined
   const abs = docStore.resolveDocPath(ref)
   if (!abs) return undefined
-  const md = `# ${title}\n\n- **项目领域**：${project ?? '（无）'}\n\n---\n\n## 附图\n\n${saved.map(s => `![](${s.rel})`).join('\n\n')}\n`
+  const request = originalText || '（仅通过粘贴图片创建，见下方附图。）'
+  const imageSection = saved.length ? `\n## 附图\n\n${saved.map((s, i) => `![任务附图 ${i + 1}](${s.rel})`).join('\n\n')}\n\n` : ''
+  const md = [
+    `# ${title} — 任务上下文`,
+    '',
+    '## Goal / Acceptance',
+    '<!-- stable: do not change unless asked -->',
+    '',
+    request,
+    '',
+    '## Background',
+    `<!-- stable: belongs to project ${project ?? '—'} -->`,
+    '',
+    '## Original request',
+    '<!-- stable: verbatim user-provided creation details -->',
+    '',
+    request,
+    '',
+    imageSection.trimEnd(),
+    '## Plan / TODO',
+    '<!-- active: - [ ] checkboxes, tick when done -->',
+    '',
+    '## Decisions / Risks',
+    '<!-- active -->',
+    '',
+    '## Progress log',
+    '<!-- append-only: - YYYY-MM-DD: … -->',
+    '',
+  ].filter((line) => line !== '').join('\n') + '\n'
   docStore.writeDoc(abs, md)
   store.updateTaskFields(id, { detailDoc: ref }, now())
   return ref

@@ -2,9 +2,12 @@
 // Talks to the RUNNING server's REST API so the server stays the single writer and runs sync. Pure
 // helpers (flag parsing, task selection, formatting) are exported for unit tests; the runners do I/O.
 
+import { readServerFile } from './server-discovery'
+import { canonicalPathKey } from './path-normalize'
+
 export interface ParsedFlags { flags: Record<string, string | boolean>; pos: string[] }
 
-const BOOL_FLAGS = new Set(['json', 'confirm', 'create-option', 'print'])
+const BOOL_FLAGS = new Set(['json', 'confirm', 'create-option', 'print', 'id'])
 
 /** Tiny flag parser: `--key val`, `--bool`, and positionals. Side-effect-free. */
 export function parseFlags(argv: string[]): ParsedFlags {
@@ -27,11 +30,14 @@ export interface TaskLite { id: string; title: string; status: string | null; pr
  * Resolve a human-typed task reference to matching tasks. Tries: exact id, id-prefix (≥6 chars),
  * then case-insensitive title substring. Returns ALL matches so the caller can disambiguate.
  */
-export function selectTask<T extends TaskLite>(tasks: T[], query: string): T[] {
+export function selectTask<T extends TaskLite>(tasks: T[], query: string, opts?: { idOnly?: boolean }): T[] {
   const q = query.trim()
   if (!q) return []
   const exact = tasks.find(t => t.id === q)
   if (exact) return [exact]
+  if (opts?.idOnly) {
+    return q.length >= 6 ? tasks.filter(t => t.id.startsWith(q)) : []
+  }
   if (q.length >= 6) {
     const byPrefix = tasks.filter(t => t.id.startsWith(q))
     if (byPrefix.length) return byPrefix
@@ -85,14 +91,51 @@ function formatProjectTable(projects: ProjectLite[]): string {
   return projects.map(formatProjectLine).join('\n')
 }
 
+export interface SessionLite {
+  sessionId: string; cli: string; cwd: string | null; updatedAt: number
+  todoKey: string | null; activity?: string | null
+}
+
+/**
+ * Resolve "my current session" for self-bind. Prefers the BERTH_SESSION_ID injected at PTY launch
+ * (deterministic for claude/coco). Falls back to the most-recently-updated session whose cwd matches
+ * the caller's cwd (same heuristic as server/reconcile.ts) — used for codex before reconcile binds it.
+ * `canon` is injectable for tests; defaults to the symlink-resolving path key.
+ */
+export function selectCurrentSession(
+  sessions: SessionLite[],
+  opts: { berthSessionId?: string; cwd: string; canon?: (p: string) => string },
+): { sessionId: string; inferred: boolean } | null {
+  if (opts.berthSessionId) return { sessionId: opts.berthSessionId, inferred: false }
+  const canon = opts.canon ?? canonicalPathKey
+  const target = canon(opts.cwd)
+  const matches = sessions.filter(s => s.cwd != null && canon(s.cwd) === target)
+  if (!matches.length) return null
+  const best = matches.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
+  return { sessionId: best.sessionId, inferred: true }
+}
+
+export function formatSessionLine(s: SessionLite, taskTitles: Map<string, string>): string {
+  const task = s.todoKey ? (taskTitles.get(s.todoKey) ?? s.todoKey.slice(0, 8)) : '-'
+  return `${padEndW(s.cli, 6)} ${padEndW(s.activity || '-', 8)} ${padEndW(task, 20)} ${padEndW(s.cwd || '-', 28)} [${s.sessionId.slice(0, 8)}]`
+}
+
+function formatSessionTable(sessions: SessionLite[], taskTitles: Map<string, string>): string {
+  if (!sessions.length) return '（没有会话）'
+  return sessions.map(s => formatSessionLine(s, taskTitles)).join('\n')
+}
+
 // ── HTTP plumbing ─────────────────────────────────────────────────────────────
 
-function baseUrl(flags: Record<string, string | boolean>): string {
-  const host = (flags.host as string) ?? process.env.HOST ?? '127.0.0.1'
-  const port = (flags.port as string) ?? process.env.PORT ?? '7777'
+export function __resolveBaseUrl(flags: Record<string, string | boolean>): string {
+  const host = (flags.host as string) ?? process.env.BERTH_HOST ?? process.env.HOST ?? '127.0.0.1'
+  // only consult the port file when nothing more specific was given
+  const file = (!flags.port && !process.env.BERTH_PORT && !process.env.PORT) ? readServerFile() : null
+  const port = (flags.port as string) ?? process.env.BERTH_PORT ?? process.env.PORT ?? (file ? String(file.port) : '7777')
   const h = host === '0.0.0.0' ? '127.0.0.1' : host
   return `http://${h}:${port}`
 }
+function baseUrl(flags: Record<string, string | boolean>): string { return __resolveBaseUrl(flags) }
 
 async function api(base: string, path: string, init?: RequestInit): Promise<any> {
   let res: Response
@@ -124,8 +167,8 @@ const del = (b: string, p: string) => api(b, p, { method: 'DELETE' })
 async function getTasks(base: string): Promise<TaskLite[]> {
   return (await json(base, '/api/todos')).todos ?? []
 }
-async function resolveOne(base: string, query: string): Promise<TaskLite> {
-  const matches = selectTask(await getTasks(base), query)
+async function resolveOne(base: string, query: string, opts?: { idOnly?: boolean }): Promise<TaskLite> {
+  const matches = selectTask(await getTasks(base), query, opts)
   if (matches.length === 0) throw new Error(`未找到匹配的任务：「${query}」`)
   if (matches.length > 1) {
     throw new Error(`「${query}」匹配到多个任务，请用更精确的标题或 id：\n` + formatTaskTable(matches))
@@ -145,6 +188,26 @@ async function resolveProjectOne(base: string, query: string): Promise<ProjectLi
   return matches[0]
 }
 
+async function getSessions(base: string): Promise<SessionLite[]> {
+  return (await json(base, '/api/sessions')) ?? []
+}
+
+/** I/O wrapper around selectCurrentSession: fetch sessions, resolve, throw a helpful error if unresolved. */
+async function resolveCurrentSession(base: string): Promise<string> {
+  const picked = selectCurrentSession(await getSessions(base), {
+    berthSessionId: process.env.BERTH_SESSION_ID,
+    cwd: process.cwd(),
+  })
+  if (!picked) {
+    throw new Error(
+      '无法确定当前会话（环境里没有 BERTH_SESSION_ID，也没有匹配当前目录的会话）。\n' +
+      '请显式指定 <sessionId>，或用 `berth session list` 查看可用会话。',
+    )
+  }
+  if (picked.inferred) console.error(`（按当前目录推断的会话：${picked.sessionId.slice(0, 8)}）`)
+  return picked.sessionId
+}
+
 const TASK_HELP = `berth task — manage tasks (talks to a running \`berth start\`)
 
   berth task [list] [--status S] [--project P] [--json]   List tasks
@@ -157,7 +220,8 @@ const TASK_HELP = `berth task — manage tasks (talks to a running \`berth start
   berth task rm <id|title>                                Delete a task
   berth task sync [--source ID]                           Push local edits + pull external changes
 
-  --port N / --host H   Reach a server not on 127.0.0.1:7777 (or $PORT)`
+  --port N / --host H   Reach a server not on 127.0.0.1:7777 (or $PORT)
+  --id                  Resolve <id|title> as an exact task id only (no title match)`
 
 export async function runTaskCli(argv: string[]): Promise<void> {
   const sub = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'list'
@@ -189,7 +253,7 @@ export async function runTaskCli(argv: string[]): Promise<void> {
       return
     }
     case 'done': {
-      const t = await resolveOne(base, pos.join(' '))
+      const t = await resolveOne(base, pos.join(' '), { idOnly: !!flags.id })
       const statuses = (await json(base, '/api/settings')).statuses ?? []
       const done = pickDoneStatus(statuses)
       if (!done) throw new Error('未配置任何状态，无法标记完成。')
@@ -199,13 +263,13 @@ export async function runTaskCli(argv: string[]): Promise<void> {
     }
     case 'status': {
       const status = pos[pos.length - 1]
-      const t = await resolveOne(base, pos.slice(0, -1).join(' '))
+      const t = await resolveOne(base, pos.slice(0, -1).join(' '), { idOnly: !!flags.id })
       await patch(base, `/api/todos/${encodeURIComponent(t.id)}`, { status })
       console.log(`✓ ${t.title} → ${status}`)
       return
     }
     case 'set': {
-      const t = await resolveOne(base, pos.join(' '))
+      const t = await resolveOne(base, pos.join(' '), { idOnly: !!flags.id })
       const body: any = {}
       if (flags.title) body.title = flags.title
       if (flags.status) body.status = flags.status
@@ -325,5 +389,58 @@ export async function runProjectCli(argv: string[]): Promise<void> {
     }
     default:
       throw new Error(`未知子命令：project ${sub}\n\n${PROJECT_HELP}`)
+  }
+}
+
+const SESSION_HELP = `berth session — bind an existing session (running or finished) to a task
+
+  berth session bind [<sessionId>] <id|title> [--project P]   Bind a session to a task (re-binds if already bound)
+  berth session unbind [<sessionId>]                          Clear a session's task binding
+  berth session list [--task <id|title>] [--json]             List sessions and their bound task
+
+  <sessionId> omitted → the current session (from $BERTH_SESSION_ID, else matched by cwd).
+  When omitting <sessionId>, quote a multi-word title: berth session bind "fix the login bug".
+  --port N / --host H   Reach a server not on 127.0.0.1:7777 (or $PORT)`
+
+export async function runSessionCli(argv: string[]): Promise<void> {
+  const sub = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'list'
+  const { flags, pos } = parseFlags(argv[0] === sub ? argv.slice(1) : argv)
+  const base = baseUrl(flags)
+
+  if (sub === 'help' || flags.help) { console.log(SESSION_HELP); return }
+
+  switch (sub) {
+    case 'bind': {
+      // 2+ positionals → explicit "<sessionId> <task...>"; 1 → "<task...>" against the current session.
+      const explicit = pos.length >= 2
+      const taskRef = (explicit ? pos.slice(1) : pos).join(' ').trim()
+      if (!taskRef) throw new Error('用法：berth session bind [<sessionId>] <id|title> [--project P]')
+      const sessionId = explicit ? pos[0] : await resolveCurrentSession(base)
+      const t = await resolveOne(base, taskRef)
+      const projectId = flags.project ? (await resolveProjectOne(base, String(flags.project))).id : undefined
+      await post(base, '/api/edge', { sessionId, todoKey: t.id, projectId })
+      console.log(`✓ 已绑定会话 ${sessionId.slice(0, 8)} → ${t.title}`)
+      return
+    }
+    case 'unbind': {
+      const sessionId = pos.length >= 1 ? pos[0] : await resolveCurrentSession(base)
+      // No todoKey/projectId → server clears the session's edge but leaves its project attach intact.
+      await post(base, '/api/edge', { sessionId })
+      console.log(`✓ 已解绑会话 ${sessionId.slice(0, 8)}`)
+      return
+    }
+    case 'list': {
+      let sessions = await getSessions(base)
+      if (flags.task) {
+        const t = await resolveOne(base, String(flags.task))
+        sessions = sessions.filter(s => s.todoKey === t.id)
+      }
+      if (flags.json) { console.log(JSON.stringify(sessions, null, 2)); return }
+      const titles = new Map((await getTasks(base)).map(t => [t.id, t.title]))
+      console.log(formatSessionTable(sessions, titles))
+      return
+    }
+    default:
+      throw new Error(`未知子命令：session ${sub}\n\n${SESSION_HELP}`)
   }
 }

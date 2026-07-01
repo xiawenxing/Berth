@@ -3,6 +3,7 @@ import type { WebSocket } from 'ws'
 import { ActivityHub, type ActivityEvent, type HoldRunning } from './activity'
 import type { Inbound, SessionDriver } from './session-driver'
 import { TuiDriver } from './tui-driver'
+import { logDiag } from './diag'
 
 /**
  * A live agent process, decoupled from any viewer. The driver keeps running regardless of how many
@@ -59,7 +60,13 @@ function terminateTree(driver: SessionDriver): void {
  * Per-session live activity (running ⇄ settled), inferred from the frames this registry sees for
  * every session regardless of viewers. This is what drives the in-list spinner / red dot.
  */
-export const IDLE_MS = 1200   // silence after which a running session is considered settled
+// Silence (no visible output) after which a RUNNING turn is considered settled. This only governs
+// TUI sessions — stream drivers hold themselves running across thinking gaps via holdRunning. It was
+// 1200ms, but real TUI agents pause 2-4s mid-turn for tool calls / thinking; at 1200ms every such
+// pause flipped the list lamp 在航(转圈)⇄待查收(红点) and re-rendered the whole session list ("item
+// 重刷闪烁" + 卡顿). 4000ms tolerates normal intra-turn pauses; a genuinely-done turn still settles
+// (lights 待查收) within ~4s, which is fine for a glanceable list.
+export const IDLE_MS = 4000
 const activity = new ActivityHub({ idleMs: IDLE_MS })
 export function subscribeActivity(cb: (e: ActivityEvent) => void): () => void { return activity.subscribe(cb) }
 export function snapshotActivity(): { sessionId: string; state: 'running' | 'settled' }[] { return activity.snapshot() }
@@ -93,6 +100,10 @@ export function registerSession(key: string, driver: SessionDriver, opts?: { run
   driver.onActivity(() => activity.data(key))
   driver.onExit(() => {
     entry.exited = true
+    // A process exit during the launch window (no viewers / very short-lived) is the signature of a
+    // launch that died before writing its jsonl — the "session vanished" failure. Log the key + how
+    // many viewers were attached so the export shows whether the user was even watching.
+    logDiag({ category: 'pty', event: 'exit', sessionId: key, viewers: entry.attached.size })
     for (const ws of entry.attached) { try { ws.close() } catch {} }
     registry.delete(key)
     activity.exit(key)
@@ -179,4 +190,5 @@ export function rekeyPty(oldKey: string, newKey: string): void {
   try { entry.driver.rekey?.(newKey) } catch {}
   registry.set(newKey, entry)
   activity.rekey(oldKey, newKey)
+  logDiag({ category: 'reconcile', event: 'rekey', sessionId: newKey, from: oldKey })
 }
