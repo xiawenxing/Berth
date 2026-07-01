@@ -11,12 +11,16 @@ let serverChild = null   // the utilityProcess we spawned, or null when we reuse
 let quitting = false     // set in before-quit so a child exit during teardown isn't treated as a crash
 let restarts = 0         // consecutive rapid crash-restarts (reset once a (re)start stays up a while)
 let lastListenAt = 0     // when the current server last reported listening
+let currentPort = null   // the server port the window should load; changes if the app takes over
+let externalHealthTimer = null
 
 // Canonical port: honour $PORT so both the CLI and the app agree on the same default.
 const CANON_PORT = Number(process.env.PORT) || 7777
 const CANON_HOST = '127.0.0.1'
 const STABLE_MS = 30_000   // a server up this long resets the rapid-restart budget
 const MAX_RAPID_RESTARTS = 3
+const EXTERNAL_HEALTH_MS = 1500
+const EXTERNAL_HEALTH_FAILS = 2
 
 // Spawn the server in its own process (Electron utilityProcess). Resolves with the bound port once the
 // child reports it listening. The server's start() prefers CANON_PORT and falls back to a free port if
@@ -57,10 +61,57 @@ async function superviseRestart() {
   }
   try {
     const port = await startServerProcess()
+    currentPort = port
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(`http://127.0.0.1:${port}/app/`)
   } catch (e) {
     dialog.showErrorBox('Berth', 'The Berth server crashed and could not be restarted: ' + ((e && e.message) || e))
   }
+}
+
+function stopExternalHealthMonitor() {
+  if (!externalHealthTimer) return
+  clearInterval(externalHealthTimer)
+  externalHealthTimer = null
+}
+
+async function probeServer(port) {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), 1000)
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: ctrl.signal })
+    return r.ok && !!(await r.json()).berth
+  } catch {
+    return false
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+// When the app reused a server started by the CLI, that server is not our child, so Electron will not
+// receive an exit event. If the CLI process goes away, detect the dead backend and take ownership by
+// starting our own utilityProcess instead of leaving the BrowserWindow pointed at a dead port.
+function startExternalHealthMonitor(port) {
+  stopExternalHealthMonitor()
+  let failures = 0
+  let takingOver = false
+  externalHealthTimer = setInterval(async () => {
+    if (quitting || takingOver || serverChild) return
+    const ok = await probeServer(port)
+    if (ok) { failures = 0; return }
+    failures += 1
+    if (failures < EXTERNAL_HEALTH_FAILS) return
+    takingOver = true
+    stopExternalHealthMonitor()
+    try {
+      const nextPort = await startServerProcess()
+      currentPort = nextPort
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(`http://127.0.0.1:${nextPort}/app/`)
+    } catch (e) {
+      takingOver = false
+      dialog.showErrorBox('Berth', 'The reused Berth server stopped and the app could not start a replacement: ' + ((e && e.message) || e))
+    }
+  }, EXTERNAL_HEALTH_MS)
+  externalHealthTimer.unref?.()
 }
 
 // 1) Reuse a Berth server already running — recorded in server.json on ANY port, or live on the
@@ -69,11 +120,12 @@ async function superviseRestart() {
 async function resolveServer() {
   const { findReusableServer } = await import(path.join(__dirname, '..', 'dist', 'server-resolve.js'))
   const reusable = await findReusableServer({ host: CANON_HOST, port: CANON_PORT })
-  if (reusable) return reusable.port
-  return startServerProcess()
+  if (reusable) return { port: reusable.port, owned: false }
+  return { port: await startServerProcess(), owned: true }
 }
 
 function createWindow(port) {
+  currentPort = port
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -86,31 +138,35 @@ function createWindow(port) {
   mainWindow.loadURL(`http://127.0.0.1:${port}/app/`)
   // Open external links (e.g. obsidian://, http docs) in the user's real browser, not in-app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (!url.startsWith(`http://127.0.0.1:${port}`)) { shell.openExternal(url); return { action: 'deny' } }
+    const allowedPort = currentPort ?? port
+    if (!url.startsWith(`http://127.0.0.1:${allowedPort}`)) { shell.openExternal(url); return { action: 'deny' } }
     return { action: 'allow' }
   })
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
 app.whenReady().then(async () => {
-  let port
+  let resolved
   try {
-    port = await resolveServer()
+    resolved = await resolveServer()
   } catch (e) {
     console.error('Berth: failed to start server', e)
     app.quit()
     return
   }
-  createWindow(port)
+  currentPort = resolved.port
+  if (!resolved.owned) startExternalHealthMonitor(resolved.port)
+  createWindow(resolved.port)
   // macOS: re-create a window when the dock icon is clicked and none are open. Use the live server
   // port (a supervised restart may have moved it) rather than the captured one.
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(port) })
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(currentPort ?? resolved.port) })
 })
 
 // Tear down the server process WE spawned when the app quits (a reused external server is left alone),
 // and WAIT for it to exit so its SIGTERM-driven killAllPtys sweep finishes — preserving the in-process
 // model's guarantee of no orphaned agent subtrees. Bounded so quit never hangs.
 app.on('before-quit', (e) => {
+  stopExternalHealthMonitor()
   if (!serverChild || quitting) return
   quitting = true
   e.preventDefault()
