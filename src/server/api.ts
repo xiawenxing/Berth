@@ -42,6 +42,7 @@ import { berthAgentCwd, berthHome } from '../paths'
 import { broadcastDataChanged } from './status-ws'
 import { compactTitle, TASK_CREATE_INPUT_MAX_CHARS } from '../title-limits'
 import { getAgentIntegrationStatus, installAgentIntegration } from '../agent-integration'
+import { getAppUpdateStatus } from '../app-update'
 
 function isFolderPickerCancelled(err: unknown, stderr = ''): boolean {
   const e = err as { message?: unknown; stderr?: unknown }
@@ -159,6 +160,9 @@ function serialize(): ApiSession[] {
 export const api = Router()
 api.get('/health', (_req, res) => {
   res.json({ berth: true, version: process.env.npm_package_version ?? null, berthHome: berthHome(), pid: process.pid })
+})
+api.get('/app-update', async (_req, res) => {
+  res.json(await getAppUpdateStatus())
 })
 api.get('/agent-integration', (_req, res) => {
   try {

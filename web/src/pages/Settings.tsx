@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare, LifeBuoy, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare, LifeBuoy, Download, AlertTriangle, CheckCircle2, ExternalLink } from 'lucide-react'
 import { exportDiagLog } from '@/lib/diag'
 import { cn } from '@/lib/utils'
 import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
@@ -12,7 +12,7 @@ import type { AgentCli, AgentEntry, AgentModelCatalog } from '@/lib/api'
 import { priorityColors } from '@/lib/priority'
 import { statusMeta } from '@/lib/status'
 import { Switch } from '@/components/ui/Switch'
-import type { AgentIntegrationStatus } from '@/lib/api'
+import type { AgentIntegrationStatus, AppUpdateStatus } from '@/lib/api'
 
 export function Settings() {
   const [scheme, setScheme] = useState<string>(() => getScheme().id)
@@ -45,6 +45,7 @@ export function Settings() {
   const [installingIntegration, setInstallingIntegration] = useState(false)
   const [integrationMessage, setIntegrationMessage] = useState<string | null>(null)
   const [integrationError, setIntegrationError] = useState<string | null>(null)
+  const [appUpdate, setAppUpdate] = useState<AppUpdateStatus | null>(null)
   useEffect(() => setStatuses(cfgStatuses), [cfgStatuses])
   useEffect(() => setPriorities(cfgPriorities), [cfgPriorities])
   useEffect(() => setAgentList(cfgAgents.list), [cfgAgents.list])
@@ -64,6 +65,13 @@ export function Settings() {
     let alive = true
     api.agentIntegration()
       .then((status) => { if (alive) setIntegration(status) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+  useEffect(() => {
+    let alive = true
+    api.appUpdate()
+      .then((status) => { if (alive) setAppUpdate(status) })
       .catch(() => {})
     return () => { alive = false }
   }, [])
@@ -123,6 +131,10 @@ export function Settings() {
       </header>
 
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5">
+        {appUpdate?.updateAvailable && (
+          <AppUpdateBanner status={appUpdate} />
+        )}
+
         {(integration?.needsAction || integrationMessage || integrationError) && (
           <AgentIntegrationBanner
             status={integration}
@@ -317,6 +329,29 @@ export function Settings() {
           )}
         </Card>
       </div>
+    </div>
+  )
+}
+
+function AppUpdateBanner({ status }: { status: AppUpdateStatus }) {
+  const openRelease = () => {
+    if (status.releaseUrl) window.open(status.releaseUrl, '_blank', 'noopener,noreferrer')
+  }
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-brand/35 bg-brand/10 px-3 py-2.5">
+      <span className="flex-none text-brand"><Download size={16} /></span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[12px] font-medium text-foreground">Berth 有新版本</div>
+        <div className="truncate text-[11px] text-muted-foreground">
+          当前 v{status.currentVersion} · 最新 v{status.latestVersion}
+        </div>
+      </div>
+      <button
+        onClick={openRelease}
+        className="flex items-center gap-1 rounded-md bg-brand px-3 py-1 text-[12px] font-medium text-brand-foreground hover:brightness-110"
+      >
+        下载 <ExternalLink size={12} />
+      </button>
     </div>
   )
 }

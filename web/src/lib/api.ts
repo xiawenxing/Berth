@@ -131,6 +131,15 @@ export interface AgentIntegrationInstallResult {
   skillResults: { agent: string; installed: string[]; skipped: string[] }[]
 }
 
+export interface AppUpdateStatus {
+  currentVersion: string
+  latestVersion: string | null
+  updateAvailable: boolean
+  releaseUrl: string | null
+  checkedAt: number | null
+  error?: string | null
+}
+
 export interface PreviewSession {
   sessionId: string
   cli: string
@@ -182,6 +191,7 @@ export const api = {
   settings: () => getJSON<ApiSettings>('/api/settings'),
   saveSettings: (patch: { priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) => send('POST', '/api/settings', patch),
   agentModels: () => getJSON<{ catalogs: AgentModelCatalog[] }>('/api/agent-models'),
+  appUpdate: () => getJSON<AppUpdateStatus>('/api/app-update'),
   agentIntegration: () => getJSON<AgentIntegrationStatus>('/api/agent-integration'),
   installAgentIntegration: () => send('POST', '/api/agent-integration/install', {}) as Promise<AgentIntegrationInstallResult>,
   // Structured codex-style chat turns for a real session's drawer/right-pane.
