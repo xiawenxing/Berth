@@ -171,9 +171,9 @@ api.get('/agent-integration', (_req, res) => {
     res.status(500).json({ error: String(e?.message ?? e) })
   }
 })
-api.post('/agent-integration/install', (_req, res) => {
+api.post('/agent-integration/install', async (_req, res) => {
   try {
-    res.json(installAgentIntegration())
+    res.json(await installAgentIntegration())
   } catch (e: any) {
     res.status(500).json({ error: String(e?.message ?? e) })
   }

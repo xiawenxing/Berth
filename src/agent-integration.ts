@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, delimiter, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { detectAgentSkillDirs, linkBundledSkills, resolveSkillsDir, type InstallResult } from './skill-install'
+import { bundledSkillState, detectAgentSkillDirs, installBundledSkills, resolveSkillsDir, type BundledSkillInstallResult } from './skill-install'
 
 const MANAGED_MARKER = 'BERTH_MANAGED_CLI_SHIM'
 
@@ -40,7 +40,7 @@ export interface AgentIntegrationStatus {
 export interface AgentIntegrationInstallResult {
   status: AgentIntegrationStatus
   cliPath: string
-  skillResults: InstallResult[]
+  skillResults: BundledSkillInstallResult
 }
 
 function packageRoot(startDir = dirname(fileURLToPath(import.meta.url))): string {
@@ -143,14 +143,8 @@ function cliStatus(version = currentVersion(), home = homedir()): CliIntegration
   }
 }
 
-function sameRealPath(a: string, b: string): boolean {
-  try { return realpathSync(a) === realpathSync(b) } catch { return false }
-}
-
 function skillTargetState(dir: string, bundledSkillPath: string): IntegrationState {
-  const dest = join(dir, 'berth-tasks')
-  if (!existsSync(dest)) return 'missing'
-  return sameRealPath(dest, bundledSkillPath) ? 'current' : 'outdated'
+  return bundledSkillState(join(dir, 'berth-tasks'), bundledSkillPath)
 }
 
 function skillsStatus(): SkillIntegrationStatus {
@@ -208,13 +202,13 @@ function replaceBrokenSkillSymlink(path: string) {
   }
 }
 
-export function installAgentIntegration(): AgentIntegrationInstallResult {
+export async function installAgentIntegration(): Promise<AgentIntegrationInstallResult> {
   const version = currentVersion()
   const cliPath = installCliShim(version)
   const skillsDir = resolveSkillsDir(dirname(fileURLToPath(import.meta.url)))
   if (!skillsDir) throw new Error('could not locate bundled skills/berth-tasks')
   const targets = detectAgentSkillDirs()
   for (const target of targets) replaceBrokenSkillSymlink(join(target.dir, 'berth-tasks'))
-  const skillResults = linkBundledSkills(skillsDir, targets, true)
+  const skillResults = await installBundledSkills(skillsDir, targets, true)
   return { cliPath, skillResults, status: getAgentIntegrationStatus() }
 }

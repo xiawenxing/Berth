@@ -128,7 +128,10 @@ export interface AgentIntegrationStatus {
 export interface AgentIntegrationInstallResult {
   status: AgentIntegrationStatus
   cliPath: string
-  skillResults: { agent: string; installed: string[]; skipped: string[] }[]
+  skillResults: {
+    skillsCli: { ok: boolean; installed: string[]; error: string | null }
+    fallback: { agent: string; installed: string[]; skipped: string[] }[]
+  }
 }
 
 export interface AppUpdateStatus {

@@ -113,9 +113,10 @@ export function Settings() {
     try {
       const result = await api.installAgentIntegration()
       setIntegration(result.status)
-      const targetCount = result.skillResults.length
-      setIntegrationMessage(targetCount > 0
-        ? `已安装 CLI，并刷新 ${targetCount} 个 agent 的 berth-tasks skill`
+      const currentCount = result.status.skills.targets.filter((target) => target.state === 'current').length
+      const viaSkills = result.skillResults.skillsCli.ok
+      setIntegrationMessage(currentCount > 0
+        ? `已安装 CLI，并${viaSkills ? '通过 skills add ' : ''}刷新 ${currentCount} 个 agent 的 berth-tasks skill`
         : '已安装 CLI；暂未检测到可写入的 agent skill 目录')
       window.setTimeout(() => setIntegrationMessage(null), 3500)
     } catch (e) {

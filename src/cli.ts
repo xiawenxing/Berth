@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import { formatStartupError } from './startup-error'
 import { findReusableServer } from './server-resolve'
 
@@ -66,13 +66,6 @@ function openBrowser(url: string): void {
   try { spawn(cmd, args, { stdio: 'ignore', detached: true }).unref() } catch { /* ignore */ }
 }
 
-function spawnExit(cmd: string, args: string[]): Promise<number> {
-  return new Promise((resolve) => {
-    const p = spawn(cmd, args, { stdio: 'inherit' })
-    p.on('close', c => resolve(c ?? 0)); p.on('error', () => resolve(-1))
-  })
-}
-
 /**
  * Install the bundled Berth skill across the user's agents. The skill is a single `SKILL.md` every
  * agent reads from its own `~/.<agent>/skills/` dir, so we always run the cross-agent installer via
@@ -81,30 +74,21 @@ function spawnExit(cmd: string, args: string[]): Promise<number> {
  * **symlinking** the skill into whichever agent dirs exist on this machine.
  */
 async function installSkill(force: boolean): Promise<void> {
-  const { resolveSkillsDir, bundledSkillNames, detectAgentSkillDirs, linkBundledSkills } = await import('./skill-install')
+  const { resolveSkillsDir, detectAgentSkillDirs, installBundledSkills } = await import('./skill-install')
   const dir = resolveSkillsDir(dirname(fileURLToPath(import.meta.url)))
   if (!dir) { console.error('berth: could not locate the bundled skills/ directory'); process.exit(1); return }
-  const names = bundledSkillNames(dir)
-
-  let ok = names.length > 0
-  for (const name of names) {
-    const code = await spawnExit('npx', ['--yes', 'skills', 'add', join(dir, name), '-g', '-y'])
-    if (code !== 0) { ok = false; break }
-  }
-  if (ok) {
-    console.log(`berth: installed via \`skills\`: ${names.join(', ')} (run \`npx skills list\` to see per-agent placement).`)
-    return
-  }
-
-  // Fallback: `npx skills add` unavailable/failed — symlink into detected agents ourselves.
-  console.error('berth: `npx skills add` failed — falling back to symlinking into detected agents.')
   const targets = detectAgentSkillDirs()
   if (!targets.length) {
     console.error('berth: no supported agent found (looked for ~/.claude, ~/.codex, ~/.cursor, ~/.gemini, ~/.coco).')
     process.exit(1); return
   }
-  const results = linkBundledSkills(dir, targets, force)
-  for (const r of results) {
+  const result = await installBundledSkills(dir, targets, force)
+  if (result.skillsCli.ok) {
+    console.log(`berth: installed via \`skills add\`: ${result.skillsCli.installed.join(', ')} (run \`npx skills list -g\` to see per-agent placement).`)
+  } else {
+    console.error(`berth: \`npx skills add\` failed — falling back to symlinking into detected agents. ${result.skillsCli.error ?? ''}`.trim())
+  }
+  for (const r of result.fallback) {
     const parts = [r.installed.length ? `linked ${r.installed.join(', ')}` : '', r.skipped.length ? `skipped ${r.skipped.join(', ')} (use --force)` : '']
       .filter(Boolean).join('; ')
     console.log(`  ${r.agent}: ${parts || '(nothing to do)'}`)
