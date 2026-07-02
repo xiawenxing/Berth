@@ -67,6 +67,7 @@ function needsTitleBackfill(p: PendingLaunch, s: ApiSession): boolean {
 // for now ship status defaults to 已停泊 and 'pinned' drives the Pin section.
 
 const DEFAULT_PRIORITIES = ['P0', 'P1', 'P2']
+const DEFAULT_DOCS_ROOT = '~/.berth/docs'
 const DEFAULT_AGENTS: AgentConfig = {
   list: [
     { cli: 'claude', enabled: true, model: null },
@@ -85,6 +86,7 @@ interface DataState {
   priorities: string[] // ordered high→low, from Settings (drives the priority color ramp + menu)
   statuses: string[] // ordered vocabulary, from Settings (drives the kanban columns + status menu)
   agents: AgentConfig // real launch/headless agent config from Settings
+  docsRoot: string // real backend docstore root; drives context maintenance paths
   loading: boolean
   error: string | null
   /** In-flight fresh launches not yet surfaced as real sessions (optimistic "创建中…" placeholders). */
@@ -109,6 +111,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [priorities, setPriorities] = useState<string[]>(DEFAULT_PRIORITIES)
   const [statuses, setStatuses] = useState<string[]>(DEFAULT_STATUSES)
   const [agents, setAgents] = useState<AgentConfig>(DEFAULT_AGENTS)
+  const [docsRoot, setDocsRoot] = useState(DEFAULT_DOCS_ROOT)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
@@ -202,6 +205,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setPriorities(c.priorities?.length ? c.priorities : DEFAULT_PRIORITIES)
         setStatuses(c.statuses?.length ? c.statuses : DEFAULT_STATUSES)
         setAgents(c.agents ?? DEFAULT_AGENTS)
+        setDocsRoot(c.docsRoot || DEFAULT_DOCS_ROOT)
         setError(null)
       })
       .catch((e) => alive && setError(String(e)))
@@ -254,6 +258,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       priorities,
       statuses,
       agents,
+      docsRoot,
       loading,
       error,
       pending,
@@ -266,7 +271,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setNonce((n) => n + 1)
       },
     }),
-    [projects, tasks, sessions, priorities, statuses, agents, loading, error, pending, addPending, resolvePending],
+    [projects, tasks, sessions, priorities, statuses, agents, docsRoot, loading, error, pending, addPending, resolvePending],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

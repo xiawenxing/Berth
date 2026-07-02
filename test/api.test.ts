@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll, afterEach, vi, beforeEach } from 'vitest'
 import type { Server } from 'node:http'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -413,6 +413,51 @@ describe('settings API – task status/priority vocabularies', () => {
     })
     expect(r.status).toBe(400)
     expect(((await r.json()) as any).error).toBeTruthy()
+  })
+
+  it('POST /settings migrates docsRoot before switching the setting', async () => {
+    const oldRoot = mkdtempSync(join(tmpdir(), 'berth-api-docs-old-'))
+    const newRoot = mkdtempSync(join(tmpdir(), 'berth-api-docs-new-'))
+    rmSync(newRoot, { recursive: true, force: true })
+    tmpRoots.push(oldRoot, newRoot)
+    mkdirSync(join(oldRoot, 'projects/Berth'), { recursive: true })
+    writeFileSync(join(oldRoot, 'projects/Berth/index.md'), '# project')
+    mockSettings.set('docsRoot', oldRoot)
+
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/settings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ docsRoot: newRoot }),
+    })
+    const j = await r.json() as any
+
+    expect(r.status).toBe(200)
+    expect(j.docsRoot).toBe(newRoot)
+    expect(j.docsMigration.copied).toBe(1)
+    expect(readFileSync(join(newRoot, 'projects/Berth/index.md'), 'utf8')).toBe('# project')
+  })
+
+  it('POST /settings refuses docsRoot switch when migration has conflicts', async () => {
+    const oldRoot = mkdtempSync(join(tmpdir(), 'berth-api-docs-old-'))
+    const newRoot = mkdtempSync(join(tmpdir(), 'berth-api-docs-new-'))
+    tmpRoots.push(oldRoot, newRoot)
+    mkdirSync(join(oldRoot, 'projects/Berth'), { recursive: true })
+    mkdirSync(join(newRoot, 'projects/Berth'), { recursive: true })
+    writeFileSync(join(oldRoot, 'projects/Berth/index.md'), '# old')
+    writeFileSync(join(newRoot, 'projects/Berth/index.md'), '# new')
+    mockSettings.set('docsRoot', oldRoot)
+
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/settings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ docsRoot: newRoot }),
+    })
+    const j = await r.json() as any
+
+    expect(r.status).toBe(409)
+    expect(j.docsMigration.conflicts).toEqual(['projects/Berth/index.md'])
+    expect(mockSettings.get('docsRoot')).toBe(oldRoot)
+    expect(existsSync(join(newRoot, 'projects/Berth/index.md'))).toBe(true)
   })
 })
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare } from 'lucide-react'
+import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare, FolderOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
 import { useData } from '@/lib/data'
@@ -28,7 +28,7 @@ export function Settings() {
 
   // Task-field vocabularies — edited as a local draft seeded from the live config; persisted
   // (POST /settings) + reload() so the whole app picks up the new statuses/priorities.
-  const { statuses: cfgStatuses, priorities: cfgPriorities, agents: cfgAgents, reload } = useData()
+  const { statuses: cfgStatuses, priorities: cfgPriorities, agents: cfgAgents, docsRoot: cfgDocsRoot, reload } = useData()
   const [statuses, setStatuses] = useState<string[]>(cfgStatuses)
   const [priorities, setPriorities] = useState<string[]>(cfgPriorities)
   const [agentList, setAgentList] = useState<AgentEntry[]>(cfgAgents.list)
@@ -37,11 +37,17 @@ export function Settings() {
   const [savingVocab, setSavingVocab] = useState(false)
   const [savingAgents, setSavingAgents] = useState(false)
   const [agentError, setAgentError] = useState<string | null>(null)
+  const [pendingDocsRoot, setPendingDocsRoot] = useState<string | null>(null)
+  const [pickingDocsRoot, setPickingDocsRoot] = useState(false)
+  const [savingDocsRoot, setSavingDocsRoot] = useState(false)
+  const [docsRootNote, setDocsRootNote] = useState<string | null>(null)
+  const [docsRootError, setDocsRootError] = useState<string | null>(null)
   useEffect(() => setStatuses(cfgStatuses), [cfgStatuses])
   useEffect(() => setPriorities(cfgPriorities), [cfgPriorities])
   useEffect(() => setAgentList(cfgAgents.list), [cfgAgents.list])
   useEffect(() => setBerthAgentCli(cfgAgents.berthAgentCli), [cfgAgents.berthAgentCli])
   useEffect(() => setBerthAgentModel(cfgAgents.berthAgentModel), [cfgAgents.berthAgentModel])
+  useEffect(() => { setPendingDocsRoot(null); setDocsRootError(null) }, [cfgDocsRoot])
   const vocabDirty =
     statuses.join('\0') !== cfgStatuses.join('\0') || priorities.join('\0') !== cfgPriorities.join('\0')
   const agentDirty =
@@ -71,6 +77,41 @@ export function Settings() {
       .then(() => reload())
       .catch((e) => setAgentError(String(e?.message ?? e)))
       .finally(() => setSavingAgents(false))
+  }
+  const pickDocsRoot = () => {
+    setPickingDocsRoot(true)
+    setDocsRootError(null)
+    api
+      .pickFolder(pendingDocsRoot ?? cfgDocsRoot)
+      .then((r) => {
+        if (r.path) {
+          setPendingDocsRoot(r.path)
+          setDocsRootNote(null)
+        }
+      })
+      .catch((e) => setDocsRootError(String(e?.message ?? e)))
+      .finally(() => setPickingDocsRoot(false))
+  }
+  const saveDocsRoot = () => {
+    const target = pendingDocsRoot?.trim()
+    if (!target || target === cfgDocsRoot) return
+    setSavingDocsRoot(true)
+    setDocsRootError(null)
+    api
+      .saveSettings({ docsRoot: target })
+      .then((r) => {
+        const m = r.docsMigration
+        setDocsRootNote(m?.changed ? `已切换并迁移 ${m.copied} 个文件，${m.unchanged} 个文件已存在且一致。` : '维护路径未变化。')
+        setPendingDocsRoot(null)
+        return reload()
+      })
+      .catch((e) => {
+        const conflicts = (e as any)?.payload?.docsMigration?.conflicts as string[] | undefined
+        setDocsRootError(conflicts?.length
+          ? `目标目录已有 ${conflicts.length} 个同名但内容不同的上下文文件；为避免覆盖，已取消切换。`
+          : String(e?.message ?? e))
+      })
+      .finally(() => setSavingDocsRoot(false))
   }
 
   return (
@@ -174,10 +215,51 @@ export function Settings() {
         </Card>
 
         <Card icon={<FileText size={14} />} title="上下文与文档" hint="任务/项目的 md 与图片">
-          <Row label="上下文文档根目录">
-            <code className="rounded bg-card px-2 py-1 font-mono text-[12px] text-foreground">~/.berth/docs</code>
-            <button className="rounded-md border border-border px-2 py-1 text-[12px] hover:bg-accent">选择</button>
+          <Row label="当前维护路径">
+            <code
+              title={cfgDocsRoot}
+              className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded bg-background px-2 py-1 font-mono text-[12px] text-foreground"
+            >
+              {cfgDocsRoot}
+            </code>
+            <button
+              onClick={pickDocsRoot}
+              disabled={pickingDocsRoot || savingDocsRoot}
+              className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[12px] hover:bg-accent disabled:opacity-60"
+            >
+              <FolderOpen size={12} /> {pickingDocsRoot ? '选择中…' : '选择'}
+            </button>
           </Row>
+          {pendingDocsRoot && pendingDocsRoot !== cfgDocsRoot && (
+            <div className="rounded-md border border-warning/35 bg-warning/10 px-3 py-2">
+              <div className="mb-1 text-[11px] font-medium text-warning">待切换路径</div>
+              <code title={pendingDocsRoot} className="block overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[12px] text-foreground">
+                {pendingDocsRoot}
+              </code>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="min-w-0 flex-1 text-[11px] text-text-dim">切换时会复制 Berth 管理的 tasks/projects/AGENTS.md 及文档引用的图片；遇到同名不同内容文件会停止，不覆盖。</span>
+                <button
+                  onClick={() => setPendingDocsRoot(null)}
+                  disabled={savingDocsRoot}
+                  className="rounded-md border border-border px-2 py-1 text-[12px] text-muted-foreground hover:bg-accent disabled:opacity-60"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={saveDocsRoot}
+                  disabled={savingDocsRoot}
+                  className="rounded-md bg-brand px-3 py-1 text-[12px] font-medium text-brand-foreground hover:brightness-110 disabled:opacity-60"
+                >
+                  {savingDocsRoot ? '迁移中…' : '迁移并切换'}
+                </button>
+              </div>
+            </div>
+          )}
+          {(docsRootNote || docsRootError) && (
+            <div className={cn('text-[11px]', docsRootError ? 'text-destructive' : 'text-success')}>
+              {docsRootError ?? docsRootNote}
+            </div>
+          )}
         </Card>
 
         {/* 数据源 / 同步——暂时隐藏 */}

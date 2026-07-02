@@ -81,9 +81,19 @@ export interface AgentConfig {
 }
 
 export interface ApiSettings {
+  docsRoot?: string
   priorities?: string[]
   statuses?: string[]
   agents?: AgentConfig
+}
+
+export interface DocsRootMigrationResult {
+  from: string
+  to: string
+  changed: boolean
+  copied: number
+  unchanged: number
+  conflicts: string[]
 }
 
 export interface PreviewSession {
@@ -106,8 +116,15 @@ async function send(method: string, url: string, body?: unknown): Promise<any> {
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`${method} ${url} → ${res.status}`)
-  return res.json().catch(() => ({}))
+  const payload = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg = typeof payload?.error === 'string' ? payload.error : `${method} ${url} → ${res.status}`
+    const err = new Error(msg) as Error & { payload?: any; status?: number }
+    err.payload = payload
+    err.status = res.status
+    throw err
+  }
+  return payload
 }
 
 export const api = {
@@ -120,7 +137,8 @@ export const api = {
   refresh: () => send('POST', '/api/refresh') as Promise<{ ok: boolean; count: number }>,
   // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
   settings: () => getJSON<ApiSettings>('/api/settings'),
-  saveSettings: (patch: { priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) => send('POST', '/api/settings', patch),
+  saveSettings: (patch: { docsRoot?: string; priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) =>
+    send('POST', '/api/settings', patch) as Promise<ApiSettings & { ok?: boolean; docsMigration?: DocsRootMigrationResult | null }>,
   // Structured codex-style chat turns for a real session's drawer/right-pane.
   transcript: (sessionId: string) =>
     getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),
@@ -141,7 +159,7 @@ export const api = {
   edge: (sessionId: string, todoKey: string | null, projectId?: string) =>
     send('POST', '/api/edge', { sessionId, todoKey, projectId }),
   // Native macOS folder picker → absolute path (or cancelled).
-  pickFolder: () => send('POST', '/api/pick-folder', {}) as Promise<{ path?: string; cancelled?: boolean }>,
+  pickFolder: (def?: string) => send('POST', '/api/pick-folder', def ? { default: def } : {}) as Promise<{ path?: string; cancelled?: boolean }>,
   // Preview the sessions a candidate dir would surface (no state mutation).
   previewDir: (cwd: string) =>
     send('POST', '/api/session-dirs/preview', { cwd }) as Promise<{ sessions: PreviewSession[] }>,
