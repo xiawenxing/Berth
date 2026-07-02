@@ -65,10 +65,13 @@ export function filterImportedSessions(
   roots: string[],
   curatedIds: Set<string>,
   hiddenIds: Set<string> = new Set(),
+  hiddenCwds: string[] = [],
 ): LogicalSession[] {
   const rootSet = new Set(roots.map(normDir))
+  const hiddenCwdSet = new Set(hiddenCwds.map(normDir))
   return sessions.filter(s =>
-    !hiddenIds.has(s.sessionId) && (
+    !hiddenIds.has(s.sessionId) &&
+    !(s.cwd != null && hiddenCwdSet.has(normDir(s.cwd))) && (
       curatedIds.has(s.sessionId) ||
       (s.cwd != null && rootSet.has(normDir(s.cwd)))
     ),

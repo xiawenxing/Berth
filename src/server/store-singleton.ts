@@ -19,7 +19,7 @@ import { syncSource } from '../data/sync/engine'
 import { setTaskSessionDigestProvider } from '../data/task-summary'
 import { readTranscript } from './context-consolidate-service'
 import { extractConversation } from '../agent/transcript'
-import { berthHome } from '../paths'
+import { berthAgentCwd, berthHome } from '../paths'
 import { scanLaunchCallbacks, startLaunchCallbackWatch } from './launch-callback-watch'
 import { codexCallbackDir } from '../pty/launch'
 import { syncRolloutWatch } from './rollout-watch'
@@ -183,7 +183,7 @@ export function storeRoots(): { claudeRoot: string; codexRoot: string; cocoRoot:
  */
 export function refreshSessions(): LogicalSession[] {
   const all = collectLogicalSessions(storeRoots())
-  cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet())
+  cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet(), [berthAgentCwd()])
   store.upsertSessions(cache)
   // Reconcile over the UNFILTERED scan, not `cache`: a fresh codex launch is bound=0 / unattached /
   // not yet session-imported, and its cwd is no longer an import root — so it's absent from `cache`.
@@ -192,7 +192,7 @@ export function refreshSessions(): LogicalSession[] {
   // once bound it enters allBoundLaunchSessionIds → curated → surfaces on the next refresh.
   const bound = reconcileLaunchIntents(store, all)
   if (bound > 0) {
-    cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet())
+    cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet(), [berthAgentCwd()])
     store.upsertSessions(cache)
   }
   // P2b: drop never-bound codex intents that never produced a session_meta and whose pty is gone, so a
