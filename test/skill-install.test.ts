@@ -14,6 +14,16 @@ describe('resolveSkillsDir', () => {
   it('returns null when no skills/ is above the start dir', () => {
     expect(resolveSkillsDir(mkdtempSync(join(tmpdir(), 'noskills-')))).toBeNull()
   })
+  it('prefers app.asar.unpacked skills for packaged Electron installs', () => {
+    const root = mkdtempSync(join(tmpdir(), 'berth-asar-'))
+    const asarDist = join(root, 'Resources', 'app.asar', 'dist')
+    const unpackedSkills = join(root, 'Resources', 'app.asar.unpacked', 'skills', 'berth-tasks')
+    mkdirSync(asarDist, { recursive: true })
+    mkdirSync(unpackedSkills, { recursive: true })
+    writeFileSync(join(unpackedSkills, 'SKILL.md'), '# berth-tasks')
+
+    expect(resolveSkillsDir(asarDist)).toBe(join(root, 'Resources', 'app.asar.unpacked', 'skills'))
+  })
 })
 
 function fakeSkillsDir() {
