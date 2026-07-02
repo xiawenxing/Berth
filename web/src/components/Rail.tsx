@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Anchor, Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight, CalendarClock } from 'lucide-react'
+import { Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight, CalendarClock } from 'lucide-react'
+import { BerthIcon } from '@/components/BerthIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
@@ -184,7 +185,7 @@ export function Rail() {
   return (
     <aside className="flex w-[260px] flex-none flex-col border-r border-border bg-sidebar">
       <div className="flex items-center gap-2 px-3.5 py-3 text-[14px] font-bold">
-        <Anchor size={18} className="text-brand" />
+        <BerthIcon width={18} height={18} className="text-brand" />
         Berth
         <ThemeToggle />
       </div>
