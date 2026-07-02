@@ -24,6 +24,8 @@ asarUnpack:
   - "dist/**"
   - "bin/**"      # unpacked alongside dist/** so the shim's `node bin/berth.mjs` → import('../dist/cli.js')
                   # resolves across the asar boundary without mixed asar/unpacked import paths
+  - "skills/**"   # agent skill installs must point at a real filesystem dir; app.asar is not readable
+                  # by external agent processes following symlinks.
   - "public/**"
 mac:
   target:

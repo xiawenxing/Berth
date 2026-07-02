@@ -11,6 +11,8 @@ export function resolveSkillsDir(startDir: string): string | null {
   let dir = startDir
   for (let i = 0; i < 8; i++) {
     const candidate = join(dir, 'skills')
+    const unpacked = candidate.replace('/app.asar/', '/app.asar.unpacked/')
+    if (unpacked !== candidate && existsSync(join(unpacked, 'berth-tasks', 'SKILL.md'))) return unpacked
     if (existsSync(join(candidate, 'berth-tasks', 'SKILL.md'))) return candidate
     const parent = dirname(dir)
     if (parent === dir) break
