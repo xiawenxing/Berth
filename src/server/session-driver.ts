@@ -12,7 +12,7 @@ export type Inbound =
   | { t: 'i'; d: string }                                              // raw keystrokes (A)
   | { t: 'r'; c: number; r: number }                                   // resize (A)
   | { t: 'img'; d: string; name?: string }                             // image paste (A)
-  | { t: 'turn'; text: string; clientTurnId?: string; images?: { name: string; dataUrl: string }[] }  // user turn (B)
+  | { t: 'turn'; text: string; clientTurnId?: string; images?: { name: string; dataUrl: string; marker?: string }[] }  // user turn (B)
   | { t: 'interrupt' }                                                  // cancel current turn (B)
   | { t: 'kill' }                                                       // end session (registry-handled)
   | { t: string;[k: string]: unknown }                                 // tolerate unknown frames

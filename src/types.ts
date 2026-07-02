@@ -24,6 +24,9 @@ export interface LogicalSession {
   resume?: { cli: AgentCli; id: string }  // command target (set for all real sessions; optional for type-honesty)
   copies: PhysicalSession[]
   deleted: boolean            // contentSource file missing
+  launching?: boolean         // transient: an in-flight Berth launch (live pty, no jsonl yet) — NOT on
+                              // disk, synthesized into the visible set only (never persisted). See
+                              // `synthLaunchingSessions`.
 }
 
 export interface LedgerRecord {

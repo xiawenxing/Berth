@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
-import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd } from '../src/pty/launch'
+import { freshArgv, resumeArgv, ensureCodexBerthHookProfile, ensureLaunchCwd, codexCallbackDir } from '../src/pty/launch'
 
 describe('ensureLaunchCwd', () => {
   it('creates a Berth workspace cwd on demand (never falls back to homedir)', () => {
@@ -128,6 +128,33 @@ it('writes the Codex Berth profile hook under CODEX_HOME', () => {
 // Regression: `--add-dir <directories...>` is variadic and would otherwise swallow the positional
 // prompt as a phantom directory, so the agent launches idle and never takes a turn. The prompt must
 // be separated from add-dir by `--`, never adjacent to it. (This combination was previously untested.)
+it('claude: safeMode omits --dangerously-skip-permissions', () => {
+  const a = freshArgv('claude', { cwd: '/c', sessionId: 'uuid-1', safeMode: true })
+  expect(a).toEqual(['--session-id', 'uuid-1'])
+  expect(a).not.toContain('--dangerously-skip-permissions')
+})
+
+it('coco: safeMode omits --yolo', () => {
+  const a = freshArgv('coco', { cwd: '/c', sessionId: 'uuid-1', safeMode: true })
+  expect(a).toEqual(['--session-id', 'uuid-1'])
+  expect(a).not.toContain('--yolo')
+})
+
+it('codex: safeMode drops the bypass and EXPLICITLY sets approval+sandbox (to override a never/danger user config)', () => {
+  const a = freshArgv('codex', { cwd: '/c', safeMode: true })
+  expect(a).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+  expect(a).toContain('--no-alt-screen')
+  // explicit -a/-s override the user's global config_policy/sandbox_mode (which may be never/danger)
+  expect(a.join(' ')).toContain('--ask-for-approval on-request')
+  expect(a.join(' ')).toContain('--sandbox workspace-write')
+})
+
+it('safeMode false/undefined keeps the bypass flag (default = max permission)', () => {
+  expect(freshArgv('claude', { cwd: '/c' })).toContain('--dangerously-skip-permissions')
+  expect(freshArgv('coco', { cwd: '/c' })).toContain('--yolo')
+  expect(freshArgv('codex', { cwd: '/c' })).toContain('--dangerously-bypass-approvals-and-sandbox')
+})
+
 it('addDirs + initialPrompt together: prompt is fenced behind `--`, never directly after --add-dir', () => {
   for (const cli of ['claude', 'coco', 'codex'] as const) {
     const a = freshArgv(cli, { cwd: '/c', sessionId: 'u', injectFile: '/m.txt', addDirs: ['/v1', '/v2'], initialPrompt: 'do it' })
@@ -138,4 +165,26 @@ it('addDirs + initialPrompt together: prompt is fenced behind `--`, never direct
     expect(a[a.length - 1]).toContain('do it')      // the user prompt is the final positional
     expect(a[a.length - 2]).toBe('--')              // and it sits immediately behind the fence
   }
+})
+
+describe('codex SessionStart hook → callback file (channel A)', () => {
+  let tmpHome = ''
+  beforeEach(() => { tmpHome = mkdtempSync(join(tmpdir(), 'berth-codexhome-')); process.env.CODEX_HOME = tmpHome })
+  afterEach(() => { rmSync(tmpHome, { recursive: true, force: true }); delete process.env.CODEX_HOME })
+
+  it('generated profile writes the stdin envelope to $BERTH_CALLBACK_DIR/$BERTH_LAUNCH_TOKEN.json and still cats context', () => {
+    ensureCodexBerthHookProfile()
+    const toml = readFileSync(join(process.env.CODEX_HOME || '', 'berth-launch.config.toml'), 'utf8')
+    expect(toml).toContain('$BERTH_CALLBACK_DIR')
+    expect(toml).toContain('$BERTH_LAUNCH_TOKEN')
+    expect(toml).toContain('$BERTH_CONTEXT_FILE')   // context injection must NOT regress
+  })
+
+  it('codexCallbackDir resolves under BERTH_HOME', () => {
+    const prev = process.env.BERTH_HOME
+    const tmp = mkdtempSync(join(tmpdir(), 'berth-home-'))
+    process.env.BERTH_HOME = tmp
+    try { expect(codexCallbackDir()).toBe(join(tmp, 'launch-callbacks')) }
+    finally { if (prev === undefined) delete process.env.BERTH_HOME; else process.env.BERTH_HOME = prev; rmSync(tmp, { recursive: true, force: true }) }
+  })
 })

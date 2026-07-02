@@ -3,7 +3,7 @@ import { ChatTranscript } from './ChatTranscript'
 import { Composer } from './Composer'
 import { useChatSession } from '@/lib/useChatSession'
 import { useUI, type LaunchSpec } from '@/lib/ui-store'
-import { resolveSessionPanelConnection } from '@/lib/session-panel-connection'
+import { resolveSessionPanelConnection, resolveSessionPanelRenderer } from '@/lib/session-panel-connection'
 
 /**
  * The Model A / Model B seam on the frontend. One mount point for a session; the active renderer is
@@ -27,9 +27,7 @@ export function SessionPanel({
   const { renderMode } = useUI()
   const effectiveCli = cli ?? launch?.cli
   const connection = resolveSessionPanelConnection(sessionId, launch)
-  // All three CLIs support Model B (claude = persistent stream-json; codex/coco = per-turn).
-  const canChat = effectiveCli === 'claude' || effectiveCli === 'codex' || effectiveCli === 'coco'
-  const active = canChat && renderMode === 'B' ? 'B' : 'A'
+  const active = resolveSessionPanelRenderer(effectiveCli, renderMode, connection)
 
   if (active === 'B') {
     const key = connection.launch ? `B:launch:${connection.launch.launchToken ?? 'pending'}` : `B:${connection.sessionId}`

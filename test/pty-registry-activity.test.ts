@@ -192,5 +192,22 @@ describe('pty-registry → activity wiring', () => {
       expect(events).toContainEqual({ kind: 'state', sessionId: 'act-7', state: 'running' })
       off(); killPty('act-7')
     })
+
+    it('an active TUI turn tolerates a brief intra-turn silence without settling (待查收 flicker fix)', () => {
+      // A running TUI agent that pauses to think / run a tool for a couple seconds must NOT flip to
+      // settled. A mid-turn settle makes the session-list lamp flicker 在航(转圈)⇄待查收(红点) on every
+      // pause AND re-renders the whole list (live.rev bump). The idle threshold must tolerate a normal
+      // intra-turn pause; only sustained silence settles.
+      const pty = fakePty(); registerPty('act-flick', pty, { running: true })
+      const events: any[] = []
+      const off = subscribeActivity(e => events.push(e))
+
+      vi.advanceTimersByTime(3000)                             // a ~3s thinking / tool-call pause
+      expect(events).toEqual([])                               // ← must NOT settle yet (no lamp flip)
+
+      vi.advanceTimersByTime(IDLE_MS)                          // sustained silence past the threshold
+      expect(events).toContainEqual({ kind: 'state', sessionId: 'act-flick', state: 'settled' })
+      off(); killPty('act-flick')
+    })
   })
 })

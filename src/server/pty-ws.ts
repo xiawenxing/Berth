@@ -17,7 +17,7 @@ import { markOpened } from './warm-pool'
 import { buildManifest, type ManifestInput } from '../agent/manifest'
 import { listTasks, updateTask } from '../data/tasks'
 import { listProjects } from '../data/projects'
-import { getTaskFieldConfig, type TaskFieldConfig } from '../data/task-config'
+import { getTaskFieldConfig, resolveStatusRoles, type TaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getDocsRoot, getDocStore } from '../data/docstore'
 import { getContextConfig } from '../data/context-config'
@@ -25,6 +25,8 @@ import { seedDefaultProtocol, resolveProtocol } from '../data/context-protocol'
 import { ensureContextDoc, maintainContextDocOnDiskAsync } from '../data/context-doc'
 import { summarizeCompactedContext } from '../agent/context-compact'
 import { getLocale, promptStrings, DEFAULT_LOCALE, type Locale } from '../i18n'
+import { logDiag } from './diag'
+import { shouldArmFirstTurnNudge, armFirstTurnNudge } from './launch-firstturn'
 import type { Task } from '../data/types'
 import type { AgentCli, LaunchIntent, LogicalSession } from '../types'
 
@@ -38,6 +40,7 @@ interface FreshLaunchResult {
   cli: AgentCli
   cwd: string
   mode: 'tui' | 'stream'
+  deferredInitialPrompt?: string
 }
 
 /** Model B (stream-json chat renderer) is opt-in via ?render=stream-json. All three CLIs support it:
@@ -73,7 +76,17 @@ function rememberFreshLaunch(token: string, promise: Promise<FreshLaunchResult>)
 }
 
 function sendLaunchFrame(ws: WebSocket, r: FreshLaunchResult) {
-  try { ws.send(JSON.stringify({ __berth: 'launched', sessionId: r.launchKey, bound: r.bound, cli: r.cli, cwd: r.cwd, mode: r.mode })) } catch {}
+  try {
+    ws.send(JSON.stringify({
+      __berth: 'launched',
+      sessionId: r.launchKey,
+      bound: r.bound,
+      cli: r.cli,
+      cwd: r.cwd,
+      mode: r.mode,
+      ...(r.deferredInitialPrompt ? { deferredInitialPrompt: r.deferredInitialPrompt } : {}),
+    }))
+  } catch {}
 }
 
 export interface FreshLaunchParams {
@@ -164,19 +177,6 @@ export function planFreshLaunch(
   return { sessionId, intent, bindNow, manifestInput, initialPrompt }
 }
 
-/**
- * Resolve the "pending"/"in-progress" status roles from the configured vocabulary, by position:
- * pending = the default (new-task) status; in-progress = the status right after it in the list.
- * This keeps launch auto-advance working for ANY vocabulary (zh-CN 待办→进行中, English Todo→In
- * Progress, …) instead of hard-comparing literal Chinese values. Returns inProgress=null when there
- * is no "next" status (single-status list), in which case nothing advances.
- */
-export function resolveStatusRoles(cfg: TaskFieldConfig): { pending: string; inProgress: string | null } {
-  const pending = cfg.defaultStatus
-  const idx = cfg.statuses.indexOf(pending)
-  const inProgress = idx >= 0 && idx + 1 < cfg.statuses.length ? cfg.statuses[idx + 1] : null
-  return { pending, inProgress }
-}
 
 /**
  * A task launch should move only genuinely pending tasks forward. This is intentionally a
@@ -281,14 +281,21 @@ export function createPtyWss(): WebSocketServer {
     const s = getCache().find(x => x.sessionId === sessionId)
     const wantStream = rendersStream(url, s?.cli)
     if (hasLivePty(sessionId)) {                  // already running (incl. a warm-pool pre-spawn)
-      if (liveDriverMode(sessionId) === (wantStream ? 'stream' : 'tui')) {
+      const liveMode = liveDriverMode(sessionId)
+      // Reattach when the modes match. Also reattach (never kill) when the session isn't in the disk
+      // cache yet: that's an in-flight launch (no jsonl written), whose render mode can't have been
+      // toggled — killing it here would destroy the still-running agent and is exactly the
+      // "reopen-loses-the-session" failure we're fixing. Only a known, cached session may A↔B respawn.
+      if (liveMode === (wantStream ? 'stream' : 'tui') || !s) {
         markOpened(sessionId)                     // user opened it → graduate out of the warm pool
+        logDiag({ category: 'resume', event: 'attach_live', sessionId, cli: s?.cli, mode: liveMode, inFlight: !s })
         attachViewer(sessionId, ws, { replayBytes }); return
       }
+      logDiag({ category: 'resume', event: 'mode_switch_kill', sessionId, cli: s?.cli, from: liveMode })
       killPty(sessionId)                          // mode switch (A↔B) → respawn in the requested mode below
     }
 
-    if (!s || !s.resume) { try { ws.send('\r\n[berth] session not found or not resumable\r\n') } catch {} ; ws.close(); return }
+    if (!s || !s.resume) { logDiag({ category: 'resume', event: 'not_resumable', sessionId, level: 'warn', cached: !!s }); try { ws.send('\r\n[berth] session not found or not resumable\r\n') } catch {} ; ws.close(); return }
     try {
       if (wantStream) spawnAndRegisterStream(s)                                 // Model B: stream-json resume (claude/codex/coco)
       else spawnAndRegister(s, { cols, rows })                                 // Model A: TUI resume
@@ -305,6 +312,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   const todoKey = url.searchParams.get('todoKey') || null
   const projectId = url.searchParams.get('projectId') || null
   const explicitPrompt = url.searchParams.get('prompt') || undefined
+  const deferInitialPrompt = url.searchParams.get('deferInitialPrompt') === '1'
   const gates = parseContextGates(url.searchParams)
   const requestedAddDirs = url.searchParams.getAll('addDirs')
 
@@ -338,13 +346,22 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     try { ws.send(`\r\n[berth] agent "${cli}" is disabled\r\n`) } catch {} ; ws.close(); return
   }
 
+  const wantStreamLog = rendersStream(url, cli)
+  logDiag({
+    category: 'launch', event: 'fresh_start', launchToken: launchToken ?? undefined, cli, cwd,
+    todoKey: todoKey ?? undefined, projectId: projectId ?? undefined,
+    hasPrompt: !!explicitPrompt, mode: wantStreamLog ? 'stream' : 'tui',
+  })
+
   if (launchToken) {
     const existing = freshLaunchDedupe.get(launchToken)
     if (existing) {
       try {
         const result = await existing
+        logDiag({ category: 'launch', event: 'dedup_hit', launchToken, sessionId: result.launchKey, cli, mode: result.mode })
         sendLaunchFrame(ws, result)
         if (!attachViewer(result.launchKey, ws, { replayBytes: parsePtyReplayBytes(url.searchParams.get('historyBytes')) })) {
+          logDiag({ category: 'launch', event: 'dedup_pty_gone', launchToken, sessionId: result.launchKey, level: 'warn' })
           try { ws.send('\r\n[berth] launch exists but live pty is gone\r\n') } catch {}
           ws.close()
         }
@@ -371,10 +388,18 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   const launchedTodo = todoKey ? todos.find(t => t.id === todoKey) : undefined
   try {
     await advanceTodoOnLaunch(store, launchedTodo)
+    if (launchedTodo) logDiag({ category: 'launch', event: 'task_status_advanced', launchToken: launchToken ?? undefined, cli, todoKey: launchedTodo.id })
   } catch (e: any) {
+    if (launchedTodo) logDiag({ category: 'launch', event: 'task_status_advance_failed', launchToken: launchToken ?? undefined, cli, todoKey: launchedTodo.id, level: 'warn', error: String(e?.message ?? e) })
     try { ws.send(`\r\n[berth] task status update skipped: ${e?.message ?? e}\r\n`) } catch {}
   }
   const plan = planFreshLaunch({ cli, cwd, todoKey, projectId, projectName }, todos, Math.floor(Date.now() / 1000), () => randomUUID(), docsRoot, locale)
+  logDiag({
+    category: 'launch', event: 'plan_built', launchToken: launchToken ?? undefined, sessionId: plan.sessionId ?? plan.intent.id, cli,
+    intentId: plan.intent.id, bound: !!plan.bindNow, todoKey: plan.bindNow?.todoKey ?? todoKey ?? undefined,
+    projectId: plan.bindNow?.projectId ?? projectId ?? undefined, hasTaskPrompt: !!plan.initialPrompt,
+    deferInitialPrompt,
+  })
 
   // Context maintenance: seed the protocol, ensure this entity's context file, and inject the
   // compact rules + paths through the same silent manifest channel. Also remember the context-file
@@ -415,7 +440,11 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
         try { ws.send(`\r\n[berth] context init skipped: ${e?.message ?? e}\r\n`) } catch {}
       }
     }
-    const enriched = { ...enrichManifestForContext(plan.manifestInput, ctxInjection), include: { project: gates.project, task: gates.task } }
+    const enriched = {
+      ...enrichManifestForContext(plan.manifestInput, ctxInjection),
+      include: { project: gates.project, task: gates.task },
+      statuses: getTaskFieldConfig(store).statuses,
+    }
     const { text, addDirs } = buildManifest(enriched, locale)
     mkdirSync(INJECT_DIR, { recursive: true })
     const injectFilePath = join(INJECT_DIR, `${plan.intent.id}.txt`)
@@ -424,6 +453,12 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
     ctxAddDirs = addDirs // [docsRoot] — bound to "any context on"; hidden from the user
   }
   const finalAddDirs = [...userAddDirs, ...ctxAddDirs]
+  logDiag({
+    category: 'launch', event: 'context_ready', launchToken: launchToken ?? undefined, sessionId: plan.sessionId ?? plan.intent.id, cli,
+    anyContext: anyCtx, includeProject: gates.project, includeTask: gates.task,
+    protocolEnabled: ctxCfg.protocolEnabled, hasContextDoc: !!contextAbs, hasInjectFile: !!injectFile,
+    userAddDirCount: userAddDirs.length, contextAddDirCount: ctxAddDirs.length, addDirCount: finalAddDirs.length,
+  })
 
   store.addLaunchIntent(plan.intent)
   if (plan.bindNow) {
@@ -440,6 +475,7 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   // directive, not a replacement. Project/free launches have no planned prompt, so explicit text
   // remains the whole first turn.
   const initialPrompt = composeLaunchInitialPrompt(plan.initialPrompt, explicitPrompt, locale)
+  const spawnInitialPrompt = deferInitialPrompt ? undefined : initialPrompt
 
   // codex injects context via a SessionStart hook gated on `--dangerously-bypass-hook-trust`. The
   // support probe is warmed off the launch path; read only the cache here so a warning never blocks
@@ -475,15 +511,16 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   const wantStream = rendersStream(url, cli)
   if (wantStream) {
     // Model B: no positional prompt — the driver delivers the first user turn (claude via stdin NDJSON;
-    // codex/coco as the per-turn exec prompt). claude's manifest rides --append-system-prompt-file
-    // (injectFile); codex/coco Model B v1 doesn't inject the manifest yet (per-turn hook is a follow-up).
+    // codex/coco as the per-turn exec prompt). claude's manifest rides --append-system-prompt-file;
+    // coco's rides the same session_start hook payload as TUI launches.
     const driver = makeFreshStreamDriver(cli, {
       cwd,
       sessionId: plan.sessionId ?? undefined,
       injectFile,
       model: agentEntry.model ?? undefined,
       addDirs: finalAddDirs,
-      initialPrompt,
+      initialPrompt: spawnInitialPrompt,
+      launchToken: launchToken ?? undefined,
     })
     // holdRunning keeps the session `running` through the agent's silent thinking gap (no output for
     // >IDLE_MS) so a freshly-launched chat turn never falsely settles to 停泊 mid-turn.
@@ -503,8 +540,10 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
       cwd,
       sessionId: plan.sessionId ?? undefined,
       injectFile,
-      initialPrompt: initialPrompt ?? undefined,
+      callbackToken: cli === 'codex' ? plan.intent.id : undefined,  // channel A: token = intent id
+      initialPrompt: spawnInitialPrompt ?? undefined,
       model: agentEntry.model ?? undefined,   // per-CLI default model (claude/codex; coco ignores)
+      safeMode: agentEntry.safeMode,           // per-CLI safe mode → freshArgv drops the bypass flag (Model A only)
       addDirs: finalAddDirs,
       cols,
       rows,
@@ -535,16 +574,41 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
         emit: (sid) => broadcastControl(sid, { __berth: 'turnStarted', sessionId: sid }),
       })
     }
+    // claude/coco: nudge the pre-filled positional prompt's Enter if the composer's slow-cold-start
+    // auto-submit missed it (gotcha #15). Guarded against double-submit by the surfaced() check —
+    // skips the instant a jsonl exists (a turn already ran). See launch-firstturn.ts.
+    if (shouldArmFirstTurnNudge({ cli, mode: 'tui', hasInitialPrompt: !!spawnInitialPrompt })) {
+      logDiag({ category: 'firstturn', event: 'nudge_armed', sessionId: launchKey, cli })
+      armFirstTurnNudge({
+        alive: () => hasLivePty(launchKey),
+        surfaced: () => { refresh(); return !!getCache().find(s => s.sessionId === launchKey) },
+        sendEnter: () => { try { pty.write('\r') } catch {} },
+        onAttempt: (fired, i) => { if (fired) logDiag({ category: 'firstturn', event: 'nudge_fired', sessionId: launchKey, cli, attempt: i }) },
+      })
+    }
   }
   // Tell the client which session id this fresh launch maps to, so it can bind the drawer to the
   // live registry key. This MUST be after register*: 2.0 re-opens /pty?sessionId=… immediately on
   // this frame, and sending it earlier races the registry and can attach the UI to stale transcript
   // state instead of the just-launched process.
-  const launchResult: FreshLaunchResult = { launchKey, bound: !!plan.sessionId, cli, cwd, mode: wantStream ? 'stream' : 'tui' }
+  const launchResult: FreshLaunchResult = {
+    launchKey,
+    bound: !!plan.sessionId,
+    cli,
+    cwd,
+    mode: wantStream ? 'stream' : 'tui',
+    deferredInitialPrompt: deferInitialPrompt ? initialPrompt : undefined,
+  }
+  logDiag({
+    category: 'launch', event: 'spawned', launchToken: launchToken ?? undefined, sessionId: launchKey, cli,
+    bound: launchResult.bound, mode: launchResult.mode, hasInitialPrompt: !!initialPrompt,
+  })
   launchDeferred?.resolve(launchResult)
   sendLaunchFrame(ws, launchResult)
+  logDiag({ category: 'launch', event: 'launched_frame', launchToken: launchToken ?? undefined, sessionId: launchKey, cli })
   attachViewer(launchKey, ws, { replayBytes: parsePtyReplayBytes(url.searchParams.get('historyBytes')) })
   } catch (e) {
+    logDiag({ category: 'launch', event: 'error', launchToken: launchToken ?? undefined, cli, level: 'error', message: String((e as any)?.message ?? e) })
     launchDeferred?.reject(e)
     throw e
   }

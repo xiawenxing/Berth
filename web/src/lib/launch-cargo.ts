@@ -22,13 +22,29 @@ export function initCargo(enabledPaths: string[], lastCwd: string | null, hasTas
   }
 }
 
-/** 勾选/取消装载某目录。取消点亮中的目录 → 回退默认；从无装载到首次勾选 → 自动点亮。 */
+function firstLoadedCwd(dirs: CargoDir[]): string | null {
+  return dirs.find((d) => d.loaded)?.cwd ?? null
+}
+
+/** Add a newly-registered directory to the current launch cargo. */
+export function addDir(s: CargoState, cwd: string): CargoState {
+  if (s.dirs.some((d) => d.cwd === cwd)) return s
+  const hadLoaded = s.dirs.some((d) => d.loaded)
+  return {
+    ...s,
+    dirs: [...s.dirs, { cwd, loaded: true }],
+    litCwd: s.litCwd ?? (hadLoaded ? null : cwd),
+  }
+}
+
+/** 勾选/取消装载某目录。取消点亮中的目录 → 由剩余装载目录接力；从无装载到首次勾选 → 自动点亮。 */
 export function toggleDir(s: CargoState, cwd: string): CargoState {
+  const hadLoaded = s.dirs.some((d) => d.loaded)
   const dirs = s.dirs.map((d) => (d.cwd === cwd ? { ...d, loaded: !d.loaded } : d))
   const target = dirs.find((d) => d.cwd === cwd)!
   let litCwd = s.litCwd
-  if (!target.loaded && s.litCwd === cwd) litCwd = null
-  else if (target.loaded && s.litCwd === null) litCwd = cwd
+  if (!target.loaded && s.litCwd === cwd) litCwd = firstLoadedCwd(dirs)
+  else if (target.loaded && s.litCwd === null && !hadLoaded) litCwd = cwd
   return { ...s, dirs, litCwd }
 }
 

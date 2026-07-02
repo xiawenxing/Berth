@@ -1,14 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Anchor, Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight, CalendarClock } from 'lucide-react'
+import { Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight, CalendarClock } from 'lucide-react'
+import { BerthIcon } from '@/components/BerthIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/lib/utils'
 import { NewProjectDialog } from './NewProjectDialog'
 import { useData } from '@/lib/data'
 import { useLive } from '@/lib/live'
-import { api, type ApiSession } from '@/lib/api'
+import { api, type AgentIntegrationStatus, type ApiSession, type AppUpdateStatus } from '@/lib/api'
+import { AGENT_INTEGRATION_CHANGED } from '@/lib/integration-events'
 import { toggleMode } from '@/lib/theme'
 import { deliveryStats } from '@/lib/delivery'
+import { settingsNotice, type SettingsNotice } from '@/lib/settings-status'
 
 interface ProjRow {
   id: string
@@ -71,12 +74,64 @@ function NavItem({ to, icon: Icon, label }: { to: string; icon: typeof Inbox; la
   )
 }
 
+function SettingsNoticeLink({ notice }: { notice: SettingsNotice }) {
+  return (
+    <NavLink
+      to="/settings"
+      className={({ isActive }) =>
+        cn(
+          'mb-1 flex items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent',
+          notice.kind === 'app-update' && 'border-brand/30 bg-brand/10 text-brand',
+          notice.kind === 'integration-install' && 'border-warning/35 bg-warning/10 text-warning',
+          notice.kind === 'integration-update' && 'border-warning/30 bg-warning/10 text-warning',
+          isActive && 'bg-sidebar-accent',
+        )
+      }
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[11px] font-semibold leading-4">{notice.title}</span>
+        <span className="block truncate text-[10.5px] font-normal leading-3 text-muted-foreground">{notice.hint}</span>
+      </span>
+      <span className="flex-none rounded-full bg-card px-1.5 py-0.5 text-[10px] font-semibold leading-none text-current">
+        {notice.badge}
+      </span>
+    </NavLink>
+  )
+}
+
 export function Rail() {
   const { projects: apiProjects, tasks, sessions, reload } = useData()
   const live = useLive()
   const [extra, setExtra] = useState<ProjRow[]>([])
   const [newProj, setNewProj] = useState(false)
   const [archivedOpen, setArchivedOpen] = useState(false)
+  const [appUpdate, setAppUpdate] = useState<AppUpdateStatus | null>(null)
+  const [integration, setIntegration] = useState<AgentIntegrationStatus | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    const refreshIntegration = () => {
+      api.appUpdate()
+        .then((status) => { if (alive) setAppUpdate(status) })
+        .catch(() => {})
+      api.agentIntegration()
+        .then((status) => { if (alive) setIntegration(status) })
+        .catch(() => {})
+    }
+    const onIntegrationChanged = (event: Event) => {
+      const status = (event as CustomEvent<AgentIntegrationStatus>).detail
+      if (alive && status) setIntegration(status)
+      refreshIntegration()
+    }
+    refreshIntegration()
+    window.addEventListener(AGENT_INTEGRATION_CHANGED, onIntegrationChanged)
+    window.addEventListener('focus', refreshIntegration)
+    return () => {
+      alive = false
+      window.removeEventListener(AGENT_INTEGRATION_CHANGED, onIntegrationChanged)
+      window.removeEventListener('focus', refreshIntegration)
+    }
+  }, [])
 
   // Sessions bucketed by project id, so each rail row can show its aggregate live status.
   const byProject = useMemo(() => {
@@ -109,6 +164,7 @@ export function Rail() {
 
   const unassignedSessions = byProject.get('__none__') ?? []
   const unassignedN = unassignedSessions.length
+  const notice = settingsNotice(appUpdate, integration)
 
   // Optimistic row + persist via POST /projects/create, then reload real data.
   const addProject = (name: string, desc = '', aiContext = true, images: string[] = []) => {
@@ -129,7 +185,7 @@ export function Rail() {
   return (
     <aside className="flex w-[260px] flex-none flex-col border-r border-border bg-sidebar">
       <div className="flex items-center gap-2 px-3.5 py-3 text-[14px] font-bold">
-        <Anchor size={18} className="text-brand" />
+        <BerthIcon width={18} height={18} className="text-brand" />
         Berth
         <ThemeToggle />
       </div>
@@ -194,6 +250,7 @@ export function Rail() {
       </div>
 
       <div className="mt-auto border-t border-border px-2.5 py-1.5">
+        {notice && <SettingsNoticeLink notice={notice} />}
         <NavItem to="/settings" icon={SettingsIcon} label="设置" />
       </div>
 

@@ -199,6 +199,60 @@ html.light {
 .btn-primary:active { transform: translateY(0.5px); box-shadow: var(--elev-1); }
 .btn-primary:disabled { opacity: 0.5; box-shadow: none; transform: none; pointer-events: none; }
 
+/* Compact app switch — token-driven, so the on/off colors follow the active Berth scheme. */
+.berth-switch {
+  --switch-w: 34px;
+  --switch-h: 19px;
+  --switch-knob: 15px;
+  --switch-pad: 2px;
+  position: relative;
+  display: inline-flex;
+  width: var(--switch-w);
+  height: var(--switch-h);
+  flex: none;
+  align-items: center;
+  border: 1px solid color-mix(in oklab, var(--color-input) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-muted) 86%, var(--color-card) 14%);
+  box-shadow: inset 0 1px 1px rgb(16 24 40 / 0.04);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out), opacity var(--dur-1) var(--ease-out);
+}
+.berth-switch[data-state="checked"] {
+  border-color: color-mix(in oklab, var(--color-success) 44%, var(--color-border));
+  background: color-mix(in oklab, var(--color-success) 62%, var(--color-card) 38%);
+  box-shadow: inset 0 -1px 0 rgb(0 0 0 / 0.035), 0 0 0 2px color-mix(in oklab, var(--color-success) 10%, transparent);
+}
+html.dark .berth-switch[data-state="checked"] {
+  background: color-mix(in oklab, var(--color-success) 42%, var(--color-card) 58%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 0 0 2px color-mix(in oklab, var(--color-success) 11%, transparent);
+}
+.berth-switch-thumb {
+  position: absolute;
+  top: var(--switch-pad);
+  left: var(--switch-pad);
+  width: var(--switch-knob);
+  height: var(--switch-knob);
+  border-radius: 999px;
+  background: var(--color-card);
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.14), 0 0 0 1px color-mix(in oklab, var(--color-border) 68%, transparent);
+  transition: transform var(--dur-2) var(--ease-out), background-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
+}
+html.dark .berth-switch-thumb {
+  background: color-mix(in oklab, var(--color-foreground) 96%, #ffffff 4%);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.36);
+}
+.berth-switch[data-state="checked"] .berth-switch-thumb {
+  transform: translateX(calc(var(--switch-w) - var(--switch-knob) - var(--switch-pad) * 2));
+}
+.berth-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 /* Kanban card — an e2 RAISED tile (--color-card: white in light, the lightest panel in dark) floating
    on the e1 page plane (the lane has no fill), so tone agrees with the elev-1 shadow without recessing
    the column into a sunken block. Hover lifts by elevation only: more shadow + a 1px rise, and a touch

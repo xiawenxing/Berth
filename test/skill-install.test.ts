@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, lstatSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resolveSkillsDir, linkBundledSkills, detectAgentSkillDirs, bundledSkillNames } from '../src/skill-install'
+import { bundledSkillState, resolveSkillsDir, linkBundledSkills, detectAgentSkillDirs, bundledSkillNames } from '../src/skill-install'
 
 describe('resolveSkillsDir', () => {
   it('finds the repo skills/ dir from a nested start dir', () => {
@@ -13,6 +13,16 @@ describe('resolveSkillsDir', () => {
   })
   it('returns null when no skills/ is above the start dir', () => {
     expect(resolveSkillsDir(mkdtempSync(join(tmpdir(), 'noskills-')))).toBeNull()
+  })
+  it('prefers app.asar.unpacked skills for packaged Electron installs', () => {
+    const root = mkdtempSync(join(tmpdir(), 'berth-asar-'))
+    const asarDist = join(root, 'Resources', 'app.asar', 'dist')
+    const unpackedSkills = join(root, 'Resources', 'app.asar.unpacked', 'skills', 'berth-tasks')
+    mkdirSync(asarDist, { recursive: true })
+    mkdirSync(unpackedSkills, { recursive: true })
+    writeFileSync(join(unpackedSkills, 'SKILL.md'), '# berth-tasks')
+
+    expect(resolveSkillsDir(asarDist)).toBe(join(root, 'Resources', 'app.asar.unpacked', 'skills'))
   })
 })
 
@@ -37,7 +47,21 @@ describe('detectAgentSkillDirs', () => {
     mkdirSync(join(home, '.codex'), { recursive: true })
     const agents = detectAgentSkillDirs(home)
     expect(agents.map(a => a.agent).sort()).toEqual(['Claude Code', 'Codex'])
-    expect(agents.find(a => a.agent === 'Codex')!.dir).toBe(join(home, '.codex', 'skills'))
+    expect(agents.find(a => a.agent === 'Codex')!.dir).toBe(join(home, '.agents', 'skills'))
+  })
+})
+
+describe('bundledSkillState', () => {
+  it('accepts copied skills with identical SKILL.md content as current', () => {
+    const src = fakeSkillsDir()
+    const home = mkdtempSync(join(tmpdir(), 'berth-home-'))
+    const dest = join(home, '.agents', 'skills', 'berth-tasks')
+    mkdirSync(dest, { recursive: true })
+    writeFileSync(join(dest, 'SKILL.md'), readFileSync(join(src, 'berth-tasks', 'SKILL.md'), 'utf8'))
+
+    expect(bundledSkillState(dest, join(src, 'berth-tasks'))).toBe('current')
+    writeFileSync(join(dest, 'SKILL.md'), '# stale')
+    expect(bundledSkillState(dest, join(src, 'berth-tasks'))).toBe('outdated')
   })
 })
 

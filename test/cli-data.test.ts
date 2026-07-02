@@ -70,3 +70,17 @@ describe('berth task progress deprecation', () => {
     await expect(runTaskCli(['progress', 'some-task', 'hello'])).rejects.toThrow(/berth task log/)
   })
 })
+
+describe('selectTask id-only mode', () => {
+  const tasks = [
+    { id: 'abc-123', title: '处理会话', status: null, priority: null, project: null },
+    { id: 'def-456', title: '会话导入', status: null, priority: null, project: null },
+  ]
+  it('matches many by title substring in default mode', () => {
+    expect(selectTask(tasks as any, '会话').length).toBe(2)
+  })
+  it('with idOnly, matches only exact id (never title)', () => {
+    expect(selectTask(tasks as any, '会话', { idOnly: true }).length).toBe(0)
+    expect(selectTask(tasks as any, 'abc-123', { idOnly: true }).map(t => t.id)).toEqual(['abc-123'])
+  })
+})

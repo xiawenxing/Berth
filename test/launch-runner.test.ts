@@ -103,4 +103,66 @@ describe('startFreshLaunch', () => {
       ;(globalThis as any).WebSocket = prevWebSocket
     }
   })
+
+  it('defers image task launches so codex submits one merged task prompt with the images', () => {
+    const prevLocation = (globalThis as any).location
+    const prevWebSocket = (globalThis as any).WebSocket
+    const sockets: any[] = []
+    class FakeWebSocket {
+      static OPEN = 1
+      onmessage: ((e: { data: string }) => void) | null = null
+      onerror: (() => void) | null = null
+      readyState = FakeWebSocket.OPEN
+      bufferedAmount = 0
+      sent: string[] = []
+      closed = false
+      constructor(public url: string) { sockets.push(this) }
+      send(data: string) { this.sent.push(data) }
+      close() { this.closed = true }
+    }
+    ;(globalThis as any).location = { protocol: 'http:', host: 'localhost:5173' }
+    ;(globalThis as any).WebSocket = FakeWebSocket
+    try {
+      startFreshLaunch({
+        dest: 'task',
+        title: 'T',
+        taskTitle: 'T',
+        taskNote: '补充范围',
+        cli: 'codex',
+        cargo: initCargo(['/repo'], '/repo', true),
+        project: { id: 'p1', name: 'Berth', workspaceCwd: '/workspace/p1' },
+        projectId: 'p1',
+        todoKey: 'task-1',
+        images: [{ name: 'paste.png', dataUrl: 'data:image/png;base64,abc' }],
+        sessions: [],
+        addPending: () => {},
+        openDrawer: () => {},
+        makeLaunchToken: () => 'launch-img',
+      })
+
+      expect(sockets).toHaveLength(1)
+      expect(sockets[0].url).toContain('deferInitialPrompt=1')
+      expect(sockets[0].url).toContain('prompt=')
+
+      sockets[0].onmessage?.({
+        data: JSON.stringify({
+          __berth: 'launched',
+          sessionId: 'live-1',
+          deferredInitialPrompt: '请开始处理任务："T"\n\n本次会话补充说明：\n补充范围',
+        }),
+      })
+      sockets[0].onmessage?.({ data: '\x1b[?2004h' })
+      sockets[0].onmessage?.({ data: '[Image #1]' })
+
+      const sent = sockets[0].sent.map((raw: string) => JSON.parse(raw))
+      expect(sent[0]).toMatchObject({ t: 'img', name: 'paste.png', d: 'data:image/png;base64,abc' })
+      expect(sent[1].t).toBe('i')
+      expect(sent[1].d).toContain('请开始处理任务')
+      expect(sent[1].d).toContain('本次会话补充说明')
+      expect(sent[1].d).toContain('补充范围')
+    } finally {
+      ;(globalThis as any).location = prevLocation
+      ;(globalThis as any).WebSocket = prevWebSocket
+    }
+  })
 })

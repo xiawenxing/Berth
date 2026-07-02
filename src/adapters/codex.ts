@@ -5,6 +5,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { PhysicalSession, LedgerRecord } from '../types'
 import { deriveTitleFromTranscript } from '../agent/transcript'
 import { lastMessageTime } from './transcript-time'
+import { createMtimeCache, type MtimeCache } from './mtime-cache'
 
 const TITLE_SCAN_BYTES = 8 * 1024 * 1024
 const TITLE_CHUNK_BYTES = 64 * 1024
@@ -84,10 +85,7 @@ function transcriptTitle(storePath: string): string | null {
 
 const STUB_PREFIX = 'Imported from Claude Code session:'
 
-export function listCodexSessions(root: string): PhysicalSession[] {
-  // Authoritative list = glob the rollouts, NOT session_index.jsonl (it drops ~10%).
-  const files = fg.sync('sessions/**/rollout-*.jsonl', { cwd: root, absolute: true })
-  const out: PhysicalSession[] = []
+function loadIndexTitles(root: string): Map<string, string> {
   const titleById = new Map<string, string>()
   try {
     for (const line of readFileSync(join(root, 'session_index.jsonl'), 'utf8').split('\n')) {
@@ -95,27 +93,51 @@ export function listCodexSessions(root: string): PhysicalSession[] {
       try { const r = JSON.parse(line); if (r.id && r.thread_name) titleById.set(r.id, r.thread_name) } catch {}
     }
   } catch {}
-  for (const storePath of files) {
-    const firstLine = readFileSync(storePath, 'utf8').split('\n', 1)[0]
-    if (!firstLine) continue
-    const meta = JSON.parse(firstLine).payload ?? {}
-    if (!meta.id) continue
-    const baseText: string = meta.base_instructions?.text ?? ''
-    const isStub = baseText.startsWith(STUB_PREFIX)
-    out.push({
-      cli: 'codex',
-      physicalId: meta.id,
-      storePath,
-      cwd: meta.cwd ?? null,
-      title: (isStub ? null : transcriptTitle(storePath)) ?? titleById.get(meta.id) ?? meta.thread_name ?? null,
-      // session_meta.timestamp is the session CREATION time and never advances; the rollout carries a
-      // top-level `timestamp` on every line, so date from the LAST message (like claude) and fall back
-      // to creation time only for an empty rollout. Otherwise unread can't re-light and ordering rots.
-      updatedAt: lastMessageTime(storePath) ?? (Math.floor(new Date(meta.timestamp ?? 0).getTime() / 1000) || 0),
-      kind: isStub ? 'import-stub' : 'native',
-      importedFromPath: isStub ? baseText.slice(STUB_PREFIX.length).trim() : undefined,
-    })
+  return titleById
+}
+
+/**
+ * Parse one rollout into a PhysicalSession (the expensive bit: reads the first line + title sample +
+ * last-message time). `titleById` is the index fallback for a session with no file-derived title;
+ * because the result is mtime-cached, a title that the index gains AFTER first parse only takes effect
+ * once the rollout's mtime next changes — an acceptable, rare staleness (the Berth rename still wins).
+ */
+function buildCodexSession(storePath: string, titleById: Map<string, string>): PhysicalSession | null {
+  const firstLine = readFileSync(storePath, 'utf8').split('\n', 1)[0]
+  if (!firstLine) return null
+  const meta = JSON.parse(firstLine).payload ?? {}
+  if (!meta.id) return null
+  const baseText: string = meta.base_instructions?.text ?? ''
+  const isStub = baseText.startsWith(STUB_PREFIX)
+  return {
+    cli: 'codex',
+    physicalId: meta.id,
+    storePath,
+    cwd: meta.cwd ?? null,
+    title: (isStub ? null : transcriptTitle(storePath)) ?? titleById.get(meta.id) ?? meta.thread_name ?? null,
+    // session_meta.timestamp is the session CREATION time and never advances; the rollout carries a
+    // top-level `timestamp` on every line, so date from the LAST message (like claude) and fall back
+    // to creation time only for an empty rollout. Otherwise unread can't re-light and ordering rots.
+    updatedAt: lastMessageTime(storePath) ?? (Math.floor(new Date(meta.timestamp ?? 0).getTime() / 1000) || 0),
+    kind: isStub ? 'import-stub' : 'native',
+    importedFromPath: isStub ? baseText.slice(STUB_PREFIX.length).trim() : undefined,
   }
+}
+
+// One cache instance for the server process's lifetime. Rollouts are append-only, so an unchanged
+// mtime means an unchanged parse — turning a full ~480MB content re-read per scan into a stat walk.
+const codexCache = createMtimeCache<PhysicalSession | null>()
+
+export function listCodexSessions(root: string, cache: MtimeCache<PhysicalSession | null> = codexCache): PhysicalSession[] {
+  // Authoritative list = glob the rollouts, NOT session_index.jsonl (it drops ~10%).
+  const files = fg.sync('sessions/**/rollout-*.jsonl', { cwd: root, absolute: true })
+  const titleById = loadIndexTitles(root)
+  const out: PhysicalSession[] = []
+  for (const storePath of files) {
+    const sess = cache.resolve(storePath, () => buildCodexSession(storePath, titleById))
+    if (sess) out.push(sess)
+  }
+  cache.prune(files)
   return out
 }
 

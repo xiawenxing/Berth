@@ -53,14 +53,15 @@ loading 态由 `TaskTag` 自身的本地 state 持有（因为 popover 已关闭
 handler（`src/server/api.ts`，挨着现有 `/todos`）：
 
 1. 校验 `sessionId`，从 session cache 找到会话，取 `contentSourcePath`。
-2. `digest = extractConversation(readTranscript(contentSourcePath), 6000)`（复用 `src/agent/transcript.ts` + `src/server/context-consolidate-service.ts`）。`digest` 为空 → `400 { error: 'empty session content' }`。
-3. 编排逻辑放进一个内聚函数 `createTaskFromSession(...)`（建议落 `src/data/task-from-session.ts`，依赖清晰、可单测）：
+2. `digest = extractConversation(readTranscript(contentSourcePath), 6000)`（复用 `src/agent/transcript.ts` + `src/server/context-consolidate-service.ts`）。`digest` 为空 → `422 { error: 'empty session content' }`（请求合法、但所指会话内容不可处理，用 422 而非 400；endpoint 负责读 transcript，编排函数只吃已抽好的 digest）。
+3. 编排逻辑放进一个内聚函数 `createTaskFromSession(store, docStore, sessionId, digest, opts)`（落 `src/data/task-from-session.ts`，纯逻辑、可单测）：
    1. `title = (await generateTaskTitle(digest, resolveBerthAgent(store))).trim()`；空 → 抛错（→ 502）。
-   2. `result = await createTask(store, getDocStore(store), title, { projectId, autoTitle: false })`。
+   2. `result = await createTask(store, docStore, title, { projectId, autoTitle: false, confirm: true })`。
       - `projectId` 缺省时由 `createTask` 现有的项目解析逻辑处理；正常会带上会话所属项目。
-   3. 取 `result.record.id`，调用与 `/edge` 同一条链路的 `setEdge(session, taskId)`，把会话关联到新任务。
-   4. `await generateTaskSummary(store, taskId)`（复用 `src/data/task-summary.ts`）——此时会话已关联，digest provider 会把会话内容折进任务摘要，**摘要由此而来，无需额外起一次 agent 提示**。该步 best-effort：失败不回滚任务/关联，只是没摘要。
-   5. `broadcastDataChanged()`；返回 `{ record }`。
+      - `confirm: true`：用户是显式「一键创建」，不能因 agent 生成的标题与既有任务同名而被 `duplicate` 静默拦下——必须建出新任务并关联。
+   3. 取 `result.record.id`，用与 `/edge` 同一语义的 `store.removeEdgesForSession` → `store.addEdge`（+ `setAttach` 当有 projectId）把会话关联到新任务。
+   4. `triggerTaskSummary(store, taskId)`（复用 `src/data/task-summary.ts`，fire-and-forget）——必须在关联**之后**触发，digest provider 才能把会话内容折进任务摘要，**摘要由此而来，无需额外起一次 agent 提示**。best-effort：失败不回滚任务/关联。
+   5. endpoint 侧 `broadcastDataChanged()`；返回 `CreateResult`（客户端只 reload、不消费 body）。
 
 注意点 / landmines：
 - `createTask` 的 `autoTitle` 只对入参 text 生效，与会话无关，这里**已自行生成标题**，故传 `autoTitle: false`，避免二次 agent 调用。
@@ -109,7 +110,7 @@ const onCreateTaskFromSession = (sessionId: string) =>
 
 - **server 单测**（`src/data/task-from-session.test.ts`，遵循现有 data 层测试风格）：
   - mock agent（stub `generateTaskTitle` / agent runner）：给定一段会话 transcript，断言 createTask 被以生成标题调用、edge 已建立、返回 record。
-  - 空 digest → 抛错/400 路径。
+  - 空 digest → 抛错路径（endpoint 侧表现为 422）。
 - **既有回归**：`npx tsc --noEmit` clean + `npm test` green。
 - agent 真实调用走 `*.live.test.ts`（`BERTH_LIVE=1`）即可，不进默认 CI。
 

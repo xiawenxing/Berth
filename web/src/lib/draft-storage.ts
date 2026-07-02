@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type SetStateAction } from 'react'
 
 const PREFIX = 'berth:draft:'
 
@@ -38,9 +38,12 @@ export function usePersistentDraft(key: string, initial = '') {
     setValueState(readDraft(key) || initial)
   }, [key, initial])
 
-  const setValue = (next: string) => {
-    setValueState(next)
-    writeDraft(key, next)
+  const setValue = (next: SetStateAction<string>) => {
+    setValueState((prev) => {
+      const resolved = typeof next === 'function' ? (next as (prev: string) => string)(prev) : next
+      writeDraft(key, resolved)
+      return resolved
+    })
   }
 
   const clear = () => {

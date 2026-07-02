@@ -13,23 +13,28 @@ export interface PreviewSession {
   updatedAt: number
 }
 
-export function toPreview(s: LogicalSession): PreviewSession {
-  return { sessionId: s.sessionId, cli: s.cli, title: s.title ?? null, cwd: s.cwd ?? null, updatedAt: s.updatedAt }
+/**
+ * Project to a PreviewSession. `overrides` is the Berth rename map (sessionId→title): a Berth-named
+ * session wins over its native/derived title, matching the main list's precedence so the 导入 chooser
+ * shows the same name (berth名 > 原生 > 推断).
+ */
+export function toPreview(s: LogicalSession, overrides?: Map<string, string>): PreviewSession {
+  return { sessionId: s.sessionId, cli: s.cli, title: overrides?.get(s.sessionId) ?? s.title ?? null, cwd: s.cwd ?? null, updatedAt: s.updatedAt }
 }
 
 /** All sessions for one CLI, most-recent first. */
-export function previewByCli(all: LogicalSession[], cli: AgentCli): PreviewSession[] {
+export function previewByCli(all: LogicalSession[], cli: AgentCli, overrides?: Map<string, string>): PreviewSession[] {
   return all
     .filter(s => s.cli === cli)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map(toPreview)
+    .map(s => toPreview(s, overrides))
 }
 
 /**
  * Split requested ids into the sessions that exist in the scan vs the ids that don't. `found`
  * preserves the request order (deduped); `notFound` lists the leftover ids (deduped, request order).
  */
-export function previewByIds(all: LogicalSession[], ids: string[]): { found: PreviewSession[]; notFound: string[] } {
+export function previewByIds(all: LogicalSession[], ids: string[], overrides?: Map<string, string>): { found: PreviewSession[]; notFound: string[] } {
   const byId = new Map(all.map(s => [s.sessionId, s]))
   const seen = new Set<string>()
   const found: PreviewSession[] = []
@@ -38,7 +43,7 @@ export function previewByIds(all: LogicalSession[], ids: string[]): { found: Pre
     if (seen.has(id)) continue
     seen.add(id)
     const s = byId.get(id)
-    if (s) found.push(toPreview(s))
+    if (s) found.push(toPreview(s, overrides))
     else notFound.push(id)
   }
   return { found, notFound }

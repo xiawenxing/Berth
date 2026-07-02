@@ -1,11 +1,15 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const saveAttachment = vi.hoisted(() => vi.fn((_dataUrl: string, _nameHint: string) => ({
   rel: 'assets/x.png',
   abs: '/tmp/berth-docs/assets/x.png',
 })))
+const mockLogDiag = vi.hoisted(() => vi.fn())
 vi.mock('../src/data/docstore', () => ({
   currentDocStore: () => ({ saveAttachment }),
+}))
+vi.mock('../src/server/diag', () => ({
+  logDiag: mockLogDiag,
 }))
 
 import { PerTurnStreamDriver } from '../src/server/per-turn-stream-driver'
@@ -38,6 +42,10 @@ const codexTurn = (text: string) => [
 ].join('\n') + '\n'
 
 describe('PerTurnStreamDriver', () => {
+  beforeEach(() => {
+    mockLogDiag.mockClear()
+  })
+
   it('initialPrompt spawns the first turn with resumeId=null (fresh) + optimistic user bubble', () => {
     const spawns: Array<{ prompt: string; resumeId: string | null }> = []
     const spawnTurn = (prompt: string, resumeId: string | null) => { spawns.push({ prompt, resumeId }); return fakeChild().child }
@@ -200,5 +208,19 @@ describe('PerTurnStreamDriver', () => {
     expect(d.turnActive()).toBe(true)            // a turn is pending even though child1 has its result
     children[0].exit()                            // child1 exits → queued q2 spawns
     expect(d.turnActive()).toBe(true)            // child2 now active
+  })
+
+  it('logs the per-turn Model B lifecycle without raw prompt text', () => {
+    const f = fakeChild()
+    const d = new PerTurnStreamDriver(new CodexReducer(clock), () => f.child, { diag: { cli: 'coco', sessionId: 'sid', launchToken: 'tok' } })
+    d.send({ t: 'turn', text: 'secret prompt', clientTurnId: 'client-1' })
+    f.emit(codexTurn('answer'))
+    f.exit()
+
+    const events = mockLogDiag.mock.calls.map(([ev]) => ev)
+    expect(events.map((ev) => ev.event)).toEqual(expect.arrayContaining(['driver_start', 'prepared', 'spawn_turn', 'spawned', 'first_output', 'session', 'result', 'child_exit']))
+    const prepared = events.find((ev) => ev.event === 'prepared')
+    expect(prepared).toMatchObject({ category: 'stream_turn', cli: 'coco', sessionId: 'sid', launchToken: 'tok', textLen: 'secret prompt'.length, agentTextLen: 'secret prompt'.length })
+    expect(prepared?.text).toBeUndefined()
   })
 })

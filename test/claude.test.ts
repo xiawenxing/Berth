@@ -58,6 +58,33 @@ describe('claude adapter', () => {
     const s = listClaudeSessions(dir).find(x => x.kind === 'native')!
     expect(s.title).toBe('标题生成信息太少 / 我会查看标题生成路径。')
   })
+  it('uses the native ai-title as the session title', () => {
+    // Claude persists the session title (shown in /resume) as an `ai-title` record. Berth used to
+    // ignore it and derive from content, which returns null when no first user turn is in the sampled
+    // head → the session rendered as "(未命名)" even though Claude has a real title.
+    const dir = mkdtempSync(join(tmpdir(), 'berth-claude-'))
+    const id = 'aaaabbbb-1111-4111-8111-2222aaaabbbb'
+    writeFileSync(join(dir, `${id}.jsonl`), [
+      JSON.stringify({ type: 'ai-title', aiTitle: '设计项目上下文管理规范AGENTMD', sessionId: id }),
+      JSON.stringify({ type: 'permission-mode', permissionMode: 'default', sessionId: id, cwd: '/tmp' }),
+    ].join('\n') + '\n')
+
+    const s = listClaudeSessions(dir).find(x => x.kind === 'native')!
+    expect(s.title).toBe('设计项目上下文管理规范AGENTMD')
+  })
+
+  it('prefers the native ai-title over the derived content title (native > derived)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'berth-claude-'))
+    const id = 'aaaabbbb-1111-4111-8111-2222ccccdddd'
+    writeFileSync(join(dir, `${id}.jsonl`), [
+      JSON.stringify({ type: 'ai-title', aiTitle: 'Claude 的原生标题', sessionId: id }),
+      JSON.stringify({ type: 'user', message: { role: 'user', content: '真正的第一条消息' }, cwd: '/tmp', timestamp: '2026-06-14T00:29:00.000Z' }),
+    ].join('\n') + '\n')
+
+    const s = listClaudeSessions(dir).find(x => x.kind === 'native')!
+    expect(s.title).toBe('Claude 的原生标题')
+  })
+
   it('classifies subagent transcripts as kind=subagent with parentId', () => {
     const sub = listClaudeSessions(ROOT).find(x => x.kind === 'subagent')!
     expect(sub.parentId).toBe('cccc1111-1111-4111-8111-111111111111')

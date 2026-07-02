@@ -7,7 +7,9 @@ import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { attachImeComposition } from '@/lib/ime-input'
 import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
 import { cliReadiness, shouldMarkLaunchReady, shouldRevealLaunch } from '@/lib/launch-readiness'
+import { logDiag } from '@/lib/diag'
 import type { LaunchSpec } from '@/lib/ui-store'
+import { appendLaunchFirstTurnParams } from '@/lib/launch-runner'
 import '@xterm/xterm/css/xterm.css'
 
 const DEFAULT_PTY_HISTORY_BYTES = 16 * 1024 * 1024
@@ -330,13 +332,18 @@ export function Terminal({
       for (const d of launch.addDirs ?? []) qs.append('addDirs', d)
       if (launch.ctxProject === false) qs.set('ctxProject', '0')
       if (launch.ctxTask === false) qs.set('ctxTask', '0')
-      if (launch.prompt && !launch.images?.length) qs.set('prompt', launch.prompt)
+      // Match the prime socket's routing exactly: this viewer can win the spawn race, so first-turn
+      // URL/deferred params must be identical to the drawer-independent launch driver.
+      appendLaunchFirstTurnParams(qs, launch, false)
     } else if (sessionId) {
       qs.set('sessionId', sessionId)
       qs.set('historyBytes', String(historyBytes))
     }
     ws = new WebSocket(`${proto}://${location.host}/pty?${qs.toString()}`)
     ws.binaryType = 'arraybuffer'
+    const diagKind = launch ? 'launch' : 'resume'
+    ws.addEventListener('open', () => logDiag('connect', 'term_open', { kind: diagKind, cli: launch?.cli, sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken }), { once: true })
+    ws.addEventListener('error', () => logDiag('connect', 'term_error', { kind: diagKind, level: 'error', sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken }), { once: true })
 
     const pasteIsForThisTerminal = (e: Event) => {
       const shell = shellRef.current
@@ -381,8 +388,35 @@ export function Terminal({
       reader.readAsDataURL(file)
     }
     let replayPositionRestored = false
+    let initialResumeBottomRestored = false
+    let userScrolledResumeBeforeRestore = false
+    let resumeBottomFrame: number | null = null
+    let resumeBottomTimer: ReturnType<typeof setTimeout> | null = null
     let suppressHistoryLoadUntil = 0
     let imagePasteHandledAt = 0
+    const noteResumeViewportIntent = () => {
+      if (!launch) userScrolledResumeBeforeRestore = true
+    }
+    const restoreInitialResumeBottom = () => {
+      if (launch || historyBytes > DEFAULT_PTY_HISTORY_BYTES || initialResumeBottomRestored || userScrolledResumeBeforeRestore) return
+      initialResumeBottomRestored = true
+      suppressHistoryLoadUntil = Date.now() + 1000
+      term.scrollToBottom()
+      // Codex resume replays a full-screen TUI and xterm may still be settling/fitting after the
+      // first write callback. Nudge the viewport once more after layout so the composer stays visible.
+      resumeBottomFrame = requestAnimationFrame(() => {
+        resumeBottomFrame = null
+        if (userScrolledResumeBeforeRestore) return
+        term.scrollToBottom()
+      })
+      resumeBottomTimer = setTimeout(() => {
+        resumeBottomTimer = null
+        if (userScrolledResumeBeforeRestore) return
+        term.scrollToBottom()
+      }, 80)
+    }
+    host.addEventListener('wheel', noteResumeViewportIntent, { passive: true })
+    host.addEventListener('touchmove', noteResumeViewportIntent, { passive: true })
     const onPaste = (e: ClipboardEvent) => {
       if (!pasteIsForThisTerminal(e)) return
       const files = clipboardImageFiles(e)
@@ -425,6 +459,7 @@ export function Terminal({
             // The drawer-independent prime socket (lib/launch-runner) owns submitting the launch's
             // images+prompt, so closing the drawer mid-launch can't drop them. This viewer only binds
             // the drawer to the real session id.
+            logDiag('connect', 'term_launched', { launchToken: launch?.launchToken, sessionId: ctl.sessionId, cli: launch?.cli })
             onLaunched?.(ctl.sessionId)
           } else if (ctl.__berth === 'turnStarted' && launch) {
             // codex's DETERMINISTIC boot-complete signal (server read its rollout task_started). Drop
@@ -450,7 +485,9 @@ export function Terminal({
           replayPositionRestored = true
           suppressHistoryLoadUntil = Date.now() + 1000
           term.scrollToTop()
+          return
         }
+        restoreInitialResumeBottom()
       })
     }
     const disp = term.onData((d) => {
@@ -494,15 +531,20 @@ export function Terminal({
       if (launchFallbackTimer) clearTimeout(launchFallbackTimer)
       if (revealTimer) clearTimeout(revealTimer)
       if (resumeOverlayTimer) clearTimeout(resumeOverlayTimer)
+      if (resumeBottomFrame !== null) cancelAnimationFrame(resumeBottomFrame)
+      if (resumeBottomTimer) clearTimeout(resumeBottomTimer)
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
       resizeObserver?.disconnect()
       window.removeEventListener('resize', onResize)
       host.removeEventListener('mousedown', refocus)
+      host.removeEventListener('wheel', noteResumeViewportIntent)
+      host.removeEventListener('touchmove', noteResumeViewportIntent)
       document.removeEventListener('paste', onPaste, true)
       document.removeEventListener('keydown', onKeyDown, true)
       disp.dispose()
       scrollDisp.dispose()
       disposeIme?.()
+      logDiag('connect', 'term_close', { kind: launch ? 'launch' : 'resume', cli: launch?.cli, sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken })
       ws?.close()
       webgl?.dispose()
       term.dispose()

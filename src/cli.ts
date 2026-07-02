@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import { formatStartupError } from './startup-error'
+import { findReusableServer } from './server-resolve'
 
 export interface CliArgs {
   command: 'start' | 'help' | 'version'
@@ -65,21 +66,6 @@ function openBrowser(url: string): void {
   try { spawn(cmd, args, { stdio: 'ignore', detached: true }).unref() } catch { /* ignore */ }
 }
 
-/** True iff a Berth server already answers `/api/health` on host:port. Never throws. */
-async function berthHealth(host: string, port: number): Promise<boolean> {
-  try {
-    const r = await fetch(`http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}/api/health`)
-    return r.ok && (await r.json())?.berth === true
-  } catch { return false }
-}
-
-function spawnExit(cmd: string, args: string[]): Promise<number> {
-  return new Promise((resolve) => {
-    const p = spawn(cmd, args, { stdio: 'inherit' })
-    p.on('close', c => resolve(c ?? 0)); p.on('error', () => resolve(-1))
-  })
-}
-
 /**
  * Install the bundled Berth skill across the user's agents. The skill is a single `SKILL.md` every
  * agent reads from its own `~/.<agent>/skills/` dir, so we always run the cross-agent installer via
@@ -88,30 +74,21 @@ function spawnExit(cmd: string, args: string[]): Promise<number> {
  * **symlinking** the skill into whichever agent dirs exist on this machine.
  */
 async function installSkill(force: boolean): Promise<void> {
-  const { resolveSkillsDir, bundledSkillNames, detectAgentSkillDirs, linkBundledSkills } = await import('./skill-install')
+  const { resolveSkillsDir, detectAgentSkillDirs, installBundledSkills } = await import('./skill-install')
   const dir = resolveSkillsDir(dirname(fileURLToPath(import.meta.url)))
   if (!dir) { console.error('berth: could not locate the bundled skills/ directory'); process.exit(1); return }
-  const names = bundledSkillNames(dir)
-
-  let ok = names.length > 0
-  for (const name of names) {
-    const code = await spawnExit('npx', ['--yes', 'skills', 'add', join(dir, name), '-g', '-y'])
-    if (code !== 0) { ok = false; break }
-  }
-  if (ok) {
-    console.log(`berth: installed via \`skills\`: ${names.join(', ')} (run \`npx skills list\` to see per-agent placement).`)
-    return
-  }
-
-  // Fallback: `npx skills add` unavailable/failed — symlink into detected agents ourselves.
-  console.error('berth: `npx skills add` failed — falling back to symlinking into detected agents.')
   const targets = detectAgentSkillDirs()
   if (!targets.length) {
     console.error('berth: no supported agent found (looked for ~/.claude, ~/.codex, ~/.cursor, ~/.gemini, ~/.coco).')
     process.exit(1); return
   }
-  const results = linkBundledSkills(dir, targets, force)
-  for (const r of results) {
+  const result = await installBundledSkills(dir, targets, force)
+  if (result.skillsCli.ok) {
+    console.log(`berth: installed via \`skills add\`: ${result.skillsCli.installed.join(', ')} (run \`npx skills list -g\` to see per-agent placement).`)
+  } else {
+    console.error(`berth: \`npx skills add\` failed — falling back to symlinking into detected agents. ${result.skillsCli.error ?? ''}`.trim())
+  }
+  for (const r of result.fallback) {
     const parts = [r.installed.length ? `linked ${r.installed.join(', ')}` : '', r.skipped.length ? `skipped ${r.skipped.join(', ')} (use --force)` : '']
       .filter(Boolean).join('; ')
     console.log(`  ${r.agent}: ${parts || '(nothing to do)'}`)
@@ -144,14 +121,21 @@ export async function runCli(argv: string[], version: string): Promise<void> {
   if (args.command === 'help') { console.log(HELP); return }
   if (args.command === 'version') { console.log(version); return }
 
-  // Idempotent start: if a Berth server already answers /api/health on the target port, don't bind a
-  // second one — just (optionally) open the frontend and return.
+  // Idempotent start: if a Berth server is already running — recorded in server.json on ANY port, or
+  // live on the target port — don't bind a second one. This is the CLI half of bidirectional reuse:
+  // whether the app or the CLI started first, the other discovers it (server.json is the source of
+  // truth; the target port is the fallback when the record is missing/stale).
   if (args.command === 'start') {
     const probeHost = args.host ?? process.env.HOST ?? '127.0.0.1'
     const probePort = Number(args.port ?? process.env.PORT ?? 7777)
-    if (await berthHealth(probeHost, probePort)) {
-      const shown = probeHost === '0.0.0.0' ? 'localhost' : probeHost
-      const base = `http://${shown}:${probePort}`
+    // An explicit --port/--host means "I want THIS address": only reuse a server actually on it. With
+    // no explicit address, reuse any recorded Berth server (bidirectional discovery — whoever started
+    // first, on whatever port).
+    const explicit = args.port !== undefined || args.host !== undefined
+    const reusable = await findReusableServer({ host: probeHost, port: probePort }, {}, { exact: explicit })
+    if (reusable) {
+      const shown = reusable.host === '0.0.0.0' ? 'localhost' : reusable.host
+      const base = `http://${shown}:${reusable.port}`
       console.log(`berth: 已在运行 ${base} — 打开前端`)
       if (args.open) openBrowser(`${base}/app/`)
       return

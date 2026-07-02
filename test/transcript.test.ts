@@ -192,7 +192,7 @@ describe('extractUserGist — codex format', () => {
 })
 
 describe('extractTitleContext', () => {
-  it('samples user, assistant, and claude tool process clues', () => {
+  it('samples user requests and assistant replies but ignores claude tool calls', () => {
     const sessionHead = [
       JSON.stringify({ type: 'user', message: { role: 'user', content: '帮我看看标题生成' } }),
       JSON.stringify({
@@ -210,10 +210,11 @@ describe('extractTitleContext', () => {
     const ctx = extractTitleContext(sessionHead)
     expect(ctx).toContain('USER: 帮我看看标题生成')
     expect(ctx).toContain('ASSISTANT: 我会检查标题提取和接口路径。')
-    expect(ctx).toContain('TOOL: Bash command: rg -n "generateTitle|firstUserTitle" src test')
+    expect(ctx).not.toContain('TOOL:')
+    expect(ctx).not.toContain('rg -n "generateTitle|firstUserTitle"')
   })
 
-  it('samples codex function calls as process clues', () => {
+  it('ignores codex function calls for title sampling', () => {
     const sessionHead = [
       JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: 'Fix title generation' }] } }),
       JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: { command: 'rg -n "title" src/adapters' } } }),
@@ -221,7 +222,25 @@ describe('extractTitleContext', () => {
 
     const sample = extractTitleContextSample(sessionHead)
     expect(sample.users).toEqual(['Fix title generation'])
-    expect(sample.tools).toEqual(['shell command: rg -n "title" src/adapters'])
+    expect(sample.tools).toEqual([])
+  })
+
+  it('evenly samples user queries and assistant replies across the session', () => {
+    const lines: string[] = []
+    for (let i = 1; i <= 15; i++) {
+      lines.push(JSON.stringify({ type: 'user', message: { role: 'user', content: `Query ${i}` } }))
+      if (i <= 5) {
+        lines.push(JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: `Assistant ${i}` } }))
+      }
+    }
+
+    const sample = extractTitleContextSample(lines.join('\n'))
+    expect(sample.users).toHaveLength(12)
+    expect(sample.users).toContain('Query 1')
+    expect(sample.users).toContain('Query 9')
+    expect(sample.users).toContain('Query 15')
+    expect(sample.users).not.toContain('Query 3')
+    expect(sample.assistants).toEqual(['Assistant 1', 'Assistant 3', 'Assistant 5'])
   })
 
   it('derives an offline title from the user request without appending tool calls', () => {

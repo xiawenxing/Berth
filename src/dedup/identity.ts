@@ -5,6 +5,14 @@ import type { PhysicalSession, LedgerRecord, LogicalSession } from '../types'
 // Normalize a path so byte-different-but-equivalent paths (./, .., trailing, NFC) join correctly.
 function normKey(p: string): string { return resolve(p).normalize('NFC') }
 
+// A Claude transcript path is `<root>/<UUID>.jsonl`, and the Claude adapter uses that UUID as its
+// physicalId. Recover it from the import source path so an import stub keeps the SAME logical id as
+// its Claude source whether or not the Claude file is still on disk. Otherwise an orphaned stub falls
+// back to the filesystem path, which orphans everything keyed on sessionId (title_override → the
+// session shows "(未命名)" instead of its renamed title; also pins/attach/todo edges).
+const CLAUDE_UUID_PATH = /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/
+function claudeIdFromPath(p: string): string | null { return p.match(CLAUDE_UUID_PATH)?.[1] ?? null }
+
 /**
  * Merge physical sessions into logical ones.
  * Rules: ledger is the ONLY join key; collapse is DIRECTIONAL (Claude file =
@@ -35,7 +43,7 @@ export function mergeSessions(
 
     if (p.kind === 'import-stub' && srcPath) {
       const claude = byClaudePath.get(normKey(srcPath))
-      const canonicalId = claude?.physicalId ?? normKey(srcPath)
+      const canonicalId = claude?.physicalId ?? claudeIdFromPath(srcPath) ?? normKey(srcPath)
       const contentPath = claude?.storePath ?? srcPath        // prefer the real Claude file when known
       const alive = existsSync(contentPath)
       const L = logicals.get(canonicalId) ?? blank(canonicalId)

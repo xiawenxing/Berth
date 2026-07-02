@@ -221,71 +221,59 @@ function cleanUserTitleText(raw: string, max = 700): string {
   return cleanText(raw, max)
 }
 
-function pushDistinct(arr: string[], text: string, maxItems: number) {
+function pushDistinctAll(arr: string[], text: string) {
   const cleaned = text.replace(/\s+/g, ' ').trim()
-  if (!cleaned || arr.length >= maxItems) return
+  if (!cleaned) return
   const lc = cleaned.toLowerCase()
   if (arr.some(x => x.toLowerCase() === lc)) return
   arr.push(cleaned)
 }
 
-function summarizeObject(value: any, depth = 0): string {
-  if (value == null) return ''
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (Array.isArray(value)) return value.map(v => summarizeObject(v, depth + 1)).filter(Boolean).join(' ')
-  if (typeof value !== 'object' || depth > 1) return ''
-  const preferred = ['command', 'cmd', 'pattern', 'path', 'file_path', 'relative_path', 'query', 'q', 'name']
-  const parts: string[] = []
-  for (const key of preferred) {
-    if (key in value) {
-      const s = summarizeObject(value[key], depth + 1)
-      if (s) parts.push(`${key}: ${s}`)
+function evenlySample(values: string[], maxItems: number): string[] {
+  if (values.length <= maxItems) return values
+  if (maxItems <= 1) return values.slice(0, 1)
+  const picked: string[] = []
+  const seen = new Set<number>()
+  for (let i = 0; i < maxItems; i++) {
+    const idx = Math.round((values.length - 1) * (i / (maxItems - 1)))
+    if (!seen.has(idx)) {
+      seen.add(idx)
+      picked.push(values[idx])
     }
   }
-  if (parts.length) return parts.join(' ')
-  return Object.entries(value).slice(0, 4).map(([k, v]) => {
-    const s = summarizeObject(v, depth + 1)
-    return s ? `${k}: ${s}` : ''
-  }).filter(Boolean).join(' ')
+  return picked
 }
 
-function collectClaudeContent(content: any, sample: TitleContextSample) {
+function collectClaudeContent(content: any, assistants: string[]) {
   if (typeof content === 'string') {
-    pushDistinct(sample.assistants, cleanText(content, 500), 3)
+    pushDistinctAll(assistants, cleanText(content, 500))
     return
   }
   if (!Array.isArray(content)) return
   for (const part of content) {
     if (typeof part === 'string') {
-      pushDistinct(sample.assistants, cleanText(part, 500), 3)
+      pushDistinctAll(assistants, cleanText(part, 500))
     } else if (part?.type === 'text') {
-      pushDistinct(sample.assistants, cleanText(part.text ?? '', 500), 3)
-    } else if (part?.type === 'tool_use') {
-      const detail = summarizeObject(part.input)
-      pushDistinct(sample.tools, cleanText(`${part.name ?? 'tool'} ${detail}`, 500), 8)
+      pushDistinctAll(assistants, cleanText(part.text ?? '', 500))
     }
   }
 }
 
-function collectCodexPayload(payload: any, sample: TitleContextSample) {
+function collectCodexPayload(payload: any, assistants: string[]) {
   if (!payload) return
   if (payload.type === 'message' && payload.role === 'assistant') {
-    pushDistinct(sample.assistants, cleanText(extractContentText(payload.content), 500), 3)
+    pushDistinctAll(assistants, cleanText(extractContentText(payload.content), 500))
   } else if (payload.type === 'agent_message') {
-    pushDistinct(sample.assistants, cleanText(payload.message ?? '', 500), 3)
-  } else if (payload.type === 'function_call') {
-    const detail = summarizeObject(payload.arguments ?? payload.input)
-    pushDistinct(sample.tools, cleanText(`${payload.name ?? 'function_call'} ${detail}`, 500), 8)
+    pushDistinctAll(assistants, cleanText(payload.message ?? '', 500))
   }
 }
 
 export function extractTitleContextSample(head: string): TitleContextSample {
-  const sample: TitleContextSample = { users: [], assistants: [], tools: [] }
+  const users: string[] = []
+  const assistants: string[] = []
 
   for (const line of head.split('\n')) {
     if (!line.trim()) continue
-    if (sample.users.length >= 3 && sample.assistants.length >= 3 && sample.tools.length >= 8) break
 
     let o: any
     try {
@@ -293,18 +281,18 @@ export function extractTitleContextSample(head: string): TitleContextSample {
     } catch {
       if ((line.includes('"type":"user"') || line.includes('"type": "user"')) &&
           (line.includes('"role":"user"') || line.includes('"role": "user"'))) {
-        pushDistinct(sample.users, extractTextViaRegex(line) ?? '', 3)
+        pushDistinctAll(users, extractTextViaRegex(line) ?? '')
       }
       continue
     }
 
     if (o.type === 'user' && o.message?.role === 'user') {
-      pushDistinct(sample.users, cleanUserTitleText(extractContentText(o.message.content), 700), 3)
+      pushDistinctAll(users, cleanUserTitleText(extractContentText(o.message.content), 700))
       continue
     }
 
     if (o.type === 'assistant' && o.message?.role === 'assistant') {
-      collectClaudeContent(o.message.content, sample)
+      collectClaudeContent(o.message.content, assistants)
       continue
     }
 
@@ -312,9 +300,9 @@ export function extractTitleContextSample(head: string): TitleContextSample {
       const p = o.payload
       if (p?.type === 'message' && p.role === 'user') {
         const cleaned = cleanUserTitleText(extractContentText(p.content), 700)
-        if (cleaned && !cleaned.startsWith('#')) pushDistinct(sample.users, cleaned, 3)
+        if (cleaned && !cleaned.startsWith('#')) pushDistinctAll(users, cleaned)
       } else {
-        collectCodexPayload(p, sample)
+        collectCodexPayload(p, assistants)
       }
       continue
     }
@@ -322,28 +310,26 @@ export function extractTitleContextSample(head: string): TitleContextSample {
     if (o.type === 'event_msg') {
       const p = o.payload
       if (p?.type === 'user_message') {
-        pushDistinct(sample.users, cleanUserTitleText(p.message ?? '', 700), 3)
+        pushDistinctAll(users, cleanUserTitleText(p.message ?? '', 700))
       } else {
-        collectCodexPayload(p, sample)
+        collectCodexPayload(p, assistants)
       }
     }
   }
 
-  return sample
+  return { users: evenlySample(users, 12), assistants: evenlySample(assistants, 3), tools: [] }
 }
 
 export function formatTitleContextSample(sample: TitleContextSample): string {
   const lines: string[] = []
   for (const u of sample.users) lines.push(`USER: ${u}`)
   for (const a of sample.assistants) lines.push(`ASSISTANT: ${a}`)
-  for (const t of sample.tools) lines.push(`TOOL: ${t}`)
-  return lines.join('\n').slice(0, 5000)
+  return lines.join('\n').slice(0, 10000)
 }
 
 /**
- * Build a title-generation input from the session head. Unlike extractUserGist,
- * this samples process clues too: assistant summaries, tool names, shell commands,
- * grep/rg patterns, and touched paths when they appear in structured tool calls.
+ * Build a title-generation input from the session sample. User requests are the primary signal:
+ * take a higher, evenly distributed set of queries, plus three evenly distributed assistant replies.
  */
 export function extractTitleContext(head: string): string {
   const sample = extractTitleContextSample(head)
