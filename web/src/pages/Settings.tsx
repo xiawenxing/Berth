@@ -13,6 +13,7 @@ import { priorityColors } from '@/lib/priority'
 import { statusMeta } from '@/lib/status'
 import { Switch } from '@/components/ui/Switch'
 import type { AgentIntegrationStatus, AppUpdateStatus } from '@/lib/api'
+import { integrationActionLabel, integrationSummary, integrationTitle } from '@/lib/settings-status'
 
 export function Settings() {
   const [scheme, setScheme] = useState<string>(() => getScheme().id)
@@ -356,21 +357,6 @@ function AppUpdateBanner({ status }: { status: AppUpdateStatus }) {
   )
 }
 
-function integrationText(status: AgentIntegrationStatus | null): string {
-  if (!status) return '正在检查本机 CLI 与 agent skill'
-  const parts: string[] = []
-  if (status.cli.state === 'missing') parts.push('CLI 未安装')
-  if (status.cli.state === 'outdated') parts.push(`CLI 不是当前版本 ${status.currentVersion}`)
-  if (!status.skills.bundled) parts.push('当前 App 未包含 berth-tasks skill')
-  else {
-    const missing = status.skills.targets.filter((t) => t.state === 'missing').length
-    const outdated = status.skills.targets.filter((t) => t.state === 'outdated').length
-    if (missing) parts.push(`${missing} 个 agent 未安装 skill`)
-    if (outdated) parts.push(`${outdated} 个 agent 的 skill 需要更新`)
-  }
-  return parts.length ? parts.join(' · ') : 'Agent 集成已是当前版本'
-}
-
 function AgentIntegrationBanner({
   status,
   busy,
@@ -395,9 +381,9 @@ function AgentIntegrationBanner({
         {ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-[12px] font-medium text-foreground">Agent 集成</div>
+        <div className="text-[12px] font-medium text-foreground">{integrationTitle(status)}</div>
         <div className="truncate text-[11px] text-muted-foreground">
-          {error ? `安装失败：${error}` : message ?? integrationText(status)}
+          {error ? `安装失败：${error}` : message ?? integrationSummary(status)}
         </div>
       </div>
       {status?.currentVersion && <span className="rounded bg-card px-1.5 py-0.5 text-[10.5px] text-text-dim">v{status.currentVersion}</span>}
@@ -407,7 +393,7 @@ function AgentIntegrationBanner({
           disabled={busy}
           className="rounded-md bg-brand px-3 py-1 text-[12px] font-medium text-brand-foreground hover:brightness-110 disabled:opacity-60"
         >
-          {busy ? '安装中…' : status.cli.state === 'missing' ? '安装' : '更新'}
+          {integrationActionLabel(status, busy)}
         </button>
       )}
     </div>
