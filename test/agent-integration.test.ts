@@ -10,6 +10,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'berth-integration-home-'))
   vi.stubEnv('HOME', home)
   vi.stubEnv('PATH', '/usr/bin:/bin')
+  vi.stubEnv('BERTH_SKIP_SKILLS_CLI', '1')
 })
 
 afterEach(() => {
@@ -33,7 +34,7 @@ describe('agent integration installer', () => {
     expect(status.needsAction).toBe(false)
   })
 
-  it('installs a managed CLI shim and current berth-tasks skill symlink', () => {
+  it('installs a managed CLI shim and current berth-tasks skill symlink', async () => {
     const before = getAgentIntegrationStatus()
     expect(before.cli.state).toBe('missing')
     expect(before.skills.state).toBe('current')
@@ -43,7 +44,7 @@ describe('agent integration installer', () => {
     mkdirSync(claudeHome, { recursive: true })
     expect(getAgentIntegrationStatus().skills.state).toBe('missing')
 
-    const result = installAgentIntegration()
+    const result = await installAgentIntegration()
     const cli = join(home, '.local', 'bin', 'berth')
     expect(result.cliPath).toBe(cli)
     expect(readFileSync(cli, 'utf8')).toContain(`BERTH_MANAGED_CLI_SHIM version=${result.status.currentVersion}`)
