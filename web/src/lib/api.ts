@@ -100,9 +100,19 @@ export interface AgentModelCatalog {
 }
 
 export interface ApiSettings {
+  docsRoot?: string
   priorities?: string[]
   statuses?: string[]
   agents?: AgentConfig
+}
+
+export interface DocsRootMigrationResult {
+  from: string
+  to: string
+  changed: boolean
+  copied: number
+  unchanged: number
+  conflicts: string[]
 }
 
 export type IntegrationState = 'current' | 'missing' | 'outdated'
@@ -174,8 +184,15 @@ async function send(method: string, url: string, body?: unknown): Promise<any> {
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`${method} ${url} → ${res.status}`)
-  return res.json().catch(() => ({}))
+  const payload = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg = typeof payload?.error === 'string' ? payload.error : `${method} ${url} → ${res.status}`
+    const err = new Error(msg) as Error & { payload?: any; status?: number }
+    err.payload = payload
+    err.status = res.status
+    throw err
+  }
+  return payload
 }
 
 export const api = {
@@ -192,7 +209,8 @@ export const api = {
   resolveLaunches: () => send('POST', '/api/launches/resolve') as Promise<ApiSession[]>,
   // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
   settings: () => getJSON<ApiSettings>('/api/settings'),
-  saveSettings: (patch: { priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) => send('POST', '/api/settings', patch),
+  saveSettings: (patch: { docsRoot?: string; priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) =>
+    send('POST', '/api/settings', patch) as Promise<ApiSettings & { ok?: boolean; docsMigration?: DocsRootMigrationResult | null }>,
   agentModels: () => getJSON<{ catalogs: AgentModelCatalog[] }>('/api/agent-models'),
   appUpdate: () => getJSON<AppUpdateStatus>('/api/app-update'),
   agentIntegration: () => getJSON<AgentIntegrationStatus>('/api/agent-integration'),
@@ -220,7 +238,7 @@ export const api = {
   createTaskFromSession: (sessionId: string, projectId?: string) =>
     send('POST', '/api/todos/from-session', { sessionId, projectId }),
   // Native macOS folder picker → absolute path (or cancelled).
-  pickFolder: () => send('POST', '/api/pick-folder', {}) as Promise<{ path?: string; cancelled?: boolean }>,
+  pickFolder: (def?: string) => send('POST', '/api/pick-folder', def ? { default: def } : {}) as Promise<{ path?: string; cancelled?: boolean }>,
   // Ask the host (this Berth server, on the user's machine) to open a local-file link with the OS
   // default app — browsers block file:// / absolute-path navigation from an http page. Unlike `send`
   // (which throws on non-2xx and drops the body), this resolves the structured {ok,error} body even

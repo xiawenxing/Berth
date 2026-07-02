@@ -11,6 +11,7 @@ import { generateAndApplyTaskTitle } from '../data/task-title'
 import { triggerTaskSummary, isSummarizingTask } from '../data/task-summary'
 import { triggerProjectSummary, isSummarizingProject } from '../data/project-summary'
 import { getDocStore, getDocsRoot } from '../data/docstore'
+import { DocsRootMigrationConflict, migrateDocsRoot } from '../data/docs-root-migration'
 import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, setAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getLocale, normalizeLocale, LOCALES, contextStrings } from '../i18n'
@@ -966,16 +967,23 @@ api.get('/settings', (_req, res) => {
 api.post('/settings', (req, res) => {
   const { docsRoot, locale, statuses, priorities, agents, context } = req.body ?? {}
   const store = getStore()
-  if (typeof docsRoot === 'string' && docsRoot.trim()) store.setSetting('docsRoot', docsRoot.trim())
-  if (typeof locale === 'string') store.setSetting('locale', normalizeLocale(locale))
+  let docsMigration = null
   try {
+    if (typeof docsRoot === 'string' && docsRoot.trim()) docsMigration = migrateDocsRoot(store, docsRoot)
+    if (typeof locale === 'string') store.setSetting('locale', normalizeLocale(locale))
     if (statuses !== undefined || priorities !== undefined) setTaskFieldConfig(store, { statuses, priorities })
     if (agents !== undefined) setAgentConfig(store, agents)
     if (context !== undefined) setContextConfig(store, context)
   } catch (e: any) {
+    if (e instanceof DocsRootMigrationConflict) {
+      return res.status(409).json({
+        error: 'docsRoot migration conflict',
+        docsMigration: e.result,
+      })
+    }
     return res.status(400).json({ error: e?.message || 'invalid settings' })
   }
-  res.json({ ok: true, docsRoot: getDocsRoot(store), locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
+  res.json({ ok: true, docsRoot: getDocsRoot(store), docsMigration, locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
 })
 
 api.get('/agent-models', async (req, res) => {
