@@ -7,6 +7,7 @@ import { NewProjectDialog } from './NewProjectDialog'
 import { useData } from '@/lib/data'
 import { useLive } from '@/lib/live'
 import { api, type AgentIntegrationStatus, type ApiSession, type AppUpdateStatus } from '@/lib/api'
+import { AGENT_INTEGRATION_CHANGED } from '@/lib/integration-events'
 import { toggleMode } from '@/lib/theme'
 import { deliveryStats } from '@/lib/delivery'
 import { settingsNotice, type SettingsNotice } from '@/lib/settings-status'
@@ -108,13 +109,27 @@ export function Rail() {
 
   useEffect(() => {
     let alive = true
-    api.appUpdate()
-      .then((status) => { if (alive) setAppUpdate(status) })
-      .catch(() => {})
-    api.agentIntegration()
-      .then((status) => { if (alive) setIntegration(status) })
-      .catch(() => {})
-    return () => { alive = false }
+    const refreshIntegration = () => {
+      api.appUpdate()
+        .then((status) => { if (alive) setAppUpdate(status) })
+        .catch(() => {})
+      api.agentIntegration()
+        .then((status) => { if (alive) setIntegration(status) })
+        .catch(() => {})
+    }
+    const onIntegrationChanged = (event: Event) => {
+      const status = (event as CustomEvent<AgentIntegrationStatus>).detail
+      if (alive && status) setIntegration(status)
+      refreshIntegration()
+    }
+    refreshIntegration()
+    window.addEventListener(AGENT_INTEGRATION_CHANGED, onIntegrationChanged)
+    window.addEventListener('focus', refreshIntegration)
+    return () => {
+      alive = false
+      window.removeEventListener(AGENT_INTEGRATION_CHANGED, onIntegrationChanged)
+      window.removeEventListener('focus', refreshIntegration)
+    }
   }, [])
 
   // Sessions bucketed by project id, so each rail row can show its aggregate live status.

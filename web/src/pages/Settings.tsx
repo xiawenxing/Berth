@@ -9,6 +9,7 @@ import { useLive } from '@/lib/live'
 import { useInlineEdit } from '@/lib/useInlineEdit'
 import { api } from '@/lib/api'
 import type { AgentCli, AgentEntry, AgentModelCatalog } from '@/lib/api'
+import { notifyAgentIntegrationChanged } from '@/lib/integration-events'
 import { priorityColors } from '@/lib/priority'
 import { statusMeta } from '@/lib/status'
 import { Switch } from '@/components/ui/Switch'
@@ -113,6 +114,7 @@ export function Settings() {
     try {
       const result = await api.installAgentIntegration()
       setIntegration(result.status)
+      notifyAgentIntegrationChanged(result.status)
       const currentCount = result.status.skills.targets.filter((target) => target.state === 'current').length
       const viaSkills = result.skillResults.skillsCli.ok
       setIntegrationMessage(currentCount > 0
