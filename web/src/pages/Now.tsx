@@ -9,7 +9,7 @@ import { useData } from '@/lib/data'
 import { imagePathPlaceholderText, shortCwd } from '@/lib/format'
 import { api } from '@/lib/api'
 import { priorityColors, priorityRank } from '@/lib/priority'
-import { isDoneStatus } from '@/lib/status'
+import { isDoneStatus, statusKind } from '@/lib/status'
 import { useLive } from '@/lib/live'
 import { deliveryTasks, localTodayISO } from '@/lib/delivery'
 import type { ShipStatus } from '@/lib/types'
@@ -17,8 +17,9 @@ import type { ApiSession, ApiTask } from '@/lib/api'
 
 export function Now() {
   const { openDrawer, openLaunch } = useUI()
-  const { tasks, sessions, projects, pending } = useData()
+  const { tasks, sessions, projects, pending, statuses, reload } = useData()
   const live = useLive()
+  const [completingIds, setCompletingIds] = useState<Set<string>>(() => new Set())
 
   const byId = useMemo(() => {
     const m = new Map<string, ApiSession>()
@@ -61,6 +62,25 @@ export function Now() {
     [tasks, today],
   )
   const doneN = todayTasks.filter((t) => isDoneStatus(t.status)).length
+  const doneStatus = useMemo(
+    () => statuses.find((status) => statusKind(status) === 'done') ?? null,
+    [statuses],
+  )
+
+  const completeTask = async (t: ApiTask) => {
+    if (!doneStatus || isDoneStatus(t.status) || completingIds.has(t.id)) return
+    setCompletingIds((ids) => new Set(ids).add(t.id))
+    try {
+      await api.patchTask(t.id, { status: doneStatus })
+    } finally {
+      setCompletingIds((ids) => {
+        const next = new Set(ids)
+        next.delete(t.id)
+        return next
+      })
+      reload()
+    }
+  }
 
   // Ship sections: real sessions across all projects, project-tagged.
   const pinShips = useMemo(() => sessions.filter((s) => s.pinned), [sessions])
@@ -106,6 +126,9 @@ export function Now() {
                 resolve={(id) => byId.get(id)}
                 onOpen={openSession}
                 onLaunch={() => launchTask(t)}
+                onComplete={() => completeTask(t)}
+                completing={completingIds.has(t.id)}
+                canComplete={!!doneStatus}
               />
             ))}
           </div>
@@ -344,12 +367,18 @@ function TaskRow({
   resolve,
   onOpen,
   onLaunch,
+  onComplete,
+  completing,
+  canComplete,
 }: {
   t: ApiTask
   overdue?: boolean
   resolve: (sessionId: string) => ApiSession | undefined
   onOpen: (s: ApiSession) => void
   onLaunch: () => void
+  onComplete: () => void
+  completing?: boolean
+  canComplete?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const live = useLive()
@@ -361,7 +390,18 @@ function TaskRow({
   return (
     <div className="relative overflow-hidden rounded-md border border-border bg-card">
       <span className="absolute left-0 top-0 h-full w-[2px]" style={{ background: priorityColors(rank, total).bar }} />
-      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setOpen((v) => !v)
+          }
+        }}
+        className="flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left"
+      >
         <ProjTag proj={t.project} />
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground" title={t.title}>{t.title}</span>
         {delivered ? (
@@ -371,11 +411,26 @@ function TaskRow({
         ) : (
           <span className="flex items-center gap-0.5 rounded bg-warning/15 px-1 py-0.5 text-[10.5px] text-warning"><CalendarClock size={11} /> 今日</span>
         )}
+        {!delivered && canComplete && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onComplete()
+            }}
+            disabled={!!completing}
+            className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground hover:bg-secondary hover:text-success disabled:cursor-wait disabled:opacity-60"
+            title="标记完成"
+            aria-label="标记完成"
+          >
+            {completing ? <Spinner size={11} label="完成中" /> : <Check size={11} />} 完成
+          </button>
+        )}
         <button onClick={(e) => { e.stopPropagation(); onLaunch() }} className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10.5px] text-muted-foreground hover:bg-secondary hover:text-success">
           <Play size={11} /> 启动
         </button>
         <ChevronDown size={14} className={cn('text-text-dim transition-transform', open && 'rotate-180')} />
-      </button>
+      </div>
       {open && (
         <div className="mx-2 mb-2 rounded-md bg-brand/[0.04] p-2">
           <p className="text-[12px] text-muted-foreground">{t.progress || '暂无进展摘要'}</p>
