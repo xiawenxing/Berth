@@ -31,4 +31,16 @@ describe('agentSpawnEnv', () => {
     expect(env.BERTH_PORT).toBe('7777')
     expect(env.BERTH_SESSION_ID).toBe('sid-9')
   })
+  it('drops parent Codex run markers but keeps CODEX_HOME', () => {
+    const env = agentSpawnEnv({
+      CODEX_CI: '1',
+      CODEX_THREAD_ID: 'parent-thread',
+      CODEX_PARENT_THREAD_ID: 'grandparent-thread',
+      CODEX_HOME: '/Users/me/.codex',
+    }, null)
+    expect(env.CODEX_CI).toBeUndefined()
+    expect(env.CODEX_THREAD_ID).toBeUndefined()
+    expect(env.CODEX_PARENT_THREAD_ID).toBeUndefined()
+    expect(env.CODEX_HOME).toBe('/Users/me/.codex')
+  })
 })
