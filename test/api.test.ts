@@ -750,22 +750,32 @@ describe('POST /api/todos', () => {
     expect(res.status).toBe(502)
   })
 
-  it('forwards projectId, confirm, createOption, and autoTitle from body', async () => {
+  it('creates immediately with raw title options and runs autoTitle in the background', async () => {
     const port = await listen()
     const base = `http://localhost:${port}/api`
 
     mockCreateTask.mockResolvedValueOnce({ status: 'created', record: { id: 'r2', title: 'x', project: 'P' } })
+    mockListTasks.mockReturnValue([{ id: 'r2', title: 'x', status: '待办', priority: 'P1', projectId: 'P', project: 'P', progress: null, detailDoc: null }])
+    let resolveTitle!: (title: string) => void
+    mockGenerateTaskTitle.mockReturnValueOnce(new Promise<string>((resolve) => { resolveTitle = resolve }))
 
-    await fetch(`${base}/todos`, {
+    const res = await fetch(`${base}/todos`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'x', projectId: 'P', confirm: true, createOption: false, autoTitle: true }),
     })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ status: 'created', record: { id: 'r2', title: 'x', project: 'P' } })
     // createTask(store, docStore, text, opts)
     expect(mockCreateTask).toHaveBeenCalledWith(
       expect.anything(), expect.anything(), 'x',
-      expect.objectContaining({ projectId: 'P', confirm: true, createOption: false, autoTitle: true }),
+      expect.objectContaining({ projectId: 'P', confirm: true, createOption: false, autoTitle: false }),
     )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockGenerateTaskTitle).toHaveBeenCalled()
+    resolveTitle('异步生成标题')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockUpdateTask).toHaveBeenCalledWith(expect.anything(), 'r2', { title: '异步生成标题' })
   })
 })
 

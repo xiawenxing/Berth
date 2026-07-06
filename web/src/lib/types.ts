@@ -22,6 +22,7 @@ export interface Task {
   status: TaskStatus
   priority: Priority
   summary?: string
+  titleGenerating?: boolean // 港务助手 is generating a better task title
   summarizing?: boolean // 港务助手 is (re)generating this task's 进展摘要 — drives the loading icon
   ddl?: string | null // local YYYY-MM-DD deadline overlay from the backend
   links?: LinkedSession[]

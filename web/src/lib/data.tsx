@@ -241,6 +241,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(iv)
   }, [anySummarizing])
 
+  // Same for immediate-create task title generation: creation returns before the title agent finishes,
+  // then /todos.titleGenerating keeps the card spinner and eventual title fresh.
+  const anyTaskTitleGenerating = tasks.some((t) => t.titleGenerating)
+  useEffect(() => {
+    if (!anyTaskTitleGenerating) return
+    const iv = setInterval(() => {
+      api.todos().then((t) => setTasks(t.todos ?? [])).catch(() => {})
+    }, 2000)
+    return () => clearInterval(iv)
+  }, [anyTaskTitleGenerating])
+
   // Same pattern for detached session-title generation: poll sessions while any title is being
   // generated, so the spinner clears and the new title appears even if the run was kicked elsewhere
   // (or the drawer was closed mid-run).

@@ -29,6 +29,7 @@ export interface ApiTask {
   detailDoc?: string | null
   ddl?: string | null
   sessions?: string[]
+  titleGenerating?: boolean // server is asynchronously generating this task's title
   summarizing?: boolean // server is regenerating this task's progress summary right now
 }
 
