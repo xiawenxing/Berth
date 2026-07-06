@@ -7,6 +7,7 @@ import { DEFAULT_PTY_REPLAY_BYTES, PtySpool } from './pty-spool'
 const MAX_BUFFER_BYTES = 2 * 1024 * 1024   // ~scrollback kept per session for replay on (re)attach
 const RESIZE_QUIET_MS = 500           // a resize triggers a full repaint — not a turn, so don't spin
 const FAST_FAIL_MS = 2500             // a process that exits this fast almost certainly failed to START
+const EPERM_RE = /(?:Operation not permitted \(os error 1\)|\bEPERM\b)/i
 
 /**
  * Model A driver: wraps a node-pty so the browser receives raw bytes and renders them in xterm. This
@@ -89,6 +90,9 @@ export class TuiDriver implements SessionDriver {
   private exitMessage(exitCode: number): string {
     const fast = Date.now() - this.startedAt < FAST_FAIL_MS
     if (fast && (exitCode !== 0 || !this.sawVisible)) {
+      if (EPERM_RE.test(this.chunks.join(''))) {
+        return `\r\n[berth] the agent exited during startup (code ${exitCode}) after the CLI reported EPERM / Operation not permitted. On macOS this usually means the app or terminal that started Berth cannot access the workspace, Codex home, or a configured hook/MCP path. Grant Files and Folders / Full Disk Access to that app, or start Berth from a terminal that already has access, then run \`codex doctor\` in the same cwd if it persists.\r\n`
+      }
       return `\r\n[berth] the agent exited during startup (code ${exitCode}). This usually means an unsupported CLI flag or a version/auth issue — check the output above, or update the CLI.\r\n`
     }
     return '\r\n[berth] session ended.\r\n'
