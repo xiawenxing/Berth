@@ -89,6 +89,7 @@ export function ProjectWorkspace() {
           status: t.status, // raw configured status; Kanban resolves it to a column
           priority: normPriority(t.priority),
           summary: t.progress ?? undefined,
+          titleGenerating: t.titleGenerating,
           summarizing: t.summarizing,
           ddl: t.ddl ?? undefined,
           links: [],
@@ -378,7 +379,7 @@ export function ProjectWorkspace() {
       title: taskText,
       status: opts.runNow ? doingStatus : todoStatus,
       priority: priorities[priorities.length - 1] ?? 'P2',
-      summary: opts.aiSummarize ? '港务助手正在总结进展摘要…' : undefined,
+      titleGenerating: opts.aiSummarize,
       links: [],
     }
     setTasks((ts) => [card, ...ts])
@@ -408,7 +409,7 @@ export function ProjectWorkspace() {
       .catch(() => {
         // keep the optimistic card but settle its title locally if the POST failed
         const { title, summary } = refineTitle(taskText)
-        setTasks((ts) => ts.map((t) => (t.id === tid ? { ...t, title, summary } : t)))
+        setTasks((ts) => ts.map((t) => (t.id === tid ? { ...t, title, summary, titleGenerating: false } : t)))
       })
   }
 

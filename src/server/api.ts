@@ -56,6 +56,37 @@ function truncate(s: string | null, max: number): string | null {
   return s.length <= max ? s : s.slice(0, max) + '…'
 }
 
+const generatingTaskTitles = new Set<string>()
+
+function isGeneratingTaskTitle(taskId: string): boolean {
+  return generatingTaskTitles.has(taskId)
+}
+
+function triggerTaskTitleGeneration(store: ReturnType<typeof getStore>, taskId: string): boolean {
+  if (!taskId || generatingTaskTitles.has(taskId)) return false
+  generatingTaskTitles.add(taskId)
+  Promise.resolve().then(async () => {
+    try {
+      const task = listTasks(store).find(t => t.id === taskId)
+      if (!task) return
+      const linkedIds = store.edgesByTodo().get(task.id) ?? []
+      const overrides = store.allTitleOverrides()
+      const cacheById = new Map(getCache().map(s => [s.sessionId, s]))
+      const sessions = linkedIds.map(id => {
+        const s = cacheById.get(id)
+        return { id, title: overrides.get(id) ?? s?.title ?? null }
+      })
+      await generateAndApplyTaskTitle(store, getDocStore(store), task.id, sessions, resolveBerthAgent(store))
+    } catch {
+      // Best-effort background title generation: creation and launch must never depend on this.
+    } finally {
+      generatingTaskTitles.delete(taskId)
+      broadcastDataChanged()
+    }
+  })
+  return true
+}
+
 function contextAgentError(error: unknown) {
   return { error: String((error as any)?.message ?? error), contextAgentCwd: berthAgentCwd() }
 }
@@ -751,6 +782,7 @@ api.get('/todos', (_req, res) => {
     detailDoc: t.detailDoc, progress: truncate(t.progress, 300),
     ddl: ddlMap.get(t.id) ?? null,
     sessions: edgesMap.get(t.id) ?? [],
+    titleGenerating: isGeneratingTaskTitle(t.id), // drives auto-title loading after immediate create
     summarizing: isSummarizingTask(t.id),   // drives the card's 摘要 loading icon
   }))
   res.json({ error: null, todos })
@@ -783,7 +815,8 @@ api.post('/todos', async (req, res) => {
   try {
     const store = getStore()
     const imgs = Array.isArray(images) ? images.filter((s: any) => typeof s === 'string') : undefined
-    const result = await createTask(store, getDocStore(store), text, { projectId, confirm, createOption, images: imgs, autoTitle: autoTitle === true })
+    const result = await createTask(store, getDocStore(store), text, { projectId, confirm, createOption, images: imgs, autoTitle: false })
+    if (autoTitle === true && result.status === 'created') triggerTaskTitleGeneration(store, result.record.id)
     broadcastDataChanged()
     res.json(result)
   } catch (e: any) {
