@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isLocalHref } from './local-links'
+import { isExternalHref, isLocalHref } from './local-links'
 
 describe('isLocalHref', () => {
   it('treats file://, absolute, ~ and custom-scheme links as local', () => {
@@ -29,5 +29,22 @@ describe('isLocalHref', () => {
     expect(isLocalHref('zed://file/x')).toBe(false)
     expect(isLocalHref('ftp://host/x')).toBe(false)
     expect(isLocalHref('javascript://%0aalert(1)')).toBe(false)
+  })
+})
+
+describe('isExternalHref', () => {
+  it('treats web/mail/phone URLs as external', () => {
+    expect(isExternalHref('https://example.com')).toBe(true)
+    expect(isExternalHref('http://127.0.0.1:3000')).toBe(true)
+    expect(isExternalHref('mailto:a@b.com')).toBe(true)
+    expect(isExternalHref('tel:+123')).toBe(true)
+  })
+  it('does not treat local paths, anchors, protocol-relative URLs or app schemes as external', () => {
+    expect(isExternalHref('/Users/me/x.md')).toBe(false)
+    expect(isExternalHref('~/notes/x.md')).toBe(false)
+    expect(isExternalHref('#section')).toBe(false)
+    expect(isExternalHref('//cdn.example.com/x')).toBe(false)
+    expect(isExternalHref('obsidian://open?file=x')).toBe(false)
+    expect(isExternalHref('javascript:alert(1)')).toBe(false)
   })
 })

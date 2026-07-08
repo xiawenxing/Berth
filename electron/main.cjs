@@ -21,6 +21,27 @@ const STABLE_MS = 30_000   // a server up this long resets the rapid-restart bud
 const MAX_RAPID_RESTARTS = 3
 const EXTERNAL_HEALTH_MS = 1500
 const EXTERNAL_HEALTH_FAILS = 2
+const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:', 'file:', 'obsidian:', 'vscode:'])
+
+function isInternalBerthUrl(url, port) {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost') && Number(u.port) === Number(port)
+  } catch {
+    return false
+  }
+}
+
+function openExternalUrl(url) {
+  try {
+    const u = new URL(url)
+    if (!EXTERNAL_PROTOCOLS.has(u.protocol)) return false
+    shell.openExternal(url)
+    return true
+  } catch {
+    return false
+  }
+}
 
 // Spawn the server in its own process (Electron utilityProcess). Resolves with the bound port once the
 // child reports it listening. The server's start() prefers CANON_PORT and falls back to a free port if
@@ -139,8 +160,14 @@ function createWindow(port) {
   // Open external links (e.g. obsidian://, http docs) in the user's real browser, not in-app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const allowedPort = currentPort ?? port
-    if (!url.startsWith(`http://127.0.0.1:${allowedPort}`)) { shell.openExternal(url); return { action: 'deny' } }
+    if (!isInternalBerthUrl(url, allowedPort)) { openExternalUrl(url); return { action: 'deny' } }
     return { action: 'allow' }
+  })
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const allowedPort = currentPort ?? port
+    if (isInternalBerthUrl(url, allowedPort)) return
+    event.preventDefault()
+    openExternalUrl(url)
   })
   mainWindow.on('closed', () => { mainWindow = null })
 }
