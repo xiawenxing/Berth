@@ -57,8 +57,9 @@ describe('handleMarkdownClick', () => {
     div.appendChild(a)
     const preventDefault = vi.fn()
     const openLocal = vi.fn()
-    handleMarkdownClick({ target: a, preventDefault }, openLocal)
-    return { preventDefault, openLocal }
+    const openExternal = vi.fn()
+    handleMarkdownClick({ target: a, preventDefault }, openLocal, openExternal)
+    return { preventDefault, openLocal, openExternal }
   }
 
   it('intercepts a local link: preventDefault + openLocal(rawHref)', () => {
@@ -72,16 +73,29 @@ describe('handleMarkdownClick', () => {
     expect(openLocal).toHaveBeenCalledWith('file:///Users/me/a%20b.md')
   })
 
-  it('ignores an http link (no preventDefault, no openLocal)', () => {
-    const { preventDefault, openLocal } = clickOn('https://example.com')
+  it('opens an http link externally', () => {
+    const { preventDefault, openLocal, openExternal } = clickOn('https://example.com')
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(openLocal).not.toHaveBeenCalled()
+    expect(openExternal).toHaveBeenCalledWith('https://example.com')
+  })
+
+  it('opens mailto/tel links externally', () => {
+    expect(clickOn('mailto:a@b.com').openExternal).toHaveBeenCalledWith('mailto:a@b.com')
+    expect(clickOn('tel:+123').openExternal).toHaveBeenCalledWith('tel:+123')
+  })
+
+  it('ignores an in-page anchor', () => {
+    const { preventDefault, openLocal, openExternal } = clickOn('#section')
     expect(preventDefault).not.toHaveBeenCalled()
     expect(openLocal).not.toHaveBeenCalled()
+    expect(openExternal).not.toHaveBeenCalled()
   })
 
   it('does nothing when the click is not on a link', () => {
     const span = document.createElement('span')
     const preventDefault = vi.fn(); const openLocal = vi.fn()
-    handleMarkdownClick({ target: span, preventDefault }, openLocal)
+    handleMarkdownClick({ target: span, preventDefault }, openLocal, vi.fn())
     expect(preventDefault).not.toHaveBeenCalled()
     expect(openLocal).not.toHaveBeenCalled()
   })

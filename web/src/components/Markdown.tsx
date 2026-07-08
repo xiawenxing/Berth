@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { isLocalHref, LOCAL_OPEN_SCHEMES } from '../lib/local-links'
+import { isExternalHref, isLocalHref, LOCAL_OPEN_SCHEMES } from '../lib/local-links'
 import { api } from '../lib/api'
 
 // Render agent chat text as markdown. Agent output is markdown-heavy (code fences, bold, headings,
@@ -33,14 +33,21 @@ export function mdToSafeHtml(text: string): string {
 export function handleMarkdownClick(
   e: { target: EventTarget | null; preventDefault: () => void },
   openLocal: (href: string) => void,
+  openExternal: (href: string) => void = (href) => window.open(href, '_blank', 'noopener,noreferrer'),
 ): void {
   const el = e.target as HTMLElement | null
   const a = el?.closest?.('a') as HTMLAnchorElement | null
   if (!a) return
   const href = a.getAttribute('href') ?? ''
-  if (!isLocalHref(href)) return
-  e.preventDefault()
-  openLocal(href)
+  if (isLocalHref(href)) {
+    e.preventDefault()
+    openLocal(href)
+    return
+  }
+  if (isExternalHref(href)) {
+    e.preventDefault()
+    openExternal(href)
+  }
 }
 
 export function Markdown({ text, className = '' }: { text: string; className?: string }) {

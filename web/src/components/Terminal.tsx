@@ -288,10 +288,9 @@ export function Terminal({
     term.loadAddon(fit)
     // Make plain-text URLs clickable. xterm only linkifies OSC-8 escape-sequence links out of the box;
     // most URLs a CLI prints (localhost dashboards, doc/PR links) are plain text and need this addon.
-    // Gate activation on ⌘/Ctrl so a normal click still reaches selection / the TUI's own mouse
-    // handling — matching native-terminal cmd-click muscle memory.
-    term.loadAddon(new WebLinksAddon((e, uri) => {
-      if (!(e.metaKey || e.ctrlKey)) return
+    // Opening via window.open lets Electron route it to the system browser while normal browser dev
+    // gets a new tab.
+    term.loadAddon(new WebLinksAddon((_e, uri) => {
       window.open(uri, '_blank', 'noopener,noreferrer')
     }))
     term.open(host)
