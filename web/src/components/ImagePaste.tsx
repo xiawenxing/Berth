@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type SetStateAction } from 'react'
+import { useCallback, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type SetStateAction } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -53,8 +53,25 @@ interface CapturedImagePastePlacement extends ImagePastePlacement {
   end: number
 }
 
+const IMAGE_MARKER_RE = /\[Image #\d+\]/g
+
+interface ImageMarkerRange {
+  marker: string
+  start: number
+  end: number
+}
+
+function imageMarkerRanges(value: string): ImageMarkerRange[] {
+  const ranges: ImageMarkerRange[] = []
+  for (const match of value.matchAll(IMAGE_MARKER_RE)) {
+    if (typeof match.index !== 'number') continue
+    ranges.push({ marker: match[0], start: match.index, end: match.index + match[0].length })
+  }
+  return ranges
+}
+
 function countImagePlaceholders(value: string): number {
-  return value.match(/\[Image #\d+\]/g)?.length ?? 0
+  return imageMarkerRanges(value).length
 }
 
 function capturePlacement(placement: ImagePastePlacement): CapturedImagePastePlacement {
@@ -97,6 +114,46 @@ function insertMarkersAtSelection(placement: ImagePastePlacement, markers: strin
   }
 }
 
+function removeMarkerText(value: string, marker: string): string {
+  const index = value.indexOf(marker)
+  if (index < 0) return value
+  return value.slice(0, index) + value.slice(index + marker.length)
+}
+
+function findMarkerDeletion(value: string, start: number, end: number, key: string): { start: number; end: number; markers: Set<string> } | null {
+  const ranges = imageMarkerRanges(value)
+  if (!ranges.length) return null
+  const touched = start === end
+    ? ranges.filter((range) => (
+      key === 'Backspace'
+        ? start > range.start && start <= range.end
+        : start >= range.start && start < range.end
+    ))
+    : ranges.filter((range) => start < range.end && end > range.start)
+  if (!touched.length) return null
+  return {
+    start: Math.min(start, ...touched.map((range) => range.start)),
+    end: Math.max(end, ...touched.map((range) => range.end)),
+    markers: new Set(touched.map((range) => range.marker)),
+  }
+}
+
+function restoreTextareaCursor(target: HTMLTextAreaElement | null | undefined, cursor: number) {
+  if (!target) return
+  const raf = typeof requestAnimationFrame === 'function'
+    ? requestAnimationFrame
+    : (cb: FrameRequestCallback) => { setTimeout(() => cb(Date.now()), 0); return 0 }
+  raf(() => {
+    try {
+      target.selectionStart = cursor
+      target.selectionEnd = cursor
+      target.focus()
+    } catch {
+      /* textarea may have unmounted */
+    }
+  })
+}
+
 export function usePastedImages() {
   const [images, setImageState] = useState<PastedImage[]>([])
   const imagesRef = useRef<PastedImage[]>([])
@@ -137,13 +194,42 @@ export function usePastedImages() {
       .catch(() => {})
   }, [setImages])
 
-  const removeImage = useCallback((idx: number) => {
+  const reconcileImagePlaceholders = useCallback((nextValue: string) => {
+    const markers = new Set(imageMarkerRanges(nextValue).map((range) => range.marker))
+    setImages((prev) => prev.filter((image) => !image.marker || markers.has(image.marker)))
+    return nextValue
+  }, [setImages])
+
+  const handleImagePlaceholderKeyDown = useCallback((e: ReactKeyboardEvent<HTMLTextAreaElement>, placement: ImagePastePlacement) => {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return false
+    if (e.key !== 'Backspace' && e.key !== 'Delete') return false
+    const captured = capturePlacement(placement)
+    const deletion = findMarkerDeletion(captured.value, captured.start, captured.end, e.key)
+    if (!deletion) return false
+    e.preventDefault()
+    placement.setValue(captured.value.slice(0, deletion.start) + captured.value.slice(deletion.end))
+    setImages((prev) => prev.filter((image) => !image.marker || !deletion.markers.has(image.marker)))
+    restoreTextareaCursor(captured.target, deletion.start)
+    return true
+  }, [setImages])
+
+  const removeImage = useCallback((idx: number, placement?: ImagePastePlacement) => {
+    const image = imagesRef.current[idx]
+    if (placement && image?.marker) {
+      const captured = capturePlacement(placement)
+      const nextValue = removeMarkerText(captured.value, image.marker)
+      if (nextValue !== captured.value) {
+        const cursor = Math.min(captured.start, nextValue.length)
+        placement.setValue(nextValue)
+        restoreTextareaCursor(captured.target, cursor)
+      }
+    }
     setImages((prev) => prev.filter((_, i) => i !== idx))
-  }, [])
+  }, [setImages])
 
   const clearImages = useCallback(() => setImages([]), [])
 
-  return { images, setImages, onPasteImages, removeImage, clearImages }
+  return { images, setImages, onPasteImages, removeImage, clearImages, reconcileImagePlaceholders, handleImagePlaceholderKeyDown }
 }
 
 export function pastedImageDataUrls(images: PastedImage[]): string[] {

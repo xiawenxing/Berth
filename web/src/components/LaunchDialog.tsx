@@ -34,11 +34,13 @@ export function LaunchDialog() {
   const [picked, setPicked] = useState<{ id: string; title: string } | null>(null)
   const [taskQuery, setTaskQuery] = useState('')
   const [taskSelectOpen, setTaskSelectOpen] = useState(false)
-  const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
+  const { images, clearImages, onPasteImages, removeImage, reconcileImagePlaceholders, handleImagePlaceholderKeyDown } = usePastedImages()
   const [cargo, setCargo] = useState<CargoState | null>(null)
   const [adjust, setAdjust] = useState(false)
   const [extraDir, setExtraDir] = useState('')
   const prevLaunch = useRef<typeof launch>(null)
+  const freeRef = useRef<HTMLTextAreaElement>(null)
+  const taskNoteRef = useRef<HTMLTextAreaElement>(null)
 
   const project = projects.find((p) => p.id === launch?.projectId)
   const enabledAgents = useMemo(() => agents.list.filter((a) => a.enabled), [agents.list])
@@ -73,6 +75,22 @@ export function LaunchDialog() {
     setCli(c)
     saveLastAgent(c)
   }, [])
+  const setFreeTextDraft = useCallback((next: SetStateAction<string>) => {
+    setFreeText((prev) => {
+      const resolved = resolveTextAction(next, prev)
+      if (launchDraftKey) writeDraft(launchDraftKey, resolved)
+      return resolved
+    })
+  }, [launchDraftKey])
+  const setTaskNoteDraft = useCallback((next: SetStateAction<string>) => {
+    setTaskNote((prev) => {
+      const resolved = resolveTextAction(next, prev)
+      if (launchDraftKey) writeDraft(launchDraftKey, resolved)
+      return resolved
+    })
+  }, [launchDraftKey])
+  const freeImagePlacement = (target: HTMLTextAreaElement | null = freeRef.current) => ({ value: freeText, setValue: setFreeTextDraft, target })
+  const taskNoteImagePlacement = (target: HTMLTextAreaElement | null = taskNoteRef.current) => ({ value: taskNote, setValue: setTaskNoteDraft, target })
 
   // Switching destination starts a clean slate: drop pasted images and clear the field we're leaving
   // (so nothing bleeds across modes). We don't touch draft storage, so reopening the dialog restores it.
@@ -188,52 +206,42 @@ export function LaunchDialog() {
           )}
           {dest === 'free' && (
             <textarea
+              ref={freeRef}
               value={freeText}
               onChange={(e) => {
-                setFreeText(e.target.value)
-                if (launchDraftKey) writeDraft(launchDraftKey, e.target.value)
+                setFreeTextDraft(reconcileImagePlaceholders(e.target.value))
               }}
               onPaste={(e) => onPasteImages(e, {
                 value: freeText,
-                setValue: (next) => {
-                  setFreeText((prev) => {
-                    const resolved = resolveTextAction(next, prev)
-                    if (launchDraftKey) writeDraft(launchDraftKey, resolved)
-                    return resolved
-                  })
-                },
+                setValue: setFreeTextDraft,
                 target: e.currentTarget,
               })}
+              onKeyDown={(e) => { handleImagePlaceholderKeyDown(e, freeImagePlacement(e.currentTarget)) }}
               rows={2}
               placeholder="想让 agent 做什么…（可粘贴图片）"
               className="mt-2 w-full resize-none rounded-md border border-border bg-card px-2.5 py-2 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
             />
           )}
-          {dest === 'free' && <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />}
+          {dest === 'free' && <PastedImageStrip images={images} onRemove={(idx) => removeImage(idx, freeImagePlacement())} className="mt-2" />}
           {dest === 'task' && taskTitle && (
             <textarea
+              ref={taskNoteRef}
               value={taskNote}
               onChange={(e) => {
-                setTaskNote(e.target.value)
-                if (launchDraftKey) writeDraft(launchDraftKey, e.target.value)
+                setTaskNoteDraft(reconcileImagePlaceholders(e.target.value))
               }}
               onPaste={(e) => onPasteImages(e, {
                 value: taskNote,
-                setValue: (next) => {
-                  setTaskNote((prev) => {
-                    const resolved = resolveTextAction(next, prev)
-                    if (launchDraftKey) writeDraft(launchDraftKey, resolved)
-                    return resolved
-                  })
-                },
+                setValue: setTaskNoteDraft,
                 target: e.currentTarget,
               })}
+              onKeyDown={(e) => { handleImagePlaceholderKeyDown(e, taskNoteImagePlacement(e.currentTarget)) }}
               rows={3}
               placeholder="补充本次会话的额外背景、范围或具体要求…（可粘贴图片）"
               className="mt-2 w-full resize-none rounded-md border border-border bg-card px-2.5 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
             />
           )}
-          {dest === 'task' && taskTitle && <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />}
+          {dest === 'task' && taskTitle && <PastedImageStrip images={images} onRemove={(idx) => removeImage(idx, taskNoteImagePlacement())} className="mt-2" />}
         </div>
 
         <LaunchConfigFields
