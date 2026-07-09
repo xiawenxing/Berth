@@ -190,7 +190,7 @@ export function refreshSessions(): LogicalSession[] {
   // Passing `cache` would mean reconcile never finds it → never binds → never surfaces (deadlock).
   // reconcile constrains candidates by intent cwd/cli/time internally, so the wider input is safe;
   // once bound it enters allBoundLaunchSessionIds → curated → surfaces on the next refresh.
-  const bound = reconcileLaunchIntents(store, all)
+  const bound = reconcileLaunchIntents(store, all, { hasLivePty })
   if (bound > 0) {
     cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet(), [berthAgentCwd()])
     store.upsertSessions(cache)
