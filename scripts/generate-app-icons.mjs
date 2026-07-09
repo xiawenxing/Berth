@@ -8,31 +8,25 @@ const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'))
 const BUILD = join(ROOT, 'build')
 const ICONSET = join(BUILD, 'icon.iconset')
 
-const BLUE_TOP = [83, 191, 255, 255]
-const BLUE_BOTTOM = [31, 101, 225, 255]
-const BLUE_EDGE = [13, 37, 103, 70]
-const WHITE = [255, 255, 255, 255]
-const SHADOW = [0, 12, 38, 74]
-const HIGHLIGHT = [255, 255, 255, 54]
+const BG_TOP = [255, 255, 255, 255]
+const BG_BOTTOM = [231, 238, 249, 255]
+const BG_EDGE = [185, 199, 221, 255]
+const SAIL_BLUE = [47, 111, 237, 255]
 
 const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <defs>
     <linearGradient id="bg" x1="188" y1="116" x2="836" y2="908" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#53bfff"/>
-      <stop offset="1" stop-color="#1f65e1"/>
+      <stop stop-color="#fff"/>
+      <stop offset="1" stop-color="#e7eef9"/>
     </linearGradient>
   </defs>
-  <rect x="88" y="88" width="848" height="848" rx="224" fill="url(#bg)"/>
-  <path d="M160 202C244 130 362 88 512 88h198c125 0 226 101 226 226v128" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="34" stroke-linecap="round"/>
+  <rect x="88" y="88" width="848" height="848" rx="214" fill="url(#bg)"/>
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M336 744V276" stroke="#00143b" stroke-opacity=".26" stroke-width="96"/>
-    <path d="M336 288c168 60 282 156 336 288-114 12-228-12-336-72" stroke="#00143b" stroke-opacity=".26" stroke-width="96"/>
-    <path d="M336 744c96-114 216-174 360-180" stroke="#00143b" stroke-opacity=".26" stroke-width="96"/>
-    <path d="M336 744V276" stroke="#fff" stroke-width="84"/>
-    <path d="M336 288c168 60 282 156 336 288-114 12-228-12-336-72" stroke="#fff" stroke-width="84"/>
-    <path d="M336 744c96-114 216-174 360-180" stroke="#fff" stroke-width="84"/>
+    <path d="M336 744V276" stroke="#2f6fed" stroke-width="84"/>
+    <path d="M336 288c168 60 282 156 336 288-114 12-228-12-336-72" stroke="#2f6fed" stroke-width="84"/>
+    <path d="M336 744c96-114 216-174 360-180" stroke="#2f6fed" stroke-width="84"/>
   </g>
-  <rect x="88" y="88" width="848" height="848" rx="224" fill="none" stroke="#0d2567" stroke-opacity=".22" stroke-width="20"/>
+  <rect x="88" y="88" width="848" height="848" rx="214" fill="none" stroke="#b9c7dd" stroke-width="22"/>
 </svg>
 `
 
@@ -83,15 +77,13 @@ function renderIcon(size) {
   const scale = w / 1024
   const pixels = new Uint8ClampedArray(w * h * 4)
 
-  drawRoundedRect(pixels, w, h, 88 * scale, 88 * scale, 848 * scale, 848 * scale, 224 * scale, (x, y) => {
+  drawRoundedRect(pixels, w, h, 88 * scale, 88 * scale, 848 * scale, 848 * scale, 214 * scale, (x, y) => {
     const t = Math.min(1, Math.max(0, (x + y) / (w + h)))
-    return mix(BLUE_TOP, BLUE_BOTTOM, t)
+    return mix(BG_TOP, BG_BOTTOM, t)
   })
-  drawArcHighlight(pixels, w, h, scale)
-  drawRoundedRectStroke(pixels, w, h, 88 * scale, 88 * scale, 848 * scale, 848 * scale, 224 * scale, 20 * scale, BLUE_EDGE)
+  drawRoundedRectStroke(pixels, w, h, 88 * scale, 88 * scale, 848 * scale, 848 * scale, 214 * scale, 22 * scale, BG_EDGE)
 
-  drawShip(pixels, w, h, scale, SHADOW, 96 * scale, 0, 18 * scale)
-  drawShip(pixels, w, h, scale, WHITE, 84 * scale, 0, 0)
+  drawShip(pixels, w, h, scale, SAIL_BLUE, 84 * scale, 0, 0)
 
   return downsample(pixels, w, h, ss)
 }
