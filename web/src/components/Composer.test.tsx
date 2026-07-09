@@ -6,6 +6,22 @@ import type { PastedImage } from './ImagePaste'
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+async function waitForAssertion(assertion: () => void) {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      assertion()
+      return
+    } catch (error) {
+      lastError = error
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      })
+    }
+  }
+  throw lastError
+}
+
 describe('Composer', () => {
   beforeEach(() => {
     sessionStorage.clear()
@@ -66,8 +82,10 @@ describe('Composer', () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
 
-      expect(host.querySelectorAll('img')).toHaveLength(1)
-      expect(textarea.value).toBe('[Image #1]')
+      await waitForAssertion(() => {
+        expect(host.querySelectorAll('img')).toHaveLength(1)
+        expect(textarea.value).toBe('[Image #1]')
+      })
       const button = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === '发送')
       if (!button) throw new Error('send button not rendered')
 
@@ -113,7 +131,9 @@ describe('Composer', () => {
         textarea.dispatchEvent(paste)
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
-      expect(host.querySelectorAll('img')).toHaveLength(1)
+      await waitForAssertion(() => {
+        expect(host.querySelectorAll('img')).toHaveLength(1)
+      })
 
       await act(async () => {
         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
@@ -155,6 +175,9 @@ describe('Composer', () => {
       await act(async () => {
         textarea.dispatchEvent(paste)
         await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      await waitForAssertion(() => {
+        expect(textarea.value).toBe('[Image #1]')
       })
       textarea.setSelectionRange('[Image #1]'.length, '[Image #1]'.length)
 
@@ -198,7 +221,9 @@ describe('Composer', () => {
         textarea.dispatchEvent(paste)
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
-      expect(textarea.value).toBe('[Image #1]')
+      await waitForAssertion(() => {
+        expect(textarea.value).toBe('[Image #1]')
+      })
 
       const remove = host.querySelector('button[title="移除图片"]')
       if (!remove) throw new Error('remove image button not rendered')
@@ -250,7 +275,9 @@ describe('Composer', () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
 
-      expect(textarea.value).toBe('before [Image #1]after')
+      await waitForAssertion(() => {
+        expect(textarea.value).toBe('before [Image #1]after')
+      })
     } finally {
       await act(async () => {
         root.unmount()
@@ -287,8 +314,10 @@ describe('Composer', () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
 
-      expect(host.querySelectorAll('img')).toHaveLength(1)
-      expect(textarea.value).toBe('[Image #1]')
+      await waitForAssertion(() => {
+        expect(host.querySelectorAll('img')).toHaveLength(1)
+        expect(textarea.value).toBe('[Image #1]')
+      })
     } finally {
       await act(async () => {
         root.unmount()
@@ -325,7 +354,9 @@ describe('Composer', () => {
       }
 
       await pasteImage(new File([new Uint8Array([1])], 'first.png', { type: 'image/png' }))
-      expect(textarea.value).toBe('[Image #1]')
+      await waitForAssertion(() => {
+        expect(textarea.value).toBe('[Image #1]')
+      })
 
       const button = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === '发送')
       if (!button) throw new Error('send button not rendered')
@@ -337,8 +368,10 @@ describe('Composer', () => {
       expect(textarea.value).toBe('')
 
       await pasteImage(new File([new Uint8Array([2])], 'second.png', { type: 'image/png' }))
-      expect(textarea.value).toBe('[Image #1]')
-      expect(host.querySelectorAll('img')).toHaveLength(1)
+      await waitForAssertion(() => {
+        expect(textarea.value).toBe('[Image #1]')
+        expect(host.querySelectorAll('img')).toHaveLength(1)
+      })
     } finally {
       await act(async () => {
         root.unmount()
