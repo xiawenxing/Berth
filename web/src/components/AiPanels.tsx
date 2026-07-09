@@ -266,7 +266,9 @@ export function ContextDocDrawer({ target, onClose }: { target: ContextDocTarget
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
-  const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
+  const { images, clearImages, onPasteImages, removeImage, reconcileImagePlaceholders, handleImagePlaceholderKeyDown } = usePastedImages()
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const inputImagePlacement = (target: HTMLTextAreaElement | null = inputRef.current) => ({ value: input, setValue: setInput, target })
 
   useEffect(() => {
     if (!target) return
@@ -333,9 +335,11 @@ export function ContextDocDrawer({ target, onClose }: { target: ContextDocTarget
             <p className="mb-1 text-[11px] text-text-dim">直接编辑，或在下方写一句，让港务助手整理进上下文</p>
             <div className="flex items-end gap-2 rounded-md border border-border bg-card p-2">
               <textarea
+                ref={inputRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => setInput(reconcileImagePlaceholders(e.target.value))}
                 onPaste={(e) => onPasteImages(e, { value: input, setValue: setInput, target: e.currentTarget })}
+                onKeyDown={(e) => { handleImagePlaceholderKeyDown(e, inputImagePlacement(e.currentTarget)) }}
                 rows={2}
                 placeholder="补充点什么，或粘贴图片，让港务助手整理进上下文…"
                 className="min-h-0 flex-1 resize-none bg-transparent text-[13px] text-foreground outline-none placeholder:text-text-dim"
@@ -348,7 +352,7 @@ export function ContextDocDrawer({ target, onClose }: { target: ContextDocTarget
                 <Sparkles size={12} className={busy ? 'spk-twinkle' : ''} /> {busy ? '整理中…' : '让 AI 整理更新'}
               </button>
             </div>
-            <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />
+            <PastedImageStrip images={images} onRemove={(idx) => removeImage(idx, inputImagePlacement())} className="mt-2" />
           </div>
         </>
       )}

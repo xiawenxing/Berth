@@ -88,6 +88,135 @@ describe('Composer', () => {
     }
   })
 
+  it('removes the pasted image when its marker is removed from the textarea', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+
+    try {
+      await act(async () => {
+        root.render(<Composer onSend={() => {}} onInterrupt={() => {}} busy={false} />)
+      })
+
+      const textarea = host.querySelector('textarea')
+      if (!textarea) throw new Error('textarea not rendered')
+      const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' })
+      const paste = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(paste, 'clipboardData', {
+        value: {
+          items: [{ type: 'image/png', getAsFile: () => file }],
+          files: [file],
+        },
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(paste)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(host.querySelectorAll('img')).toHaveLength(1)
+
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(textarea, '')
+        textarea.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+
+      expect(textarea.value).toBe('')
+      expect(host.querySelectorAll('img')).toHaveLength(0)
+    } finally {
+      await act(async () => {
+        root.unmount()
+      })
+      host.remove()
+    }
+  })
+
+  it('deletes an image marker as one token with Backspace', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+
+    try {
+      await act(async () => {
+        root.render(<Composer onSend={() => {}} onInterrupt={() => {}} busy={false} />)
+      })
+
+      const textarea = host.querySelector('textarea')
+      if (!textarea) throw new Error('textarea not rendered')
+      const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' })
+      const paste = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(paste, 'clipboardData', {
+        value: {
+          items: [{ type: 'image/png', getAsFile: () => file }],
+          files: [file],
+        },
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(paste)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      textarea.setSelectionRange('[Image #1]'.length, '[Image #1]'.length)
+
+      await act(async () => {
+        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      expect(textarea.value).toBe('')
+      expect(host.querySelectorAll('img')).toHaveLength(0)
+    } finally {
+      await act(async () => {
+        root.unmount()
+      })
+      host.remove()
+    }
+  })
+
+  it('removes the marker when deleting an image thumbnail', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+
+    try {
+      await act(async () => {
+        root.render(<Composer onSend={() => {}} onInterrupt={() => {}} busy={false} />)
+      })
+
+      const textarea = host.querySelector('textarea')
+      if (!textarea) throw new Error('textarea not rendered')
+      const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' })
+      const paste = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(paste, 'clipboardData', {
+        value: {
+          items: [{ type: 'image/png', getAsFile: () => file }],
+          files: [file],
+        },
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(paste)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(textarea.value).toBe('[Image #1]')
+
+      const remove = host.querySelector('button[title="移除图片"]')
+      if (!remove) throw new Error('remove image button not rendered')
+      await act(async () => {
+        remove.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      expect(textarea.value).toBe('')
+      expect(host.querySelectorAll('img')).toHaveLength(0)
+    } finally {
+      await act(async () => {
+        root.unmount()
+      })
+      host.remove()
+    }
+  })
+
   it('inserts pasted image markers at the textarea caret', async () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -202,6 +331,7 @@ describe('Composer', () => {
       if (!button) throw new Error('send button not rendered')
       await act(async () => {
         button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await new Promise((resolve) => setTimeout(resolve, 0))
       })
       expect(sent).toHaveLength(1)
       expect(textarea.value).toBe('')

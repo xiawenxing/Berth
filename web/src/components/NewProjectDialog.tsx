@@ -21,8 +21,10 @@ export function NewProjectDialog({
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const [ai, setAi] = useState(true)
-  const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
+  const { images, clearImages, onPasteImages, removeImage, reconcileImagePlaceholders, handleImagePlaceholderKeyDown } = usePastedImages()
   const ref = useRef<HTMLInputElement>(null)
+  const descRef = useRef<HTMLTextAreaElement>(null)
+  const descImagePlacement = (target: HTMLTextAreaElement | null = descRef.current) => ({ value: desc, setValue: setDesc, target })
 
   useEffect(() => {
     if (open) {
@@ -61,14 +63,16 @@ export function NewProjectDialog({
         <div>
           <label className="mb-1 block text-[10.5px] text-muted-foreground">描述</label>
           <textarea
+            ref={descRef}
             value={desc}
-            onChange={(e) => setDesc(e.target.value)}
+            onChange={(e) => setDesc(reconcileImagePlaceholders(e.target.value))}
             onPaste={(e) => onPasteImages(e, { value: desc, setValue: setDesc, target: e.currentTarget })}
+            onKeyDown={(e) => { handleImagePlaceholderKeyDown(e, descImagePlacement(e.currentTarget)) }}
             rows={3}
             placeholder="简单描述这个项目是做什么的…（可粘贴图片）"
             className="w-full resize-y rounded-md border border-border bg-card px-3 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
           />
-          <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />
+          <PastedImageStrip images={images} onRemove={(idx) => removeImage(idx, descImagePlacement())} className="mt-2" />
         </div>
         <button onClick={() => setAi((v) => !v)} className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
           <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${ai ? 'border-brand bg-brand' : 'border-border'}`}>
