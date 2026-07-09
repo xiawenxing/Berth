@@ -231,6 +231,8 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
   const [copiedSessionId, setCopiedSessionId] = useState(false)
   const copiedResetRef = useRef<number | null>(null)
   const generating = kicked || !!s.titleGenerating
+  const titleError = s.titleError ?? null
+  const failedTitle = titleError ?? (failed ? '生成失败，点击重试' : null)
   useEffect(() => { if (s.titleGenerating) setKicked(false) }, [s.titleGenerating])
   useEffect(() => {
     return () => {
@@ -307,14 +309,14 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
         type="button"
         onClick={generateTitle}
         disabled={generating}
-        title={generating ? '正在智能生成标题…' : failed ? '生成失败，点击重试' : '智能生成标题'}
+        title={generating ? '正在智能生成标题…' : failedTitle ?? '智能生成标题'}
         aria-label="智能生成标题"
         className={cn(
           'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim transition-opacity hover:bg-secondary hover:text-foreground disabled:opacity-50',
-          generating ? 'opacity-100' : failed ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
+          generating ? 'opacity-100' : failedTitle ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
         )}
       >
-        <Sparkles size={12} className={cn(generating && 'spk-twinkle', failed && 'text-destructive')} />
+        <Sparkles size={12} className={cn(generating && 'spk-twinkle', failedTitle && 'text-destructive')} />
       </button>
       <button
         type="button"

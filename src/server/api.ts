@@ -27,7 +27,7 @@ import { createTaskFromSession } from '../data/task-from-session'
 import { parseStructuredSummary } from '../agent/index'
 import { summarizeCompactedContext } from '../agent/context-compact'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
-import { isGeneratingTitle, triggerSessionTitle, titleGist } from './title-service'
+import { isGeneratingTitle, triggerSessionTitle, titleError, titleGist } from './title-service'
 import type { Locale } from '../i18n'
 import { readFileSync, statSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -113,6 +113,7 @@ export interface ApiSession {
   todoKey?: string | null
   activity: 'running' | 'settled' | null   // live PTY status (null = no live process / external session)
   titleGenerating?: boolean                // 港务助手 is generating this session's title right now
+  titleError?: string | null                // short-lived failure hint from detached title generation
   launching?: boolean                      // in-flight fresh launch: live PTY but no jsonl on disk yet
 }
 
@@ -184,6 +185,7 @@ function serialize(): ApiSession[] {
     todoKey: reverseMap.get(s.sessionId) ?? null,
     activity: activityMap.get(s.sessionId) ?? null,
     titleGenerating: isGeneratingTitle(s.sessionId),   // drives the live spinner on the generate-title icon
+    titleError: titleError(s.sessionId),   // drives a visible retry/failure state when the detached run fails
     launching: s.launching,   // in-flight launch surfaced from the live-PTY arm (undefined for real rows)
     }
   }).sort((a, b) => b.updatedAt - a.updatedAt)
@@ -328,7 +330,7 @@ api.post('/todos/from-session', async (req, res) => {
     broadcastDataChanged()
     res.json(result)
   } catch (e: any) {
-    res.status(502).json({ error: String(e?.message ?? e) })
+    return sendAgentError(res, e, getLocale(getStore()))
   }
 })
 

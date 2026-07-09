@@ -53,6 +53,7 @@ export interface ApiSession {
   activity?: string | null
   deleted?: boolean
   titleGenerating?: boolean // server is generating this session's title right now (drives the spinner)
+  titleError?: string | null // short-lived failure hint from detached title generation
   /** Server-side in-flight launch: a live PTY that hasn't written its jsonl yet, surfaced so a closed
    *  drawer / page reload keeps it (reopening reattaches to the same process). Shown as 启动中…. */
   launching?: boolean
@@ -187,7 +188,11 @@ async function send(method: string, url: string, body?: unknown): Promise<any> {
   })
   const payload = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const msg = typeof payload?.error === 'string' ? payload.error : `${method} ${url} → ${res.status}`
+    const msg = typeof payload?.hint === 'string'
+      ? payload.hint
+      : typeof payload?.error === 'string'
+        ? payload.error
+        : `${method} ${url} → ${res.status}`
     const err = new Error(msg) as Error & { payload?: any; status?: number }
     err.payload = payload
     err.status = res.status

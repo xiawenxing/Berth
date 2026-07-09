@@ -7,12 +7,33 @@ import { openSync, readSync, closeSync, fstatSync } from 'node:fs'
 import { getStore, getCache } from './store-singleton'
 import { resolveBerthAgent } from '../data/agent-config'
 import { generateTitle } from '../agent/index'
+import { agentBlockHint, isInternalAgentBlocked } from '../agent/agent-failure'
 import { titleInputFromTranscript } from '../agent/transcript'
 import { logDiag } from './diag'
 import { compactTitle } from '../title-limits'
+import { getLocale } from '../i18n'
+import { broadcastDataChanged } from './status-ws'
 
 const inFlight = new Set<string>()
+const failures = new Map<string, { message: string; at: number }>()
+const FAILURE_TTL_MS = 60_000
 export function isGeneratingTitle(id: string): boolean { return inFlight.has(id) }
+
+export function titleError(id: string, now = Date.now()): string | null {
+  const failure = failures.get(id)
+  if (!failure) return null
+  if (now - failure.at > FAILURE_TTL_MS) {
+    failures.delete(id)
+    return null
+  }
+  return failure.message
+}
+
+function titleFailureMessage(error: unknown): string {
+  const locale = getLocale(getStore())
+  if (isInternalAgentBlocked(error)) return agentBlockHint(error.kind, error.cli, locale)
+  return locale === 'zh-CN' ? '标题生成失败，请稍后重试' : 'Title generation failed. Try again later.'
+}
 
 function readAlignedChunk(fd: number, start: number, length: number, fileSize: number): string {
   const b = Buffer.alloc(length)
@@ -76,6 +97,7 @@ async function generateSessionTitle(sessionId: string): Promise<void> {
   }
   const saved = compactTitle(title)
   getStore().setTitleOverride(sessionId, saved)
+  failures.delete(sessionId)
   logDiag({ category: 'title', event: 'saved', sessionId, titleLen: saved.length })
 }
 
@@ -87,14 +109,20 @@ export function triggerSessionTitle(sessionId: string): void {
     logDiag({ category: 'title', event: 'dedupe', sessionId })
     return
   }
+  failures.delete(sessionId)
   inFlight.add(sessionId)
   logDiag({ category: 'title', event: 'start', sessionId })
+  broadcastDataChanged()
   queueMicrotask(() => {
     void generateSessionTitle(sessionId)
-      .catch((e: any) => logDiag({ category: 'title', event: 'failed', sessionId, level: 'error', error: String(e?.message ?? e) }))
+      .catch((e: any) => {
+        failures.set(sessionId, { message: titleFailureMessage(e), at: Date.now() })
+        logDiag({ category: 'title', event: 'failed', sessionId, level: 'error', error: String(e?.message ?? e) })
+      })
       .finally(() => {
         inFlight.delete(sessionId)
         logDiag({ category: 'title', event: 'finish', sessionId })
+        broadcastDataChanged()
       })
   })
 }

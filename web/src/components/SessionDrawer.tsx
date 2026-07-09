@@ -99,6 +99,7 @@ export function SessionDrawer() {
             task={drawer.task}
             editable={!!drawer.sessionId}
             generating={!!currentSession?.titleGenerating}
+            generationError={currentSession?.titleError ?? null}
             onRename={async (title) => {
               if (!drawer.sessionId) return
               await api.renameSessionTitle(drawer.sessionId, title)

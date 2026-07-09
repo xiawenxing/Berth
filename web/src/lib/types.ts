@@ -40,6 +40,7 @@ export interface SessionRow {
   taskId?: string | null
   pinned?: boolean
   titleGenerating?: boolean // server is generating this session's title (shared with the drawer's icon)
+  titleError?: string | null // server surfaced a recent detached title-generation failure
   /** Optimistic in-flight launch placeholder (创建中…) — not yet a real, openable session. */
   pending?: boolean
   pendingOpenable?: boolean
