@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const mockExecFile = vi.hoisted(() => vi.fn())
+const mockGenerateTitle = vi.hoisted(() => vi.fn(async (..._a: any[]) => 'mocked title'))
 const mockGenerateTaskTitle = vi.hoisted(() => vi.fn(async (..._a: any[]) => '智能任务标题'))
 const mockGetAgentModelCatalogs = vi.hoisted(() => vi.fn(async (..._a: any[]) => [
   { cli: 'codex', ok: true, source: 'cli', models: [{ id: 'gpt-5.5', label: 'GPT-5.5' }] },
@@ -116,7 +117,7 @@ vi.mock('../src/data/projects', () => ({
 
 // ── Mock agent modules ────────────────────────────────────────────────────────
 vi.mock('../src/agent/index', () => ({
-  generateTitle: vi.fn(async () => 'mocked title'),
+  generateTitle: (...a: any[]) => mockGenerateTitle(...a),
   generateTaskTitle: (...a: any[]) => mockGenerateTaskTitle(...a),
   parseStructuredSummary: vi.fn((raw: string) => ({ headline: raw, progress: [], milestones: [] })),
 }))
@@ -197,6 +198,7 @@ beforeEach(() => {
   mockListTasks.mockReturnValue([])
   mockCreateTask.mockResolvedValue({ status: 'created', record: { id: 'r', title: 'test', project: 'Berth' } })
   mockUpdateTask.mockClear()
+  mockGenerateTitle.mockReset().mockResolvedValue('mocked title')
   mockGenerateTaskTitle.mockReset().mockResolvedValue('智能任务标题')
   mockGetAgentModelCatalogs.mockReset().mockResolvedValue([
     { cli: 'codex', ok: true, source: 'cli', models: [{ id: 'gpt-5.5', label: 'GPT-5.5' }] },
@@ -580,6 +582,27 @@ describe('/api/sessions – live activity field (always)', () => {
     expect(after.find(s => s.sessionId === 's-live-1')?.activity).toBe('running')
 
     killPty('s-live-1')
+  })
+
+  it('reports a short-lived titleError when detached title generation fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'berth-title-'))
+    tmpRoots.push(root)
+    const transcript = join(root, 'session.jsonl')
+    writeFileSync(transcript, '{"type":"user","message":{"content":"please fix title generation"}}\n')
+    mockGenerateTitle.mockRejectedValueOnce(new InternalAgentBlocked('auth', 'codex', 'not logged in'))
+    mockGetCache.mockReturnValue([
+      { sessionId: 's-title-fail', cli: 'codex', cwd: '/x', title: 'old', updatedAt: 100, deleted: false, copies: [], contentSourcePath: transcript },
+    ])
+    const port = await listen()
+
+    const kicked = await fetch(`http://localhost:${port}/api/sessions/s-title-fail/title`, { method: 'POST' })
+    expect(kicked.status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const sessions = await (await fetch(`http://localhost:${port}/api/sessions`)).json() as any[]
+    expect(sessions.find((s) => s.sessionId === 's-title-fail')?.titleGenerating).toBe(false)
+    expect(sessions.find((s) => s.sessionId === 's-title-fail')?.titleError).toContain('codex login')
   })
 })
 
@@ -1004,6 +1027,26 @@ describe('POST /api/todos/from-session', () => {
     })
     expect(res.status).toBe(422)
     expect(await res.json()).toEqual({ error: 'empty session content' })
+  })
+
+  it('maps an InternalAgentBlocked title agent failure to 409 {blocked,cli,hint}', async () => {
+    mockGetCache.mockReturnValue([
+      { sessionId: 'sess-1', cli: 'claude', cwd: '/x', title: 't', updatedAt: 100, deleted: false, copies: [], contentSourcePath: '/x.jsonl' },
+    ])
+    mockExtractConversation.mockReturnValueOnce('USER: fix the menu')
+    mockGenerateTaskTitle.mockRejectedValueOnce(new InternalAgentBlocked('auth', 'codex', 'not logged in'))
+    const port = await listen()
+
+    const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'sess-1' }),
+    })
+
+    expect(res.status).toBe(409)
+    const body = await res.json() as any
+    expect(body.blocked).toBe('auth')
+    expect(body.cli).toBe('codex')
+    expect(body.hint).toContain('codex login')
   })
 })
 

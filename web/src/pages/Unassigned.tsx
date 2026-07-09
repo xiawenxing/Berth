@@ -461,6 +461,8 @@ function SessionListRow({
   const [failed, setFailed] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const generating = kicked || !!s.titleGenerating
+  const titleError = s.titleError ?? null
+  const failedTitle = titleError ?? (failed ? '生成失败，点击重试' : null)
   const displayTitle = imagePathPlaceholderText(s.title, s.sessionId)
   useEffect(() => { if (s.titleGenerating) setKicked(false) }, [s.titleGenerating])
 
@@ -545,16 +547,16 @@ function SessionListRow({
         </span>
         <button
           type="button"
-          title={generating ? '正在智能生成标题…' : failed ? '生成失败，点击重试' : '智能生成标题'}
+          title={generating ? '正在智能生成标题…' : failedTitle ?? '智能生成标题'}
           aria-label="智能生成标题"
           disabled={generating}
           onClick={generateTitle}
           className={cn(
             'flex-none rounded p-1 text-text-dim transition-opacity hover:bg-secondary hover:text-foreground',
-            generating ? 'opacity-100' : failed ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
+            generating ? 'opacity-100' : failedTitle ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
           )}
         >
-          <Sparkles size={13} className={cn(generating && 'spk-twinkle', failed && 'text-destructive')} />
+          <Sparkles size={13} className={cn(generating && 'spk-twinkle', failedTitle && 'text-destructive')} />
         </button>
         <button
           title="归属到项目"

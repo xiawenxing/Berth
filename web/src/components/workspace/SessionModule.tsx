@@ -42,8 +42,15 @@ function TaskTag({
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const createErrorResetRef = useRef<number | null>(null)
   const linked = tasks?.find((t) => t.id === s.taskId)
   const isLinked = !!s.taskId
+  useEffect(() => {
+    return () => {
+      if (createErrorResetRef.current != null) window.clearTimeout(createErrorResetRef.current)
+    }
+  }, [])
   const close = () => {
     setOpen(false)
     setQ('')
@@ -58,11 +65,15 @@ function TaskTag({
     if (!onCreateTaskFromSession) return
     close()
     setCreating(true)
+    setCreateError(null)
     try {
       await onCreateTaskFromSession(s.id)
     } catch (err) {
       // best-effort：失败就恢复，标签回到原关联/未关联（reload 不会带来新任务）。
+      setCreateError(err instanceof Error ? err.message : '创建失败')
       console.error('createTaskFromSession failed', err)
+      if (createErrorResetRef.current != null) window.clearTimeout(createErrorResetRef.current)
+      createErrorResetRef.current = window.setTimeout(() => setCreateError(null), 5000)
     } finally {
       setCreating(false)
     }
@@ -76,7 +87,7 @@ function TaskTag({
         ref={ref}
         type="button"
         disabled={creating}
-        title={creating ? '正在根据会话内容创建任务…' : isLinked ? linked?.title ?? '已关联任务' : '关联到任务'}
+        title={createError ?? (creating ? '正在根据会话内容创建任务…' : isLinked ? linked?.title ?? '已关联任务' : '关联到任务')}
         onClick={(e) => {
           e.stopPropagation()
           if (creating) return
@@ -87,11 +98,12 @@ function TaskTag({
           isLinked
             ? 'border border-brand/30 bg-brand/12 text-brand hover:bg-brand/20'
             : 'border border-dashed border-border text-text-dim opacity-0 hover:border-brand/45 hover:text-brand group-hover:opacity-100',
+          createError && 'border-destructive/40 bg-destructive/10 text-destructive opacity-100',
           (open || creating) && 'opacity-100',
         )}
       >
         {creating ? <Spinner size={10} className="flex-none" /> : <Link2 size={10} className="flex-none" />}
-        <span className="truncate">{creating ? '创建中…' : isLinked ? linked?.title ?? '已关联任务' : '关联任务'}</span>
+        <span className="truncate">{creating ? '创建中…' : createError ? '创建失败' : isLinked ? linked?.title ?? '已关联任务' : '关联任务'}</span>
       </button>
       {open && (
         <AnchoredPopover anchor={ref} width={264} onClose={close}>
@@ -174,6 +186,7 @@ export function rowPropsEqual(a: RowProps, b: RowProps): boolean {
     x.taskId === y.taskId &&
     x.pinned === y.pinned &&
     x.titleGenerating === y.titleGenerating &&
+    x.titleError === y.titleError &&
     x.pending === y.pending &&
     x.pendingOpenable === y.pendingOpenable
   )
@@ -201,6 +214,7 @@ function RowImpl({
   const [copiedSessionId, setCopiedSessionId] = useState(false)
   const copiedResetRef = useRef<number | null>(null)
   const generating = kicked || !!s.titleGenerating
+  const titleError = s.titleError ?? null
   useEffect(() => { if (s.titleGenerating) setKicked(false) }, [s.titleGenerating])
   useEffect(() => {
     return () => {
@@ -326,16 +340,16 @@ function RowImpl({
         {onGenerateTitle && (
           <button
             type="button"
-            title="智能生成标题"
+            title={generating ? '正在智能生成标题…' : titleError ?? '智能生成标题'}
             aria-label="智能生成标题"
             disabled={generating}
             onClick={generateTitle}
             className={cn(
               'flex h-[22px] w-[22px] items-center justify-center rounded text-text-dim transition-opacity hover:bg-secondary hover:text-foreground',
-              generating ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+              generating ? 'opacity-100' : titleError ? 'text-destructive opacity-100' : 'opacity-0 group-hover:opacity-100',
             )}
           >
-            <Sparkles size={12} className={cn(generating && 'spk-twinkle')} />
+            <Sparkles size={12} className={cn(generating && 'spk-twinkle', titleError && 'text-destructive')} />
           </button>
         )}
         <button
