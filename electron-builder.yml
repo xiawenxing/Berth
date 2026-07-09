@@ -5,6 +5,7 @@ appId: dev.berth.app
 productName: Berth
 directories:
   output: release
+  buildResources: build
 extraMetadata:
   main: electron/main.cjs
 files:
@@ -28,6 +29,7 @@ asarUnpack:
                   # by external agent processes following symlinks.
   - "public/**"
 mac:
+  icon: build/icon.icns
   target:
     - dmg
     - zip
@@ -49,6 +51,8 @@ mac:
   hardenedRuntime: true
   notarize: true
 win:
+  icon: build/icon.ico
   target: nsis
 linux:
+  icon: build/icon.png
   target: AppImage
