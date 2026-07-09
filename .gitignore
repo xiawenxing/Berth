@@ -1,6 +1,7 @@
 node_modules
 dist
 release
+build/icon.iconset/
 *.sqlite
 log/
 *.log
