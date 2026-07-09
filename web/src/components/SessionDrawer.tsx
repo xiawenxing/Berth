@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Drawer } from './ui/Overlay'
 import { SessionPanel } from './SessionPanel'
 import { SessionTitleBar } from './SessionTitleBar'
@@ -67,6 +67,18 @@ export function SessionDrawer() {
       openDrawer({ ...drawer, sessionId, status: 'sail' })
     }
   }
+  const closeAfterTerminalTerminate = useCallback(() => {
+    if (drawer) {
+      logDiag('ui', 'drawer_terminate_shortcut', {
+        launchToken: drawer.launch?.launchToken,
+        sessionId: drawer.sessionId ?? undefined,
+        cli: drawer.cli,
+        wasLaunch: !!drawer.launch,
+      })
+    }
+    closeDrawer()
+    window.setTimeout(() => reload(), 250)
+  }, [closeDrawer, drawer, reload])
 
   const currentSession = drawer?.sessionId ? sessions.find((s) => s.sessionId === drawer.sessionId) : undefined
   const currentStatus = drawer?.sessionId
@@ -108,9 +120,16 @@ export function SessionDrawer() {
           {/* body: terminal (Model A) or stream-json chat (Model B), chosen by the in-panel toggle.
               Both attach to the same persistent process via /pty; the backend respawns on a mode switch. */}
           {drawer.launch ? (
-            <SessionPanel key={`launch:${drawer.launch.launchToken ?? 'pending'}`} cli={drawer.cli} sessionId={drawer.sessionId} launch={drawer.launch} onLaunched={resyncAfterLaunch} />
+            <SessionPanel
+              key={`launch:${drawer.launch.launchToken ?? 'pending'}`}
+              cli={drawer.cli}
+              sessionId={drawer.sessionId}
+              launch={drawer.launch}
+              onLaunched={resyncAfterLaunch}
+              onTerminateShortcut={closeAfterTerminalTerminate}
+            />
           ) : drawer.sessionId ? (
-            <SessionPanel key={drawer.sessionId} cli={drawer.cli} sessionId={drawer.sessionId} />
+            <SessionPanel key={drawer.sessionId} cli={drawer.cli} sessionId={drawer.sessionId} onTerminateShortcut={closeAfterTerminalTerminate} />
           ) : null}
         </>
       )}
