@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Berth App Icon Preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d8dfeb;
+      --brand: #2f6fed;
+      --dock: rgba(234, 238, 246, .82);
+      --shadow: 0 18px 46px rgba(24, 36, 68, .15);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, #f8fbff 0%, #eef3fa 58%, #e8edf5 100%);
+      color: var(--ink);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .shell {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 28px 28px 38px;
+    }
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 20px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+    .sub {
+      margin: 0;
+      max-width: 740px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    .current {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: none;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.72);
+      box-shadow: 0 8px 26px rgba(24, 36, 68, .08);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .current img {
+      width: 44px;
+      height: 44px;
+      border-radius: 11px;
+      display: block;
+    }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.86);
+      box-shadow: 0 12px 34px rgba(24, 36, 68, .08);
+      overflow: hidden;
+    }
+    .hero {
+      min-height: 254px;
+      display: grid;
+      place-items: center;
+      padding: 24px 20px 18px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.68), rgba(255,255,255,.22)),
+        radial-gradient(circle at 50% 0%, rgba(255,255,255,.95), transparent 45%),
+        #eef3fa;
+    }
+    .icon-lg {
+      width: 164px;
+      height: 164px;
+      filter: drop-shadow(0 18px 22px rgba(19, 31, 63, .18));
+    }
+    .meta {
+      padding: 13px 14px 14px;
+      border-top: 1px solid var(--line);
+      background: #fff;
+    }
+    .name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .num {
+      width: 24px;
+      height: 20px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 5px;
+      background: #eef4ff;
+      color: #245cc8;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .desc {
+      min-height: 54px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.48;
+    }
+    .scale {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #edf1f6;
+    }
+    .sizes {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .sizes svg:nth-child(1) { width: 44px; height: 44px; }
+    .sizes svg:nth-child(2) { width: 30px; height: 30px; }
+    .sizes svg:nth-child(3) { width: 18px; height: 18px; }
+    .dock {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 96px;
+      height: 42px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: var(--dock);
+      border: 1px solid rgba(152, 162, 179, .22);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.72);
+    }
+    .dock .fake {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #172033, #5b6472);
+      opacity: .45;
+    }
+    .dock svg {
+      width: 32px;
+      height: 32px;
+      filter: drop-shadow(0 5px 7px rgba(19,31,63,.20));
+    }
+    .strip {
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.76);
+      overflow: hidden;
+    }
+    .strip-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .finder {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 14px;
+      padding: 16px;
+      background:
+        linear-gradient(90deg, rgba(47,111,237,.06) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(47,111,237,.06) 1px, transparent 1px),
+        #fbfcff;
+      background-size: 46px 46px;
+    }
+    .finder-item {
+      min-width: 0;
+      text-align: center;
+      color: #344054;
+      font-size: 11px;
+      line-height: 1.3;
+    }
+    .finder-item svg {
+      width: 56px;
+      height: 56px;
+      display: block;
+      margin: 0 auto 8px;
+      filter: drop-shadow(0 9px 12px rgba(19,31,63,.18));
+    }
+    .mobile-row {
+      display: flex;
+      gap: 8px;
+      padding: 12px 14px 14px;
+      overflow: auto;
+      background: #f8fafd;
+      border-top: 1px solid var(--line);
+    }
+    .mobile-row svg {
+      width: 42px;
+      height: 42px;
+      flex: none;
+    }
+    svg { display: block; }
+    @media (max-width: 1120px) {
+      .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .finder { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      .shell { padding: 18px 14px 28px; }
+      header { display: block; }
+      .current { margin-top: 14px; }
+      .board { grid-template-columns: 1fr; }
+      .finder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <h1>Berth App Icon 候选</h1>
+        <p class="sub">每个方案都用同一套帆船/B 轮廓，只调整圆角、底色、立体程度和帆的留白。大图看品牌感，小图看 Dock/Finder 识别度。</p>
+      </div>
+      <div class="current">
+        <img src="../build/icon.png" alt="current icon" />
+        <span>当前打包图标<br />蓝底 · 白帆 · 圆角方块</span>
+      </div>
+    </header>
+
+    <main class="board">
+      <article class="card">
+        <div class="hero"><svg class="icon-lg"><use href="#v1" /></svg></div>
+        <div class="meta">
+          <div class="name"><span class="num">01</span> App Blue</div>
+          <p class="desc">当前已生成方向：macOS app 感强，蓝底清楚，白帆在 Dock 小尺寸仍然最稳。</p>
+          <div class="scale"><div class="sizes"><svg><use href="#v1" /></svg><svg><use href="#v1" /></svg><svg><use href="#v1" /></svg></div><div class="dock"><span class="fake"></span><svg><use href="#v1" /></svg><span class="fake"></span></div></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="hero"><svg class="icon-lg"><use href="#v2" /></svg></div>
+        <div class="meta">
+          <div class="name"><span class="num">02</span> Deep Harbor</div>
+          <p class="desc">深海蓝底，边缘更克制，适合和开发工具类 App 放在一起，质感更沉稳。</p>
+          <div class="scale"><div class="sizes"><svg><use href="#v2" /></svg><svg><use href="#v2" /></svg><svg><use href="#v2" /></svg></div><div class="dock"><span class="fake"></span><svg><use href="#v2" /></svg><span class="fake"></span></div></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="hero"><svg class="icon-lg"><use href="#v3" /></svg></div>
+        <div class="meta">
+          <div class="name"><span class="num">03</span> White Dock</div>
+          <p class="desc">白色底座配蓝帆，更轻，但在浅色壁纸和 Finder 白底里轮廓需要靠描边支撑。</p>
+          <div class="scale"><div class="sizes"><svg><use href="#v3" /></svg><svg><use href="#v3" /></svg><svg><use href="#v3" /></svg></div><div class="dock"><span class="fake"></span><svg><use href="#v3" /></svg><span class="fake"></span></div></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="hero"><svg class="icon-lg"><use href="#v4" /></svg></div>
+        <div class="meta">
+          <div class="name"><span class="num">04</span> Glass Cyan</div>
+          <p class="desc">更亮的青蓝渐变，偏产品化和轻盈；在 Dock 里会更跳，但也更接近通用 SaaS 图标。</p>
+          <div class="scale"><div class="sizes"><svg><use href="#v4" /></svg><svg><use href="#v4" /></svg><svg><use href="#v4" /></svg></div><div class="dock"><span class="fake"></span><svg><use href="#v4" /></svg><span class="fake"></span></div></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="hero"><svg class="icon-lg"><use href="#v5" /></svg></div>
+        <div class="meta">
+          <div class="name"><span class="num">05</span> Navy Minimal</div>
+          <p class="desc">纯深色底，几乎无高光。专业但更重，小尺寸识别不错，缺少一点 Berth 的轻快感。</p>
+          <div class="scale"><div class="sizes"><svg><use href="#v5" /></svg><svg><use href="#v5" /></svg><svg><use href="#v5" /></svg></div><div class="dock"><span class="fake"></span><svg><use href="#v5" /></svg><span class="fake"></span></div></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="hero"><svg class="icon-lg"><use href="#v6" /></svg></div>
+        <div class="meta">
+          <div class="name"><span class="num">06</span> Soft Squircle</div>
+          <p class="desc">更大的圆角和内阴影，Dock 里更像原生 macOS App；图形面积略小，显得精致。</p>
+          <div class="scale"><div class="sizes"><svg><use href="#v6" /></svg><svg><use href="#v6" /></svg><svg><use href="#v6" /></svg></div><div class="dock"><span class="fake"></span><svg><use href="#v6" /></svg><span class="fake"></span></div></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="hero"><svg class="icon-lg"><use href="#v7" /></svg></div>
+        <div class="meta">
+          <div class="name"><span class="num">07</span> Harbor Tag</div>
+          <p class="desc">左上角保留一点深色标记，和截图里的开发工具环境更搭，但品牌符号会稍微复杂。</p>
+          <div class="scale"><div class="sizes"><svg><use href="#v7" /></svg><svg><use href="#v7" /></svg><svg><use href="#v7" /></svg></div><div class="dock"><span class="fake"></span><svg><use href="#v7" /></svg><span class="fake"></span></div></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="hero"><svg class="icon-lg"><use href="#v8" /></svg></div>
+        <div class="meta">
+          <div class="name"><span class="num">08</span> Flat Signal</div>
+          <p class="desc">扁平化、无强阴影，发布页和 README 里最干净；Dock 里比 01 少一点体积感。</p>
+          <div class="scale"><div class="sizes"><svg><use href="#v8" /></svg><svg><use href="#v8" /></svg><svg><use href="#v8" /></svg></div><div class="dock"><span class="fake"></span><svg><use href="#v8" /></svg><span class="fake"></span></div></div>
+        </div>
+      </article>
+    </main>
+
+    <section class="strip">
+      <div class="strip-head">
+        <span>Finder / Launchpad 对比</span>
+        <span style="color:var(--muted);font-weight:600">56px 视图</span>
+      </div>
+      <div class="finder">
+        <div class="finder-item"><svg><use href="#v1" /></svg>01<br />App Blue</div>
+        <div class="finder-item"><svg><use href="#v2" /></svg>02<br />Deep Harbor</div>
+        <div class="finder-item"><svg><use href="#v3" /></svg>03<br />White Dock</div>
+        <div class="finder-item"><svg><use href="#v4" /></svg>04<br />Glass Cyan</div>
+        <div class="finder-item"><svg><use href="#v5" /></svg>05<br />Navy Minimal</div>
+        <div class="finder-item"><svg><use href="#v6" /></svg>06<br />Soft Squircle</div>
+        <div class="finder-item"><svg><use href="#v7" /></svg>07<br />Harbor Tag</div>
+        <div class="finder-item"><svg><use href="#v8" /></svg>08<br />Flat Signal</div>
+      </div>
+      <div class="mobile-row">
+        <svg><use href="#v1" /></svg><svg><use href="#v2" /></svg><svg><use href="#v3" /></svg><svg><use href="#v4" /></svg>
+        <svg><use href="#v5" /></svg><svg><use href="#v6" /></svg><svg><use href="#v7" /></svg><svg><use href="#v8" /></svg>
+      </div>
+    </section>
+  </div>
+
+  <svg width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="g1" x1="188" y1="116" x2="836" y2="908" gradientUnits="userSpaceOnUse"><stop stop-color="#53bfff"/><stop offset="1" stop-color="#1f65e1"/></linearGradient>
+      <linearGradient id="g2" x1="210" y1="116" x2="780" y2="900" gradientUnits="userSpaceOnUse"><stop stop-color="#1a6fe8"/><stop offset="1" stop-color="#0b2465"/></linearGradient>
+      <linearGradient id="g3" x1="164" y1="100" x2="850" y2="880" gradientUnits="userSpaceOnUse"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#e7eef9"/></linearGradient>
+      <linearGradient id="g4" x1="190" y1="116" x2="824" y2="920" gradientUnits="userSpaceOnUse"><stop stop-color="#6df0ff"/><stop offset=".52" stop-color="#34a8ff"/><stop offset="1" stop-color="#2459d8"/></linearGradient>
+      <linearGradient id="g5" x1="180" y1="102" x2="850" y2="910" gradientUnits="userSpaceOnUse"><stop stop-color="#263347"/><stop offset="1" stop-color="#08101d"/></linearGradient>
+      <linearGradient id="g6" x1="204" y1="100" x2="820" y2="908" gradientUnits="userSpaceOnUse"><stop stop-color="#61c7ff"/><stop offset="1" stop-color="#2964dc"/></linearGradient>
+      <linearGradient id="g7" x1="150" y1="118" x2="850" y2="900" gradientUnits="userSpaceOnUse"><stop stop-color="#4ed7ff"/><stop offset="1" stop-color="#2462e4"/></linearGradient>
+      <linearGradient id="g8" x1="180" y1="120" x2="830" y2="900" gradientUnits="userSpaceOnUse"><stop stop-color="#39a8ff"/><stop offset="1" stop-color="#296fee"/></linearGradient>
+      <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#0a1a3b" flood-opacity=".22"/></filter>
+      <filter id="sailShadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="18" stdDeviation="10" flood-color="#00143b" flood-opacity=".42"/></filter>
+      <symbol id="sail-white" viewBox="0 0 1024 1024">
+        <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#sailShadow)">
+          <path d="M336 744V276" stroke="#fff" stroke-width="84"/>
+          <path d="M336 288c168 60 282 156 336 288-114 12-228-12-336-72" stroke="#fff" stroke-width="84"/>
+          <path d="M336 744c96-114 216-174 360-180" stroke="#fff" stroke-width="84"/>
+        </g>
+      </symbol>
+      <symbol id="sail-blue" viewBox="0 0 1024 1024">
+        <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M336 744V276" stroke="#2f6fed" stroke-width="84"/>
+          <path d="M336 288c168 60 282 156 336 288-114 12-228-12-336-72" stroke="#2f6fed" stroke-width="84"/>
+          <path d="M336 744c96-114 216-174 360-180" stroke="#2f6fed" stroke-width="84"/>
+        </g>
+      </symbol>
+
+      <symbol id="v1" viewBox="0 0 1024 1024">
+        <rect x="88" y="88" width="848" height="848" rx="224" fill="url(#g1)" filter="url(#softShadow)"/>
+        <path d="M160 202C244 130 362 88 512 88h198c125 0 226 101 226 226v128" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="34" stroke-linecap="round"/>
+        <use href="#sail-white"/>
+        <rect x="88" y="88" width="848" height="848" rx="224" fill="none" stroke="#0d2567" stroke-opacity=".22" stroke-width="20"/>
+      </symbol>
+      <symbol id="v2" viewBox="0 0 1024 1024">
+        <rect x="92" y="92" width="840" height="840" rx="188" fill="url(#g2)" filter="url(#softShadow)"/>
+        <path d="M156 798c146 70 420 86 716-10" fill="none" stroke="#6fc9ff" stroke-opacity=".14" stroke-width="70" stroke-linecap="round"/>
+        <use href="#sail-white"/>
+        <rect x="92" y="92" width="840" height="840" rx="188" fill="none" stroke="#ffffff" stroke-opacity=".15" stroke-width="18"/>
+      </symbol>
+      <symbol id="v3" viewBox="0 0 1024 1024">
+        <rect x="88" y="88" width="848" height="848" rx="214" fill="url(#g3)" filter="url(#softShadow)"/>
+        <rect x="88" y="88" width="848" height="848" rx="214" fill="none" stroke="#b9c7dd" stroke-width="22"/>
+        <use href="#sail-blue"/>
+      </symbol>
+      <symbol id="v4" viewBox="0 0 1024 1024">
+        <rect x="86" y="86" width="852" height="852" rx="234" fill="url(#g4)" filter="url(#softShadow)"/>
+        <path d="M176 220c118-84 284-124 498-116" fill="none" stroke="#ffffff" stroke-opacity=".32" stroke-width="48" stroke-linecap="round"/>
+        <use href="#sail-white"/>
+      </symbol>
+      <symbol id="v5" viewBox="0 0 1024 1024">
+        <rect x="104" y="104" width="816" height="816" rx="172" fill="url(#g5)" filter="url(#softShadow)"/>
+        <use href="#sail-white"/>
+        <rect x="104" y="104" width="816" height="816" rx="172" fill="none" stroke="#ffffff" stroke-opacity=".11" stroke-width="18"/>
+      </symbol>
+      <symbol id="v6" viewBox="0 0 1024 1024">
+        <rect x="80" y="80" width="864" height="864" rx="264" fill="url(#g6)" filter="url(#softShadow)"/>
+        <rect x="124" y="120" width="776" height="760" rx="226" fill="#ffffff" fill-opacity=".08"/>
+        <g transform="translate(18 10) scale(.94)"><use href="#sail-white"/></g>
+      </symbol>
+      <symbol id="v7" viewBox="0 0 1024 1024">
+        <rect x="88" y="88" width="848" height="848" rx="216" fill="url(#g7)" filter="url(#softShadow)"/>
+        <path d="M88 298V224c0-75 61-136 136-136h156c-42 78-110 144-292 210z" fill="#16223a" fill-opacity=".62"/>
+        <use href="#sail-white"/>
+        <rect x="88" y="88" width="848" height="848" rx="216" fill="none" stroke="#0d2567" stroke-opacity=".2" stroke-width="20"/>
+      </symbol>
+      <symbol id="v8" viewBox="0 0 1024 1024">
+        <rect x="96" y="96" width="832" height="832" rx="208" fill="url(#g8)"/>
+        <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M336 744V276" stroke="#fff" stroke-width="88"/>
+          <path d="M336 288c168 60 282 156 336 288-114 12-228-12-336-72" stroke="#fff" stroke-width="88"/>
+          <path d="M336 744c96-114 216-174 360-180" stroke="#fff" stroke-width="88"/>
+        </g>
+      </symbol>
+    </defs>
+  </svg>
+</body>
+</html>
