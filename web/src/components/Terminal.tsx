@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
+import { isSessionTerminateInput } from '@/lib/terminal-shortcuts'
 import { attachImeComposition } from '@/lib/ime-input'
 import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
 import { cliReadiness, shouldMarkLaunchReady, shouldRevealLaunch } from '@/lib/launch-readiness'
@@ -132,16 +133,19 @@ export function Terminal({
   sessionId,
   launch,
   onLaunched,
+  onTerminateShortcut,
   initialInput,
 }: {
   sessionId?: string
   launch?: LaunchSpec
   onLaunched?: (sessionId: string) => void
+  onTerminateShortcut?: () => void
   /** When resuming (sessionId mode), text submitted to the agent once, after the ws opens. */
   initialInput?: string
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
+  const onTerminateShortcutRef = useRef(onTerminateShortcut)
   const [historyBytes, setHistoryBytes] = useState(DEFAULT_PTY_HISTORY_BYTES)
   // Three overlay states:
   //  - 'opaque' — fresh-launch boot mask; hides the half-built TUI while it's actively streaming.
@@ -150,6 +154,10 @@ export function Terminal({
   //               prompt is visible and answerable, never trapped.
   //  - 'off'    — hidden.
   const [overlayMode, setOverlayMode] = useState<'off' | 'opaque' | 'veil'>('off')
+
+  useEffect(() => {
+    onTerminateShortcutRef.current = onTerminateShortcut
+  }, [onTerminateShortcut])
 
   useEffect(() => {
     const host = hostRef.current
@@ -173,6 +181,8 @@ export function Terminal({
     let stableLaunchTimer: ReturnType<typeof setTimeout> | null = null
     let launchFallbackTimer: ReturnType<typeof setTimeout> | null = null
     let revealTimer: ReturnType<typeof setTimeout> | null = null
+    let terminateRequested = false
+    let terminateClosed = false
     // Resume mask is ANTI-FLASH: a warm / already-loaded session replays its scrollback in a few ms,
     // so masking it would just flash a veil over content that's already there. Show the veil ONLY if
     // nothing has rendered yet after a short delay (a genuinely cold `--resume` that takes seconds),
@@ -186,6 +196,24 @@ export function Terminal({
     }, LOADING_OVERLAY_DELAY_MS)
     const sendInputNow = (d: string) => {
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d }))
+    }
+    const sendKillAndClose = () => {
+      if (terminateClosed || ws?.readyState !== WebSocket.OPEN) return
+      terminateClosed = true
+      ws.send(JSON.stringify({ t: 'kill' }))
+      window.setTimeout(() => onTerminateShortcutRef.current?.(), 0)
+    }
+    const requestBerthTerminate = () => {
+      if (!terminateRequested) {
+        terminateRequested = true
+        logDiag('connect', 'term_terminate_shortcut', {
+          kind: launch ? 'launch' : 'resume',
+          cli: launch?.cli,
+          sessionId: launch ? undefined : sessionId,
+          launchToken: launch?.launchToken,
+        })
+      }
+      sendKillAndClose()
     }
     const flushQueuedLaunchInput = () => {
       if (!queuedLaunchInput) return
@@ -342,6 +370,7 @@ export function Terminal({
     ws.binaryType = 'arraybuffer'
     const diagKind = launch ? 'launch' : 'resume'
     ws.addEventListener('open', () => logDiag('connect', 'term_open', { kind: diagKind, cli: launch?.cli, sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken }), { once: true })
+    ws.addEventListener('open', () => { if (terminateRequested) sendKillAndClose() }, { once: true })
     ws.addEventListener('error', () => logDiag('connect', 'term_error', { kind: diagKind, level: 'error', sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken }), { once: true })
 
     const pasteIsForThisTerminal = (e: Event) => {
@@ -460,6 +489,7 @@ export function Terminal({
             // the drawer to the real session id.
             logDiag('connect', 'term_launched', { launchToken: launch?.launchToken, sessionId: ctl.sessionId, cli: launch?.cli })
             onLaunched?.(ctl.sessionId)
+            if (terminateRequested) sendKillAndClose()
           } else if (ctl.__berth === 'turnStarted' && launch) {
             // codex's DETERMINISTIC boot-complete signal (server read its rollout task_started). Drop
             // the launch mask exactly when the first turn begins — no output-quiet guessing.
@@ -491,7 +521,12 @@ export function Terminal({
     }
     const disp = term.onData((d) => {
       const userInput = stripTerminalGeneratedInput(d)
-      if (userInput) sendInput(userInput)
+      if (!userInput) return
+      if (isSessionTerminateInput(userInput)) {
+        requestBerthTerminate()
+        return
+      }
+      sendInput(userInput)
     })
     // IME-safe CJK input: bypass xterm's textarea-slicing CompositionHelper (it intermittently
     // drops/duplicates/reorders committed characters) and send the browser's authoritative

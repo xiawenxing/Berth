@@ -18,11 +18,13 @@ export function SessionPanel({
   sessionId,
   launch,
   onLaunched,
+  onTerminateShortcut,
 }: {
   cli?: string
   sessionId?: string
   launch?: LaunchSpec
   onLaunched?: (sessionId: string) => void
+  onTerminateShortcut?: () => void
 }) {
   const { renderMode } = useUI()
   const effectiveCli = cli ?? launch?.cli
@@ -36,9 +38,9 @@ export function SessionPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {connection.launch ? (
-        <Terminal key="A:launch" launch={connection.launch} onLaunched={onLaunched} />
+        <Terminal key="A:launch" launch={connection.launch} onLaunched={onLaunched} onTerminateShortcut={onTerminateShortcut} />
       ) : connection.sessionId ? (
-        <Terminal key={`A:${connection.sessionId}`} sessionId={connection.sessionId} />
+        <Terminal key={`A:${connection.sessionId}`} sessionId={connection.sessionId} onTerminateShortcut={onTerminateShortcut} />
       ) : null}
     </div>
   )
