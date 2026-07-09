@@ -16,7 +16,8 @@ const COMMON_AUTH: RegExp[] = [
   /not authenticated/i,
   /authentication[_\s-]?error/i,
   /\b401\b/,
-  /(?:token|session|credential)s?\s+(?:has\s+|have\s+)?expired/i,
+  /(?:token|credential)s?\s+(?:has\s+|have\s+)?expired/i,
+  /session\s+(?:has\s+)?expired.*(?:log\s?in|auth)/i,
   /please\s+(?:re-?)?log\s?in/i,
 ]
 // Per-CLI extras (login command names, provider-specific markers).
