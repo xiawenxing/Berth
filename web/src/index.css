@@ -158,18 +158,12 @@ html.light {
 }
 
 html.electron-shell .berth-app-shell {
-  box-sizing: border-box;
-  padding-top: 30px;
   background: var(--color-background);
 }
 
-html.electron-shell .berth-window-drag-region {
-  position: fixed;
-  top: 0;
-  left: 78px;
-  right: 78px;
-  z-index: 1000;
-  height: 30px;
+html.electron-shell .berth-rail-titlebar {
+  min-height: 46px;
+  padding-left: 82px;
   -webkit-app-region: drag;
 }
 

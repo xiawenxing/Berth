@@ -17,7 +17,6 @@ function Layout() {
       <LiveProvider>
       <UIProvider>
         <div className="berth-app-shell flex h-full w-full overflow-hidden">
-          <div className="berth-window-drag-region" aria-hidden="true" />
           <Rail />
           <main className="min-w-0 flex-1 overflow-hidden bg-background">
             <Outlet />
