@@ -167,7 +167,19 @@ html.electron-shell .berth-rail-titlebar {
   -webkit-app-region: drag;
 }
 
+/* The project header has a deliberately generous empty area between its title and
+   actions. In the desktop shell that space should behave like native window chrome. */
+html.electron-shell .berth-workspace-titlebar {
+  -webkit-app-region: drag;
+}
+
 html.electron-shell :is(a, button, input, textarea, select, [role="button"], [role="menuitem"], [contenteditable="true"], .xterm) {
+  -webkit-app-region: no-drag;
+}
+
+/* Project names can be double-clicked to rename, so they must remain an ordinary
+   page interaction even though their containing header is draggable. */
+html.electron-shell .berth-workspace-titlebar h1 {
   -webkit-app-region: no-drag;
 }
 
