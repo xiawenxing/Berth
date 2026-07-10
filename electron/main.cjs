@@ -147,11 +147,16 @@ async function resolveServer() {
 
 function createWindow(port) {
   currentPort = port
+  const macWindowChrome = process.platform === 'darwin'
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
     title: 'Berth',
     backgroundColor: '#0b0b0c',
+    ...(macWindowChrome ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 14, y: 12 },
+    } : {}),
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   })
   // 1.0 entry is deprecated — load the 2.0 SPA directly. The server also 302s / → /app/, so this is

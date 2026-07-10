@@ -157,6 +157,26 @@ html.light {
   }
 }
 
+html.electron-shell .berth-app-shell {
+  box-sizing: border-box;
+  padding-top: 30px;
+  background: var(--color-background);
+}
+
+html.electron-shell .berth-window-drag-region {
+  position: fixed;
+  top: 0;
+  left: 78px;
+  right: 78px;
+  z-index: 1000;
+  height: 30px;
+  -webkit-app-region: drag;
+}
+
+html.electron-shell :is(a, button, input, textarea, select, [role="button"], [role="menuitem"], [contenteditable="true"], .xterm) {
+  -webkit-app-region: no-drag;
+}
+
 /* Reusable elevation + enter-motion utilities. Use these instead of Tailwind's flat shadow-*
    so depth tracks the active mode (light = soft neutral shadow, dark = deep shadow + top highlight). */
 .elev-1 { box-shadow: var(--elev-1); }
