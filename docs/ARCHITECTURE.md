@@ -108,7 +108,8 @@ live-reloading SPA. `npm test` = unit; `*.live.test.ts` are gated behind `BERTH_
 
 **Launch / terminal (the core):**
 - `pty/binaries.ts` — `resolveAgentBinary` (pins coco at `~/.local/bin/coco`, blacklists the Trae IDE
-  launcher, `verifyCoco` identity check — **cached**, see gotchas).
+  launcher, discovers Claude/Codex from PATH plus common version-manager/app locations — including
+  NVM when a GUI/server PATH is stale — and caches `verifyCoco`; see gotchas).
 - `pty/launch.ts` — `resumeArgv`/`resumeSession` and `freshArgv`/`launchFresh`. Fresh launches add
   **bypass-permissions** flags. claude/coco pre-mint `--session-id`. The manifest rides a silent
   channel per CLI (see gotcha #12). First-turn delivery is **uniform**: all three CLIs take their native
