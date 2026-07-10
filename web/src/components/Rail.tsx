@@ -184,7 +184,7 @@ export function Rail() {
 
   return (
     <aside className="flex w-[260px] flex-none flex-col border-r border-border bg-sidebar">
-      <div className="flex items-center gap-2 px-3.5 py-3 text-[14px] font-bold">
+      <div className="berth-rail-titlebar flex items-center gap-2 px-3.5 py-3 text-[14px] font-bold">
         <BerthIcon width={18} height={18} className="text-brand" />
         Berth
         <ThemeToggle />
