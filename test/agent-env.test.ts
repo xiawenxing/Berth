@@ -9,6 +9,15 @@ describe('agentSpawnEnv', () => {
     expect(out.BERTH_PORT).toBe('7777')
     expect(out.BERTH_HOST).toBe('127.0.0.1')
   })
+  it('keeps the berth shim first and adds the resolved agent dir for env-node launchers', () => {
+    const out = agentSpawnEnv(
+      { PATH: '/usr/bin:/bin' },
+      { port: 7777, host: '127.0.0.1', binDir: '/home/.berth/bin' },
+      undefined,
+      '/home/.nvm/versions/node/v20/bin',
+    )
+    expect(out.PATH).toBe('/home/.berth/bin:/home/.nvm/versions/node/v20/bin:/usr/bin:/bin')
+  })
   it('does not mutate the input', () => {
     const env = { PATH: '/usr/bin' }
     agentSpawnEnv(env, { port: 1, host: 'h', binDir: '/b' })

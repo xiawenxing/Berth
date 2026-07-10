@@ -23,12 +23,13 @@ const codexHome = () => process.env.CODEX_HOME || join(homedir(), '.codex')
  *  otherwise makes the agent write a legacy Mac-Roman pasteboard flavor (copy→Feishu mojibake). This
  *  is the single chokepoint all launch/resume/per-turn spawns flow through, so centralizing the
  *  locale here covers them all (the clipboard branch wrapped each call site; this is the DRY merge). */
-function spawnEnv(sessionId?: string): NodeJS.ProcessEnv {
+function spawnEnv(sessionId?: string, agentBin?: string): NodeJS.ProcessEnv {
   const addr = getLocalServerAddress()
-  if (!addr) return withUtf8Locale(agentSpawnEnv(process.env, null, sessionId))
+  const agentBinDir = agentBin ? dirname(agentBin) : undefined
+  if (!addr) return withUtf8Locale(agentSpawnEnv(process.env, null, sessionId, agentBinDir))
   const cliEntry = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'berth.mjs')
   const binDir = ensureAgentBerthShim(cliEntry)
-  return withUtf8Locale(agentSpawnEnv(process.env, { port: addr.port, host: addr.host, binDir }, sessionId))
+  return withUtf8Locale(agentSpawnEnv(process.env, { port: addr.port, host: addr.host, binDir }, sessionId, agentBinDir))
 }
 
 /**
@@ -82,7 +83,7 @@ export function resumeSession(s: LogicalSession, opts: LaunchOpts = {}): IPty {
   if (cli === 'claude') ensureClaudeTrust(cwd)
   else if (cli === 'codex') ensureCodexTrust(cwd)
   return spawn(bin, gated(cli, bin, resumeArgv(cli, id)), {
-    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: spawnEnv(s.sessionId) as any,
+    name: 'xterm-color', cols: opts.cols ?? 120, rows: opts.rows ?? 30, cwd, env: spawnEnv(s.sessionId, bin) as any,
   })
 }
 
@@ -196,7 +197,7 @@ export function launchFreshStream(o: FreshOpts): ChildProcess {
   const cwd = ensureLaunchCwd(o.cwd)
   const bin = resolveAgentBinary('claude')
   ensureClaudeTrust(cwd)
-  const env = spawnEnv(o.sessionId) as any
+  const env = spawnEnv(o.sessionId, bin) as any
   // detached:true → the child leads its own process group, so the registry's process.kill(-pid)
   // reaps the whole tree (MCP/sub-procs). Verified (task smoke test C1).
   return spawnChild(bin, gated('claude', bin, freshArgvStream('claude', o)), { cwd, env, detached: true, stdio: STREAM_STDIO })
@@ -209,7 +210,7 @@ export function resumeSessionStream(s: LogicalSession, o: { model?: string } = {
   const cwd = ensureLaunchCwd(s.cwd)
   const bin = resolveAgentBinary(cli)
   ensureClaudeTrust(cwd)
-  return spawnChild(bin, gated(cli, bin, resumeArgvStream(cli, id, o)), { cwd, env: spawnEnv(s.sessionId) as any, detached: true, stdio: STREAM_STDIO })
+  return spawnChild(bin, gated(cli, bin, resumeArgvStream(cli, id, o)), { cwd, env: spawnEnv(s.sessionId, bin) as any, detached: true, stdio: STREAM_STDIO })
 }
 
 // ─── Model B per-turn spawn for codex + coco (single-turn-then-exit: each user turn is a fresh
@@ -235,7 +236,7 @@ export function spawnPerTurn(cli: AgentCli, o: PerTurnOpts): ChildProcess {
   const cwd = ensureLaunchCwd(o.cwd)
   const bin = resolveAgentBinary(cli)
   if (cli === 'codex') ensureCodexTrust(cwd)   // `codex exec` also refuses an untrusted dir
-  const env = spawnEnv(o.sessionId) as any
+  const env = spawnEnv(o.sessionId, bin) as any
   if (cli === 'coco' && o.injectFile) {
     ensureCocoBerthHook()
     env.BERTH_CONTEXT_FILE = writeCocoContextPayload(o.injectFile)
@@ -291,7 +292,7 @@ export function launchFresh(cli: AgentCli, o: FreshOpts, flags: { minimal?: bool
   if (cli === 'codex' && opts.injectFile && codexHookTrustSupportOrWarm(bin) !== true) {
     opts = { ...opts, injectFile: undefined }
   }
-  const env = spawnEnv(o.sessionId) as any
+  const env = spawnEnv(o.sessionId, bin) as any
   if (cli === 'codex' && opts.injectFile) {
     ensureCodexBerthHookProfile()
     env.BERTH_CONTEXT_FILE = opts.injectFile            // codex hook cats raw text as context
