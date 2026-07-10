@@ -446,7 +446,7 @@ export function ProjectWorkspace() {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <header className="elev-header sticky top-0 z-10 bg-background px-6 py-4">
+      <header className="berth-workspace-titlebar elev-header sticky top-0 z-10 bg-background px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-baseline gap-3">
             {renamingProject ? (
