@@ -9,6 +9,7 @@ const BLACKLIST = new Set(['/usr/local/bin/trae'])   // Trae CN IDE launcher, NO
 export interface BinarySearchOptions {
   home?: string
   path?: string
+  env?: NodeJS.ProcessEnv
   appCandidates?: Partial<Record<AgentCli, string[]>>
 }
 
@@ -71,8 +72,19 @@ function managedCandidates(home: string, name: string): string[] {
 function candidatePaths(cli: AgentCli, opts: BinarySearchOptions): string[] {
   const home = opts.home ?? homedir()
   const pathValue = opts.path ?? process.env.PATH ?? ''
+  const env = opts.env ?? process.env
   const apps = opts.appCandidates ?? DEFAULT_APP_CANDIDATES
-  if (cli === 'coco') return [join(home, '.local', 'bin', 'coco')]
+  if (cli === 'coco') {
+    const configured = env.BERTH_COCO_BIN?.trim()
+    return [
+      ...(configured ? [configured] : []),
+      join(home, '.local', 'bin', 'coco'),
+      ...pathCandidates(cli, pathValue),
+      ...managedCandidates(home, cli),
+      `/opt/homebrew/bin/${cli}`,
+      `/usr/local/bin/${cli}`,
+    ]
+  }
 
   const local = cli === 'claude'
     ? [join(home, '.local', 'bin', cli), join(home, '.claude', 'local', 'claude')]

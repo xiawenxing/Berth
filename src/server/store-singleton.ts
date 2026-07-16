@@ -1,4 +1,3 @@
-import { homedir } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { openStore } from '../db/store'
@@ -20,6 +19,9 @@ import { setTaskSessionDigestProvider } from '../data/task-summary'
 import { readTranscript } from './context-consolidate-service'
 import { extractConversation } from '../agent/transcript'
 import { berthAgentCwd, berthHome } from '../paths'
+import { agentStoreRoots } from '../agent-paths'
+import { setAutoTrustWorkspaces } from '../pty/trust'
+import { setCocoHookInstallEnabled } from '../pty/coco-hook'
 import { scanLaunchCallbacks, startLaunchCallbackWatch } from './launch-callback-watch'
 import { codexCallbackDir } from '../pty/launch'
 import { syncRolloutWatch } from './rollout-watch'
@@ -30,6 +32,8 @@ import type { LogicalSession } from '../types'
 const DB_DIR = berthHome()
 mkdirSync(DB_DIR, { recursive: true })
 const store = openStore(join(DB_DIR, 'berth.sqlite'))
+setAutoTrustWorkspaces(store.getSetting('autoTrustWorkspaces') !== '0')
+setCocoHookInstallEnabled(store.getSetting('cocoContextHookEnabled') !== '0')
 
 // Register the store so DocStore consumers far from here (pty-registry) can resolve docsRoot.
 // (Pure reference registration — no DB writes, so importing this module never mutates state.)
@@ -163,11 +167,7 @@ function curatedSessionIds(): Set<string> {
  * preview endpoint (which scans without mutating state) agree on exactly which stores to read.
  */
 export function storeRoots(): { claudeRoot: string; codexRoot: string; cocoRoot: string } {
-  return {
-    claudeRoot: join(homedir(), '.claude', 'projects') + '/',
-    codexRoot: join(homedir(), '.codex') + '/',
-    cocoRoot: join(homedir(), 'Library', 'Caches', 'coco') + '/',
-  }
+  return agentStoreRoots()
 }
 
 /**

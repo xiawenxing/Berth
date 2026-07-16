@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, type AgentConfig, type ApiProject, type ApiSession, type ApiSettings, type ApiTask } from './api'
 import { DEFAULT_STATUSES } from './status'
+import { setDisplayHome } from './format'
 import { logDiag } from './diag'
 
 // A fresh launch in flight: shown as an optimistic "创建中…" placeholder in the lists until its
@@ -93,6 +94,8 @@ interface DataState {
   statuses: string[] // ordered vocabulary, from Settings (drives the kanban columns + status menu)
   agents: AgentConfig // real launch/headless agent config from Settings
   docsRoot: string // real backend docstore root; drives context maintenance paths
+  autoTrustWorkspaces: boolean
+  cocoContextHookEnabled: boolean
   loading: boolean
   error: string | null
   /** In-flight fresh launches not yet surfaced as real sessions (optimistic "创建中…" placeholders). */
@@ -118,6 +121,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [statuses, setStatuses] = useState<string[]>(DEFAULT_STATUSES)
   const [agents, setAgents] = useState<AgentConfig>(DEFAULT_AGENTS)
   const [docsRoot, setDocsRoot] = useState(DEFAULT_DOCS_ROOT)
+  const [autoTrustWorkspaces, setAutoTrustWorkspaces] = useState(true)
+  const [cocoContextHookEnabled, setCocoContextHookEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
@@ -220,6 +225,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setStatuses(c.statuses?.length ? c.statuses : DEFAULT_STATUSES)
         setAgents(c.agents ?? DEFAULT_AGENTS)
         setDocsRoot(c.docsRoot || DEFAULT_DOCS_ROOT)
+        setAutoTrustWorkspaces(c.autoTrustWorkspaces !== false)
+        setCocoContextHookEnabled(c.cocoContextHookEnabled !== false)
+        setDisplayHome(c.homeDir)
         setError(null)
       })
       .catch((e) => alive && setError(String(e)))
@@ -284,6 +292,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       statuses,
       agents,
       docsRoot,
+      autoTrustWorkspaces,
+      cocoContextHookEnabled,
       loading,
       error,
       pending,
@@ -296,7 +306,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setNonce((n) => n + 1)
       },
     }),
-    [projects, tasks, sessions, priorities, statuses, agents, docsRoot, loading, error, pending, addPending, resolvePending],
+    [projects, tasks, sessions, priorities, statuses, agents, docsRoot, autoTrustWorkspaces, cocoContextHookEnabled, loading, error, pending, addPending, resolvePending],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

@@ -3,13 +3,21 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
-import { ensureCocoBerthHook, writeCocoContextPayload } from '../src/pty/coco-hook'
+import { ensureCocoBerthHook, setCocoHookInstallEnabled, writeCocoContextPayload } from '../src/pty/coco-hook'
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), 'berth-coco-hook-'))
 }
 
 describe('ensureCocoBerthHook', () => {
+  it('does not create or modify config when hook installation is disabled', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'berth-coco-hook-off-'))
+    const cfg = join(dir, 'traecli.yaml')
+    setCocoHookInstallEnabled(false)
+    ensureCocoBerthHook(cfg)
+    expect(existsSync(cfg)).toBe(false)
+    setCocoHookInstallEnabled(true)
+  })
   it('adds a session_start hook that cats $BERTH_CONTEXT_FILE when the config is missing', () => {
     const dir = tmp()
     try {

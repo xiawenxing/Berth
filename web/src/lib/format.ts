@@ -12,10 +12,19 @@ export function relTime(epochSec: number): string {
   return `${Math.floor(s / 604800)}周前`
 }
 
+let displayHome: string | null = null
+
+/** Set by the local backend. Keeping it here avoids guessing `/Users/<name>` in browser-only code. */
+export function setDisplayHome(home?: string | null): void {
+  displayHome = home?.replace(/[\\/]+$/, '') || null
+}
+
 export function shortCwd(cwd?: string | null): string {
   if (!cwd) return ''
-  const home = '/Users/'
-  return cwd.startsWith(home) ? '~/' + cwd.split('/').slice(3).join('/') : cwd
+  if (!displayHome) return cwd
+  const slash = displayHome.includes('\\') ? '\\' : '/'
+  if (cwd === displayHome) return '~'
+  return cwd.startsWith(displayHome + slash) ? '~' + cwd.slice(displayHome.length) : cwd
 }
 
 const IMAGE_PATH_RE = /(?:(?:~|\/)[^\n\r]*?\.(?:png|jpe?g|gif|webp|bmp|heic|heif|tiff?))/gi
