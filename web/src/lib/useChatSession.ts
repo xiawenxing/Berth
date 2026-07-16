@@ -16,6 +16,8 @@ export interface ChatSession {
   connected: boolean
   send: (text: string, images?: ChatImage[]) => void
   interrupt: () => void
+  /** End the entire persistent session, unlike interrupt which only stops the active turn. */
+  terminate: () => boolean
 }
 
 export interface ChatImage {
@@ -149,6 +151,12 @@ export function useChatSession({
       sendRaw({ t: 'interrupt' })
       setAwaiting(false)
       setTurns((cur) => stopInFlightTurns(cur))
+    },
+    terminate: () => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false
+      ws.send(JSON.stringify({ t: 'kill' }))
+      return true
     },
   }
 }

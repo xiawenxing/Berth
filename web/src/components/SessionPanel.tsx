@@ -4,6 +4,8 @@ import { Composer } from './Composer'
 import { useChatSession } from '@/lib/useChatSession'
 import { useUI, type LaunchSpec } from '@/lib/ui-store'
 import { resolveSessionPanelConnection, resolveSessionPanelRenderer } from '@/lib/session-panel-connection'
+import { useEffect } from 'react'
+import { isSessionTerminateKeyboardEvent } from '@/lib/terminal-shortcuts'
 
 /**
  * The Model A / Model B seam on the frontend. One mount point for a session; the active renderer is
@@ -33,7 +35,7 @@ export function SessionPanel({
 
   if (active === 'B') {
     const key = connection.launch ? `B:launch:${connection.launch.launchToken ?? 'pending'}` : `B:${connection.sessionId}`
-    return <ChatPanel key={key} sessionId={connection.sessionId} launch={connection.launch} onLaunched={onLaunched} />
+    return <ChatPanel key={key} sessionId={connection.sessionId} launch={connection.launch} onLaunched={onLaunched} onTerminateShortcut={onTerminateShortcut} />
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -46,9 +48,20 @@ export function SessionPanel({
   )
 }
 
-function ChatPanel({ sessionId, launch, onLaunched }: { sessionId?: string; launch?: LaunchSpec; onLaunched?: (sessionId: string) => void }) {
+function ChatPanel({ sessionId, launch, onLaunched, onTerminateShortcut }: { sessionId?: string; launch?: LaunchSpec; onLaunched?: (sessionId: string) => void; onTerminateShortcut?: () => void }) {
   const chat = useChatSession({ sessionId, launch, onLaunched })
   const draftScope = launch?.launchToken ? `launch:${launch.launchToken}` : sessionId ? `session:${sessionId}` : 'unknown'
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isSessionTerminateKeyboardEvent(event)) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (!chat.terminate()) return
+      window.setTimeout(() => onTerminateShortcut?.(), 0)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [chat, onTerminateShortcut])
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-canvas">
       <ChatTranscript turns={chat.turns} thinking={chat.thinking} loading={chat.historyLoading} error={chat.historyError} />
