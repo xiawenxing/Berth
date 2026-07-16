@@ -1,10 +1,11 @@
 const SESSION_TERMINATE_CONTROLS = new Set([
+  '\x03', // Ctrl+C / ETX
   '\x04', // Ctrl+D / EOT
   '\x1a', // Ctrl+Z / SUB
   '\x1c', // Ctrl+\ / FS
 ])
 
-const SESSION_TERMINATE_KEYS = new Set(['d', 'z', '\\'])
+const SESSION_TERMINATE_KEYS = new Set(['c', 'd', 'z', '\\'])
 
 export function isSessionTerminateInput(data: string): boolean {
   return data.length === 1 && SESSION_TERMINATE_CONTROLS.has(data)
@@ -12,8 +13,8 @@ export function isSessionTerminateInput(data: string): boolean {
 
 /**
  * The stream/chat renderer has no xterm `onData` control bytes. Keep its keyboard semantics in
- * lockstep with the TUI renderer: Ctrl+C remains the CLI/turn interrupt, while Ctrl+D, Ctrl+Z and
- * Ctrl+\\ explicitly end the whole Berth-owned session.
+ * lockstep with the TUI renderer: Ctrl+C, Ctrl+D, Ctrl+Z and Ctrl+\\ explicitly end the whole
+ * Berth-owned session.
  */
 export function isSessionTerminateKeyboardEvent(event: Pick<KeyboardEvent, 'ctrlKey' | 'altKey' | 'metaKey' | 'key'>): boolean {
   return event.ctrlKey && !event.altKey && !event.metaKey && SESSION_TERMINATE_KEYS.has(event.key.toLowerCase())
