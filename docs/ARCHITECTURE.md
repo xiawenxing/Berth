@@ -329,7 +329,10 @@ is the session-grained model that replaced the old directory-grained one (where 
   `{"__berth":"launched","sessionId":…,"bound":…}` (precedes all pty output) telling the client which
   real session id the launch maps to, so the UI can associate its "创建中…" placeholder row with the
   real session. All other frames are raw pty bytes; the client treats only frames starting with
-  `{"__berth"` as control.
+  `{"__berth"` as control. A **cold TUI resume** replays the persisted PTY spool first, then sends
+  `{"__berth":"restoring","sessionId":…,"cli":…}` before any fresh process output; this ordering lets
+  the React terminal keep the old screen visible while showing an accurate bottom restore status
+  until the new CLI output settles. Live/warm reattachments do not send this frame.
 
 ---
 

@@ -15,6 +15,7 @@ import '@xterm/xterm/css/xterm.css'
 
 const DEFAULT_PTY_HISTORY_BYTES = 16 * 1024 * 1024
 const MAX_PTY_HISTORY_BYTES = 64 * 1024 * 1024
+const RESUME_READY_FALLBACK_MS = 30_000
 
 export type { LaunchSpec }
 
@@ -147,13 +148,15 @@ export function Terminal({
   const shellRef = useRef<HTMLDivElement>(null)
   const onTerminateShortcutRef = useRef(onTerminateShortcut)
   const [historyBytes, setHistoryBytes] = useState(DEFAULT_PTY_HISTORY_BYTES)
-  // Three overlay states:
+  // Four overlay states:
   //  - 'opaque' — fresh-launch boot mask; hides the half-built TUI while it's actively streaming.
   //  - 'veil'   — translucent, frosted, CLICK-THROUGH. Shown for a genuinely cold resume (nothing
   //               rendered yet), and for a launch the moment the CLI pauses for the user, so a HITL
   //               prompt is visible and answerable, never trapped.
+  //  - 'restore'— bottom-only status for a cold resume after its old spool has replayed. The old
+  //               terminal remains visible while the newly spawned CLI gets its composer ready.
   //  - 'off'    — hidden.
-  const [overlayMode, setOverlayMode] = useState<'off' | 'opaque' | 'veil'>('off')
+  const [overlayMode, setOverlayMode] = useState<'off' | 'opaque' | 'veil' | 'restore'>('off')
 
   useEffect(() => {
     onTerminateShortcutRef.current = onTerminateShortcut
@@ -184,6 +187,10 @@ export function Terminal({
     let terminateRequested = false
     let terminateClosed = false
     let remoteExitClosed = false
+    let resumeRestoring = false
+    let resumeCli = ''
+    let resumeReadyTimer: ReturnType<typeof setTimeout> | null = null
+    let resumeFallbackTimer: ReturnType<typeof setTimeout> | null = null
     // Resume mask is ANTI-FLASH: a warm / already-loaded session replays its scrollback in a few ms,
     // so masking it would just flash a veil over content that's already there. Show the veil ONLY if
     // nothing has rendered yet after a short delay (a genuinely cold `--resume` that takes seconds),
@@ -195,6 +202,29 @@ export function Terminal({
         setOverlayMode('veil')
       }
     }, LOADING_OVERLAY_DELAY_MS)
+    const markResumeReady = () => {
+      if (!resumeRestoring) return
+      resumeRestoring = false
+      if (resumeReadyTimer) { clearTimeout(resumeReadyTimer); resumeReadyTimer = null }
+      if (resumeFallbackTimer) { clearTimeout(resumeFallbackTimer); resumeFallbackTimer = null }
+      setOverlayMode('off')
+    }
+    const beginResumeRestore = (cli: string) => {
+      resumeRestoring = true
+      resumeCli = cli
+      if (resumeOverlayTimer) { clearTimeout(resumeOverlayTimer); resumeOverlayTimer = null }
+      if (resumeReadyTimer) { clearTimeout(resumeReadyTimer); resumeReadyTimer = null }
+      if (resumeFallbackTimer) clearTimeout(resumeFallbackTimer)
+      setOverlayMode('restore')
+      resumeFallbackTimer = setTimeout(markResumeReady, RESUME_READY_FALLBACK_MS)
+    }
+    const noteResumeOutput = () => {
+      if (!resumeRestoring) return
+      if (resumeReadyTimer) clearTimeout(resumeReadyTimer)
+      // The restoring control frame is ordered after replay, so every byte observed here came from
+      // the new CLI process. Wait for its output to settle before declaring the composer usable.
+      resumeReadyTimer = setTimeout(markResumeReady, cliReadiness(resumeCli).stableReadyMs)
+    }
     const sendInputNow = (d: string) => {
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d }))
     }
@@ -277,7 +307,7 @@ export function Terminal({
       if (!launch) {
         // First bytes rendered → the session is loaded; cancel / drop the cold-resume veil.
         if (resumeOverlayTimer) { clearTimeout(resumeOverlayTimer); resumeOverlayTimer = null }
-        setOverlayMode('off')
+        if (!resumeRestoring) setOverlayMode('off')
       }
     }
 
@@ -495,6 +525,8 @@ export function Terminal({
             // codex's DETERMINISTIC boot-complete signal (server read its rollout task_started). Drop
             // the launch mask exactly when the first turn begins — no output-quiet guessing.
             markLaunchReady()
+          } else if (ctl.__berth === 'restoring' && !launch) {
+            beginResumeRestore(typeof ctl.cli === 'string' ? ctl.cli : '')
           } else if (ctl.__berth === 'exited' && !remoteExitClosed) {
             remoteExitClosed = true
             logDiag('connect', 'term_remote_exit', { kind: diagKind, sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken })
@@ -507,6 +539,7 @@ export function Terminal({
         }
       }
       markDataSeen()
+      noteResumeOutput()
       if (launch) {
         recentLaunchOutput = (recentLaunchOutput + data).slice(-4096)
         lastLaunchDataAt = Date.now()
@@ -570,6 +603,8 @@ export function Terminal({
       if (launchFallbackTimer) clearTimeout(launchFallbackTimer)
       if (revealTimer) clearTimeout(revealTimer)
       if (resumeOverlayTimer) clearTimeout(resumeOverlayTimer)
+      if (resumeReadyTimer) clearTimeout(resumeReadyTimer)
+      if (resumeFallbackTimer) clearTimeout(resumeFallbackTimer)
       if (resumeBottomFrame !== null) cancelAnimationFrame(resumeBottomFrame)
       if (resumeBottomTimer) clearTimeout(resumeBottomTimer)
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
@@ -611,6 +646,18 @@ export function Terminal({
           <div className="absolute inset-x-0 bottom-3 flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
             {launch ? '等待 agent 就绪，可直接响应提示…' : '正在恢复会话…'}
+          </div>
+        </div>
+      )}
+      {overlayMode === 'restore' && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3">
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-center gap-2 rounded-full border border-border/80 bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm"
+          >
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
+            正在恢复会话，等待输入就绪…
           </div>
         </div>
       )}
