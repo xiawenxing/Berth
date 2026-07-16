@@ -16,7 +16,7 @@ describe('binaries + argv', () => {
   })
   it('maps each cli to a resume argv template', () => {
     expect(resumeArgv('claude', 'U')).toEqual(['--resume', 'U'])
-    expect(resumeArgv('codex', 'U')).toEqual(['--profile', 'berth-launch', 'resume', '--no-alt-screen', 'U'])
+    expect(resumeArgv('codex', 'U')).toEqual(['resume', '--no-alt-screen', 'U'])
     expect(resumeArgv('coco', 'U')).toEqual(['--resume=U'])   // pflag optional-value: must use =id, see launch.test.ts
   })
 
