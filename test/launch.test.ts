@@ -49,9 +49,9 @@ it('coco: resume uses the =id form so the id is never parsed as a positional pro
     .toEqual(['--resume=f60ef02f-7986-41c7-8f63-4067ddc06039'])
 })
 
-it('claude/codex: resume takes the id space-separated', () => {
+it('claude/codex: resume takes the id space-separated (Codex also loads Berth key bindings)', () => {
   expect(resumeArgv('claude', 'uuid-1')).toEqual(['--resume', 'uuid-1'])
-  expect(resumeArgv('codex', 'uuid-2')).toEqual(['resume', '--no-alt-screen', 'uuid-2'])
+  expect(resumeArgv('codex', 'uuid-2')).toEqual(['--profile', 'berth-launch', 'resume', '--no-alt-screen', 'uuid-2'])
 })
 
 it('claude: session-id + bypass + system-prompt-file + add-dir, no positional', () => {
@@ -95,7 +95,7 @@ it('claude: model is passed as --model after the bypass flag', () => {
 
 it('codex: model is passed as --model', () => {
   const a = freshArgv('codex', { cwd: '/c', model: 'gpt-5' })
-  expect(a).toEqual(['--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', '--model', 'gpt-5'])
+  expect(a).toEqual(['--profile', 'berth-launch', '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', '--model', 'gpt-5'])
 })
 
 it('coco: model is never emitted (no --model flag)', () => {
@@ -115,6 +115,7 @@ it('writes the Codex Berth profile hook under CODEX_HOME', () => {
     process.env.CODEX_HOME = home
     ensureCodexBerthHookProfile()
     const text = readFileSync(join(home, 'berth-launch.config.toml'), 'utf8')
+    expect(text).toContain('interrupt_turn = "ctrl-c"')
     expect(text).toContain('[[hooks.SessionStart]]')
     expect(text).toContain('matcher = "startup"')
     expect(text).toContain('BERTH_CONTEXT_FILE')
