@@ -131,10 +131,20 @@ export function registerPty(key: string, pty: IPty, opts?: { running?: boolean; 
  * and accept input. When the socket closes the viewer DETACHES — the session keeps running. A
  * `{t:'kill'}` message ends the session for real. Returns false if there is no live session for `key`.
  */
-export function attachViewer(key: string, ws: WebSocket, opts?: { replayBytes?: number }): boolean {
+export interface AttachViewerOptions {
+  replayBytes?: number
+  /** A cold TUI resume is booting behind the replayed spool. This frame is deliberately sent AFTER
+   *  the snapshot, so the browser can distinguish old terminal bytes from fresh resume output. */
+  restoring?: { sessionId: string; cli: string }
+}
+
+export function attachViewer(key: string, ws: WebSocket, opts?: AttachViewerOptions): boolean {
   const entry = registry.get(key)
   if (!entry || entry.exited) return false
   for (const frame of entry.driver.snapshot(opts?.replayBytes)) { try { ws.send(frame) } catch {} }
+  if (opts?.restoring) {
+    try { ws.send(JSON.stringify({ __berth: 'restoring', ...opts.restoring })) } catch {}
+  }
   entry.attached.add(ws)
   ws.on('message', (raw) => {
     let msg: Inbound

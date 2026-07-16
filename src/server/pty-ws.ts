@@ -300,7 +300,12 @@ export function createPtyWss(): WebSocketServer {
       if (wantStream) spawnAndRegisterStream(s)                                 // Model B: stream-json resume (claude/codex/coco)
       else spawnAndRegister(s, { cols, rows })                                 // Model A: TUI resume
     } catch (e: any) { try { ws.send(`\r\n[berth] launch failed: ${e?.message}\r\n`) } catch {} ; ws.close(); return }
-    attachViewer(sessionId, ws, { replayBytes })
+    attachViewer(sessionId, ws, {
+      replayBytes,
+      // The persisted spool is replayed first, then this control frame tells the terminal that the
+      // newly spawned CLI is still restoring. Stream mode has its own history/loading treatment.
+      restoring: wantStream ? undefined : { sessionId, cli: s.cli },
+    })
   })
   return wss
 }
