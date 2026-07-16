@@ -173,7 +173,7 @@ vi.mock('../src/data/doc-git', async (importOriginal) => ({
 
 import { createApp } from '../src/server/index'
 // pty-registry is NOT mocked here — drive the real singleton so /api/sessions reflects live activity.
-import { registerPty, killPty } from '../src/server/pty-registry'
+import { registerPty, killPty, hasLivePty } from '../src/server/pty-registry'
 import { InternalAgentBlocked } from '../src/agent/agent-failure'
 
 let server: Server
@@ -380,6 +380,8 @@ describe('session removal API (detach / un-import)', () => {
   })
 
   it('un-imports sessions (remove visible/organized signals + detach)', async () => {
+    registerPty('s1', fakePty())
+    expect(hasLivePty('s1')).toBe(true)
     const port = await listen()
     const r = await fetch(`http://localhost:${port}/api/session-import/remove`, {
       method: 'POST', headers: J, body: JSON.stringify({ ids: ['s1'] }),
@@ -391,6 +393,7 @@ describe('session removal API (detach / un-import)', () => {
     expect(mockSetAttach).toHaveBeenCalledWith('s1', null, 'confirmed')
     expect(mockRemoveLaunchIntentsForSession).toHaveBeenCalledWith('s1')
     expect(mockHideSession).toHaveBeenCalledWith('s1')
+    expect(hasLivePty('s1')).toBe(false)
   })
 
   it('rejects un-import with no ids', async () => {
