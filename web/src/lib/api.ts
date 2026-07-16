@@ -103,6 +103,9 @@ export interface AgentModelCatalog {
 
 export interface ApiSettings {
   docsRoot?: string
+  homeDir?: string
+  autoTrustWorkspaces?: boolean
+  cocoContextHookEnabled?: boolean
   priorities?: string[]
   statuses?: string[]
   agents?: AgentConfig
@@ -215,7 +218,7 @@ export const api = {
   resolveLaunches: () => send('POST', '/api/launches/resolve') as Promise<ApiSession[]>,
   // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
   settings: () => getJSON<ApiSettings>('/api/settings'),
-  saveSettings: (patch: { docsRoot?: string; priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) =>
+  saveSettings: (patch: { docsRoot?: string; priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig>; autoTrustWorkspaces?: boolean; cocoContextHookEnabled?: boolean }) =>
     send('POST', '/api/settings', patch) as Promise<ApiSettings & { ok?: boolean; docsMigration?: DocsRootMigrationResult | null }>,
   agentModels: () => getJSON<{ catalogs: AgentModelCatalog[] }>('/api/agent-models'),
   appUpdate: () => getJSON<AppUpdateStatus>('/api/app-update'),

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, watch } from 'node:fs'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { codexHome } from '../agent-paths'
 import { rekeyPty } from './pty-registry'
 import { logDiag } from './diag'
 import { bindIntentToSession } from './bind'
@@ -12,11 +12,11 @@ type Store = ReturnType<typeof openStore>
 export const ROLLOUT_POLL_MS = 5_000   // coarse fallback — do NOT shrink (perf); only runs while a codex intent is unbound
 
 /** The codex rollout dir for a given Date: <codexHome>/sessions/YYYY/MM/DD. Pure (date injected). */
-export function rolloutDayDir(now: Date, codexHome = join(homedir(), '.codex')): string {
+export function rolloutDayDir(now: Date, home = codexHome()): string {
   const y = now.getUTCFullYear()
   const m = String(now.getUTCMonth() + 1).padStart(2, '0')
   const d = String(now.getUTCDate()).padStart(2, '0')
-  return join(codexHome, 'sessions', String(y), m, d)
+  return join(home, 'sessions', String(y), m, d)
 }
 
 /** Read a rollout file's first line and bind it to a pending intent if it matches. Best-effort.

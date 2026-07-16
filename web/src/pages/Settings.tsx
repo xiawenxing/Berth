@@ -33,7 +33,7 @@ export function Settings() {
 
   // Task-field vocabularies — edited as a local draft seeded from the live config; persisted
   // (POST /settings) + reload() so the whole app picks up the new statuses/priorities.
-  const { statuses: cfgStatuses, priorities: cfgPriorities, agents: cfgAgents, docsRoot: cfgDocsRoot, reload } = useData()
+  const { statuses: cfgStatuses, priorities: cfgPriorities, agents: cfgAgents, docsRoot: cfgDocsRoot, autoTrustWorkspaces, cocoContextHookEnabled, reload } = useData()
   const [statuses, setStatuses] = useState<string[]>(cfgStatuses)
   const [priorities, setPriorities] = useState<string[]>(cfgPriorities)
   const [agentList, setAgentList] = useState<AgentEntry[]>(cfgAgents.list)
@@ -41,6 +41,7 @@ export function Settings() {
   const [berthAgentModel, setBerthAgentModel] = useState(cfgAgents.berthAgentModel)
   const [savingVocab, setSavingVocab] = useState(false)
   const [savingAgents, setSavingAgents] = useState(false)
+  const [savingTrust, setSavingTrust] = useState(false)
   const [agentError, setAgentError] = useState<string | null>(null)
   const [pendingDocsRoot, setPendingDocsRoot] = useState<string | null>(null)
   const [pickingDocsRoot, setPickingDocsRoot] = useState(false)
@@ -112,6 +113,14 @@ export function Settings() {
       .then(() => reload())
       .catch((e) => setAgentError(String(e?.message ?? e)))
       .finally(() => setSavingAgents(false))
+  }
+  const toggleAutoTrust = () => {
+    setSavingTrust(true)
+    api.saveSettings({ autoTrustWorkspaces: !autoTrustWorkspaces }).then(() => reload()).finally(() => setSavingTrust(false))
+  }
+  const toggleCocoHook = () => {
+    setSavingTrust(true)
+    api.saveSettings({ cocoContextHookEnabled: !cocoContextHookEnabled }).then(() => reload()).finally(() => setSavingTrust(false))
   }
   const pickDocsRoot = () => {
     setPickingDocsRoot(true)
@@ -258,6 +267,9 @@ export function Settings() {
               onChange={(patch) => updateAgent(agent.cli, patch)}
             />
           ))}
+          <ToggleRow label="自动信任工作目录" hint="为避免 CLI trust 弹窗阻塞首条任务，Berth 会写入 Claude/Codex 的本机配置；关闭后不会再写入。" on={autoTrustWorkspaces} onChange={toggleAutoTrust} />
+          <ToggleRow label="Coco 上下文 Hook" hint="让 Coco 自动收到项目/任务上下文，会写入 ~/.trae/traecli.yaml；关闭后不再安装或修改该 Hook。" on={cocoContextHookEnabled} onChange={toggleCocoHook} />
+          {savingTrust && <span className="text-[11px] text-text-dim">保存中…</span>}
           {(agentDirty || agentError) && (
             <div className="flex items-center gap-2 border-t border-border pt-2.5">
               <span className={cn('text-[11px]', agentError ? 'text-destructive' : 'text-warning')}>
@@ -288,12 +300,7 @@ export function Settings() {
 
         <Card icon={<FileText size={14} />} title="上下文与文档" hint="任务/项目的 md 与图片">
           <Row label="当前维护路径">
-            <code
-              title={cfgDocsRoot}
-              className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded bg-background px-2 py-1 font-mono text-[12px] text-foreground"
-            >
-              {cfgDocsRoot}
-            </code>
+            <input value={pendingDocsRoot ?? cfgDocsRoot} onChange={(e) => setPendingDocsRoot(e.target.value)} title={pendingDocsRoot ?? cfgDocsRoot} className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 font-mono text-[12px] text-foreground outline-none" />
             <button
               onClick={pickDocsRoot}
               disabled={pickingDocsRoot || savingDocsRoot}

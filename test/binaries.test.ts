@@ -2,12 +2,17 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resolveAgentBinary, firstUsableCandidate, codexHookTrustSupportCached, codexSupportsHookTrust, warmCodexHookTrustSupport, warmCliHelp, cliFlagSupportedCached, clearAgentBinaryCachesForTest } from '../src/pty/binaries'
+import { firstUsableCandidate, codexHookTrustSupportCached, codexSupportsHookTrust, warmCodexHookTrustSupport, warmCliHelp, cliFlagSupportedCached, clearAgentBinaryCachesForTest } from '../src/pty/binaries'
 import { resumeArgv } from '../src/pty/launch'
 describe('binaries + argv', () => {
-  it('pins coco to ~/.local/bin and never returns the trae IDE launcher', { timeout: 25000 }, () => {
-    expect(resolveAgentBinary('coco')).toMatch(/\/\.local\/bin\/coco$/)
-    expect(resolveAgentBinary('coco')).not.toBe('/usr/local/bin/trae')
+  it('finds coco from PATH or an explicit override while still requiring identity verification at launch', () => {
+    const home = mkdtempSync(join(tmpdir(), 'berth-coco-home-'))
+    const binDir = mkdtempSync(join(tmpdir(), 'berth-coco-bin-'))
+    const coco = join(binDir, 'coco')
+    writeFileSync(coco, '#!/bin/sh\nexit 0\n')
+    chmodSync(coco, 0o755)
+    expect(firstUsableCandidate('coco', { home, path: binDir, appCandidates: {} })).toBe(coco)
+    expect(firstUsableCandidate('coco', { home, path: '', env: { BERTH_COCO_BIN: coco }, appCandidates: {} })).toBe(coco)
   })
   it('maps each cli to a resume argv template', () => {
     expect(resumeArgv('claude', 'U')).toEqual(['--resume', 'U'])

@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
 import { getStore, getCache, visibleSessions, refresh, refreshSessions, storeRoots } from './store-singleton'
 import { collectLogicalSessions } from '../sessions'
 import { toPreview, previewByCli, previewByIds } from './import-preview'
@@ -44,6 +45,8 @@ import { broadcastDataChanged } from './status-ws'
 import { compactTitle, TASK_CREATE_INPUT_MAX_CHARS } from '../title-limits'
 import { getAgentIntegrationStatus, installAgentIntegration } from '../agent-integration'
 import { getAppUpdateStatus } from '../app-update'
+import { setAutoTrustWorkspaces } from '../pty/trust'
+import { setCocoHookInstallEnabled } from '../pty/coco-hook'
 
 function isFolderPickerCancelled(err: unknown, stderr = ''): boolean {
   const e = err as { message?: unknown; stderr?: unknown }
@@ -337,6 +340,7 @@ api.post('/todos/from-session', async (req, res) => {
 // Native macOS folder picker (the browser can't expose absolute paths). Returns the chosen
 // absolute path, or { cancelled: true } if the user cancels / no GUI is available.
 api.post('/pick-folder', (req, res) => {
+  if (process.platform !== 'darwin') return res.status(501).json({ cancelled: true, unsupported: true, error: 'native folder picker is currently available on macOS only; enter the path manually' })
   const def = typeof req.body?.default === 'string' ? req.body.default : ''
   // `choose folder` returns an alias; `POSIX path of` yields the absolute path (trailing slash).
   const loc = def ? ` default location (POSIX file ${JSON.stringify(def)})` : ''
@@ -996,11 +1000,11 @@ api.delete('/data-sources/:id', (req, res) => {
 // ── App settings (docsRoot, locale, task status/priority vocabularies, …) ──
 api.get('/settings', (_req, res) => {
   const store = getStore()
-  res.json({ docsRoot: getDocsRoot(store), locale: getLocale(store), locales: LOCALES, ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
+  res.json({ homeDir: homedir(), docsRoot: getDocsRoot(store), locale: getLocale(store), locales: LOCALES, ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store), autoTrustWorkspaces: store.getSetting('autoTrustWorkspaces') !== '0', cocoContextHookEnabled: store.getSetting('cocoContextHookEnabled') !== '0' })
 })
 
 api.post('/settings', (req, res) => {
-  const { docsRoot, locale, statuses, priorities, agents, context } = req.body ?? {}
+  const { docsRoot, locale, statuses, priorities, agents, context, autoTrustWorkspaces, cocoContextHookEnabled } = req.body ?? {}
   const store = getStore()
   let docsMigration = null
   try {
@@ -1009,6 +1013,14 @@ api.post('/settings', (req, res) => {
     if (statuses !== undefined || priorities !== undefined) setTaskFieldConfig(store, { statuses, priorities })
     if (agents !== undefined) setAgentConfig(store, agents)
     if (context !== undefined) setContextConfig(store, context)
+    if (typeof autoTrustWorkspaces === 'boolean') {
+      store.setSetting('autoTrustWorkspaces', autoTrustWorkspaces ? '1' : '0')
+      setAutoTrustWorkspaces(autoTrustWorkspaces)
+    }
+    if (typeof cocoContextHookEnabled === 'boolean') {
+      store.setSetting('cocoContextHookEnabled', cocoContextHookEnabled ? '1' : '0')
+      setCocoHookInstallEnabled(cocoContextHookEnabled)
+    }
   } catch (e: any) {
     if (e instanceof DocsRootMigrationConflict) {
       return res.status(409).json({
@@ -1018,7 +1030,7 @@ api.post('/settings', (req, res) => {
     }
     return res.status(400).json({ error: e?.message || 'invalid settings' })
   }
-  res.json({ ok: true, docsRoot: getDocsRoot(store), docsMigration, locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
+  res.json({ ok: true, homeDir: homedir(), docsRoot: getDocsRoot(store), docsMigration, locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store), autoTrustWorkspaces: store.getSetting('autoTrustWorkspaces') !== '0', cocoContextHookEnabled: store.getSetting('cocoContextHookEnabled') !== '0' })
 })
 
 api.get('/agent-models', async (req, res) => {

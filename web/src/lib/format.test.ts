@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { imagePathPlaceholderText, splitImagePathPlaceholders } from './format'
+import { imagePathPlaceholderText, setDisplayHome, shortCwd, splitImagePathPlaceholders } from './format'
+
+describe('shortCwd', () => {
+  it('shortens only the real home path supplied by the backend', () => {
+    setDisplayHome('/home/alice')
+    expect(shortCwd('/home/alice/code/berth')).toBe('~/code/berth')
+    expect(shortCwd('/home/bob/code/berth')).toBe('/home/bob/code/berth')
+    setDisplayHome('C:\\Users\\Alice')
+    expect(shortCwd('C:\\Users\\Alice\\code\\berth')).toBe('~\\code\\berth')
+  })
+})
 
 describe('image path placeholders', () => {
   it('formats image paths as [图片] for compact titles', () => {
     expect(
-      imagePathPlaceholderText('/Users/bytedance/Documents/Obsidian\\ Vault/assets/imagepng-1782446492681-2567.png 1. 打包失败'),
+      imagePathPlaceholderText('/Users/example/Documents/Notes/assets/image.png 1. 打包失败'),
     ).toBe('[图片] 1. 打包失败')
   })
 

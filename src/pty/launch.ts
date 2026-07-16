@@ -7,16 +7,16 @@ import { fileURLToPath } from 'node:url'
 import { resolveAgentBinary, codexHookTrustSupportOrWarm } from './binaries'
 import { gateArgvForBinary, stripAllDegradable } from './flag-gate'
 import { ensureClaudeTrust, ensureCodexTrust } from './trust'
-import { ensureCocoBerthHook, writeCocoContextPayload } from './coco-hook'
+import { ensureCocoBerthHook, isCocoContextHookEnabled, writeCocoContextPayload } from './coco-hook'
 import { agentSpawnEnv } from './agent-env'
 import { ensureAgentBerthShim } from './agent-shim'
 import { getLocalServerAddress } from '../server-address'
 import { withUtf8Locale } from './locale'
 import { berthHome } from '../paths'
+import { codexHome } from '../agent-paths'
 import type { AgentCli, LogicalSession } from '../types'
 
 const CODEX_BERTH_PROFILE = 'berth-launch'
-const codexHome = () => process.env.CODEX_HOME || join(homedir(), '.codex')
 
 /** Env for a Berth-spawned agent: PATH gets the berth-shim dir; BERTH_PORT/HOST point at our server.
  *  Wrapped in withUtf8Locale so every spawn path also gets a UTF-8 LANG/LC_* — a GUI/C-locale launch
@@ -237,7 +237,7 @@ export function spawnPerTurn(cli: AgentCli, o: PerTurnOpts): ChildProcess {
   const bin = resolveAgentBinary(cli)
   if (cli === 'codex') ensureCodexTrust(cwd)   // `codex exec` also refuses an untrusted dir
   const env = spawnEnv(o.sessionId, bin) as any
-  if (cli === 'coco' && o.injectFile) {
+  if (cli === 'coco' && o.injectFile && isCocoContextHookEnabled()) {
     ensureCocoBerthHook()
     env.BERTH_CONTEXT_FILE = writeCocoContextPayload(o.injectFile)
   }
@@ -305,7 +305,7 @@ export function launchFresh(cli: AgentCli, o: FreshOpts, flags: { minimal?: bool
       env.BERTH_CALLBACK_DIR = codexCallbackDir()
     }
   }
-  if (cli === 'coco' && opts.injectFile) {
+  if (cli === 'coco' && opts.injectFile && isCocoContextHookEnabled()) {
     ensureCocoBerthHook()                               // register the session_start context hook (idempotent)
     env.BERTH_CONTEXT_FILE = writeCocoContextPayload(opts.injectFile)   // coco hook cats a JSON envelope
   }

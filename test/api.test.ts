@@ -403,6 +403,21 @@ describe('session removal API (detach / un-import)', () => {
 })
 
 describe('settings API – task status/priority vocabularies', () => {
+  it('persists the automatic workspace-trust preference', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/settings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ autoTrustWorkspaces: false }),
+    })
+    expect((await r.json() as any).autoTrustWorkspaces).toBe(false)
+    const next = await fetch(`http://localhost:${port}/api/settings`)
+    expect((await next.json() as any).autoTrustWorkspaces).toBe(false)
+    await fetch(`http://localhost:${port}/api/settings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ autoTrustWorkspaces: true }),
+    })
+  })
+
   it('GET /settings returns default statuses + priorities when unset', async () => {
     const port = await listen()
     const r = await fetch(`http://localhost:${port}/api/settings`)
