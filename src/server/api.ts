@@ -32,7 +32,7 @@ import { isGeneratingTitle, triggerSessionTitle, titleError, titleGist } from '.
 import type { Locale } from '../i18n'
 import { readFileSync, statSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { snapshotActivity, liveCount } from './pty-registry'
+import { snapshotActivity, liveCount, killPty } from './pty-registry'
 import { ingestDiag, collectDiagForExport, logDiag } from './diag'
 import { getAgentModelCatalogs } from '../pty/model-catalog'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
@@ -604,12 +604,14 @@ api.post('/sessions/detach', (req, res) => {
   res.json({ ok: true, count: getCache().length })
 })
 
-// 取消导入：撤销 Berth 侧可见/组织信号。不会删除磁盘上的 CLI 会话文件。
+// 取消导入：撤销 Berth 侧可见/组织信号，并终止 Berth 为该会话保活的进程。
+// 不会删除磁盘上的 CLI 会话文件；下次重新导入并打开会重新 `resume` 最新 transcript。
 api.post('/session-import/remove', (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
   if (!ids.length) return res.status(400).json({ error: 'ids:string[] required' })
   const store = getStore()
   for (const id of ids) {
+    killPty(id)
     store.removeSessionImport(id)
     store.removeEdgesForSession(id)
     store.setPin(id, false)
