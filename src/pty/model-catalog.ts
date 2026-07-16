@@ -50,7 +50,7 @@ export function parseCodexModelsJson(text: string): AgentModelOption[] {
   const parsed = JSON.parse(text) as unknown
   const rows = Array.isArray((parsed as any)?.models) ? (parsed as any).models : []
   return uniqueOptions(rows
-    .filter((m: any) => m && typeof m.slug === 'string' && m.visibility !== 'hidden')
+    .filter((m: any) => m && typeof m.slug === 'string' && m.visibility === 'list')
     .map((m: any) => ({
       id: m.slug,
       label: typeof m.display_name === 'string' ? m.display_name : m.slug,

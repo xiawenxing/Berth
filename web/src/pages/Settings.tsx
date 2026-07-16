@@ -13,6 +13,7 @@ import { notifyAgentIntegrationChanged } from '@/lib/integration-events'
 import { priorityColors } from '@/lib/priority'
 import { statusMeta } from '@/lib/status'
 import { Switch } from '@/components/ui/Switch'
+import { AgentModelSelect } from '@/components/settings/AgentModelSelect'
 import type { AgentIntegrationStatus, AppUpdateStatus } from '@/lib/api'
 import { integrationActionLabel, integrationSummary, integrationTitle } from '@/lib/settings-status'
 
@@ -244,14 +245,13 @@ export function Settings() {
             >
               {enabledHeadless.map((cli) => <option key={cli} value={cli}>{cli}</option>)}
             </select>
-            <input
+            <AgentModelSelect
               value={berthAgentModel}
-              onChange={(e) => setBerthAgentModel(e.target.value)}
-              placeholder="留空 = CLI 默认模型"
-              list={`model-options-berth-${berthAgentCli}`}
-              className="min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground outline-none placeholder:text-text-dim"
+              catalog={modelCatalogs[berthAgentCli]}
+              ariaLabel="港务助手管理模型"
+              onChange={setBerthAgentModel}
+              className="min-w-0 flex-1"
             />
-            <ModelOptions id={`model-options-berth-${berthAgentCli}`} catalog={modelCatalogs[berthAgentCli]} />
           </Row>
           <ToggleRow label="主动提议建议" hint="船返港且有产出时给建议卡（可关）" on={proactive} onChange={() => setProactive((v) => !v)} />
           <ToggleRow label="新建任务默认 AI 自动总结标题" on={autoTitle} onChange={() => setAutoTitle((v) => !v)} />
@@ -665,16 +665,6 @@ function agentTone(cli: AgentCli): string {
   return 'text-purple'
 }
 
-function ModelOptions({ id, catalog }: { id: string; catalog?: AgentModelCatalog }) {
-  return (
-    <datalist id={id}>
-      {catalog?.models.map((m) => (
-        <option key={m.id} value={m.id} label={m.label} />
-      ))}
-    </datalist>
-  )
-}
-
 function AgentRow({
   agent,
   catalog,
@@ -687,7 +677,6 @@ function AgentRow({
   onChange: (patch: Partial<AgentEntry>) => void
 }) {
   const canDisable = !agent.enabled || enabledCount > 1
-  const listId = `model-options-${agent.cli}`
   return (
     <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
       <span className={cn('w-16 text-[13px] font-semibold', agentTone(agent.cli))}>{agent.cli}</span>
@@ -695,16 +684,14 @@ function AgentRow({
       {agent.cli === 'coco' ? (
         <span className="text-[12px] text-text-dim">coco 无 --model</span>
       ) : (
-        <input
+        <AgentModelSelect
           value={agent.model ?? ''}
-          onChange={(e) => onChange({ model: e.target.value.trim() ? e.target.value : null })}
-          placeholder="CLI 默认模型"
-          list={listId}
-          title={catalog?.source === 'cli' ? '已探测 CLI 模型列表' : catalog?.source === 'help' ? 'CLI help 中的模型别名' : '可手动输入模型'}
-          className="w-48 rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground outline-none placeholder:text-text-dim"
+          catalog={catalog}
+          ariaLabel={`${agent.cli} 默认模型`}
+          onChange={(model) => onChange({ model: model || null })}
+          className="w-56"
         />
       )}
-      <ModelOptions id={listId} catalog={catalog} />
       <span className="text-[11px] text-muted-foreground" title="开启后该 agent 每次工具调用前请求授权（仅交互式会话生效）">安全</span>
       <Switch
         checked={agent.safeMode}
