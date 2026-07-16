@@ -120,8 +120,12 @@ describe('pty-registry', () => {
   it('pty exit removes it from the registry', () => {
     const pty = fakePty()
     registerPty('sess-4', pty)
+    const viewer = fakeWs()
+    attachViewer('sess-4', viewer)
     pty.exit()
     expect(hasLivePty('sess-4')).toBe(false)
+    expect(viewer.sent).toContain(JSON.stringify({ __berth: 'exited', sessionId: 'sess-4' }))
+    expect(viewer.close).toHaveBeenCalled()
   })
 
   it('rekeyPty moves a live pty to a new key (codex bind)', () => {

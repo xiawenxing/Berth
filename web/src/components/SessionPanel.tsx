@@ -49,7 +49,7 @@ export function SessionPanel({
 }
 
 function ChatPanel({ sessionId, launch, onLaunched, onTerminateShortcut }: { sessionId?: string; launch?: LaunchSpec; onLaunched?: (sessionId: string) => void; onTerminateShortcut?: () => void }) {
-  const chat = useChatSession({ sessionId, launch, onLaunched })
+  const chat = useChatSession({ sessionId, launch, onLaunched, onExited: onTerminateShortcut })
   const draftScope = launch?.launchToken ? `launch:${launch.launchToken}` : sessionId ? `session:${sessionId}` : 'unknown'
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
