@@ -183,6 +183,7 @@ export function Terminal({
     let revealTimer: ReturnType<typeof setTimeout> | null = null
     let terminateRequested = false
     let terminateClosed = false
+    let remoteExitClosed = false
     // Resume mask is ANTI-FLASH: a warm / already-loaded session replays its scrollback in a few ms,
     // so masking it would just flash a veil over content that's already there. Show the veil ONLY if
     // nothing has rendered yet after a short delay (a genuinely cold `--resume` that takes seconds),
@@ -494,6 +495,10 @@ export function Terminal({
             // codex's DETERMINISTIC boot-complete signal (server read its rollout task_started). Drop
             // the launch mask exactly when the first turn begins — no output-quiet guessing.
             markLaunchReady()
+          } else if (ctl.__berth === 'exited' && !remoteExitClosed) {
+            remoteExitClosed = true
+            logDiag('connect', 'term_remote_exit', { kind: diagKind, sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken })
+            window.setTimeout(() => onTerminateShortcutRef.current?.(), 0)
           }
           return // a well-formed control frame is not terminal output
         } catch {

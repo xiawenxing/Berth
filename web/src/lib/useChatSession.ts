@@ -36,10 +36,12 @@ export function useChatSession({
   sessionId,
   launch,
   onLaunched,
+  onExited,
 }: {
   sessionId?: string
   launch?: LaunchSpec
   onLaunched?: (sessionId: string) => void
+  onExited?: () => void
 }): ChatSession {
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [model, setModel] = useState<string | undefined>()
@@ -52,6 +54,8 @@ export function useChatSession({
   const [awaiting, setAwaiting] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const turnSeqRef = useRef(0)
+  const onExitedRef = useRef(onExited)
+  useEffect(() => { onExitedRef.current = onExited }, [onExited])
 
   useEffect(() => {
     let disposed = false
@@ -105,6 +109,10 @@ export function useChatSession({
         // A launch that auto-fires a first turn (images here, or a server-side ?prompt=) is
         // immediately awaiting the agent — show the thinking indicator from the handshake on.
         if (launch?.prompt?.trim() || launch?.images?.length) setAwaiting(true)
+        return
+      }
+      if (msg.__berth === 'exited') {
+        onExitedRef.current?.()
         return
       }
       const frame = msg as ChatFrame
