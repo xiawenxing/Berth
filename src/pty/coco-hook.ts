@@ -6,6 +6,16 @@ import { parse, stringify } from 'yaml'
 // coco's authoritative config (the file `coco config edit` opens). Hooks live in a flat `hooks:`
 // array of `{ type, command, matchers: [{ event }] }` — confirmed against `coco doc hooks`.
 const traeConfigPath = () => join(homedir(), '.trae', 'traecli.yaml')
+let cocoHookInstallEnabled = true
+
+/** Controls the opt-in write of Berth's context hook into coco's global config. */
+export function setCocoHookInstallEnabled(enabled: boolean): void {
+  cocoHookInstallEnabled = enabled
+}
+
+export function isCocoContextHookEnabled(): boolean {
+  return cocoHookInstallEnabled
+}
 
 // A `session_start` hook that prints the Berth manifest as the agent's additional context. coco
 // injects `hookSpecificOutput.additionalContext` from a session_start hook as a `<system-reminder>`
@@ -32,6 +42,7 @@ const isBerthHook = (h: unknown): boolean =>
  *  - if our hook is already present, we don't write at all.
  */
 export function ensureCocoBerthHook(configPath = traeConfigPath()): void {
+  if (!cocoHookInstallEnabled) return
   let doc: any
   if (existsSync(configPath)) {
     try { doc = parse(readFileSync(configPath, 'utf8')) }

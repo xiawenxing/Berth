@@ -104,7 +104,14 @@ export function registerSession(key: string, driver: SessionDriver, opts?: { run
     // launch that died before writing its jsonl — the "session vanished" failure. Log the key + how
     // many viewers were attached so the export shows whether the user was even watching.
     logDiag({ category: 'pty', event: 'exit', sessionId: key, viewers: entry.attached.size })
-    for (const ws of entry.attached) { try { ws.close() } catch {} }
+    // A PTY can end on its own (for example, a CLI may decide that Ctrl+C exits after cancelling a
+    // turn). Tell the viewer before closing the transport so it can close the drawer too. Explicit
+    // Berth kills already close their drawer at the caller, and close their sockets before this
+    // callback runs, so this frame only represents an actual process exit observed by the registry.
+    for (const ws of entry.attached) {
+      try { ws.send(JSON.stringify({ __berth: 'exited', sessionId: key })) } catch {}
+      try { ws.close() } catch {}
+    }
     registry.delete(key)
     activity.exit(key)
     try { opts?.onExit?.() } catch {}   // mechanical context-log rotation (§7 Phase 1); never throws into the driver
@@ -124,10 +131,20 @@ export function registerPty(key: string, pty: IPty, opts?: { running?: boolean; 
  * and accept input. When the socket closes the viewer DETACHES — the session keeps running. A
  * `{t:'kill'}` message ends the session for real. Returns false if there is no live session for `key`.
  */
-export function attachViewer(key: string, ws: WebSocket, opts?: { replayBytes?: number }): boolean {
+export interface AttachViewerOptions {
+  replayBytes?: number
+  /** A cold TUI resume is booting behind the replayed spool. This frame is deliberately sent AFTER
+   *  the snapshot, so the browser can distinguish old terminal bytes from fresh resume output. */
+  restoring?: { sessionId: string; cli: string }
+}
+
+export function attachViewer(key: string, ws: WebSocket, opts?: AttachViewerOptions): boolean {
   const entry = registry.get(key)
   if (!entry || entry.exited) return false
   for (const frame of entry.driver.snapshot(opts?.replayBytes)) { try { ws.send(frame) } catch {} }
+  if (opts?.restoring) {
+    try { ws.send(JSON.stringify({ __berth: 'restoring', ...opts.restoring })) } catch {}
+  }
   entry.attached.add(ws)
   ws.on('message', (raw) => {
     let msg: Inbound

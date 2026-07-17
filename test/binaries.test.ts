@@ -1,18 +1,47 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, writeFileSync, chmodSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resolveAgentBinary, codexHookTrustSupportCached, codexSupportsHookTrust, warmCodexHookTrustSupport, warmCliHelp, cliFlagSupportedCached, clearAgentBinaryCachesForTest } from '../src/pty/binaries'
+import { firstUsableCandidate, codexHookTrustSupportCached, codexSupportsHookTrust, warmCodexHookTrustSupport, warmCliHelp, cliFlagSupportedCached, clearAgentBinaryCachesForTest } from '../src/pty/binaries'
 import { resumeArgv } from '../src/pty/launch'
 describe('binaries + argv', () => {
-  it('pins coco to ~/.local/bin and never returns the trae IDE launcher', { timeout: 25000 }, () => {
-    expect(resolveAgentBinary('coco')).toMatch(/\/\.local\/bin\/coco$/)
-    expect(resolveAgentBinary('coco')).not.toBe('/usr/local/bin/trae')
+  it('finds coco from PATH or an explicit override while still requiring identity verification at launch', () => {
+    const home = mkdtempSync(join(tmpdir(), 'berth-coco-home-'))
+    const binDir = mkdtempSync(join(tmpdir(), 'berth-coco-bin-'))
+    const coco = join(binDir, 'coco')
+    writeFileSync(coco, '#!/bin/sh\nexit 0\n')
+    chmodSync(coco, 0o755)
+    expect(firstUsableCandidate('coco', { home, path: binDir, appCandidates: {} })).toBe(coco)
+    expect(firstUsableCandidate('coco', { home, path: '', env: { BERTH_COCO_BIN: coco }, appCandidates: {} })).toBe(coco)
   })
   it('maps each cli to a resume argv template', () => {
     expect(resumeArgv('claude', 'U')).toEqual(['--resume', 'U'])
     expect(resumeArgv('codex', 'U')).toEqual(['resume', '--no-alt-screen', 'U'])
     expect(resumeArgv('coco', 'U')).toEqual(['--resume=U'])   // pflag optional-value: must use =id, see launch.test.ts
+  })
+
+  it('finds an NVM-installed codex when the parent PATH does not include NVM', () => {
+    const home = mkdtempSync(join(tmpdir(), 'berth-nvm-home-'))
+    const oldBin = join(home, '.nvm', 'versions', 'node', 'v20.20.0', 'bin')
+    const newBin = join(home, '.nvm', 'versions', 'node', 'v22.17.1', 'bin')
+    mkdirSync(oldBin, { recursive: true })
+    mkdirSync(newBin, { recursive: true })
+    const codex = join(oldBin, 'codex')
+    writeFileSync(codex, '#!/bin/sh\nexit 0\n')
+    chmodSync(codex, 0o755)
+
+    expect(firstUsableCandidate('codex', { home, path: '', appCandidates: {} })).toBe(codex)
+  })
+
+  it('resolves PATH candidates to an executable absolute path and never returns a bare command', () => {
+    const home = mkdtempSync(join(tmpdir(), 'berth-empty-home-'))
+    const binDir = mkdtempSync(join(tmpdir(), 'berth-path-bin-'))
+    const codex = join(binDir, 'codex')
+    writeFileSync(codex, '#!/bin/sh\nexit 0\n')
+    chmodSync(codex, 0o755)
+
+    expect(firstUsableCandidate('codex', { home, path: binDir, appCandidates: {} })).toBe(codex)
+    expect(firstUsableCandidate('codex', { home, path: '', appCandidates: {} })).toBeNull()
   })
 })
 

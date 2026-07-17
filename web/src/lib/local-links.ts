@@ -7,6 +7,7 @@
  * support another app protocol (e.g. `cursor`, `zed`) — it must be safe to hand to the OS `open`.
  */
 export const LOCAL_OPEN_SCHEMES = ['file', 'obsidian', 'vscode'] as const
+export const EXTERNAL_OPEN_SCHEMES = ['http', 'https', 'mailto', 'tel'] as const
 
 /**
  * True when a raw markdown href points at a LOCAL file address that the browser cannot navigate to
@@ -25,4 +26,15 @@ export function isLocalHref(href: string): boolean {
   if (h.startsWith('/') && !h.startsWith('//')) return true
   const scheme = h.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//)?.[1]?.toLowerCase()
   return scheme !== undefined && (LOCAL_OPEN_SCHEMES as readonly string[]).includes(scheme)
+}
+
+/**
+ * True for URL-like links that should leave the Berth app. This intentionally stays narrower than
+ * the sanitizer's allowed URI set: only browser/mail/phone schemes are opened externally here.
+ */
+export function isExternalHref(href: string): boolean {
+  const h = href.trim()
+  if (h === '') return false
+  const scheme = h.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/)?.[1]?.toLowerCase()
+  return scheme !== undefined && (EXTERNAL_OPEN_SCHEMES as readonly string[]).includes(scheme)
 }

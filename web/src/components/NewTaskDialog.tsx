@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { Sparkles, Play } from 'lucide-react'
 import { Dialog } from './ui/Overlay'
 import { PastedImageStrip, pastedImageDataUrls, usePastedImages, type PastedImage } from './ImagePaste'
@@ -38,7 +38,7 @@ export function NewTaskDialog({
   const [cargo, setCargo] = useState<CargoState | null>(null)
   const [adjust, setAdjust] = useState(false)
   const [extraDir, setExtraDir] = useState('')
-  const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
+  const { images, clearImages, onPasteImages, removeImage, reconcileImagePlaceholders, handleImagePlaceholderKeyDown } = usePastedImages()
   const ref = useRef<HTMLTextAreaElement>(null)
   const wasOpen = useRef(false)
   const enabledAgents = useMemo(() => agents?.list.filter((a) => a.enabled) ?? [], [agents?.list])
@@ -46,11 +46,15 @@ export function NewTaskDialog({
   const enabledPaths = useMemo(() => (project?.pathsMeta ?? []).filter((p) => p.enabled).map((p) => p.cwd), [project])
   const canRun = !run || (!!project?.id && !!selectedAgent)
   const taskDraftKey = draftKey(`new-task:${project?.id ?? 'global'}`)
-  const setLimitedText = useCallback((next: string) => {
-    const limited = next.slice(0, TASK_CREATE_INPUT_MAX_CHARS)
-    setText(limited)
-    writeDraft(taskDraftKey, limited)
+  const setLimitedText = useCallback((next: SetStateAction<string>) => {
+    setText((prev) => {
+      const raw = typeof next === 'function' ? (next as (prev: string) => string)(prev) : next
+      const limited = raw.slice(0, TASK_CREATE_INPUT_MAX_CHARS)
+      writeDraft(taskDraftKey, limited)
+      return limited
+    })
   }, [taskDraftKey])
+  const imagePlacement = (target: HTMLTextAreaElement | null = ref.current) => ({ value: text, setValue: setLimitedText, target })
 
   useEffect(() => {
     if (open && !wasOpen.current) {
@@ -118,12 +122,13 @@ export function NewTaskDialog({
           ref={ref}
           value={text}
           maxLength={TASK_CREATE_INPUT_MAX_CHARS}
-          onChange={(e) => setLimitedText(e.target.value)}
+          onChange={(e) => setLimitedText(reconcileImagePlaceholders(e.target.value))}
           onPaste={(e) => onPasteImages(e, {
             value: text,
             setValue: setLimitedText,
             target: e.currentTarget,
           })}
+          onKeyDown={(e) => { handleImagePlaceholderKeyDown(e, imagePlacement(e.currentTarget)) }}
           rows={4}
           placeholder="粗略写个标题，或贴一段描述/图片都行"
           className="min-h-24 w-full resize-y rounded-md border border-border bg-card px-3 py-2.5 text-[13px] leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring placeholder:text-text-dim"
@@ -131,7 +136,7 @@ export function NewTaskDialog({
         <div className="mt-1 text-right text-[10.5px] text-muted-foreground">
           {text.length}/{TASK_CREATE_INPUT_MAX_CHARS}
         </div>
-        <PastedImageStrip images={images} onRemove={removeImage} className="mt-2" />
+        <PastedImageStrip images={images} onRemove={(idx) => removeImage(idx, imagePlacement())} className="mt-2" />
         <div className="mt-2.5 flex flex-wrap gap-4">
           <MiniCheck on={ai} onToggle={() => setAi((v) => !v)} icon={<Sparkles size={12} />}>
             AI 自动总结任务标题

@@ -127,7 +127,7 @@ export function Kanban({
                     onSetDdl={onSetDdl}
                     onRename={onRename}
                     onGenerateTitle={onGenerateTitle}
-                    titleGenerating={titleGeneratingIds?.has(t.id)}
+                    titleGenerating={!!t.titleGenerating || titleGeneratingIds?.has(t.id)}
                     onDelete={onDelete}
                     onOpenContext={onOpenContext}
                   />

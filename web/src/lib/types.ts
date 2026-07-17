@@ -22,6 +22,7 @@ export interface Task {
   status: TaskStatus
   priority: Priority
   summary?: string
+  titleGenerating?: boolean // 港务助手 is generating a better task title
   summarizing?: boolean // 港务助手 is (re)generating this task's 进展摘要 — drives the loading icon
   ddl?: string | null // local YYYY-MM-DD deadline overlay from the backend
   links?: LinkedSession[]
@@ -39,6 +40,7 @@ export interface SessionRow {
   taskId?: string | null
   pinned?: boolean
   titleGenerating?: boolean // server is generating this session's title (shared with the drawer's icon)
+  titleError?: string | null // server surfaced a recent detached title-generation failure
   /** Optimistic in-flight launch placeholder (创建中…) — not yet a real, openable session. */
   pending?: boolean
   pendingOpenable?: boolean

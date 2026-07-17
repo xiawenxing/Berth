@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { withTrustedProject, ensureClaudeTrust, withTrustedCodexProject, ensureCodexTrust } from '../src/pty/trust'
+import { withTrustedProject, ensureClaudeTrust, withTrustedCodexProject, ensureCodexTrust, setAutoTrustWorkspaces } from '../src/pty/trust'
 
 describe('withTrustedProject (pure)', () => {
   it('marks a brand-new project entry as trusted, creating projects map', () => {
@@ -32,6 +32,17 @@ describe('withTrustedProject (pure)', () => {
 })
 
 describe('ensureClaudeTrust (io)', () => {
+  it('does not write either CLI config when automatic trust is disabled', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'berth-trust-disabled-'))
+    const claude = join(dir, 'claude.json')
+    const codex = join(dir, 'config.toml')
+    setAutoTrustWorkspaces(false)
+    ensureClaudeTrust(dir, claude)
+    ensureCodexTrust(dir, codex)
+    expect(existsSync(claude)).toBe(false)
+    expect(existsSync(codex)).toBe(false)
+    setAutoTrustWorkspaces(true)
+  })
   it('seeds the resolved real path and preserves the rest of the file', () => {
     const dir = mkdtempSync(join(tmpdir(), 'berth-trust-'))
     const real = realpathSync(dir)                       // macOS: /tmp → /private/tmp

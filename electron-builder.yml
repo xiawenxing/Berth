@@ -5,6 +5,7 @@ appId: dev.berth.app
 productName: Berth
 directories:
   output: release
+  buildResources: build
 extraMetadata:
   main: electron/main.cjs
 files:
@@ -12,6 +13,7 @@ files:
   - dist/**
   - bin/**        # bin/berth.mjs is the CLI entry the agent shim (src/pty/agent-shim) re-invokes; the
                   # app-spawned `berth` skill resolves it relative to dist/ — without this it's missing
+  - skills/**     # bundled berth-tasks skill; Settings can install/update it for DMG users
   - public/**
   - web/dist/**   # Berth 2.0 React SPA — served at /app; without this the packaged app ships only 1.0
   - package.json
@@ -23,8 +25,11 @@ asarUnpack:
   - "dist/**"
   - "bin/**"      # unpacked alongside dist/** so the shim's `node bin/berth.mjs` → import('../dist/cli.js')
                   # resolves across the asar boundary without mixed asar/unpacked import paths
+  - "skills/**"   # agent skill installs must point at a real filesystem dir; app.asar is not readable
+                  # by external agent processes following symlinks.
   - "public/**"
 mac:
+  icon: build/icon.icns
   target:
     - dmg
     - zip
@@ -46,6 +51,8 @@ mac:
   hardenedRuntime: true
   notarize: true
 win:
+  icon: build/icon.ico
   target: nsis
 linux:
+  icon: build/icon.png
   target: AppImage

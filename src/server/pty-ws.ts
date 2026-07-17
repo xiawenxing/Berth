@@ -1,5 +1,5 @@
 import { WebSocketServer } from 'ws'
-import type { WebSocket } from 'ws'
+import type { RawData, WebSocket } from 'ws'
 import type { IPty } from 'node-pty'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -300,13 +300,27 @@ export function createPtyWss(): WebSocketServer {
       if (wantStream) spawnAndRegisterStream(s)                                 // Model B: stream-json resume (claude/codex/coco)
       else spawnAndRegister(s, { cols, rows })                                 // Model A: TUI resume
     } catch (e: any) { try { ws.send(`\r\n[berth] launch failed: ${e?.message}\r\n`) } catch {} ; ws.close(); return }
-    attachViewer(sessionId, ws, { replayBytes })
+    attachViewer(sessionId, ws, {
+      replayBytes,
+      // The persisted spool is replayed first, then this control frame tells the terminal that the
+      // newly spawned CLI is still restoring. Stream mode has its own history/loading treatment.
+      restoring: wantStream ? undefined : { sessionId, cli: s.cli },
+    })
   })
   return wss
 }
 
 /** Fresh-launch branch: mint id, build manifest, record intent/edge/attach, spawn, and bridge. */
 async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) {
+  let killBeforeAttach = false
+  const notePreAttachKill = (raw: RawData) => {
+    let msg: any
+    try { msg = JSON.parse(raw.toString()) } catch { return }
+    if (msg?.t === 'kill') killBeforeAttach = true
+  }
+  // Fresh launch setup can take long enough for the user to hit Ctrl+C before attachViewer installs
+  // the normal message handler. Preserve that kill request and apply it immediately after register*.
+  ws.on('message', notePreAttachKill)
   const cli = url.searchParams.get('cli') as AgentCli | null
   const launchToken = url.searchParams.get('launchToken') || null
   const todoKey = url.searchParams.get('todoKey') || null
@@ -606,8 +620,16 @@ async function handleFresh(ws: WebSocket, url: URL, cols: number, rows: number) 
   launchDeferred?.resolve(launchResult)
   sendLaunchFrame(ws, launchResult)
   logDiag({ category: 'launch', event: 'launched_frame', launchToken: launchToken ?? undefined, sessionId: launchKey, cli })
+  ws.off('message', notePreAttachKill)
+  if (killBeforeAttach) {
+    logDiag({ category: 'launch', event: 'pre_attach_kill', launchToken: launchToken ?? undefined, sessionId: launchKey, cli })
+    killPty(launchKey)
+    try { ws.close() } catch {}
+    return
+  }
   attachViewer(launchKey, ws, { replayBytes: parsePtyReplayBytes(url.searchParams.get('historyBytes')) })
   } catch (e) {
+    ws.off('message', notePreAttachKill)
     logDiag({ category: 'launch', event: 'error', launchToken: launchToken ?? undefined, cli, level: 'error', message: String((e as any)?.message ?? e) })
     launchDeferred?.reject(e)
     throw e

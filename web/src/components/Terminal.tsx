@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
+import { isSessionTerminateInput } from '@/lib/terminal-shortcuts'
 import { attachImeComposition } from '@/lib/ime-input'
 import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
 import { cliReadiness, shouldMarkLaunchReady, shouldRevealLaunch } from '@/lib/launch-readiness'
@@ -14,6 +15,7 @@ import '@xterm/xterm/css/xterm.css'
 
 const DEFAULT_PTY_HISTORY_BYTES = 16 * 1024 * 1024
 const MAX_PTY_HISTORY_BYTES = 64 * 1024 * 1024
+const RESUME_READY_FALLBACK_MS = 30_000
 
 export type { LaunchSpec }
 
@@ -132,24 +134,33 @@ export function Terminal({
   sessionId,
   launch,
   onLaunched,
+  onTerminateShortcut,
   initialInput,
 }: {
   sessionId?: string
   launch?: LaunchSpec
   onLaunched?: (sessionId: string) => void
+  onTerminateShortcut?: () => void
   /** When resuming (sessionId mode), text submitted to the agent once, after the ws opens. */
   initialInput?: string
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
+  const onTerminateShortcutRef = useRef(onTerminateShortcut)
   const [historyBytes, setHistoryBytes] = useState(DEFAULT_PTY_HISTORY_BYTES)
-  // Three overlay states:
+  // Four overlay states:
   //  - 'opaque' — fresh-launch boot mask; hides the half-built TUI while it's actively streaming.
   //  - 'veil'   — translucent, frosted, CLICK-THROUGH. Shown for a genuinely cold resume (nothing
   //               rendered yet), and for a launch the moment the CLI pauses for the user, so a HITL
   //               prompt is visible and answerable, never trapped.
+  //  - 'restore'— bottom-only status for a cold resume after its old spool has replayed. The old
+  //               terminal remains visible while the newly spawned CLI gets its composer ready.
   //  - 'off'    — hidden.
-  const [overlayMode, setOverlayMode] = useState<'off' | 'opaque' | 'veil'>('off')
+  const [overlayMode, setOverlayMode] = useState<'off' | 'opaque' | 'veil' | 'restore'>('off')
+
+  useEffect(() => {
+    onTerminateShortcutRef.current = onTerminateShortcut
+  }, [onTerminateShortcut])
 
   useEffect(() => {
     const host = hostRef.current
@@ -173,6 +184,13 @@ export function Terminal({
     let stableLaunchTimer: ReturnType<typeof setTimeout> | null = null
     let launchFallbackTimer: ReturnType<typeof setTimeout> | null = null
     let revealTimer: ReturnType<typeof setTimeout> | null = null
+    let terminateRequested = false
+    let terminateClosed = false
+    let remoteExitClosed = false
+    let resumeRestoring = false
+    let resumeCli = ''
+    let resumeReadyTimer: ReturnType<typeof setTimeout> | null = null
+    let resumeFallbackTimer: ReturnType<typeof setTimeout> | null = null
     // Resume mask is ANTI-FLASH: a warm / already-loaded session replays its scrollback in a few ms,
     // so masking it would just flash a veil over content that's already there. Show the veil ONLY if
     // nothing has rendered yet after a short delay (a genuinely cold `--resume` that takes seconds),
@@ -184,8 +202,49 @@ export function Terminal({
         setOverlayMode('veil')
       }
     }, LOADING_OVERLAY_DELAY_MS)
+    const markResumeReady = () => {
+      if (!resumeRestoring) return
+      resumeRestoring = false
+      if (resumeReadyTimer) { clearTimeout(resumeReadyTimer); resumeReadyTimer = null }
+      if (resumeFallbackTimer) { clearTimeout(resumeFallbackTimer); resumeFallbackTimer = null }
+      setOverlayMode('off')
+    }
+    const beginResumeRestore = (cli: string) => {
+      resumeRestoring = true
+      resumeCli = cli
+      if (resumeOverlayTimer) { clearTimeout(resumeOverlayTimer); resumeOverlayTimer = null }
+      if (resumeReadyTimer) { clearTimeout(resumeReadyTimer); resumeReadyTimer = null }
+      if (resumeFallbackTimer) clearTimeout(resumeFallbackTimer)
+      setOverlayMode('restore')
+      resumeFallbackTimer = setTimeout(markResumeReady, RESUME_READY_FALLBACK_MS)
+    }
+    const noteResumeOutput = () => {
+      if (!resumeRestoring) return
+      if (resumeReadyTimer) clearTimeout(resumeReadyTimer)
+      // The restoring control frame is ordered after replay, so every byte observed here came from
+      // the new CLI process. Wait for its output to settle before declaring the composer usable.
+      resumeReadyTimer = setTimeout(markResumeReady, cliReadiness(resumeCli).stableReadyMs)
+    }
     const sendInputNow = (d: string) => {
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d }))
+    }
+    const sendKillAndClose = () => {
+      if (terminateClosed || ws?.readyState !== WebSocket.OPEN) return
+      terminateClosed = true
+      ws.send(JSON.stringify({ t: 'kill' }))
+      window.setTimeout(() => onTerminateShortcutRef.current?.(), 0)
+    }
+    const requestBerthTerminate = () => {
+      if (!terminateRequested) {
+        terminateRequested = true
+        logDiag('connect', 'term_terminate_shortcut', {
+          kind: launch ? 'launch' : 'resume',
+          cli: launch?.cli,
+          sessionId: launch ? undefined : sessionId,
+          launchToken: launch?.launchToken,
+        })
+      }
+      sendKillAndClose()
     }
     const flushQueuedLaunchInput = () => {
       if (!queuedLaunchInput) return
@@ -248,7 +307,7 @@ export function Terminal({
       if (!launch) {
         // First bytes rendered → the session is loaded; cancel / drop the cold-resume veil.
         if (resumeOverlayTimer) { clearTimeout(resumeOverlayTimer); resumeOverlayTimer = null }
-        setOverlayMode('off')
+        if (!resumeRestoring) setOverlayMode('off')
       }
     }
 
@@ -288,10 +347,9 @@ export function Terminal({
     term.loadAddon(fit)
     // Make plain-text URLs clickable. xterm only linkifies OSC-8 escape-sequence links out of the box;
     // most URLs a CLI prints (localhost dashboards, doc/PR links) are plain text and need this addon.
-    // Gate activation on ⌘/Ctrl so a normal click still reaches selection / the TUI's own mouse
-    // handling — matching native-terminal cmd-click muscle memory.
-    term.loadAddon(new WebLinksAddon((e, uri) => {
-      if (!(e.metaKey || e.ctrlKey)) return
+    // Opening via window.open lets Electron route it to the system browser while normal browser dev
+    // gets a new tab.
+    term.loadAddon(new WebLinksAddon((_e, uri) => {
       window.open(uri, '_blank', 'noopener,noreferrer')
     }))
     term.open(host)
@@ -343,6 +401,7 @@ export function Terminal({
     ws.binaryType = 'arraybuffer'
     const diagKind = launch ? 'launch' : 'resume'
     ws.addEventListener('open', () => logDiag('connect', 'term_open', { kind: diagKind, cli: launch?.cli, sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken }), { once: true })
+    ws.addEventListener('open', () => { if (terminateRequested) sendKillAndClose() }, { once: true })
     ws.addEventListener('error', () => logDiag('connect', 'term_error', { kind: diagKind, level: 'error', sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken }), { once: true })
 
     const pasteIsForThisTerminal = (e: Event) => {
@@ -388,8 +447,35 @@ export function Terminal({
       reader.readAsDataURL(file)
     }
     let replayPositionRestored = false
+    let initialResumeBottomRestored = false
+    let userScrolledResumeBeforeRestore = false
+    let resumeBottomFrame: number | null = null
+    let resumeBottomTimer: ReturnType<typeof setTimeout> | null = null
     let suppressHistoryLoadUntil = 0
     let imagePasteHandledAt = 0
+    const noteResumeViewportIntent = () => {
+      if (!launch) userScrolledResumeBeforeRestore = true
+    }
+    const restoreInitialResumeBottom = () => {
+      if (launch || historyBytes > DEFAULT_PTY_HISTORY_BYTES || initialResumeBottomRestored || userScrolledResumeBeforeRestore) return
+      initialResumeBottomRestored = true
+      suppressHistoryLoadUntil = Date.now() + 1000
+      term.scrollToBottom()
+      // Codex resume replays a full-screen TUI and xterm may still be settling/fitting after the
+      // first write callback. Nudge the viewport once more after layout so the composer stays visible.
+      resumeBottomFrame = requestAnimationFrame(() => {
+        resumeBottomFrame = null
+        if (userScrolledResumeBeforeRestore) return
+        term.scrollToBottom()
+      })
+      resumeBottomTimer = setTimeout(() => {
+        resumeBottomTimer = null
+        if (userScrolledResumeBeforeRestore) return
+        term.scrollToBottom()
+      }, 80)
+    }
+    host.addEventListener('wheel', noteResumeViewportIntent, { passive: true })
+    host.addEventListener('touchmove', noteResumeViewportIntent, { passive: true })
     const onPaste = (e: ClipboardEvent) => {
       if (!pasteIsForThisTerminal(e)) return
       const files = clipboardImageFiles(e)
@@ -434,10 +520,17 @@ export function Terminal({
             // the drawer to the real session id.
             logDiag('connect', 'term_launched', { launchToken: launch?.launchToken, sessionId: ctl.sessionId, cli: launch?.cli })
             onLaunched?.(ctl.sessionId)
+            if (terminateRequested) sendKillAndClose()
           } else if (ctl.__berth === 'turnStarted' && launch) {
             // codex's DETERMINISTIC boot-complete signal (server read its rollout task_started). Drop
             // the launch mask exactly when the first turn begins — no output-quiet guessing.
             markLaunchReady()
+          } else if (ctl.__berth === 'restoring' && !launch) {
+            beginResumeRestore(typeof ctl.cli === 'string' ? ctl.cli : '')
+          } else if (ctl.__berth === 'exited' && !remoteExitClosed) {
+            remoteExitClosed = true
+            logDiag('connect', 'term_remote_exit', { kind: diagKind, sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken })
+            window.setTimeout(() => onTerminateShortcutRef.current?.(), 0)
           }
           return // a well-formed control frame is not terminal output
         } catch {
@@ -446,6 +539,7 @@ export function Terminal({
         }
       }
       markDataSeen()
+      noteResumeOutput()
       if (launch) {
         recentLaunchOutput = (recentLaunchOutput + data).slice(-4096)
         lastLaunchDataAt = Date.now()
@@ -458,12 +552,19 @@ export function Terminal({
           replayPositionRestored = true
           suppressHistoryLoadUntil = Date.now() + 1000
           term.scrollToTop()
+          return
         }
+        restoreInitialResumeBottom()
       })
     }
     const disp = term.onData((d) => {
       const userInput = stripTerminalGeneratedInput(d)
-      if (userInput) sendInput(userInput)
+      if (!userInput) return
+      if (isSessionTerminateInput(userInput)) {
+        requestBerthTerminate()
+        return
+      }
+      sendInput(userInput)
     })
     // IME-safe CJK input: bypass xterm's textarea-slicing CompositionHelper (it intermittently
     // drops/duplicates/reorders committed characters) and send the browser's authoritative
@@ -502,10 +603,16 @@ export function Terminal({
       if (launchFallbackTimer) clearTimeout(launchFallbackTimer)
       if (revealTimer) clearTimeout(revealTimer)
       if (resumeOverlayTimer) clearTimeout(resumeOverlayTimer)
+      if (resumeReadyTimer) clearTimeout(resumeReadyTimer)
+      if (resumeFallbackTimer) clearTimeout(resumeFallbackTimer)
+      if (resumeBottomFrame !== null) cancelAnimationFrame(resumeBottomFrame)
+      if (resumeBottomTimer) clearTimeout(resumeBottomTimer)
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
       resizeObserver?.disconnect()
       window.removeEventListener('resize', onResize)
       host.removeEventListener('mousedown', refocus)
+      host.removeEventListener('wheel', noteResumeViewportIntent)
+      host.removeEventListener('touchmove', noteResumeViewportIntent)
       document.removeEventListener('paste', onPaste, true)
       document.removeEventListener('keydown', onKeyDown, true)
       disp.dispose()
@@ -539,6 +646,18 @@ export function Terminal({
           <div className="absolute inset-x-0 bottom-3 flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
             {launch ? '等待 agent 就绪，可直接响应提示…' : '正在恢复会话…'}
+          </div>
+        </div>
+      )}
+      {overlayMode === 'restore' && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3">
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-center gap-2 rounded-full border border-border/80 bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm"
+          >
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-brand" />
+            正在恢复会话，等待输入就绪…
           </div>
         </div>
       )}

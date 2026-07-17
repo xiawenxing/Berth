@@ -4,6 +4,16 @@ import { dirname, join } from 'node:path'
 
 const CLAUDE_CONFIG = join(homedir(), '.claude.json')
 const codexConfig = () => join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'config.toml')
+let autoTrustWorkspaces = true
+
+/** Controls Berth's opt-in compatibility write to the agent CLIs' workspace-trust settings. */
+export function setAutoTrustWorkspaces(enabled: boolean): void {
+  autoTrustWorkspaces = enabled
+}
+
+export function shouldAutoTrustWorkspaces(): boolean {
+  return autoTrustWorkspaces
+}
 
 /**
  * Pure: return `config` with `projects[realCwd].hasTrustDialogAccepted = true`, creating the
@@ -32,6 +42,7 @@ export function withTrustedProject(config: any, realCwd: string): any {
  * Never throws: on any failure the launch proceeds unchanged (claude just shows the dialog as before).
  */
 export function ensureClaudeTrust(cwd: string, configPath: string = CLAUDE_CONFIG): void {
+  if (!autoTrustWorkspaces) return
   try {
     let real = cwd
     try { real = realpathSync(cwd) } catch {}
@@ -70,6 +81,7 @@ export function withTrustedCodexProject(toml: string, realCwd: string): string |
  * still appears with it set). codex keys trust by the RESOLVED real path. Never throws.
  */
 export function ensureCodexTrust(cwd: string, configPath: string = codexConfig()): void {
+  if (!autoTrustWorkspaces) return
   try {
     let real = cwd
     try { real = realpathSync(cwd) } catch {}

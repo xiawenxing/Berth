@@ -12,7 +12,7 @@ vi.mock('../src/pty/binaries', () => ({ resolveAgentBinary: () => '/bin/coco', c
 vi.mock('../src/pty/trust', () => ({ ensureClaudeTrust: () => {}, ensureCodexTrust: () => {} }))
 vi.mock('../src/pty/flag-gate', () => ({ gateArgvForBinary: (_c: string, _b: string, argv: string[]) => ({ argv, dropped: [] }), stripAllDegradable: (_c: string, argv: string[]) => ({ argv, dropped: [] }) }))
 vi.mock('../src/server-address', () => ({ getLocalServerAddress: () => null }))
-vi.mock('../src/pty/coco-hook', () => ({ ensureCocoBerthHook: vi.fn(), writeCocoContextPayload: (p: string) => `${p}.coco.json` }))
+vi.mock('../src/pty/coco-hook', () => ({ ensureCocoBerthHook: vi.fn(), isCocoContextHookEnabled: () => true, writeCocoContextPayload: (p: string) => `${p}.coco.json` }))
 
 beforeEach(() => { childSpawnCalls.length = 0 })
 

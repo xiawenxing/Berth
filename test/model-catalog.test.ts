@@ -7,6 +7,7 @@ describe('pty/model-catalog parsers', () => {
       models: [
         { slug: 'gpt-5.5', display_name: 'GPT-5.5', description: 'Frontier', visibility: 'list', base_instructions: 'large ignored blob' },
         { slug: 'hidden-model', display_name: 'Hidden', visibility: 'hidden' },
+        { slug: 'internal-review', display_name: 'Review', visibility: 'hide' },
       ],
     }))
     expect(models).toEqual([{ id: 'gpt-5.5', label: 'GPT-5.5', description: 'Frontier' }])

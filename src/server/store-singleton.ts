@@ -1,4 +1,3 @@
-import { homedir } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { openStore } from '../db/store'
@@ -19,7 +18,10 @@ import { syncSource } from '../data/sync/engine'
 import { setTaskSessionDigestProvider } from '../data/task-summary'
 import { readTranscript } from './context-consolidate-service'
 import { extractConversation } from '../agent/transcript'
-import { berthHome } from '../paths'
+import { berthAgentCwd, berthHome } from '../paths'
+import { agentStoreRoots } from '../agent-paths'
+import { setAutoTrustWorkspaces } from '../pty/trust'
+import { setCocoHookInstallEnabled } from '../pty/coco-hook'
 import { scanLaunchCallbacks, startLaunchCallbackWatch } from './launch-callback-watch'
 import { codexCallbackDir } from '../pty/launch'
 import { syncRolloutWatch } from './rollout-watch'
@@ -30,6 +32,8 @@ import type { LogicalSession } from '../types'
 const DB_DIR = berthHome()
 mkdirSync(DB_DIR, { recursive: true })
 const store = openStore(join(DB_DIR, 'berth.sqlite'))
+setAutoTrustWorkspaces(store.getSetting('autoTrustWorkspaces') !== '0')
+setCocoHookInstallEnabled(store.getSetting('cocoContextHookEnabled') !== '0')
 
 // Register the store so DocStore consumers far from here (pty-registry) can resolve docsRoot.
 // (Pure reference registration — no DB writes, so importing this module never mutates state.)
@@ -163,11 +167,7 @@ function curatedSessionIds(): Set<string> {
  * preview endpoint (which scans without mutating state) agree on exactly which stores to read.
  */
 export function storeRoots(): { claudeRoot: string; codexRoot: string; cocoRoot: string } {
-  return {
-    claudeRoot: join(homedir(), '.claude', 'projects') + '/',
-    codexRoot: join(homedir(), '.codex') + '/',
-    cocoRoot: join(homedir(), 'Library', 'Caches', 'coco') + '/',
-  }
+  return agentStoreRoots()
 }
 
 /**
@@ -183,16 +183,16 @@ export function storeRoots(): { claudeRoot: string; codexRoot: string; cocoRoot:
  */
 export function refreshSessions(): LogicalSession[] {
   const all = collectLogicalSessions(storeRoots())
-  cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet())
+  cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet(), [berthAgentCwd()])
   store.upsertSessions(cache)
   // Reconcile over the UNFILTERED scan, not `cache`: a fresh codex launch is bound=0 / unattached /
   // not yet session-imported, and its cwd is no longer an import root — so it's absent from `cache`.
   // Passing `cache` would mean reconcile never finds it → never binds → never surfaces (deadlock).
   // reconcile constrains candidates by intent cwd/cli/time internally, so the wider input is safe;
   // once bound it enters allBoundLaunchSessionIds → curated → surfaces on the next refresh.
-  const bound = reconcileLaunchIntents(store, all)
+  const bound = reconcileLaunchIntents(store, all, { hasLivePty })
   if (bound > 0) {
-    cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet())
+    cache = filterImportedSessions(all, importRoots(), curatedSessionIds(), store.allHiddenSessionSet(), [berthAgentCwd()])
     store.upsertSessions(cache)
   }
   // P2b: drop never-bound codex intents that never produced a session_meta and whose pty is gone, so a

@@ -1,10 +1,11 @@
 import { describe, it, expect, afterAll, afterEach, vi, beforeEach } from 'vitest'
 import type { Server } from 'node:http'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const mockExecFile = vi.hoisted(() => vi.fn())
+const mockGenerateTitle = vi.hoisted(() => vi.fn(async (..._a: any[]) => 'mocked title'))
 const mockGenerateTaskTitle = vi.hoisted(() => vi.fn(async (..._a: any[]) => '智能任务标题'))
 const mockGetAgentModelCatalogs = vi.hoisted(() => vi.fn(async (..._a: any[]) => [
   { cli: 'codex', ok: true, source: 'cli', models: [{ id: 'gpt-5.5', label: 'GPT-5.5' }] },
@@ -116,7 +117,7 @@ vi.mock('../src/data/projects', () => ({
 
 // ── Mock agent modules ────────────────────────────────────────────────────────
 vi.mock('../src/agent/index', () => ({
-  generateTitle: vi.fn(async () => 'mocked title'),
+  generateTitle: (...a: any[]) => mockGenerateTitle(...a),
   generateTaskTitle: (...a: any[]) => mockGenerateTaskTitle(...a),
   parseStructuredSummary: vi.fn((raw: string) => ({ headline: raw, progress: [], milestones: [] })),
 }))
@@ -172,7 +173,7 @@ vi.mock('../src/data/doc-git', async (importOriginal) => ({
 
 import { createApp } from '../src/server/index'
 // pty-registry is NOT mocked here — drive the real singleton so /api/sessions reflects live activity.
-import { registerPty, killPty } from '../src/server/pty-registry'
+import { registerPty, killPty, hasLivePty } from '../src/server/pty-registry'
 import { InternalAgentBlocked } from '../src/agent/agent-failure'
 
 let server: Server
@@ -197,6 +198,7 @@ beforeEach(() => {
   mockListTasks.mockReturnValue([])
   mockCreateTask.mockResolvedValue({ status: 'created', record: { id: 'r', title: 'test', project: 'Berth' } })
   mockUpdateTask.mockClear()
+  mockGenerateTitle.mockReset().mockResolvedValue('mocked title')
   mockGenerateTaskTitle.mockReset().mockResolvedValue('智能任务标题')
   mockGetAgentModelCatalogs.mockReset().mockResolvedValue([
     { cli: 'codex', ok: true, source: 'cli', models: [{ id: 'gpt-5.5', label: 'GPT-5.5' }] },
@@ -378,6 +380,8 @@ describe('session removal API (detach / un-import)', () => {
   })
 
   it('un-imports sessions (remove visible/organized signals + detach)', async () => {
+    registerPty('s1', fakePty())
+    expect(hasLivePty('s1')).toBe(true)
     const port = await listen()
     const r = await fetch(`http://localhost:${port}/api/session-import/remove`, {
       method: 'POST', headers: J, body: JSON.stringify({ ids: ['s1'] }),
@@ -389,6 +393,7 @@ describe('session removal API (detach / un-import)', () => {
     expect(mockSetAttach).toHaveBeenCalledWith('s1', null, 'confirmed')
     expect(mockRemoveLaunchIntentsForSession).toHaveBeenCalledWith('s1')
     expect(mockHideSession).toHaveBeenCalledWith('s1')
+    expect(hasLivePty('s1')).toBe(false)
   })
 
   it('rejects un-import with no ids', async () => {
@@ -401,6 +406,21 @@ describe('session removal API (detach / un-import)', () => {
 })
 
 describe('settings API – task status/priority vocabularies', () => {
+  it('persists the automatic workspace-trust preference', async () => {
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/settings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ autoTrustWorkspaces: false }),
+    })
+    expect((await r.json() as any).autoTrustWorkspaces).toBe(false)
+    const next = await fetch(`http://localhost:${port}/api/settings`)
+    expect((await next.json() as any).autoTrustWorkspaces).toBe(false)
+    await fetch(`http://localhost:${port}/api/settings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ autoTrustWorkspaces: true }),
+    })
+  })
+
   it('GET /settings returns default statuses + priorities when unset', async () => {
     const port = await listen()
     const r = await fetch(`http://localhost:${port}/api/settings`)
@@ -432,6 +452,51 @@ describe('settings API – task status/priority vocabularies', () => {
     })
     expect(r.status).toBe(400)
     expect(((await r.json()) as any).error).toBeTruthy()
+  })
+
+  it('POST /settings migrates docsRoot before switching the setting', async () => {
+    const oldRoot = mkdtempSync(join(tmpdir(), 'berth-api-docs-old-'))
+    const newRoot = mkdtempSync(join(tmpdir(), 'berth-api-docs-new-'))
+    rmSync(newRoot, { recursive: true, force: true })
+    tmpRoots.push(oldRoot, newRoot)
+    mkdirSync(join(oldRoot, 'projects/Berth'), { recursive: true })
+    writeFileSync(join(oldRoot, 'projects/Berth/index.md'), '# project')
+    mockSettings.set('docsRoot', oldRoot)
+
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/settings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ docsRoot: newRoot }),
+    })
+    const j = await r.json() as any
+
+    expect(r.status).toBe(200)
+    expect(j.docsRoot).toBe(newRoot)
+    expect(j.docsMigration.copied).toBe(1)
+    expect(readFileSync(join(newRoot, 'projects/Berth/index.md'), 'utf8')).toBe('# project')
+  })
+
+  it('POST /settings refuses docsRoot switch when migration has conflicts', async () => {
+    const oldRoot = mkdtempSync(join(tmpdir(), 'berth-api-docs-old-'))
+    const newRoot = mkdtempSync(join(tmpdir(), 'berth-api-docs-new-'))
+    tmpRoots.push(oldRoot, newRoot)
+    mkdirSync(join(oldRoot, 'projects/Berth'), { recursive: true })
+    mkdirSync(join(newRoot, 'projects/Berth'), { recursive: true })
+    writeFileSync(join(oldRoot, 'projects/Berth/index.md'), '# old')
+    writeFileSync(join(newRoot, 'projects/Berth/index.md'), '# new')
+    mockSettings.set('docsRoot', oldRoot)
+
+    const port = await listen()
+    const r = await fetch(`http://localhost:${port}/api/settings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ docsRoot: newRoot }),
+    })
+    const j = await r.json() as any
+
+    expect(r.status).toBe(409)
+    expect(j.docsMigration.conflicts).toEqual(['projects/Berth/index.md'])
+    expect(mockSettings.get('docsRoot')).toBe(oldRoot)
+    expect(existsSync(join(newRoot, 'projects/Berth/index.md'))).toBe(true)
   })
 })
 
@@ -535,6 +600,27 @@ describe('/api/sessions – live activity field (always)', () => {
     expect(after.find(s => s.sessionId === 's-live-1')?.activity).toBe('running')
 
     killPty('s-live-1')
+  })
+
+  it('reports a short-lived titleError when detached title generation fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'berth-title-'))
+    tmpRoots.push(root)
+    const transcript = join(root, 'session.jsonl')
+    writeFileSync(transcript, '{"type":"user","message":{"content":"please fix title generation"}}\n')
+    mockGenerateTitle.mockRejectedValueOnce(new InternalAgentBlocked('auth', 'codex', 'not logged in'))
+    mockGetCache.mockReturnValue([
+      { sessionId: 's-title-fail', cli: 'codex', cwd: '/x', title: 'old', updatedAt: 100, deleted: false, copies: [], contentSourcePath: transcript },
+    ])
+    const port = await listen()
+
+    const kicked = await fetch(`http://localhost:${port}/api/sessions/s-title-fail/title`, { method: 'POST' })
+    expect(kicked.status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const sessions = await (await fetch(`http://localhost:${port}/api/sessions`)).json() as any[]
+    expect(sessions.find((s) => s.sessionId === 's-title-fail')?.titleGenerating).toBe(false)
+    expect(sessions.find((s) => s.sessionId === 's-title-fail')?.titleError).toContain('codex login')
   })
 })
 
@@ -705,22 +791,32 @@ describe('POST /api/todos', () => {
     expect(res.status).toBe(502)
   })
 
-  it('forwards projectId, confirm, createOption, and autoTitle from body', async () => {
+  it('creates immediately with raw title options and runs autoTitle in the background', async () => {
     const port = await listen()
     const base = `http://localhost:${port}/api`
 
     mockCreateTask.mockResolvedValueOnce({ status: 'created', record: { id: 'r2', title: 'x', project: 'P' } })
+    mockListTasks.mockReturnValue([{ id: 'r2', title: 'x', status: '待办', priority: 'P1', projectId: 'P', project: 'P', progress: null, detailDoc: null }])
+    let resolveTitle!: (title: string) => void
+    mockGenerateTaskTitle.mockReturnValueOnce(new Promise<string>((resolve) => { resolveTitle = resolve }))
 
-    await fetch(`${base}/todos`, {
+    const res = await fetch(`${base}/todos`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'x', projectId: 'P', confirm: true, createOption: false, autoTitle: true }),
     })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ status: 'created', record: { id: 'r2', title: 'x', project: 'P' } })
     // createTask(store, docStore, text, opts)
     expect(mockCreateTask).toHaveBeenCalledWith(
       expect.anything(), expect.anything(), 'x',
-      expect.objectContaining({ projectId: 'P', confirm: true, createOption: false, autoTitle: true }),
+      expect.objectContaining({ projectId: 'P', confirm: true, createOption: false, autoTitle: false }),
     )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockGenerateTaskTitle).toHaveBeenCalled()
+    resolveTitle('异步生成标题')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockUpdateTask).toHaveBeenCalledWith(expect.anything(), 'r2', { title: '异步生成标题' })
   })
 })
 
@@ -949,6 +1045,26 @@ describe('POST /api/todos/from-session', () => {
     })
     expect(res.status).toBe(422)
     expect(await res.json()).toEqual({ error: 'empty session content' })
+  })
+
+  it('maps an InternalAgentBlocked title agent failure to 409 {blocked,cli,hint}', async () => {
+    mockGetCache.mockReturnValue([
+      { sessionId: 'sess-1', cli: 'claude', cwd: '/x', title: 't', updatedAt: 100, deleted: false, copies: [], contentSourcePath: '/x.jsonl' },
+    ])
+    mockExtractConversation.mockReturnValueOnce('USER: fix the menu')
+    mockGenerateTaskTitle.mockRejectedValueOnce(new InternalAgentBlocked('auth', 'codex', 'not logged in'))
+    const port = await listen()
+
+    const res = await fetch(`http://localhost:${port}/api/todos/from-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'sess-1' }),
+    })
+
+    expect(res.status).toBe(409)
+    const body = await res.json() as any
+    expect(body.blocked).toBe('auth')
+    expect(body.cli).toBe('codex')
+    expect(body.hint).toContain('codex login')
   })
 })
 

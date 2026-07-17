@@ -1,19 +1,110 @@
 import { homedir } from 'node:os'
-import { existsSync } from 'node:fs'
+import { accessSync, constants, readdirSync, statSync } from 'node:fs'
 import { execFile, execFileSync } from 'node:child_process'
+import { delimiter, join } from 'node:path'
 import type { AgentCli } from '../types'
 
 const BLACKLIST = new Set(['/usr/local/bin/trae'])   // Trae CN IDE launcher, NOT the agent
-const CANDIDATES: Record<AgentCli, string[]> = {
-  claude: [homedir() + '/.local/bin/claude', homedir() + '/.claude/local/claude', '/Applications/cmux.app/Contents/Resources/bin/claude', '/opt/homebrew/bin/claude', 'claude'],
-  codex:  [homedir() + '/.local/bin/codex', '/Applications/Codex.app/Contents/Resources/codex', '/opt/homebrew/bin/codex', 'codex'],
-  coco:   [homedir() + '/.local/bin/coco'],
+
+export interface BinarySearchOptions {
+  home?: string
+  path?: string
+  env?: NodeJS.ProcessEnv
+  appCandidates?: Partial<Record<AgentCli, string[]>>
 }
 
-export function firstUsableCandidate(cli: AgentCli): string | null {
-  for (const c of CANDIDATES[cli]) {
-    if (BLACKLIST.has(c)) continue
-    if (c.startsWith('/') ? existsSync(c) : true) return c
+const DEFAULT_APP_CANDIDATES: Partial<Record<AgentCli, string[]>> = {
+  claude: ['/Applications/cmux.app/Contents/Resources/bin/claude'],
+  // Codex Desktop used this path historically; current desktop bundles may live in ChatGPT.app.
+  codex: [
+    '/Applications/Codex.app/Contents/Resources/codex',
+    '/Applications/ChatGPT.app/Contents/Resources/codex',
+  ],
+}
+
+function isExecutable(path: string): boolean {
+  if (BLACKLIST.has(path)) return false
+  try {
+    if (!statSync(path).isFile()) return false
+    accessSync(path, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function pathCandidates(name: string, pathValue: string): string[] {
+  return pathValue.split(delimiter).filter(Boolean).map(dir => join(dir, name))
+}
+
+/**
+ * Discover binaries installed under NVM even when Berth itself was launched outside an NVM shell.
+ * GUI apps and long-running dev servers commonly have a PATH captured before `codex update` moves the
+ * npm shim into ~/.nvm/versions/node/<version>/bin. Prefer newer Node dirs, but keep walking until an
+ * executable is found because the CLI may only be installed in an older active Node version.
+ */
+function nvmCandidates(home: string, name: string): string[] {
+  const root = join(home, '.nvm', 'versions', 'node')
+  let versions: string[]
+  try {
+    versions = readdirSync(root, { withFileTypes: true })
+      .filter(e => e.isDirectory())
+      .map(e => e.name)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }))
+  } catch {
+    return []
+  }
+  return versions.map(version => join(root, version, 'bin', name))
+}
+
+function managedCandidates(home: string, name: string): string[] {
+  return [
+    join(home, '.volta', 'bin', name),
+    join(home, '.asdf', 'shims', name),
+    join(home, '.local', 'share', 'mise', 'shims', name),
+    join(home, '.bun', 'bin', name),
+    join(home, 'Library', 'pnpm', name),
+    join(home, '.local', 'share', 'pnpm', name),
+    ...nvmCandidates(home, name),
+  ]
+}
+
+function candidatePaths(cli: AgentCli, opts: BinarySearchOptions): string[] {
+  const home = opts.home ?? homedir()
+  const pathValue = opts.path ?? process.env.PATH ?? ''
+  const env = opts.env ?? process.env
+  const apps = opts.appCandidates ?? DEFAULT_APP_CANDIDATES
+  if (cli === 'coco') {
+    const configured = env.BERTH_COCO_BIN?.trim()
+    return [
+      ...(configured ? [configured] : []),
+      join(home, '.local', 'bin', 'coco'),
+      ...pathCandidates(cli, pathValue),
+      ...managedCandidates(home, cli),
+      `/opt/homebrew/bin/${cli}`,
+      `/usr/local/bin/${cli}`,
+    ]
+  }
+
+  const local = cli === 'claude'
+    ? [join(home, '.local', 'bin', cli), join(home, '.claude', 'local', 'claude')]
+    : [join(home, '.local', 'bin', cli)]
+  return [
+    ...local,
+    ...pathCandidates(cli, pathValue),
+    ...managedCandidates(home, cli),
+    `/opt/homebrew/bin/${cli}`,
+    `/usr/local/bin/${cli}`,
+    ...(apps[cli] ?? []),
+  ]
+}
+
+export function firstUsableCandidate(cli: AgentCli, opts: BinarySearchOptions = {}): string | null {
+  const seen = new Set<string>()
+  for (const c of candidatePaths(cli, opts)) {
+    if (seen.has(c)) continue
+    seen.add(c)
+    if (isExecutable(c)) return c
   }
   return null
 }
@@ -38,7 +129,7 @@ export function execVersion(bin: string, timeout: number): Promise<string> {
 
 export function resolveAgentBinary(cli: AgentCli): string {
   const c = firstUsableCandidate(cli)
-  if (!c) throw new Error(`no binary for ${cli}`)
+  if (!c) throw new Error(`no executable binary found for ${cli} (checked PATH and common install locations)`)
   if (cli === 'coco') {
     if (!verifyCoco(c)) throw new Error('resolved coco binary failed identity check')
   }

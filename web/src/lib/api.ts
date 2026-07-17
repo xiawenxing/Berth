@@ -29,6 +29,7 @@ export interface ApiTask {
   detailDoc?: string | null
   ddl?: string | null
   sessions?: string[]
+  titleGenerating?: boolean // server is asynchronously generating this task's title
   summarizing?: boolean // server is regenerating this task's progress summary right now
 }
 
@@ -52,6 +53,7 @@ export interface ApiSession {
   activity?: string | null
   deleted?: boolean
   titleGenerating?: boolean // server is generating this session's title right now (drives the spinner)
+  titleError?: string | null // short-lived failure hint from detached title generation
   /** Server-side in-flight launch: a live PTY that hasn't written its jsonl yet, surfaced so a closed
    *  drawer / page reload keeps it (reopening reattaches to the same process). Shown as 启动中…. */
   launching?: boolean
@@ -100,9 +102,60 @@ export interface AgentModelCatalog {
 }
 
 export interface ApiSettings {
+  docsRoot?: string
+  homeDir?: string
+  autoTrustWorkspaces?: boolean
+  cocoContextHookEnabled?: boolean
   priorities?: string[]
   statuses?: string[]
   agents?: AgentConfig
+}
+
+export interface DocsRootMigrationResult {
+  from: string
+  to: string
+  changed: boolean
+  copied: number
+  unchanged: number
+  conflicts: string[]
+}
+
+export type IntegrationState = 'current' | 'missing' | 'outdated'
+
+export interface AgentIntegrationStatus {
+  currentVersion: string
+  cli: {
+    state: IntegrationState
+    currentVersion: string
+    installedVersion: string | null
+    path: string
+    pathInEnv: boolean
+    managed: boolean
+  }
+  skills: {
+    state: IntegrationState
+    bundled: boolean
+    targets: { agent: string; dir: string; state: IntegrationState }[]
+  }
+  needsAction: boolean
+}
+
+export interface AgentIntegrationInstallResult {
+  status: AgentIntegrationStatus
+  cliPath: string
+  skillResults: {
+    skillsCli: { ok: boolean; installed: string[]; error: string | null }
+    fallback: { agent: string; installed: string[]; skipped: string[] }[]
+  }
+}
+
+export interface AppUpdateStatus {
+  currentVersion: string
+  latestVersion: string | null
+  updateAvailable: boolean
+  releaseUrl: string | null
+  checkedAt: number | null
+  error?: string | null
 }
 
 export interface PreviewSession {
@@ -136,8 +189,19 @@ async function send(method: string, url: string, body?: unknown): Promise<any> {
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`${method} ${url} → ${res.status}`)
-  return res.json().catch(() => ({}))
+  const payload = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg = typeof payload?.hint === 'string'
+      ? payload.hint
+      : typeof payload?.error === 'string'
+        ? payload.error
+        : `${method} ${url} → ${res.status}`
+    const err = new Error(msg) as Error & { payload?: any; status?: number }
+    err.payload = payload
+    err.status = res.status
+    throw err
+  }
+  return payload
 }
 
 export const api = {
@@ -154,8 +218,12 @@ export const api = {
   resolveLaunches: () => send('POST', '/api/launches/resolve') as Promise<ApiSession[]>,
   // Task-field vocabularies (ordered priority + status lists, user-configurable in Settings).
   settings: () => getJSON<ApiSettings>('/api/settings'),
-  saveSettings: (patch: { priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig> }) => send('POST', '/api/settings', patch),
+  saveSettings: (patch: { docsRoot?: string; priorities?: string[]; statuses?: string[]; agents?: Partial<AgentConfig>; autoTrustWorkspaces?: boolean; cocoContextHookEnabled?: boolean }) =>
+    send('POST', '/api/settings', patch) as Promise<ApiSettings & { ok?: boolean; docsMigration?: DocsRootMigrationResult | null }>,
   agentModels: () => getJSON<{ catalogs: AgentModelCatalog[] }>('/api/agent-models'),
+  appUpdate: () => getJSON<AppUpdateStatus>('/api/app-update'),
+  agentIntegration: () => getJSON<AgentIntegrationStatus>('/api/agent-integration'),
+  installAgentIntegration: () => send('POST', '/api/agent-integration/install', {}) as Promise<AgentIntegrationInstallResult>,
   // Structured codex-style chat turns for a real session's drawer/right-pane.
   transcript: (sessionId: string) =>
     getJSON<{ turns: TranscriptTurn[] }>(`/api/sessions/${sessionId}/transcript`),
@@ -179,7 +247,7 @@ export const api = {
   createTaskFromSession: (sessionId: string, projectId?: string) =>
     send('POST', '/api/todos/from-session', { sessionId, projectId }),
   // Native macOS folder picker → absolute path (or cancelled).
-  pickFolder: () => send('POST', '/api/pick-folder', {}) as Promise<{ path?: string; cancelled?: boolean }>,
+  pickFolder: (def?: string) => send('POST', '/api/pick-folder', def ? { default: def } : {}) as Promise<{ path?: string; cancelled?: boolean }>,
   // Ask the host (this Berth server, on the user's machine) to open a local-file link with the OS
   // default app — browsers block file:// / absolute-path navigation from an http page. Unlike `send`
   // (which throws on non-2xx and drops the body), this resolves the structured {ok,error} body even

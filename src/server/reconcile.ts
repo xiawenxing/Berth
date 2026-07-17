@@ -23,11 +23,16 @@ function normPath(p: string): string {
  *   - session not already edge-bound (todoKeyForSession === null)
  *   - session not already attached (getAttach === null)
  *   - session not already claimed by a previous intent in this same pass
+ *   - in production, the intent's live pty is still present
  *
  * Among candidates pick the one with the highest updatedAt. If none found, the
  * intent stays pending and will be retried on the next refresh.
  */
-export function reconcileLaunchIntents(store: Store, cache: LogicalSession[]): number {
+export function reconcileLaunchIntents(
+  store: Store,
+  cache: LogicalSession[],
+  deps: { hasLivePty?: (key: string) => boolean } = {},
+): number {
   const pending = store.pendingIntents()
     .filter(i => i.cli === 'codex')
     .sort((a, b) => b.createdAt - a.createdAt)
@@ -39,6 +44,9 @@ export function reconcileLaunchIntents(store: Store, cache: LogicalSession[]): n
   let bound = 0
 
   for (const intent of pending) {
+    // The cwd/time fallback is intentionally approximate. Once the launch pty is gone, keeping the
+    // intent eligible lets it steal a later same-cwd Codex session and resurrect a ghost task edge.
+    if (deps.hasLivePty && !deps.hasLivePty(intent.id)) continue
     const normIntentCwd = normPath(intent.cwd)
 
     const candidates = cache.filter(s => {

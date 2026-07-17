@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
 import { getStore, getCache, visibleSessions, refresh, refreshSessions, storeRoots } from './store-singleton'
 import { collectLogicalSessions } from '../sessions'
 import { toPreview, previewByCli, previewByIds } from './import-preview'
@@ -11,6 +12,7 @@ import { generateAndApplyTaskTitle } from '../data/task-title'
 import { triggerTaskSummary, isSummarizingTask } from '../data/task-summary'
 import { triggerProjectSummary, isSummarizingProject } from '../data/project-summary'
 import { getDocStore, getDocsRoot } from '../data/docstore'
+import { DocsRootMigrationConflict, migrateDocsRoot } from '../data/docs-root-migration'
 import { getTaskFieldConfig, setTaskFieldConfig } from '../data/task-config'
 import { getAgentConfig, setAgentConfig, resolveBerthAgent } from '../data/agent-config'
 import { getLocale, normalizeLocale, LOCALES, contextStrings } from '../i18n'
@@ -26,11 +28,11 @@ import { createTaskFromSession } from '../data/task-from-session'
 import { parseStructuredSummary } from '../agent/index'
 import { summarizeCompactedContext } from '../agent/context-compact'
 import { isInternalAgentBlocked, agentBlockHint } from '../agent/agent-failure'
-import { isGeneratingTitle, triggerSessionTitle, titleGist } from './title-service'
+import { isGeneratingTitle, triggerSessionTitle, titleError, titleGist } from './title-service'
 import type { Locale } from '../i18n'
 import { readFileSync, statSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { snapshotActivity, liveCount } from './pty-registry'
+import { snapshotActivity, liveCount, killPty } from './pty-registry'
 import { ingestDiag, collectDiagForExport, logDiag } from './diag'
 import { getAgentModelCatalogs } from '../pty/model-catalog'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
@@ -41,6 +43,10 @@ import { revertCommit } from '../data/doc-git'
 import { berthAgentCwd, berthHome } from '../paths'
 import { broadcastDataChanged } from './status-ws'
 import { compactTitle, TASK_CREATE_INPUT_MAX_CHARS } from '../title-limits'
+import { getAgentIntegrationStatus, installAgentIntegration } from '../agent-integration'
+import { getAppUpdateStatus } from '../app-update'
+import { setAutoTrustWorkspaces } from '../pty/trust'
+import { setCocoHookInstallEnabled } from '../pty/coco-hook'
 
 function isFolderPickerCancelled(err: unknown, stderr = ''): boolean {
   const e = err as { message?: unknown; stderr?: unknown }
@@ -51,6 +57,37 @@ function isFolderPickerCancelled(err: unknown, stderr = ''): boolean {
 function truncate(s: string | null, max: number): string | null {
   if (!s) return null
   return s.length <= max ? s : s.slice(0, max) + '…'
+}
+
+const generatingTaskTitles = new Set<string>()
+
+function isGeneratingTaskTitle(taskId: string): boolean {
+  return generatingTaskTitles.has(taskId)
+}
+
+function triggerTaskTitleGeneration(store: ReturnType<typeof getStore>, taskId: string): boolean {
+  if (!taskId || generatingTaskTitles.has(taskId)) return false
+  generatingTaskTitles.add(taskId)
+  Promise.resolve().then(async () => {
+    try {
+      const task = listTasks(store).find(t => t.id === taskId)
+      if (!task) return
+      const linkedIds = store.edgesByTodo().get(task.id) ?? []
+      const overrides = store.allTitleOverrides()
+      const cacheById = new Map(getCache().map(s => [s.sessionId, s]))
+      const sessions = linkedIds.map(id => {
+        const s = cacheById.get(id)
+        return { id, title: overrides.get(id) ?? s?.title ?? null }
+      })
+      await generateAndApplyTaskTitle(store, getDocStore(store), task.id, sessions, resolveBerthAgent(store))
+    } catch {
+      // Best-effort background title generation: creation and launch must never depend on this.
+    } finally {
+      generatingTaskTitles.delete(taskId)
+      broadcastDataChanged()
+    }
+  })
+  return true
 }
 
 function contextAgentError(error: unknown) {
@@ -79,6 +116,7 @@ export interface ApiSession {
   todoKey?: string | null
   activity: 'running' | 'settled' | null   // live PTY status (null = no live process / external session)
   titleGenerating?: boolean                // 港务助手 is generating this session's title right now
+  titleError?: string | null                // short-lived failure hint from detached title generation
   launching?: boolean                      // in-flight fresh launch: live PTY but no jsonl on disk yet
 }
 
@@ -150,6 +188,7 @@ function serialize(): ApiSession[] {
     todoKey: reverseMap.get(s.sessionId) ?? null,
     activity: activityMap.get(s.sessionId) ?? null,
     titleGenerating: isGeneratingTitle(s.sessionId),   // drives the live spinner on the generate-title icon
+    titleError: titleError(s.sessionId),   // drives a visible retry/failure state when the detached run fails
     launching: s.launching,   // in-flight launch surfaced from the live-PTY arm (undefined for real rows)
     }
   }).sort((a, b) => b.updatedAt - a.updatedAt)
@@ -158,6 +197,23 @@ function serialize(): ApiSession[] {
 export const api = Router()
 api.get('/health', (_req, res) => {
   res.json({ berth: true, version: process.env.npm_package_version ?? null, berthHome: berthHome(), pid: process.pid })
+})
+api.get('/app-update', async (_req, res) => {
+  res.json(await getAppUpdateStatus())
+})
+api.get('/agent-integration', (_req, res) => {
+  try {
+    res.json(getAgentIntegrationStatus())
+  } catch (e: any) {
+    res.status(500).json({ error: String(e?.message ?? e) })
+  }
+})
+api.post('/agent-integration/install', async (_req, res) => {
+  try {
+    res.json(await installAgentIntegration())
+  } catch (e: any) {
+    res.status(500).json({ error: String(e?.message ?? e) })
+  }
 })
 api.get('/sessions', (_req, res) => res.json(serialize()))
 api.post('/refresh', (_req, res) => { refresh(); res.json({ ok: true, count: getCache().length }) })
@@ -277,13 +333,14 @@ api.post('/todos/from-session', async (req, res) => {
     broadcastDataChanged()
     res.json(result)
   } catch (e: any) {
-    res.status(502).json({ error: String(e?.message ?? e) })
+    return sendAgentError(res, e, getLocale(getStore()))
   }
 })
 
 // Native macOS folder picker (the browser can't expose absolute paths). Returns the chosen
 // absolute path, or { cancelled: true } if the user cancels / no GUI is available.
 api.post('/pick-folder', (req, res) => {
+  if (process.platform !== 'darwin') return res.status(501).json({ cancelled: true, unsupported: true, error: 'native folder picker is currently available on macOS only; enter the path manually' })
   const def = typeof req.body?.default === 'string' ? req.body.default : ''
   // `choose folder` returns an alias; `POSIX path of` yields the absolute path (trailing slash).
   const loc = def ? ` default location (POSIX file ${JSON.stringify(def)})` : ''
@@ -547,12 +604,14 @@ api.post('/sessions/detach', (req, res) => {
   res.json({ ok: true, count: getCache().length })
 })
 
-// 取消导入：撤销 Berth 侧可见/组织信号。不会删除磁盘上的 CLI 会话文件。
+// 取消导入：撤销 Berth 侧可见/组织信号，并终止 Berth 为该会话保活的进程。
+// 不会删除磁盘上的 CLI 会话文件；下次重新导入并打开会重新 `resume` 最新 transcript。
 api.post('/session-import/remove', (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : []
   if (!ids.length) return res.status(400).json({ error: 'ids:string[] required' })
   const store = getStore()
   for (const id of ids) {
+    killPty(id)
     store.removeSessionImport(id)
     store.removeEdgesForSession(id)
     store.setPin(id, false)
@@ -731,6 +790,7 @@ api.get('/todos', (_req, res) => {
     detailDoc: t.detailDoc, progress: truncate(t.progress, 300),
     ddl: ddlMap.get(t.id) ?? null,
     sessions: edgesMap.get(t.id) ?? [],
+    titleGenerating: isGeneratingTaskTitle(t.id), // drives auto-title loading after immediate create
     summarizing: isSummarizingTask(t.id),   // drives the card's 摘要 loading icon
   }))
   res.json({ error: null, todos })
@@ -763,7 +823,8 @@ api.post('/todos', async (req, res) => {
   try {
     const store = getStore()
     const imgs = Array.isArray(images) ? images.filter((s: any) => typeof s === 'string') : undefined
-    const result = await createTask(store, getDocStore(store), text, { projectId, confirm, createOption, images: imgs, autoTitle: autoTitle === true })
+    const result = await createTask(store, getDocStore(store), text, { projectId, confirm, createOption, images: imgs, autoTitle: false })
+    if (autoTitle === true && result.status === 'created') triggerTaskTitleGeneration(store, result.record.id)
     broadcastDataChanged()
     res.json(result)
   } catch (e: any) {
@@ -941,22 +1002,37 @@ api.delete('/data-sources/:id', (req, res) => {
 // ── App settings (docsRoot, locale, task status/priority vocabularies, …) ──
 api.get('/settings', (_req, res) => {
   const store = getStore()
-  res.json({ docsRoot: getDocsRoot(store), locale: getLocale(store), locales: LOCALES, ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
+  res.json({ homeDir: homedir(), docsRoot: getDocsRoot(store), locale: getLocale(store), locales: LOCALES, ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store), autoTrustWorkspaces: store.getSetting('autoTrustWorkspaces') !== '0', cocoContextHookEnabled: store.getSetting('cocoContextHookEnabled') !== '0' })
 })
 
 api.post('/settings', (req, res) => {
-  const { docsRoot, locale, statuses, priorities, agents, context } = req.body ?? {}
+  const { docsRoot, locale, statuses, priorities, agents, context, autoTrustWorkspaces, cocoContextHookEnabled } = req.body ?? {}
   const store = getStore()
-  if (typeof docsRoot === 'string' && docsRoot.trim()) store.setSetting('docsRoot', docsRoot.trim())
-  if (typeof locale === 'string') store.setSetting('locale', normalizeLocale(locale))
+  let docsMigration = null
   try {
+    if (typeof docsRoot === 'string' && docsRoot.trim()) docsMigration = migrateDocsRoot(store, docsRoot)
+    if (typeof locale === 'string') store.setSetting('locale', normalizeLocale(locale))
     if (statuses !== undefined || priorities !== undefined) setTaskFieldConfig(store, { statuses, priorities })
     if (agents !== undefined) setAgentConfig(store, agents)
     if (context !== undefined) setContextConfig(store, context)
+    if (typeof autoTrustWorkspaces === 'boolean') {
+      store.setSetting('autoTrustWorkspaces', autoTrustWorkspaces ? '1' : '0')
+      setAutoTrustWorkspaces(autoTrustWorkspaces)
+    }
+    if (typeof cocoContextHookEnabled === 'boolean') {
+      store.setSetting('cocoContextHookEnabled', cocoContextHookEnabled ? '1' : '0')
+      setCocoHookInstallEnabled(cocoContextHookEnabled)
+    }
   } catch (e: any) {
+    if (e instanceof DocsRootMigrationConflict) {
+      return res.status(409).json({
+        error: 'docsRoot migration conflict',
+        docsMigration: e.result,
+      })
+    }
     return res.status(400).json({ error: e?.message || 'invalid settings' })
   }
-  res.json({ ok: true, docsRoot: getDocsRoot(store), locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store) })
+  res.json({ ok: true, homeDir: homedir(), docsRoot: getDocsRoot(store), docsMigration, locale: getLocale(store), ...getTaskFieldConfig(store), agents: getAgentConfig(store), context: getContextConfig(store), autoTrustWorkspaces: store.getSetting('autoTrustWorkspaces') !== '0', cocoContextHookEnabled: store.getSetting('cocoContextHookEnabled') !== '0' })
 })
 
 api.get('/agent-models', async (req, res) => {

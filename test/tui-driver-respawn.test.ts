@@ -58,6 +58,21 @@ describe('TuiDriver reactive respawn', () => {
     expect(frames.join('')).toContain('exited during startup')
   })
 
+  it('explains fast EPERM exits as a macOS permission/path problem', () => {
+    const p = fakePty()
+    const d = new TuiDriver(p, 'k-eperm')
+    const frames: string[] = []
+    d.onFrame((s) => frames.push(s))
+
+    p.emit('Error: Operation not permitted (os error 1)\r\n')
+    p.exit(1)
+
+    const out = frames.join('')
+    expect(out).toContain('EPERM / Operation not permitted')
+    expect(out).toContain('Full Disk Access')
+    expect(out).not.toContain('unsupported CLI flag')
+  })
+
   it('a normal (slow) exit says "session ended", not the failure diagnostic', () => {
     vi.useFakeTimers()
     const p = fakePty()

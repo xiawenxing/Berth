@@ -86,6 +86,25 @@ describe('pty-registry', () => {
     killPty('spool-1')
   })
 
+  it('orders a cold-resume restoring frame after old replay and before fresh output', () => {
+    const pty = fakePty()
+    registerPty('resume-1', pty)
+    pty.emit('previous interrupted screen')
+
+    const ws = fakeWs()
+    attachViewer('resume-1', ws, {
+      restoring: { sessionId: 'resume-1', cli: 'codex' },
+    })
+    expect(ws.sent).toEqual([
+      'previous interrupted screen',
+      JSON.stringify({ __berth: 'restoring', sessionId: 'resume-1', cli: 'codex' }),
+    ])
+
+    pty.emit('fresh resume output')
+    expect(ws.sent.at(-1)).toBe('fresh resume output')
+    killPty('resume-1')
+  })
+
   it('moves the raw pty spool when a live pty is rekeyed', () => {
     const pty = fakePty()
     registerPty('intent-spool', pty)
@@ -120,8 +139,12 @@ describe('pty-registry', () => {
   it('pty exit removes it from the registry', () => {
     const pty = fakePty()
     registerPty('sess-4', pty)
+    const viewer = fakeWs()
+    attachViewer('sess-4', viewer)
     pty.exit()
     expect(hasLivePty('sess-4')).toBe(false)
+    expect(viewer.sent).toContain(JSON.stringify({ __berth: 'exited', sessionId: 'sess-4' }))
+    expect(viewer.close).toHaveBeenCalled()
   })
 
   it('rekeyPty moves a live pty to a new key (codex bind)', () => {

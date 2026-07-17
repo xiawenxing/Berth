@@ -59,6 +59,19 @@ describe('reconcileLaunchIntents', () => {
     expect(s.pendingIntents().length).toBe(1)  // unmatched, still pending
   })
 
+  it('does not let a dead codex intent steal a later same-cwd session', () => {
+    const s = openStore(':memory:')
+    s.addLaunchIntent({ id: 'dead-intent', cli: 'codex', cwd: '/proj', projectId: 'P', todoKey: 'task-A', sessionId: null, createdAt: 1000, bound: false })
+    const cache = [makeSession('later-session', '/proj', 1400)]
+    s.upsertSessions(cache)
+
+    expect(reconcileLaunchIntents(s, cache, { hasLivePty: () => false })).toBe(0)
+
+    expect(s.pendingIntents().map(i => i.id)).toEqual(['dead-intent'])
+    expect(s.todoKeyForSession('later-session')).toBeNull()
+    expect(s.getAttach('later-session')).toBeNull()
+  })
+
   it('binds codex intents when launch cwd and session cwd are path aliases', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'berth-reconcile-'))
     try {

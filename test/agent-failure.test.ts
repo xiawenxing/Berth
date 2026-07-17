@@ -44,6 +44,14 @@ describe('classifyAgentFailure', () => {
     expect(looksLikeAuthBlock('claude', 'Your credit balance is too low')).toBe(false)
     expect(looksLikeAuthBlock('claude', 'usage limit reached for today')).toBe(false)
   })
+
+  it('does not treat codex MCP stream session expiry noise as login expiry', () => {
+    const stderr =
+      '2026-07-09T12:01:04.251969Z ERROR rmcp::transport::streamable_http_client: ' +
+      'fail to get common stream: Client error: streamable HTTP session expired with 404 Not Found'
+    expect(looksLikeAuthBlock('codex', stderr)).toBe(false)
+    expect(classifyAgentFailure('codex', stderr, false)).toBe('other')
+  })
 })
 
 describe('InternalAgentBlocked', () => {

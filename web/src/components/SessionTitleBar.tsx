@@ -18,9 +18,10 @@ interface SessionTitleBarProps {
   // (driven by the session's titleGenerating) is the source of truth for the spinner.
   onGenerate?: () => Promise<void> | void
   generating?: boolean
+  generationError?: string | null
 }
 
-export function SessionTitleBar({ cli, title, cwd, status, task, editable = false, onRename, onGenerate, generating = false }: SessionTitleBarProps) {
+export function SessionTitleBar({ cli, title, cwd, status, task, editable = false, onRename, onGenerate, generating = false, generationError = null }: SessionTitleBarProps) {
   const [localTitle, setLocalTitle] = useState(title)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(title)
@@ -142,8 +143,11 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
             {displayTitle}
           </button>
         )}
-        <div className="mt-0.5 truncate font-mono text-[11px] text-text-dim" title={cwd ?? undefined}>
-          {error ?? cwd}
+        <div
+          className={cn('mt-0.5 truncate font-mono text-[11px]', error || generationError ? 'text-destructive' : 'text-text-dim')}
+          title={error || generationError || cwd || undefined}
+        >
+          {error ?? generationError ?? cwd}
         </div>
       </div>
       {onGenerate && (
@@ -151,9 +155,12 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
           type="button"
           onClick={generateTitle}
           disabled={busy || saving || editing}
-          title={busy ? '正在智能生成标题…' : '智能生成标题'}
+          title={busy ? '正在智能生成标题…' : generationError ?? '智能生成标题'}
           aria-label="智能生成标题"
-          className="flex-none rounded p-1 text-text-dim transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          className={cn(
+            'flex-none rounded p-1 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50',
+            generationError ? 'text-destructive' : 'text-text-dim',
+          )}
         >
           <Sparkles className={cn('h-3.5 w-3.5', busy && 'spk-twinkle')} />
         </button>

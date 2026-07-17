@@ -16,7 +16,7 @@ function Layout() {
     <DataProvider>
       <LiveProvider>
       <UIProvider>
-        <div className="flex h-full w-full overflow-hidden">
+        <div className="berth-app-shell flex h-full w-full overflow-hidden">
           <Rail />
           <main className="min-w-0 flex-1 overflow-hidden bg-background">
             <Outlet />

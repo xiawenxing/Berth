@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare, LifeBuoy, Download } from 'lucide-react'
+import { Palette, Sparkles, Terminal, FileText, RefreshCw, ListChecks, X, Plus, ChevronLeft, ChevronRight, MessagesSquare, LifeBuoy, Download, AlertTriangle, CheckCircle2, ExternalLink, FolderOpen } from 'lucide-react'
 import { exportDiagLog } from '@/lib/diag'
 import { cn } from '@/lib/utils'
 import { LIGHT_SCHEMES, DARK_SCHEMES, applyScheme, getScheme, type Scheme } from '@/lib/theme'
@@ -9,9 +9,13 @@ import { useLive } from '@/lib/live'
 import { useInlineEdit } from '@/lib/useInlineEdit'
 import { api } from '@/lib/api'
 import type { AgentCli, AgentEntry, AgentModelCatalog } from '@/lib/api'
+import { notifyAgentIntegrationChanged } from '@/lib/integration-events'
 import { priorityColors } from '@/lib/priority'
 import { statusMeta } from '@/lib/status'
 import { Switch } from '@/components/ui/Switch'
+import { AgentModelSelect } from '@/components/settings/AgentModelSelect'
+import type { AgentIntegrationStatus, AppUpdateStatus } from '@/lib/api'
+import { integrationActionLabel, integrationSummary, integrationTitle } from '@/lib/settings-status'
 
 export function Settings() {
   const [scheme, setScheme] = useState<string>(() => getScheme().id)
@@ -30,7 +34,7 @@ export function Settings() {
 
   // Task-field vocabularies — edited as a local draft seeded from the live config; persisted
   // (POST /settings) + reload() so the whole app picks up the new statuses/priorities.
-  const { statuses: cfgStatuses, priorities: cfgPriorities, agents: cfgAgents, reload } = useData()
+  const { statuses: cfgStatuses, priorities: cfgPriorities, agents: cfgAgents, docsRoot: cfgDocsRoot, autoTrustWorkspaces, cocoContextHookEnabled, reload } = useData()
   const [statuses, setStatuses] = useState<string[]>(cfgStatuses)
   const [priorities, setPriorities] = useState<string[]>(cfgPriorities)
   const [agentList, setAgentList] = useState<AgentEntry[]>(cfgAgents.list)
@@ -38,13 +42,25 @@ export function Settings() {
   const [berthAgentModel, setBerthAgentModel] = useState(cfgAgents.berthAgentModel)
   const [savingVocab, setSavingVocab] = useState(false)
   const [savingAgents, setSavingAgents] = useState(false)
+  const [savingTrust, setSavingTrust] = useState(false)
   const [agentError, setAgentError] = useState<string | null>(null)
+  const [pendingDocsRoot, setPendingDocsRoot] = useState<string | null>(null)
+  const [pickingDocsRoot, setPickingDocsRoot] = useState(false)
+  const [savingDocsRoot, setSavingDocsRoot] = useState(false)
+  const [docsRootNote, setDocsRootNote] = useState<string | null>(null)
+  const [docsRootError, setDocsRootError] = useState<string | null>(null)
   const [modelCatalogs, setModelCatalogs] = useState<Partial<Record<AgentCli, AgentModelCatalog>>>({})
+  const [integration, setIntegration] = useState<AgentIntegrationStatus | null>(null)
+  const [installingIntegration, setInstallingIntegration] = useState(false)
+  const [integrationMessage, setIntegrationMessage] = useState<string | null>(null)
+  const [integrationError, setIntegrationError] = useState<string | null>(null)
+  const [appUpdate, setAppUpdate] = useState<AppUpdateStatus | null>(null)
   useEffect(() => setStatuses(cfgStatuses), [cfgStatuses])
   useEffect(() => setPriorities(cfgPriorities), [cfgPriorities])
   useEffect(() => setAgentList(cfgAgents.list), [cfgAgents.list])
   useEffect(() => setBerthAgentCli(cfgAgents.berthAgentCli), [cfgAgents.berthAgentCli])
   useEffect(() => setBerthAgentModel(cfgAgents.berthAgentModel), [cfgAgents.berthAgentModel])
+  useEffect(() => { setPendingDocsRoot(null); setDocsRootError(null) }, [cfgDocsRoot])
   useEffect(() => {
     let alive = true
     api.agentModels()
@@ -52,6 +68,20 @@ export function Settings() {
         if (!alive) return
         setModelCatalogs(Object.fromEntries(catalogs.map((c) => [c.cli, c])) as Partial<Record<AgentCli, AgentModelCatalog>>)
       })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+  useEffect(() => {
+    let alive = true
+    api.agentIntegration()
+      .then((status) => { if (alive) setIntegration(status) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+  useEffect(() => {
+    let alive = true
+    api.appUpdate()
+      .then((status) => { if (alive) setAppUpdate(status) })
       .catch(() => {})
     return () => { alive = false }
   }, [])
@@ -85,6 +115,69 @@ export function Settings() {
       .catch((e) => setAgentError(String(e?.message ?? e)))
       .finally(() => setSavingAgents(false))
   }
+  const toggleAutoTrust = () => {
+    setSavingTrust(true)
+    api.saveSettings({ autoTrustWorkspaces: !autoTrustWorkspaces }).then(() => reload()).finally(() => setSavingTrust(false))
+  }
+  const toggleCocoHook = () => {
+    setSavingTrust(true)
+    api.saveSettings({ cocoContextHookEnabled: !cocoContextHookEnabled }).then(() => reload()).finally(() => setSavingTrust(false))
+  }
+  const pickDocsRoot = () => {
+    setPickingDocsRoot(true)
+    setDocsRootError(null)
+    api
+      .pickFolder(pendingDocsRoot ?? cfgDocsRoot)
+      .then((r) => {
+        if (r.path) {
+          setPendingDocsRoot(r.path)
+          setDocsRootNote(null)
+        }
+      })
+      .catch((e) => setDocsRootError(String(e?.message ?? e)))
+      .finally(() => setPickingDocsRoot(false))
+  }
+  const saveDocsRoot = () => {
+    const target = pendingDocsRoot?.trim()
+    if (!target || target === cfgDocsRoot) return
+    setSavingDocsRoot(true)
+    setDocsRootError(null)
+    api
+      .saveSettings({ docsRoot: target })
+      .then((r) => {
+        const m = r.docsMigration
+        setDocsRootNote(m?.changed ? `已切换并迁移 ${m.copied} 个文件，${m.unchanged} 个文件已存在且一致。` : '维护路径未变化。')
+        setPendingDocsRoot(null)
+        return reload()
+      })
+      .catch((e) => {
+        const conflicts = (e as any)?.payload?.docsMigration?.conflicts as string[] | undefined
+        setDocsRootError(conflicts?.length
+          ? `目标目录已有 ${conflicts.length} 个同名但内容不同的上下文文件；为避免覆盖，已取消切换。`
+          : String(e?.message ?? e))
+      })
+      .finally(() => setSavingDocsRoot(false))
+  }
+  const installIntegration = async () => {
+    setInstallingIntegration(true)
+    setIntegrationError(null)
+    setIntegrationMessage(null)
+    try {
+      const result = await api.installAgentIntegration()
+      setIntegration(result.status)
+      notifyAgentIntegrationChanged(result.status)
+      const currentCount = result.status.skills.targets.filter((target) => target.state === 'current').length
+      const viaSkills = result.skillResults.skillsCli.ok
+      setIntegrationMessage(currentCount > 0
+        ? `已安装 CLI，并${viaSkills ? '通过 skills add ' : ''}刷新 ${currentCount} 个 agent 的 berth-tasks skill`
+        : '已安装 CLI；暂未检测到可写入的 agent skill 目录')
+      window.setTimeout(() => setIntegrationMessage(null), 3500)
+    } catch (e) {
+      setIntegrationError(String((e as any)?.message ?? e))
+    } finally {
+      setInstallingIntegration(false)
+    }
+  }
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -93,6 +186,20 @@ export function Settings() {
       </header>
 
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5">
+        {appUpdate?.updateAvailable && (
+          <AppUpdateBanner status={appUpdate} />
+        )}
+
+        {(integration?.needsAction || integrationMessage || integrationError) && (
+          <AgentIntegrationBanner
+            status={integration}
+            busy={installingIntegration}
+            message={integrationMessage}
+            error={integrationError}
+            onInstall={installIntegration}
+          />
+        )}
+
         <Card icon={<Palette size={14} />} title="外观" hint="选择日间 / 夜间配色方案（即时生效）">
           <Row label="日间">
             <div className="flex flex-wrap gap-2">
@@ -138,14 +245,13 @@ export function Settings() {
             >
               {enabledHeadless.map((cli) => <option key={cli} value={cli}>{cli}</option>)}
             </select>
-            <input
+            <AgentModelSelect
               value={berthAgentModel}
-              onChange={(e) => setBerthAgentModel(e.target.value)}
-              placeholder="留空 = CLI 默认模型"
-              list={`model-options-berth-${berthAgentCli}`}
-              className="min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground outline-none placeholder:text-text-dim"
+              catalog={modelCatalogs[berthAgentCli]}
+              ariaLabel="港务助手管理模型"
+              onChange={setBerthAgentModel}
+              className="min-w-0 flex-1"
             />
-            <ModelOptions id={`model-options-berth-${berthAgentCli}`} catalog={modelCatalogs[berthAgentCli]} />
           </Row>
           <ToggleRow label="主动提议建议" hint="船返港且有产出时给建议卡（可关）" on={proactive} onChange={() => setProactive((v) => !v)} />
           <ToggleRow label="新建任务默认 AI 自动总结标题" on={autoTitle} onChange={() => setAutoTitle((v) => !v)} />
@@ -161,6 +267,9 @@ export function Settings() {
               onChange={(patch) => updateAgent(agent.cli, patch)}
             />
           ))}
+          <ToggleRow label="自动信任工作目录" hint="为避免 CLI trust 弹窗阻塞首条任务，Berth 会写入 Claude/Codex 的本机配置；关闭后不会再写入。" on={autoTrustWorkspaces} onChange={toggleAutoTrust} />
+          <ToggleRow label="Coco 上下文 Hook" hint="让 Coco 自动收到项目/任务上下文，会写入 ~/.trae/traecli.yaml；关闭后不再安装或修改该 Hook。" on={cocoContextHookEnabled} onChange={toggleCocoHook} />
+          {savingTrust && <span className="text-[11px] text-text-dim">保存中…</span>}
           {(agentDirty || agentError) && (
             <div className="flex items-center gap-2 border-t border-border pt-2.5">
               <span className={cn('text-[11px]', agentError ? 'text-destructive' : 'text-warning')}>
@@ -190,10 +299,46 @@ export function Settings() {
         </Card>
 
         <Card icon={<FileText size={14} />} title="上下文与文档" hint="任务/项目的 md 与图片">
-          <Row label="上下文文档根目录">
-            <code className="rounded bg-card px-2 py-1 font-mono text-[12px] text-foreground">~/.berth/docs</code>
-            <button className="rounded-md border border-border px-2 py-1 text-[12px] hover:bg-accent">选择</button>
+          <Row label="当前维护路径">
+            <input value={pendingDocsRoot ?? cfgDocsRoot} onChange={(e) => setPendingDocsRoot(e.target.value)} title={pendingDocsRoot ?? cfgDocsRoot} className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 font-mono text-[12px] text-foreground outline-none" />
+            <button
+              onClick={pickDocsRoot}
+              disabled={pickingDocsRoot || savingDocsRoot}
+              className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[12px] hover:bg-accent disabled:opacity-60"
+            >
+              <FolderOpen size={12} /> {pickingDocsRoot ? '选择中…' : '选择'}
+            </button>
           </Row>
+          {pendingDocsRoot && pendingDocsRoot !== cfgDocsRoot && (
+            <div className="rounded-md border border-warning/35 bg-warning/10 px-3 py-2">
+              <div className="mb-1 text-[11px] font-medium text-warning">待切换路径</div>
+              <code title={pendingDocsRoot} className="block overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[12px] text-foreground">
+                {pendingDocsRoot}
+              </code>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="min-w-0 flex-1 text-[11px] text-text-dim">切换时会复制 Berth 管理的 tasks/projects/AGENTS.md 及文档引用的图片；遇到同名不同内容文件会停止，不覆盖。</span>
+                <button
+                  onClick={() => setPendingDocsRoot(null)}
+                  disabled={savingDocsRoot}
+                  className="rounded-md border border-border px-2 py-1 text-[12px] text-muted-foreground hover:bg-accent disabled:opacity-60"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={saveDocsRoot}
+                  disabled={savingDocsRoot}
+                  className="rounded-md bg-brand px-3 py-1 text-[12px] font-medium text-brand-foreground hover:brightness-110 disabled:opacity-60"
+                >
+                  {savingDocsRoot ? '迁移中…' : '迁移并切换'}
+                </button>
+              </div>
+            </div>
+          )}
+          {(docsRootNote || docsRootError) && (
+            <div className={cn('text-[11px]', docsRootError ? 'text-destructive' : 'text-success')}>
+              {docsRootError ?? docsRootNote}
+            </div>
+          )}
         </Card>
 
         <Card icon={<LifeBuoy size={14} />} title="诊断日志" hint="会话启动 / 连接 / 时序的埋点；遇到问题导出后发给维护者排查">
@@ -277,6 +422,72 @@ export function Settings() {
           )}
         </Card>
       </div>
+    </div>
+  )
+}
+
+function AppUpdateBanner({ status }: { status: AppUpdateStatus }) {
+  const openRelease = () => {
+    if (status.releaseUrl) window.open(status.releaseUrl, '_blank', 'noopener,noreferrer')
+  }
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-brand/35 bg-brand/10 px-3 py-2.5">
+      <span className="flex-none text-brand"><Download size={16} /></span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[12px] font-medium text-foreground">Berth 有新版本</div>
+        <div className="truncate text-[11px] text-muted-foreground">
+          当前 v{status.currentVersion} · 最新 v{status.latestVersion}
+        </div>
+      </div>
+      <button
+        onClick={openRelease}
+        className="flex items-center gap-1 rounded-md bg-brand px-3 py-1 text-[12px] font-medium text-brand-foreground hover:brightness-110"
+      >
+        下载 <ExternalLink size={12} />
+      </button>
+    </div>
+  )
+}
+
+function AgentIntegrationBanner({
+  status,
+  busy,
+  message,
+  error,
+  onInstall,
+}: {
+  status: AgentIntegrationStatus | null
+  busy: boolean
+  message: string | null
+  error: string | null
+  onInstall: () => void
+}) {
+  const ok = status && !status.needsAction && !error
+  return (
+    <div className={cn(
+      'flex items-center gap-3 rounded-lg border px-3 py-2.5',
+      ok ? 'border-success/35 bg-success/10' : 'border-warning/35 bg-warning/10',
+      error && 'border-destructive/35 bg-destructive/10',
+    )}>
+      <span className={cn('flex-none', ok ? 'text-success' : error ? 'text-destructive' : 'text-warning')}>
+        {ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[12px] font-medium text-foreground">{integrationTitle(status)}</div>
+        <div className="truncate text-[11px] text-muted-foreground">
+          {error ? `安装失败：${error}` : message ?? integrationSummary(status)}
+        </div>
+      </div>
+      {status?.currentVersion && <span className="rounded bg-card px-1.5 py-0.5 text-[10.5px] text-text-dim">v{status.currentVersion}</span>}
+      {status?.needsAction && (
+        <button
+          onClick={onInstall}
+          disabled={busy}
+          className="rounded-md bg-brand px-3 py-1 text-[12px] font-medium text-brand-foreground hover:brightness-110 disabled:opacity-60"
+        >
+          {integrationActionLabel(status, busy)}
+        </button>
+      )}
     </div>
   )
 }
@@ -454,16 +665,6 @@ function agentTone(cli: AgentCli): string {
   return 'text-purple'
 }
 
-function ModelOptions({ id, catalog }: { id: string; catalog?: AgentModelCatalog }) {
-  return (
-    <datalist id={id}>
-      {catalog?.models.map((m) => (
-        <option key={m.id} value={m.id} label={m.label} />
-      ))}
-    </datalist>
-  )
-}
-
 function AgentRow({
   agent,
   catalog,
@@ -476,7 +677,6 @@ function AgentRow({
   onChange: (patch: Partial<AgentEntry>) => void
 }) {
   const canDisable = !agent.enabled || enabledCount > 1
-  const listId = `model-options-${agent.cli}`
   return (
     <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
       <span className={cn('w-16 text-[13px] font-semibold', agentTone(agent.cli))}>{agent.cli}</span>
@@ -484,16 +684,14 @@ function AgentRow({
       {agent.cli === 'coco' ? (
         <span className="text-[12px] text-text-dim">coco 无 --model</span>
       ) : (
-        <input
+        <AgentModelSelect
           value={agent.model ?? ''}
-          onChange={(e) => onChange({ model: e.target.value.trim() ? e.target.value : null })}
-          placeholder="CLI 默认模型"
-          list={listId}
-          title={catalog?.source === 'cli' ? '已探测 CLI 模型列表' : catalog?.source === 'help' ? 'CLI help 中的模型别名' : '可手动输入模型'}
-          className="w-48 rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground outline-none placeholder:text-text-dim"
+          catalog={catalog}
+          ariaLabel={`${agent.cli} 默认模型`}
+          onChange={(model) => onChange({ model: model || null })}
+          className="w-56"
         />
       )}
-      <ModelOptions id={listId} catalog={catalog} />
       <span className="text-[11px] text-muted-foreground" title="开启后该 agent 每次工具调用前请求授权（仅交互式会话生效）">安全</span>
       <Switch
         checked={agent.safeMode}

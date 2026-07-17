@@ -16,6 +16,8 @@ export interface ChatSession {
   connected: boolean
   send: (text: string, images?: ChatImage[]) => void
   interrupt: () => void
+  /** End the entire persistent session, unlike interrupt which only stops the active turn. */
+  terminate: () => boolean
 }
 
 export interface ChatImage {
@@ -34,10 +36,12 @@ export function useChatSession({
   sessionId,
   launch,
   onLaunched,
+  onExited,
 }: {
   sessionId?: string
   launch?: LaunchSpec
   onLaunched?: (sessionId: string) => void
+  onExited?: () => void
 }): ChatSession {
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [model, setModel] = useState<string | undefined>()
@@ -50,6 +54,8 @@ export function useChatSession({
   const [awaiting, setAwaiting] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const turnSeqRef = useRef(0)
+  const onExitedRef = useRef(onExited)
+  useEffect(() => { onExitedRef.current = onExited }, [onExited])
 
   useEffect(() => {
     let disposed = false
@@ -105,6 +111,10 @@ export function useChatSession({
         if (launch?.prompt?.trim() || launch?.images?.length) setAwaiting(true)
         return
       }
+      if (msg.__berth === 'exited') {
+        onExitedRef.current?.()
+        return
+      }
       const frame = msg as ChatFrame
       if (clearsAwaiting(frame)) setAwaiting(false)
       if (frame.type === 'session') { if (frame.model) setModel(frame.model); return }
@@ -149,6 +159,12 @@ export function useChatSession({
       sendRaw({ t: 'interrupt' })
       setAwaiting(false)
       setTurns((cur) => stopInFlightTurns(cur))
+    },
+    terminate: () => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false
+      ws.send(JSON.stringify({ t: 'kill' }))
+      return true
     },
   }
 }

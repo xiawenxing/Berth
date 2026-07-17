@@ -22,7 +22,8 @@ export function Composer({
   const text = draft.value
   const setText = draft.setValue
   const taRef = useRef<HTMLTextAreaElement>(null)
-  const { images, clearImages, onPasteImages, removeImage } = usePastedImages()
+  const { images, clearImages, onPasteImages, removeImage, reconcileImagePlaceholders, handleImagePlaceholderKeyDown } = usePastedImages()
+  const imagePlacement = (target: HTMLTextAreaElement | null = taRef.current) => ({ value: text, setValue: setText, target })
 
   const submit = () => {
     const t = text.trim()
@@ -32,7 +33,8 @@ export function Composer({
     clearImages()
     if (taRef.current) taRef.current.style.height = 'auto'
   }
-  const onKeyDown = (e: React.KeyboardEvent) => {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (handleImagePlaceholderKeyDown(e, imagePlacement(e.currentTarget))) return
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       submit()
@@ -43,12 +45,12 @@ export function Composer({
 
   return (
     <div className="border-t border-border bg-canvas px-3 py-2.5">
-      <PastedImageStrip images={images} onRemove={removeImage} className="mb-2" />
+      <PastedImageStrip images={images} onRemove={(idx) => removeImage(idx, imagePlacement())} className="mb-2" />
       <div className="flex items-end gap-2">
         <textarea
           ref={taRef}
           value={text}
-          onChange={(e) => { setText(e.target.value); grow(e.target) }}
+          onChange={(e) => { setText(reconcileImagePlaceholders(e.target.value)); grow(e.target) }}
           onPaste={(e) => onPasteImages(e, { value: text, setValue: setText, target: e.currentTarget })}
           onKeyDown={onKeyDown}
           rows={1}

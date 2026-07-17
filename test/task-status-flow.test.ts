@@ -20,6 +20,9 @@ const activityBus = vi.hoisted(() => {
 })
 vi.mock('../src/server/pty-registry', () => ({ subscribeActivity: activityBus.subscribeActivity }))
 
+const summaryTrigger = vi.hoisted(() => vi.fn(() => true))
+vi.mock('../src/data/task-summary', () => ({ triggerTaskSummary: summaryTrigger }))
+
 import { reconcileTaskStatusForSession, startTaskStatusFlow } from '../src/server/task-status-flow'
 
 // Insert a task row directly (synchronous, no AI/docStore) — same shape the onboarding seed uses.
@@ -132,6 +135,7 @@ describe('reconcileTaskStatusForSession', () => {
 describe('startTaskStatusFlow', () => {
   afterEach(() => {
     activityBus.reset()
+    summaryTrigger.mockClear()
     vi.useRealTimers()
   })
 
