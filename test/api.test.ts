@@ -602,6 +602,25 @@ describe('/api/sessions – live activity field (always)', () => {
     killPty('s-live-1')
   })
 
+  // Regression: a launch that was never typed into writes no jsonl, so it is absent from the disk
+  // cache while its agent is still live. The chat history for it is empty, not broken — a 404 here
+  // rendered as a red "会话历史加载失败" over an otherwise working chat view.
+  it('serves an empty chat history (not 404) for a live session with no transcript on disk', async () => {
+    mockGetCache.mockReturnValue([])
+    const port = await listen()
+    const base = `http://localhost:${port}/api`
+
+    // Not in the cache and not live → genuinely unknown, still a 404.
+    expect((await fetch(`${base}/sessions/s-unknown/chat`)).status).toBe(404)
+
+    registerPty('s-nojsonl', fakePty(), { running: true })
+    const res = await fetch(`${base}/sessions/s-nojsonl/chat`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ turns: [] })
+
+    killPty('s-nojsonl')
+  })
+
   it('reports a short-lived titleError when detached title generation fails', async () => {
     const root = mkdtempSync(join(tmpdir(), 'berth-title-'))
     tmpRoots.push(root)

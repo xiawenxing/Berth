@@ -32,7 +32,7 @@ import { isGeneratingTitle, triggerSessionTitle, titleError, titleGist } from '.
 import type { Locale } from '../i18n'
 import { readFileSync, statSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { snapshotActivity, liveCount, killPty } from './pty-registry'
+import { snapshotActivity, liveCount, killPty, hasLivePty } from './pty-registry'
 import { ingestDiag, collectDiagForExport, logDiag } from './diag'
 import { getAgentModelCatalogs } from '../pty/model-catalog'
 import { runConsolidation, runContextUpdate, readTranscript, type ContextTarget } from './context-consolidate-service'
@@ -1130,7 +1130,13 @@ api.get('/sessions/:id/transcript', (req, res) => {
 const MAX_CHAT_JSONL_BYTES = 32 * 1024 * 1024
 api.get('/sessions/:id/chat', (req, res) => {
   const s = getCache().find(x => x.sessionId === req.params.id)
-  if (!s || !s.contentSourcePath) return res.status(404).json({ error: 'no readable transcript' })
+  if (!s || !s.contentSourcePath) {
+    // A Berth launch that has not been typed into writes no jsonl, so it never enters the disk cache
+    // — but its agent IS live. That is an EMPTY history, not a failed one; 404 here made every
+    // reopen of a never-used session show a red "会话历史加载失败" over an otherwise working chat.
+    if (hasLivePty(req.params.id)) return res.json({ turns: [] })
+    return res.status(404).json({ error: 'no readable transcript' })
+  }
   try {
     if (s.cli === 'claude' && statSync(s.contentSourcePath).size > MAX_CHAT_JSONL_BYTES) return res.json({ turns: [], truncated: true })
     const turns = s.cli === 'claude'
