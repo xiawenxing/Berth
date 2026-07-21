@@ -282,18 +282,23 @@ export function createPtyWss(): WebSocketServer {
     const wantStream = rendersStream(url, s?.cli)
     if (hasLivePty(sessionId)) {                  // already running (incl. a warm-pool pre-spawn)
       const liveMode = liveDriverMode(sessionId)
+      // Reattach when the modes match.
       if (liveMode === (wantStream ? 'stream' : 'tui')) {
         markOpened(sessionId)                     // user opened it → graduate out of the warm pool
         logDiag({ category: 'resume', event: 'attach_live', sessionId, cli: s?.cli, mode: liveMode, inFlight: !s })
         attachViewer(sessionId, ws, { replayBytes }); return
       }
-      // Mode mismatch. A cached, resumable session can be killed and respawned in the requested mode
-      // (the A↔B toggle, below). A session with NO jsonl on disk cannot be respawned — killing it
-      // destroys the still-running agent, which is the "reopen-loses-the-session" failure. That
-      // happens for real: a free claude/coco launch is forced to Model B, and if the user never types
-      // anything the CLI writes no jsonl, so reopening it (global render mode = A) asks for a TUI on
-      // a live stream driver. Attach to the driver AS IT IS and tell the viewer which mode it
-      // actually got, so it switches renderers instead of printing chat frames as terminal bytes.
+      // Modes differ. Only a known, cached (resumable) session may be killed and respawned in the
+      // requested mode (the A↔B toggle, below). When the session isn't in the disk cache yet — an
+      // in-flight launch, no jsonl written — killing it here would destroy the still-running agent and
+      // is exactly the "reopen-loses-the-session" failure we're fixing.
+      //
+      // (The original code reattached blindly here on the assumption such a launch's render mode
+      // "can't have been toggled" — but it can, which was the bug: a free claude/coco launch is forced
+      // to Model B, and if the user never types anything the CLI writes no jsonl, so reopening it under
+      // the global render mode = A asks for a TUI on a live stream driver.) So for that case, attach to
+      // the driver AS IT IS and tell the viewer which mode it actually got, so it switches renderers
+      // instead of printing chat frames as terminal bytes.
       if (!s || !s.resume) {
         markOpened(sessionId)
         logDiag({ category: 'resume', event: 'attach_live_mode_pinned', sessionId, cli: s?.cli, mode: liveMode, want: wantStream ? 'stream' : 'tui' })
