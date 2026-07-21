@@ -135,18 +135,24 @@ export function Terminal({
   launch,
   onLaunched,
   onTerminateShortcut,
+  onStreamModePinned,
   initialInput,
 }: {
   sessionId?: string
   launch?: LaunchSpec
   onLaunched?: (sessionId: string) => void
   onTerminateShortcut?: () => void
+  /** The live session is pinned to a stream (Model B) driver and cannot be respawned as a TUI — the
+   *  caller must switch to the chat renderer. See the `__berth:'mode'` frame in server/pty-ws.ts. */
+  onStreamModePinned?: () => void
   /** When resuming (sessionId mode), text submitted to the agent once, after the ws opens. */
   initialInput?: string
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
   const onTerminateShortcutRef = useRef(onTerminateShortcut)
+  const onStreamModePinnedRef = useRef(onStreamModePinned)
+  useEffect(() => { onStreamModePinnedRef.current = onStreamModePinned }, [onStreamModePinned])
   const [historyBytes, setHistoryBytes] = useState(DEFAULT_PTY_HISTORY_BYTES)
   // Four overlay states:
   //  - 'opaque' — fresh-launch boot mask; hides the half-built TUI while it's actively streaming.
@@ -509,8 +515,13 @@ export function Terminal({
         sendInput('\r')
       }, { once: true })
     }
+    // Set once the server tells us this live session is pinned to a stream driver. Everything after
+    // that frame is chat JSON, not terminal bytes — drop it rather than printing it, since the
+    // renderer swap happens on the next React render and frames can land before it.
+    let streamModePinned = false
     ws.onmessage = (e) => {
       const data = typeof e.data === 'string' ? e.data : new TextDecoder().decode(e.data as ArrayBuffer)
+      if (streamModePinned) return
       if (data.startsWith('{"__berth"')) {
         try {
           const ctl = JSON.parse(data)
@@ -525,6 +536,11 @@ export function Terminal({
             // codex's DETERMINISTIC boot-complete signal (server read its rollout task_started). Drop
             // the launch mask exactly when the first turn begins — no output-quiet guessing.
             markLaunchReady()
+          } else if (ctl.__berth === 'mode' && ctl.mode === 'stream') {
+            // Live session can only be served as Model B (no jsonl → not respawnable as a TUI).
+            streamModePinned = true
+            logDiag('connect', 'term_stream_mode_pinned', { sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken })
+            onStreamModePinnedRef.current?.()
           } else if (ctl.__berth === 'restoring' && !launch) {
             beginResumeRestore(typeof ctl.cli === 'string' ? ctl.cli : '')
           } else if (ctl.__berth === 'exited' && !remoteExitClosed) {

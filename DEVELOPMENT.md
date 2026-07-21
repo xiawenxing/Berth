@@ -40,6 +40,53 @@ npx tsc --noEmit   # type-check
 - **`npm run build`** produces `dist/` via esbuild — used by the `berth` CLI and the Electron build,
   not by the dev server.
 
+### ⚠️ Start the dev server from a plain terminal — never from inside a Claude Code (agent) session
+
+Berth launches its CLI agents (`claude`/`codex`/`coco`) by spawning them as **children of the
+server process**, inheriting the server's environment. If you start the server from **inside a Claude
+Code session** (e.g. running `npm start` through Claude Code's Bash tool, or from a shell that some
+agent harness spawned), that parent session leaks its nesting-signal env vars into every agent Berth
+launches:
+
+```
+CLAUDECODE=1
+CLAUDE_CODE_ENTRYPOINT=cli
+CLAUDE_CODE_CHILD_SESSION=1
+CLAUDE_CODE_SESSION_ID=<the parent session's id>
+CLAUDE_CODE_EXECPATH=…
+```
+
+These tell the spawned `claude` it is a **nested child session**, so it does **not write its own
+`~/.claude/projects/**/<id>.jsonl` transcript.** Berth surfaces a launched session, generates its
+title, and recovers it after a restart entirely from that jsonl (see the jsonl dependency map in
+`docs/ARCHITECTURE.md`). With no jsonl the symptoms are:
+
+- every launched claude session is stuck at **「启动中…」** with no title (it never leaves the
+  in-memory "launching" bridge because the on-disk row never appears);
+- the session **vanishes from the list when the backend restarts** (the bridge is in-memory only and
+  the CLI wrote nothing to resume from).
+
+This is **not** a Berth bug and **not** a `claude` bug — it is environment leakage from launching the
+dev server inside an agent session. Fixes:
+
+- **Just launch from a normal terminal** (a shell you opened yourself, not one an agent spawned).
+- If you must launch from a possibly-nested shell, strip the vars explicitly:
+  ```bash
+  env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_CHILD_SESSION \
+      -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_EXECPATH \
+    npm run dev:clean
+  ```
+- **Verify it's clean:** launch a claude session, send one message, then confirm the transcript
+  landed and the process carries no nesting flag:
+  ```bash
+  find ~/.claude/projects -path "*<your BERTH_HOME workspace>*" -name '*.jsonl' -mmin -5   # should list the new session
+  ps eww "$(pgrep -f 'session-id <that id>')" | tr ' ' '\n' | grep -c '^CLAUDECODE='       # should print 0
+  ```
+
+(A launched session reads `launching:true` / no title in `/api/sessions` for exactly as long as its
+jsonl is missing — so a *permanently* 「启动中…」 session is the tell that its transcript is never
+being written.)
+
 ## Desktop release
 
 ```bash

@@ -5,6 +5,8 @@ import { Terminal } from './Terminal'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+const termWrites = vi.hoisted(() => [] as string[])
+
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 120
@@ -14,7 +16,7 @@ vi.mock('@xterm/xterm', () => ({
     loadAddon() {}
     open() {}
     focus() {}
-    write(_data: string, done?: () => void) { done?.() }
+    write(data: string, done?: () => void) { termWrites.push(data); done?.() }
     onData() { return { dispose() {} } }
     onScroll() { return { dispose() {} } }
     scrollToBottom() {}
@@ -59,6 +61,7 @@ let root: ReturnType<typeof createRoot>
 
 beforeEach(() => {
   vi.useFakeTimers()
+  termWrites.length = 0
   FakeWebSocket.instances = []
   vi.stubGlobal('WebSocket', FakeWebSocket)
   vi.stubGlobal('ResizeObserver', FakeResizeObserver)
@@ -95,5 +98,30 @@ describe('Terminal cold resume status', () => {
 
     act(() => vi.advanceTimersByTime(1))
     expect(host.querySelector('[role="status"]')).toBeNull()
+  })
+})
+
+describe('Terminal stream-mode pinning', () => {
+  // Regression: a session launched into Model B that was never typed into writes no jsonl, so the
+  // server cannot respawn it as a TUI and pins it to its stream driver. Before the fix the terminal
+  // printed the driver's chat snapshot verbatim: {"type":"snapshot","turns":[]}.
+  it('reports the pin and stops rendering the chat frames that follow', () => {
+    const onStreamModePinned = vi.fn()
+    act(() => root.render(<Terminal sessionId="session-1" onStreamModePinned={onStreamModePinned} />))
+    const ws = FakeWebSocket.instances[0]
+
+    act(() => ws.emit(JSON.stringify({ __berth: 'mode', mode: 'stream', sessionId: 'session-1' })))
+    expect(onStreamModePinned).toHaveBeenCalledTimes(1)
+
+    act(() => ws.emit('{"type":"snapshot","turns":[]}'))
+    expect(termWrites.join('')).not.toContain('snapshot')
+  })
+
+  it('still renders terminal bytes when the session is not pinned', () => {
+    act(() => root.render(<Terminal sessionId="session-1" />))
+    const ws = FakeWebSocket.instances[0]
+
+    act(() => ws.emit('normal tui output'))
+    expect(termWrites.join('')).toContain('normal tui output')
   })
 })

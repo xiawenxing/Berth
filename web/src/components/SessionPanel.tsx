@@ -4,7 +4,7 @@ import { Composer } from './Composer'
 import { useChatSession } from '@/lib/useChatSession'
 import { useUI, type LaunchSpec } from '@/lib/ui-store'
 import { resolveSessionPanelConnection, resolveSessionPanelRenderer } from '@/lib/session-panel-connection'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { isSessionTerminateKeyboardEvent } from '@/lib/terminal-shortcuts'
 
 /**
@@ -31,7 +31,12 @@ export function SessionPanel({
   const { renderMode } = useUI()
   const effectiveCli = cli ?? launch?.cli
   const connection = resolveSessionPanelConnection(sessionId, launch)
-  const active = resolveSessionPanelRenderer(effectiveCli, renderMode, connection)
+  // A live session with no jsonl on disk (launched, never typed into) cannot be respawned as a TUI,
+  // so the server pins it to its stream driver and says so. Honour that over the global render mode
+  // — otherwise the terminal renders chat frames as raw text ({"type":"snapshot","turns":[]}).
+  const [streamPinned, setStreamPinned] = useState(false)
+  useEffect(() => { setStreamPinned(false) }, [connection.sessionId, connection.launch?.launchToken])
+  const active = streamPinned ? 'B' : resolveSessionPanelRenderer(effectiveCli, renderMode, connection)
 
   if (active === 'B') {
     const key = connection.launch ? `B:launch:${connection.launch.launchToken ?? 'pending'}` : `B:${connection.sessionId}`
@@ -42,7 +47,7 @@ export function SessionPanel({
       {connection.launch ? (
         <Terminal key="A:launch" launch={connection.launch} onLaunched={onLaunched} onTerminateShortcut={onTerminateShortcut} />
       ) : connection.sessionId ? (
-        <Terminal key={`A:${connection.sessionId}`} sessionId={connection.sessionId} onTerminateShortcut={onTerminateShortcut} />
+        <Terminal key={`A:${connection.sessionId}`} sessionId={connection.sessionId} onTerminateShortcut={onTerminateShortcut} onStreamModePinned={() => setStreamPinned(true)} />
       ) : null}
     </div>
   )
