@@ -456,6 +456,18 @@ is the session-grained model that replaced the old directory-grained one (where 
     correctness dependency on the 40s window. claude/coco are unaffected (they pre-mint `--session-id`
     and edge synchronously at launch); their only residual risk is a dangling edge if the session never
     materializes, swept by `orphan-sweep.ts`. See the bind-reliability spec/plan under `docs/superpowers/`.
+18. **A launched claude/coco session that NEVER writes a jsonl is (almost always) env leakage, not a
+    bug.** Berth surfaces a launch, titles it, and recovers it after restart from the CLI's on-disk
+    jsonl (see the surfacing model above + `synthLaunchingSessions`' in-memory "launching" bridge). A
+    `claude` spawned with `CLAUDECODE=1` / `CLAUDE_CODE_CHILD_SESSION=1` / `CLAUDE_CODE_SESSION_ID=…`
+    in its env treats itself as a **nested child session and writes no jsonl** — so the session is
+    stuck `launching:true` / no title forever and disappears on the next backend restart. This bites
+    when the Berth **server** is started from inside a Claude Code (or similar agent) session and
+    leaks those vars into every agent it spawns as children. It is neither a Berth nor a claude bug;
+    launch the server from a plain terminal (or `env -u` the vars). Full repro + fix in
+    `DEVELOPMENT.md`. NB: this is also a candidate for a real hardening — Berth could strip the
+    `CLAUDE_CODE_*`/`CLAUDECODE` nesting vars when spawning agents, since every Berth session is a
+    top-level session, not a child of the launching shell.
 
 ---
 

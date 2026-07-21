@@ -34,9 +34,18 @@ describe('resolveSessionPanelRenderer', () => {
     expect(resolveSessionPanelRenderer('coco', 'A', { launch })).toBe('A')
   })
 
-  it('routes free claude/coco launches through chat to match the prime socket', () => {
-    expect(resolveSessionPanelRenderer('claude', 'A', { launch: { cli: 'claude', cwd: '/repo' } })).toBe('B')
+  it('routes free coco launches through chat to match the prime socket', () => {
     expect(resolveSessionPanelRenderer('coco', 'A', { launch: { cli: 'coco', cwd: '/repo' } })).toBe('B')
+  })
+
+  // claude is terminal-only: Model B is still under development and must not surface for it. Launch
+  // and resume must agree, or reopening a session makes the server kill + respawn the live agent
+  // just to switch renderer.
+  it('keeps claude in the terminal renderer everywhere, ignoring the global mode', () => {
+    expect(resolveSessionPanelRenderer('claude', 'A', { launch: { cli: 'claude', cwd: '/repo' } })).toBe('A')
+    expect(resolveSessionPanelRenderer('claude', 'B', { launch: { cli: 'claude', cwd: '/repo' } })).toBe('A')
+    expect(resolveSessionPanelRenderer('claude', 'A', { sessionId: 'sess-1' })).toBe('A')
+    expect(resolveSessionPanelRenderer('claude', 'B', { sessionId: 'sess-1' })).toBe('A')
   })
 
   it('respects the global chat renderer for codex sessions', () => {

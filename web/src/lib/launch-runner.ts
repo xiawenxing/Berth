@@ -74,10 +74,14 @@ export interface FirstTurnLaunch {
 }
 
 function streamRenderEnabled(launch: FirstTurnLaunch): boolean {
-  // Claude/Coco free-launch first turns must not be typed into a booting TUI: both CLIs can expose
-  // terminal readiness markers before their composers accept paste/Enter. Route those launches
-  // through Model B by default; keep task launches and codex under the user's renderer preference.
-  if (!launch.todoKey && (launch.cli === 'claude' || launch.cli === 'coco')) return true
+  // claude never streams — it is terminal-only for its whole lifetime (see the matching rule in
+  // session-panel-connection.ts). Its free-launch first turn goes over the prime socket instead,
+  // gated on the CLI actually going idle (`firstTurnSteps` below).
+  if (launch.cli === 'claude') return false
+  // Coco free-launch first turns must not be typed into a booting TUI: it can expose terminal
+  // readiness markers before its composer accepts paste/Enter. Route those launches through Model B
+  // by default; keep task launches and codex under the user's renderer preference.
+  if (!launch.todoKey && launch.cli === 'coco') return true
   try { return localStorage.getItem('berth-render-mode') === 'B' } catch { return false }
 }
 

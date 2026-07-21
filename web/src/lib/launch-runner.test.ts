@@ -105,16 +105,21 @@ describe('startFreshLaunch — first-turn delivery', () => {
     expect(resync).toHaveBeenCalledTimes(1)
   })
 
-  // ---- claude/coco free launches: default to Model B (race-free first turn) ----
-  it('text-only (claude free): defaults to Model B instead of prime-socket paste', () => {
+  // ---- claude: terminal-only, so its first turn goes over the idle-gated prime socket ----
+  it('text-only (claude free): waits for the composer to go IDLE, then pastes and Enters separately', () => {
     startFreshLaunch(baseInput({ freeText: 'do the thing' }))
     const ws = FakeWS.instances[0]
-    expect(ws.url).toContain('render=stream-json')
-    expect(ws.url).toContain('prompt=do+the+thing')
+    expect(ws.url).not.toContain('render=stream-json')
+    expect(ws.url).not.toContain('prompt=')
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
     ws.emit(`boot ${BRACKETED_PASTE_READY} prompt>`)
-    vi.advanceTimersByTime(2000)
-    expect(ws.sent).toEqual([]) // server-side stream driver owns the first turn
+    vi.advanceTimersByTime(300)
+    expect(ws.sent).toEqual([]) // marker seen but not idle yet → do NOT fire (the live-verify failure)
+    vi.advanceTimersByTime(1500) // idle → paste (no Enter) then Enter as a separate write
+    expect(ws.parsed()).toEqual([
+      { t: 'i', d: '\x1b[200~do the thing\x1b[201~' },
+      { t: 'i', d: '\r' },
+    ])
   })
 
   it('text-only (coco free): defaults to Model B instead of prime-socket paste', () => {
@@ -128,26 +133,41 @@ describe('startFreshLaunch — first-turn delivery', () => {
     expect(ws.sent).toEqual([])
   })
 
-  it('image launch (claude free): sends one structured Model B turn on launch', () => {
+  it('image launch (claude free): holds the prompt until the [Image attach chip, then pastes + Enters', () => {
     startFreshLaunch(baseInput({
       freeText: 'look at this',
       images: [{ name: 'shot.png', dataUrl: 'data:image/png;base64,AAAA' }],
     }))
     const ws = FakeWS.instances[0]
-    expect(ws.url).toContain('render=stream-json')
+    expect(ws.url).not.toContain('render=stream-json')
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
-    expect(ws.parsed()).toEqual([
-      { t: 'turn', text: 'look at this', images: [{ name: 'shot.png', dataUrl: 'data:image/png;base64,AAAA' }], clientTurnId: 'launch_tok-1' },
-    ])
+    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
+    vi.advanceTimersByTime(1200) // idle → image goes out first
+    expect(ws.parsed()).toEqual([{ t: 'img', name: 'shot.png', d: 'data:image/png;base64,AAAA' }])
+
+    ws.emit('spinner redraw, still attaching') // NOT the attach chip
+    vi.advanceTimersByTime(900)
+    expect(ws.sent.length).toBe(1) // prompt held — this was the reported bug
+
+    ws.emit('[Image #1] attached') // attach confirmation → release prompt, then Enter
+    vi.advanceTimersByTime(1500)
+    const m = ws.parsed()
+    expect(m[1]).toEqual({ t: 'i', d: '\x1b[200~look at this\x1b[201~' })
+    expect(m[2]).toEqual({ t: 'i', d: '\r' })
   })
 
-  it('image-only launch (claude free): sends one structured Model B image turn', () => {
+  it('image-only launch (claude free): image then Enter after attach, no paste', () => {
     startFreshLaunch(baseInput({ images: [{ name: 'a.png', dataUrl: 'data:image/png;base64,BBBB' }] }))
     const ws = FakeWS.instances[0]
-    expect(ws.url).toContain('render=stream-json')
+    expect(ws.url).not.toContain('render=stream-json')
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
+    ws.emit(`ready ${BRACKETED_PASTE_READY}`)
+    vi.advanceTimersByTime(1200)
+    ws.emit('[Image #1]')
+    vi.advanceTimersByTime(1200)
     expect(ws.parsed()).toEqual([
-      { t: 'turn', text: '', images: [{ name: 'a.png', dataUrl: 'data:image/png;base64,BBBB' }], clientTurnId: 'launch_tok-1' },
+      { t: 'img', name: 'a.png', d: 'data:image/png;base64,BBBB' },
+      { t: 'i', d: '\r' },
     ])
   })
 
@@ -270,9 +290,10 @@ describe('startFreshLaunch — first-turn delivery', () => {
     expect(ws.parsed()[2]).toEqual({ t: 'i', d: '\r' })
   })
 
+  // codex, not claude — claude is terminal-only and ignores the global render mode entirely.
   it('image launch (Model B / stream): one structured turn on the launched frame', () => {
     localStorage.setItem('berth-render-mode', 'B')
-    startFreshLaunch(baseInput({ freeText: 'describe it', images: [{ name: 'b.png', dataUrl: 'data:image/png;base64,CCCC' }] }))
+    startFreshLaunch(baseInput({ cli: 'codex', freeText: 'describe it', images: [{ name: 'b.png', dataUrl: 'data:image/png;base64,CCCC' }] }))
     const ws = FakeWS.instances[0]
     ws.emit('{"__berth":"launched","sessionId":"S1"}')
     const msg = JSON.parse(ws.sent[0])
