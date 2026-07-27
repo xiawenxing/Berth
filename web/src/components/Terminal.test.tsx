@@ -21,6 +21,9 @@ vi.mock('@xterm/xterm', () => ({
     onScroll() { return { dispose() {} } }
     scrollToBottom() {}
     scrollToTop() {}
+    scrollLines() {}
+    modes = { mouseTrackingMode: 'none' }
+    attachCustomWheelEventHandler() {}
     dispose() {}
   },
 }))
@@ -46,7 +49,8 @@ class FakeWebSocket {
     this.listeners.set(type, listeners)
   }
 
-  send() {}
+  sent: string[] = []
+  send(data: string) { this.sent.push(data) }
   close() {}
   emit(data: string) { this.onmessage?.({ data }) }
 }
