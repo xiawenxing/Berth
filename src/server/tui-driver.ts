@@ -3,6 +3,7 @@ import { hasVisibleOutput } from './activity'
 import { currentDocStore } from '../data/docstore'
 import type { Inbound, SessionDriver } from './session-driver'
 import { DEFAULT_PTY_REPLAY_BYTES, PtySpool } from './pty-spool'
+import { AltScreenFilter, stripAltScreen } from './alt-screen'
 
 const MAX_BUFFER_BYTES = 2 * 1024 * 1024   // ~scrollback kept per session for replay on (re)attach
 const RESIZE_QUIET_MS = 500           // a resize triggers a full repaint — not a turn, so don't spin
@@ -23,6 +24,8 @@ export class TuiDriver implements SessionDriver {
   private exitCb: () => void = () => {}
   private activityCb: () => void = () => {}
   private spool: PtySpool
+  // Viewers render in the main buffer only — see alt-screen.ts for why.
+  private altFilter = new AltScreenFilter()
 
   private startedAt = Date.now()
   private sawVisible = false
@@ -45,11 +48,14 @@ export class TuiDriver implements SessionDriver {
     this.startedAt = Date.now()
     this.sawVisible = false
     pty.onData((d) => {
+      // The spool and the replay ring keep the RAW bytes (faithful record, and the alt-screen strip is
+      // reapplied on read) — only what reaches a viewer is normalized.
       this.spool.append(d)
       this.chunks.push(d)
       this.bytes += d.length
       while (this.bytes > MAX_BUFFER_BYTES && this.chunks.length > 1) this.bytes -= this.chunks.shift()!.length
-      this.frameCb(d)
+      const framed = this.altFilter.push(d)
+      if (framed) this.frameCb(framed)
       // Count output as turn activity unless it's noise: an idle cursor-repaint (no visible content)
       // or the full repaint a Berth-initiated resize just triggered (within the quiet window).
       if (hasVisibleOutput(d)) {
@@ -69,7 +75,8 @@ export class TuiDriver implements SessionDriver {
           return
         }
       }
-      try { this.frameCb(this.exitMessage(code)) } catch {}
+      const tail = this.altFilter.flush()
+      try { this.frameCb(tail + this.exitMessage(code)) } catch {}
       this.spool.close()
       this.exitCb()
     })
@@ -103,11 +110,15 @@ export class TuiDriver implements SessionDriver {
   onFrame(cb: (s: string) => void): void { this.frameCb = cb }
   onExit(cb: () => void): void { this.exitCb = cb }
   onActivity(cb: () => void): void { this.activityCb = cb }
+  // Replay is a byte TAIL, so its alt-screen enters/exits need not be balanced — a spool cut after an
+  // enter (or written by an attach client that was killed rather than detached) would strand every
+  // future viewer in the empty alternate buffer. Strip them here too, so history always replays into
+  // the main buffer and the scrollback stays reachable regardless of where the cut fell.
   snapshot(maxBytes = DEFAULT_PTY_REPLAY_BYTES): string[] {
     const persisted = this.spool.snapshot(maxBytes)
-    if (persisted) return [persisted]
-    const j = this.chunks.join('')
-    return j ? [j] : []
+    const raw = persisted || this.chunks.join('')
+    if (!raw) return []
+    return [stripAltScreen(raw)]
   }
   rekey(key: string): void { this.spool.rekey(key) }
 
