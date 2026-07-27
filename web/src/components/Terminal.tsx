@@ -5,6 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { stripTerminalGeneratedInput } from '@/lib/terminal-input'
 import { isSessionTerminateInput } from '@/lib/terminal-shortcuts'
+import { SCROLL_SENSITIVITY, attachWheelReclaim } from '@/lib/terminal-wheel'
 import { attachImeComposition } from '@/lib/ime-input'
 import { shouldShowLoadingOverlay, LOADING_OVERLAY_DELAY_MS } from '@/lib/loading-overlay'
 import { cliReadiness, shouldMarkLaunchReady, shouldRevealLaunch } from '@/lib/launch-readiness'
@@ -336,10 +337,8 @@ export function Terminal({
       // No smooth-scroll animation: animating every wheel tick over 80ms made scrollback feel laggy
       // and unresponsive (rapid ticks queue/restart the animation). Default 0 = instant, snappy scroll.
       smoothScrollDuration: 0,
-      // Lines moved per wheel notch. xterm's default is 1 (one line/tick), which reads as sluggish
-      // when skimming scrollback; 3 covers ground without overshooting. Alt-scroll uses the separate
-      // fastScrollSensitivity (default 5).
-      scrollSensitivity: 3,
+      // Shared with the reclaimed-wheel path so the two can't drift; see lib/terminal-wheel.ts.
+      scrollSensitivity: SCROLL_SENSITIVITY,
       cursorBlink: true,
       cursorStyle: 'bar',
       convertEol: true,
@@ -379,6 +378,10 @@ export function Terminal({
       webgl?.dispose()
       webgl = null
     }
+    // While the CLI holds the mouse, xterm gives it the wheel instead of scrolling — and the CLIs that
+    // do this ignore wheel events, freezing the drawer. See lib/terminal-wheel.ts.
+    const disposeWheel = attachWheelReclaim(term, host)
+
     // Focus so keyboard input (arrow keys, Ctrl-C, …) goes to the pty, not the page.
     term.focus()
     const refocus = () => term.focus()
@@ -633,6 +636,7 @@ export function Terminal({
       document.removeEventListener('keydown', onKeyDown, true)
       disp.dispose()
       scrollDisp.dispose()
+      disposeWheel()
       disposeIme?.()
       logDiag('connect', 'term_close', { kind: launch ? 'launch' : 'resume', cli: launch?.cli, sessionId: launch ? undefined : sessionId, launchToken: launch?.launchToken })
       ws?.close()
