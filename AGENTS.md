@@ -30,7 +30,8 @@ serves both, so backend work is normal regardless.
 - **Never commit on a broken build.** `npx tsc --noEmit` clean + `npm test` green before you commit.
 - `main` is protected by convention: do **not** commit or push directly to `main`.
 - All code/doc changes must be made on a `release/<version-or-scope>` branch. `main` only receives
-  merges from release branches after tests pass. Push only if asked.
+  merges from release branches after tests pass. Pushing your own task branch to open a PR (see Dev
+  workflow §3) is expected; push `release/x.x.x` or `main` only if asked.
 
 ## ⚠️ Dev workflow — mandatory (this has been violated too many times)
 
@@ -42,7 +43,8 @@ in-flight `release/x.x.x`** (the latest unreleased version that will merge back 
 # branch from the active release/x.x.x into a fresh worktree:
 git worktree add ../berth-<task> -b <branch> release/x.x.x
 # ...develop + commit there, tests green...
-git worktree remove ../berth-<task>      # after it's merged back
+git push -u origin <branch> && gh pr create --base release/x.x.x --head <branch>
+git worktree remove ../berth-<task>      # after the PR is merged
 ```
 
 - **NEVER develop directly in the current / shared working tree or on the currently-checked-out
@@ -66,14 +68,17 @@ git worktree remove ../berth-<task>      # after it's merged back
 - Worktree setup: symlink `node_modules` (+ `web/node_modules`) and use **Node 20** (better-sqlite3
   ABI) or you'll hit phantom test failures.
 
-**2. Merge only — `rebase` is BANNED in this repo.** Integrate finished branches back with
-`git merge` (keep the merge history). **Do not `rebase`, do not `rebase --onto`, do not rewrite
+**2. Merge only — `rebase` is BANNED in this repo.** Integrate finished branches back with a merge
+commit (keep the merge history; on GitHub use "Create a merge commit", not squash/rebase merge). **Do not `rebase`, do not `rebase --onto`, do not rewrite
 commits** for a "linear history" — not even to clean up churn left by a parallel session. When the
 upstream branch looks messy, resolve it with a merge.
 
-**3. When the task is done and green, merge the branch back into the same `release/x.x.x`** it was
-cut from, then `git worktree remove` and delete the branch. Do this on your own initiative — no need
-to ask permission to branch/worktree/merge.
+**3. When the task is done and green, push the task branch and open a PR into the same
+`release/x.x.x`** it was cut from (`gh pr create --base release/x.x.x`). **Do not merge into
+`release/x.x.x` yourself** — not even locally: release branches only change through reviewed PRs
+(see PRs #2–#5). The PR description should cover the problem, the change, and test results. Do the
+branch / worktree / push / PR steps on your own initiative — no need to ask. After the PR is merged,
+`git worktree remove` and delete the task branch (local and remote).
 
 ## Release flow
 
