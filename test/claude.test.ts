@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, writeFileSync, utimesSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { listClaudeSessions } from '../src/adapters/claude'
+import { listClaudeSessions, scanClaudeMeta } from '../src/adapters/claude'
 const ROOT = new URL('./fixtures/claude/projects/', import.meta.url).pathname
 
 describe('claude adapter', () => {
@@ -122,5 +122,66 @@ describe('claude adapter', () => {
 
     const s = listClaudeSessions(dir).find(x => x.kind === 'native')!
     expect(s.updatedAt).toBe(mtimeSec)
+  })
+
+  describe('metadata beyond the first 64KB', () => {
+    // Sessions continued from a compaction point open with dozens of cwd-less `file-history-snapshot`
+    // records (and some with big `api-request-*` blobs), pushing the first `cwd` past 64KB.
+    const snapshot = (id: string, i: number) => JSON.stringify({
+      type: 'file-history-snapshot', messageId: `m${i}`, sessionId: id,
+      snapshot: { trackedFileBackups: { [`f${i}`]: 'x'.repeat(3000) } },
+    })
+    const preamble = (id: string, count = 30) => Array.from({ length: count }, (_, i) => snapshot(id, i))
+    const user = (content: string) => JSON.stringify({
+      type: 'user', message: { role: 'user', content }, cwd: '/tmp/x', timestamp: '2026-06-14T00:29:00.000Z',
+    })
+    const write = (lines: string[]) => {
+      const dir = mkdtempSync(join(tmpdir(), 'berth-claude-'))
+      const id = 'dddd1111-1111-4111-8111-' + Math.random().toString(16).slice(2, 14).padEnd(12, '0')
+      const file = join(dir, `${id}.jsonl`)
+      writeFileSync(file, lines.map(l => l.replaceAll('__ID__', id)).join('\n') + '\n')
+      return { dir, id, file }
+    }
+
+    it('finds a cwd whose first record sits past 64KB', () => {
+      const { dir, file } = write([...preamble('__ID__'), user('hello after preamble')])
+      expect(preamble('x').join('\n').length).toBeGreaterThan(65536)
+      const [native] = listClaudeSessions(dir)
+      expect(native.cwd).toBe('/tmp/x')
+      expect(scanClaudeMeta(file).firstUserOffset).toBeGreaterThan(65536)
+    })
+
+    it('derives the title from a first user turn past 64KB', () => {
+      const { dir } = write([...preamble('__ID__'), user('真正的第一条消息')])
+      expect(listClaudeSessions(dir)[0].title).toBe('真正的第一条消息')
+    })
+
+    it('picks up an ai-title written past 64KB', () => {
+      const { dir } = write([...preamble('__ID__'), JSON.stringify({ type: 'ai-title', aiTitle: '原生标题' }), user('hi')])
+      expect(listClaudeSessions(dir)[0].title).toBe('原生标题')
+    })
+
+    it('still finds an ai-title written after the first user turn within the head', () => {
+      const { dir } = write([user('first'), JSON.stringify({ type: 'ai-title', aiTitle: '后写的原生标题' })])
+      expect(listClaudeSessions(dir)[0].title).toBe('后写的原生标题')
+    })
+
+    it('handles single records larger than a read chunk', () => {
+      const blob = JSON.stringify({ type: 'api-request-blob', body: 'y'.repeat(150_000) })
+      const { dir } = write([blob, blob, user('after blobs')])
+      const [native] = listClaudeSessions(dir)
+      expect(native.cwd).toBe('/tmp/x')
+      expect(native.title).toBe('after blobs')
+    })
+
+    it('returns null cwd when none exists, and never reads past the cap', () => {
+      const { dir, file } = write(preamble('__ID__'))
+      expect(listClaudeSessions(dir)[0].cwd).toBeNull()
+      // A cwd that only appears beyond the cap is not found: the scan is bounded.
+      const capped = write([...preamble('__ID__'), user('late')])
+      expect(scanClaudeMeta(capped.file, 65536).cwd).toBeNull()
+      expect(scanClaudeMeta(capped.file).cwd).toBe('/tmp/x')
+      expect(scanClaudeMeta(file).cwd).toBeNull()
+    })
   })
 })
