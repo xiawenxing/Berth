@@ -20,6 +20,16 @@ describe('store', () => {
     expect(db.isPinned('s1')).toBe(true)
     db.setPin('s1', false); expect(db.isPinned('s1')).toBe(false)
   })
+  it('reports pins in the order they were pinned (re-pinning keeps the original slot)', () => {
+    const db = openStore(':memory:')
+    const mk = (id: string): LogicalSession => ({ ...sess, sessionId: id, contentSourcePath: `/c/${id}.jsonl`, resume: { cli: 'codex', id } })
+    db.upsertSessions(['a', 'b', 'c', 'd'].map(mk))
+    db.setPin('c', true); db.setPin('a', true); db.setPin('b', true)
+    db.setPin('a', true) // idempotent re-pin: stays where it was
+    expect([...db.pinOrderMap()]).toEqual([['c', 0], ['a', 1], ['b', 2]])
+    db.setPin('a', false); db.setPin('d', true); db.setPin('a', true) // unpin + re-pin → goes to the end
+    expect([...db.pinOrderMap().keys()]).toEqual(['c', 'b', 'd', 'a'])
+  })
   it('attach survives a re-scan that re-upserts the same session (no triage reset)', () => {
     const db = openStore(':memory:')
     db.upsertSessions([sess]); db.setAttach('s1','projA','confirmed')
