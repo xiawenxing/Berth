@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles } from 'lucide-react'
+import { Pin, Sparkles } from 'lucide-react'
 import { Spinner } from './ui/Spinner'
 import { CliBadge } from './workspace/TaskCard'
 import { SHIP_LABEL, type ShipStatus } from '@/lib/types'
@@ -19,9 +19,12 @@ interface SessionTitleBarProps {
   onGenerate?: () => Promise<void> | void
   generating?: boolean
   generationError?: string | null
+  // Pin toggle (quick-access list in the rail). Omitted → no button (e.g. a launch with no session yet).
+  pinned?: boolean
+  onTogglePin?: (next: boolean) => void
 }
 
-export function SessionTitleBar({ cli, title, cwd, status, task, editable = false, onRename, onGenerate, generating = false, generationError = null }: SessionTitleBarProps) {
+export function SessionTitleBar({ cli, title, cwd, status, task, editable = false, onRename, onGenerate, generating = false, generationError = null, pinned = false, onTogglePin }: SessionTitleBarProps) {
   const [localTitle, setLocalTitle] = useState(title)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(title)
@@ -163,6 +166,21 @@ export function SessionTitleBar({ cli, title, cwd, status, task, editable = fals
           )}
         >
           <Sparkles className={cn('h-3.5 w-3.5', busy && 'spk-twinkle')} />
+        </button>
+      )}
+      {onTogglePin && (
+        <button
+          type="button"
+          onClick={() => onTogglePin(!pinned)}
+          title={pinned ? '取消 Pin' : 'Pin 到侧边栏'}
+          aria-label={pinned ? '取消 Pin' : 'Pin 到侧边栏'}
+          aria-pressed={pinned}
+          className={cn(
+            'flex-none rounded p-1 transition-colors hover:bg-muted',
+            pinned ? 'text-priority' : 'text-text-dim hover:text-foreground',
+          )}
+        >
+          <Pin className="h-3.5 w-3.5" fill={pinned ? 'currentColor' : 'none'} />
         </button>
       )}
       <ShipPill status={status} task={task} />

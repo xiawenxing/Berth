@@ -47,6 +47,8 @@ export interface ApiSession {
   cwd?: string | null
   updatedAt: number
   pinned?: boolean
+  /** 0-based order the session was pinned in (oldest first); null/absent when not pinned. */
+  pinOrder?: number | null
   projectId?: string | null
   project?: string
   todoKey?: string | null

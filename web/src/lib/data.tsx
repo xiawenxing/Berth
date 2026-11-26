@@ -3,6 +3,7 @@ import { api, type AgentConfig, type ApiProject, type ApiSession, type ApiSettin
 import { DEFAULT_STATUSES } from './status'
 import { setDisplayHome } from './format'
 import { logDiag } from './diag'
+import { applyPin } from './pinned'
 
 // A fresh launch in flight: shown as an optimistic "创建中…" placeholder in the lists until its
 // real session surfaces on disk (and in /api/sessions). Reconciled away by exact session id (claude/
@@ -109,6 +110,9 @@ interface DataState {
   /** Re-scan the CLI session stores on disk (POST /api/refresh) then re-read. Use after a fresh
    *  launch or to pick up sessions started by hand — `reload()` alone can't surface a new session. */
   resync: () => Promise<void>
+  /** Pin / unpin a session. Applied to `sessions` optimistically (so the rail's Pin section, list rows
+   *  and title bars all flip at once), persisted via POST /pin, then re-read; a failure re-reads too. */
+  setPinned: (sessionId: string, on: boolean) => Promise<void>
 }
 
 const Ctx = createContext<DataState | null>(null)
@@ -304,6 +308,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // Best-effort disk re-scan; even if it fails, refetch so the cache view is current.
         await api.refresh().catch(() => {})
         setNonce((n) => n + 1)
+      },
+      setPinned: async (sessionId: string, on: boolean) => {
+        setSessions((cur) => applyPin(cur, sessionId, on))
+        try {
+          await api.pin(sessionId, on)
+        } finally {
+          setNonce((n) => n + 1)
+        }
       },
     }),
     [projects, tasks, sessions, priorities, statuses, agents, docsRoot, autoTrustWorkspaces, cocoContextHookEnabled, loading, error, pending, addPending, resolvePending],

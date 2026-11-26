@@ -223,7 +223,7 @@ function ShipRow({ s, onOpen }: { s: ApiSession; onOpen: (s: ApiSession) => void
 
 function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus; pending?: boolean }) {
   const live = useLive()
-  const { reload } = useData()
+  const { reload, setPinned } = useData()
   const moreBtnRef = useRef<HTMLButtonElement>(null)
   const [kicked, setKicked] = useState(false) // instant feedback until titleGenerating takes over
   const [failed, setFailed] = useState(false)
@@ -262,12 +262,7 @@ function SessionActions({ s, ship, pending }: { s: ApiSession; ship: ShipStatus;
   const togglePin = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (pending) return
-    try {
-      await api.pin(s.sessionId, !s.pinned)
-      reload()
-    } catch {
-      reload()
-    }
+    await setPinned(s.sessionId, !s.pinned).catch(() => {})
   }
 
   const markRead = (e: React.MouseEvent) => {
