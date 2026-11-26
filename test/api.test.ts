@@ -37,6 +37,7 @@ const mockSetTaskDdl = vi.fn((..._a: any[]) => {})
 const mockTaskDdls = new Map<string, string>()
 const mockGetStore = vi.fn((..._a: any[]) => ({
   allPinnedSet: () => new Set<string>(),
+  pinOrderMap: () => new Map<string, number>(),
   allAttachMap: () => new Map(),
   allTitleOverrides: () => new Map(),
   launchIntentCwdBySession: () => new Map<string, string>(),
@@ -734,6 +735,7 @@ live('pin/attach API – round-trip through /api/sessions (BERTH_LIVE)', () => {
     const row = after.find((s: any) => s.sessionId === id)
     expect(row).toBeDefined()
     expect(row.pinned).toBe(true)
+    expect(typeof row.pinOrder).toBe("number")
     expect(row.projectId).toBe('TEST_PROJ')
     expect(row.attachState).toBe('confirmed')
 

@@ -112,7 +112,9 @@ function sendAgentError(res: import('express').Response, error: unknown, locale:
 export interface ApiSession {
   sessionId: string; cli: string; cwd: string | null; title: string | null
   updatedAt: number; deleted: boolean; copies: number
-  pinned: boolean; projectId: string | null; project: string | null; attachState: string
+  pinned: boolean
+  pinOrder: number | null                  // 0-based order the session was pinned in (null = not pinned)
+  projectId: string | null; project: string | null; attachState: string
   todoKey?: string | null
   activity: 'running' | 'settled' | null   // live PTY status (null = no live process / external session)
   titleGenerating?: boolean                // 港务助手 is generating this session's title right now
@@ -143,7 +145,7 @@ export function normalizeWorkspaceCwd(
 
 function serialize(): ApiSession[] {
   const store = getStore()
-  const pins = store.allPinnedSet()
+  const pins = store.pinOrderMap()
   const attach = store.allAttachMap()
   const projectRows = typeof (store as any).allProjects === 'function' ? store.allProjects() : []
   const projectNames = new Map(projectRows.map(p => [p.id, p.name]))
@@ -182,6 +184,7 @@ function serialize(): ApiSession[] {
     sessionId: s.sessionId, cli: s.cli, cwd, title: rawTitle ? compactTitle(rawTitle) : null,
     updatedAt: s.updatedAt, deleted: s.deleted, copies: s.copies.length,
     pinned: pins.has(s.sessionId),
+    pinOrder: pins.get(s.sessionId) ?? null,
     projectId,
     project: projectNames.get(projectId ?? '') ?? null,
     attachState: attach.get(s.sessionId)?.state ?? 'unconfirmed',

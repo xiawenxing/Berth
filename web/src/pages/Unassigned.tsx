@@ -35,7 +35,7 @@ function match(s: ApiSession, q: string) {
 }
 
 export function Unassigned() {
-  const { sessions, projects, reload, resync } = useData()
+  const { sessions, projects, reload, resync, setPinned } = useData()
   const live = useLive()
   const [selId, setSelId] = useState<string | null>(null)
   const [q, setQ] = useState('')
@@ -84,41 +84,12 @@ export function Unassigned() {
       setPicking(false)
     }
   }
-  const [pinOverrides, setPinOverrides] = useState<Map<string, boolean>>(new Map())
   const [hiddenOverrides, setHiddenOverrides] = useState<Set<string>>(new Set())
   const activeProjects = useMemo(() => projects.filter((p) => !p.archived), [projects])
-  const isPinned = (s: ApiSession) => pinOverrides.get(s.sessionId) ?? !!s.pinned
-
-  useEffect(() => {
-    setPinOverrides((cur) => {
-      if (cur.size === 0) return cur
-      let changed = false
-      const next = new Map(cur)
-      for (const s of sessions) {
-        const override = next.get(s.sessionId)
-        if (override !== undefined && override === !!s.pinned) {
-          next.delete(s.sessionId)
-          changed = true
-        }
-      }
-      return changed ? next : cur
-    })
-  }, [sessions])
-
-  const togglePin = (id: string, nextOn: boolean) => {
-    setPinOverrides((prev) => new Map(prev).set(id, nextOn))
-    api
-      .pin(id, nextOn)
-      .then(() => reload())
-      .catch(() => {
-        setPinOverrides((prev) => {
-          const next = new Map(prev)
-          next.delete(id)
-          return next
-        })
-        reload()
-      })
-  }
+  // Pin state is optimistic in the shared data layer (setPinned), so the rail's Pin section and this
+  // list flip together.
+  const isPinned = (s: ApiSession) => !!s.pinned
+  const togglePin = (id: string, nextOn: boolean) => { void setPinned(id, nextOn).catch(() => {}) }
   const attach = (sessionId: string, projectId: string) => {
     api
       .attach(sessionId, projectId)
@@ -147,7 +118,7 @@ export function Unassigned() {
   const visibleSessions = useMemo(() => sessions.filter((s) => !hiddenOverrides.has(s.sessionId)), [sessions, hiddenOverrides])
   const pinSessions = useMemo(
     () => visibleSessions.filter((s) => !s.projectId && isPinned(s)).sort((a, b) => b.updatedAt - a.updatedAt),
-    [visibleSessions, pinOverrides],
+    [visibleSessions],
   )
   const groups = useMemo(() => {
     const m = new Map<string, ApiSession[]>()
@@ -163,7 +134,7 @@ export function Unassigned() {
       cwd,
       sessions: list.slice().sort((a, b) => b.updatedAt - a.updatedAt),
     }))
-  }, [visibleSessions, pinOverrides])
+  }, [visibleSessions])
 
   const allUnassigned = useMemo(() => [...pinSessions, ...groups.flatMap((g) => g.sessions)], [pinSessions, groups])
   // First real unassigned session selected by default; fall back if selection vanished.
@@ -258,6 +229,8 @@ export function Unassigned() {
               status={live.shipStatus(sel.sessionId, sel.updatedAt)}
               editable
               generating={!!sel.titleGenerating}
+              pinned={isPinned(sel)}
+              onTogglePin={(next) => togglePin(sel.sessionId, next)}
               onRename={async (title) => {
                 await api.renameSessionTitle(sel.sessionId, title)
                 reload()

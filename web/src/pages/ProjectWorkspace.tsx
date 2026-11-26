@@ -36,7 +36,7 @@ export function ProjectWorkspace() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { openLaunch, openDrawer, newTask, setNewTask } = useUI()
-  const { projects, tasks: apiTasks, sessions, statuses, priorities, agents, pending, addPending, resolvePending, reload, resync } = useData()
+  const { projects, tasks: apiTasks, sessions, statuses, priorities, agents, pending, addPending, resolvePending, reload, resync, setPinned } = useData()
   const live = useLive()
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [ctxDoc, setCtxDoc] = useState<ContextDocTarget | null>(null)
@@ -250,13 +250,8 @@ export function ProjectWorkspace() {
       .catch(() => reload())
   }
 
-  // Pin toggle：persist via POST /pin, then reload (re-derives pin section vs groups).
-  const onPin = (sessionId: string, on: boolean) => {
-    api
-      .pin(sessionId, on)
-      .then(() => reload())
-      .catch(() => reload())
-  }
+  // Pin toggle：optimistic via the shared data layer (also updates the rail's Pin section), then reload.
+  const onPin = (sessionId: string, on: boolean) => { void setPinned(sessionId, on).catch(() => {}) }
   const onGenerateSessionTitle = (sessionId: string) =>
     api
       .sessionTitle(sessionId)

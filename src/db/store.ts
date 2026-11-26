@@ -152,6 +152,12 @@ export function openStore(path: string) {
     allPinnedSet(): Set<string> {
       return new Set((db.prepare('SELECT session_id FROM pin').all() as any[]).map(r => r.session_id))
     },
+    /** sessionId → 0-based pin order (oldest pin first). `pin` is a rowid table and INSERT OR IGNORE
+     *  never re-numbers an existing row, so rowid order == the order the user pinned things in. */
+    pinOrderMap(): Map<string, number> {
+      const rows = db.prepare('SELECT session_id FROM pin ORDER BY rowid').all() as any[]
+      return new Map(rows.map((r, i) => [r.session_id as string, i]))
+    },
     markSeen(ids: string[], tsSeconds: number) {
       if (ids.length === 0) return
       const stmt = db.prepare(`INSERT INTO session_read (session_id,last_seen,explicit_unread)

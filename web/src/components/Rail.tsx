@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight, CalendarClock } from 'lucide-react'
+import { Inbox, Settings as SettingsIcon, Plus, Ban, Sun, Moon, Archive, ChevronRight, CalendarClock, Pin, PinOff } from 'lucide-react'
 import { BerthIcon } from '@/components/BerthIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/lib/utils'
@@ -12,6 +12,9 @@ import { AGENT_INTEGRATION_CHANGED } from '@/lib/integration-events'
 import { toggleMode } from '@/lib/theme'
 import { deliveryStats } from '@/lib/delivery'
 import { settingsNotice, type SettingsNotice } from '@/lib/settings-status'
+import { useUI } from '@/lib/ui-store'
+import { pinnedSessions } from '@/lib/pinned'
+import { imagePathPlaceholderText, shortCwd } from '@/lib/format'
 
 interface ProjRow {
   id: string
@@ -194,6 +197,8 @@ export function Rail() {
         <NavItem to="/now" icon={Inbox} label="Now" />
       </nav>
 
+      <PinnedSection />
+
       <div className="mx-3 my-2.5 h-px bg-border" />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-2">
@@ -280,5 +285,85 @@ function ProjectNavRow({ project, ship }: { project: ProjRow; ship: 'sail' | 'do
       </span>
       <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{project.meta}</span>
     </NavLink>
+  )
+}
+
+/**
+ * Quick access to the sessions the user pinned, right under Now. Fixed pin order (see pinnedSessions)
+ * so rows don't reshuffle on activity; each row shows the live sail/dock dot, opens the session in the
+ * drawer (same as Now / project rows), and reveals an unpin button on hover. Capped in height so a long
+ * pin list scrolls instead of pushing the project list off the rail. Hidden when nothing is pinned.
+ */
+function PinnedSection() {
+  const { sessions, setPinned } = useData()
+  const { drawer, openDrawer } = useUI()
+  const live = useLive()
+  const pins = useMemo(() => pinnedSessions(sessions), [sessions])
+  if (pins.length === 0) return null
+
+  const open = (s: ApiSession) => {
+    live.markSeen(s.sessionId)
+    openDrawer({
+      title: imagePathPlaceholderText(s.title, s.sessionId),
+      cli: s.cli,
+      cwd: shortCwd(s.cwd),
+      status: live.shipStatus(s.sessionId, s.updatedAt),
+      sessionId: s.sessionId,
+    })
+  }
+
+  return (
+    <section className="mt-2 px-2.5" aria-label="Pin 会话">
+      <div className="flex items-center gap-1.5 px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <Pin size={11} />
+        <span>Pin</span>
+        <span className="ml-auto rounded-full bg-muted px-1.5 py-0 text-[10px] font-medium">{pins.length}</span>
+      </div>
+      <div className="flex max-h-[40vh] flex-col gap-0.5 overflow-y-auto">
+        {pins.map((s) => {
+          const title = imagePathPlaceholderText(s.title, s.sessionId)
+          const where = [s.project ?? '无归属', shortCwd(s.cwd)].filter(Boolean).join(' · ')
+          const active = drawer?.sessionId === s.sessionId
+          const ship = live.shipStatus(s.sessionId, s.updatedAt)
+          return (
+            <div
+              key={s.sessionId}
+              className={cn(
+                'group relative flex items-center rounded-md transition-colors hover:bg-sidebar-accent',
+                active &&
+                  'bg-sidebar-accent before:absolute before:-left-2 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-brand',
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => open(s)}
+                title={`${title}\n${where}`}
+                className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left"
+              >
+                <span className="flex w-[11px] flex-none justify-center">
+                  {ship === 'sail' || ship === 'dock' ? (
+                    <ShipDot kind={ship} />
+                  ) : (
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+                  )}
+                </span>
+                <span className={cn('min-w-0 flex-1 truncate text-[13px] text-accent-foreground', active && 'font-semibold')}>
+                  {title}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { void setPinned(s.sessionId, false).catch(() => {}) }}
+                title="取消 Pin"
+                aria-label={`取消 Pin：${title}`}
+                className="mr-1 flex-none rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              >
+                <PinOff size={12} />
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }

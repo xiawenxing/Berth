@@ -15,7 +15,7 @@ import { logDiag } from '@/lib/diag'
  */
 export function SessionDrawer() {
   const { drawer, closeDrawer, openDrawer } = useUI()
-  const { sessions, reload, resolvePending } = useData()
+  const { sessions, reload, resolvePending, setPinned } = useData()
   const live = useLive()
   const [optimisticLiveId, setOptimisticLiveId] = useState<string | null>(null)
   // A fresh launch's session jsonl is written when the CLI initializes/takes its first turn, which
@@ -100,6 +100,8 @@ export function SessionDrawer() {
             editable={!!drawer.sessionId}
             generating={!!currentSession?.titleGenerating}
             generationError={currentSession?.titleError ?? null}
+            pinned={!!currentSession?.pinned}
+            onTogglePin={currentSession ? (next) => { void setPinned(currentSession.sessionId, next).catch(() => {}) } : undefined}
             onRename={async (title) => {
               if (!drawer.sessionId) return
               await api.renameSessionTitle(drawer.sessionId, title)
